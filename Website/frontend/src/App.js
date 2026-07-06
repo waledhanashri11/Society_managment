@@ -1,0 +1,66 @@
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import Landing from './pages/Landing';
+import Login from './pages/Login';
+import Register from './pages/Register';
+import AdminLayout from './admin/AdminLayout';
+import AdminDashboard from './admin/AdminDashboard';
+import Residents from './admin/Residents';
+import Flats from './admin/Flats';
+import Maintenance from './admin/Maintenance';
+import Complaints from './admin/Complaints';
+import Notices from './admin/Notices';
+import Staff from './admin/Staff';
+import Reports from './admin/Reports';
+import ResidentLayout from './resident/ResidentLayout';
+import ResidentDashboard from './resident/ResidentDashboard';
+import { getUser } from './utils/auth';
+
+const PrivateRoute = ({ children, role }) => {
+  const user = getUser();
+  if (!user) {
+    return <Navigate to="/login" />;
+  }
+  if (role && user.role !== role) {
+    return <Navigate to={user.role === 'admin' ? '/admin' : '/resident'} />;
+  }
+  return children;
+};
+
+function App() {
+  return (
+    <Router>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+        
+        <Route path="/admin" element={
+          <PrivateRoute role="admin">
+            <AdminLayout />
+          </PrivateRoute>
+        }>
+          <Route index element={<AdminDashboard />} />
+          <Route path="residents" element={<Residents />} />
+          <Route path="flats" element={<Flats />} />
+          <Route path="maintenance" element={<Maintenance />} />
+          <Route path="complaints" element={<Complaints />} />
+          <Route path="notices" element={<Notices />} />
+          <Route path="staff" element={<Staff />} />
+          <Route path="reports" element={<Reports />} />
+        </Route>
+
+        <Route path="/resident" element={
+          <PrivateRoute role="resident">
+            <ResidentLayout />
+          </PrivateRoute>
+        }>
+          <Route index element={<ResidentDashboard />} />
+        </Route>
+
+        <Route path="/" element={<Landing />} />
+      </Routes>
+    </Router>
+  );
+}
+
+export default App;
