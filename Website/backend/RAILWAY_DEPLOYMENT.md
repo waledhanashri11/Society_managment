@@ -1,40 +1,53 @@
 # Backend Deployment to Railway
 
-## Environment Variables Required
+This backend is a Node.js + Express service that connects to Supabase
+PostgreSQL through `DATABASE_URL`.
 
-Add these to Railway dashboard:
+## Railway service settings
 
-```
-DATABASE_URL=postgresql://[user]:[password]@[host]:[port]/[database]
+- Root directory: `Website/backend`
+- Start command: `npm start`
+- App entry: `Server.js`
+
+Railway provides `PORT` automatically. The backend also falls back to `5000`
+for local development.
+
+## Environment variables required
+
+Add these in the Railway dashboard. Do not commit real values to Git.
+
+```env
+DATABASE_URL=your_supabase_postgresql_connection_string
+JWT_SECRET=your_strong_secret_key
+FRONTEND_URL=http://localhost:3000
+NODE_ENV=production
 DATABASE_SSL=true
 DB_POOL_SIZE=20
-JWT_SECRET=your_secure_random_secret_here
-NODE_ENV=production
-PORT=5000
-FRONTEND_URL=https://your-vercel-domain.vercel.app
 ```
 
-## How to Deploy
+After the frontend is deployed to Vercel, replace `FRONTEND_URL` with the
+Vercel app URL, for example:
 
-1. Push code to GitHub
-2. Go to railway.app
-3. Click "New Project" → "Deploy from GitHub"
-4. Select this repository
-5. Add environment variables above
-6. Railway will auto-detect Node.js and run `npm start`
-
-## Database Migration
-
-The database schema will be auto-initialized on first connection via Supabase.
-
-## Testing Production URL
-
-Once deployed, test the API at:
-```
-https://your-railway-url.com/
+```env
+FRONTEND_URL=https://your-vercel-app.vercel.app
 ```
 
-Should return:
+## Apply database migrations
+
+After `DATABASE_URL` is configured, run migrations manually from Railway or
+locally:
+
+```bash
+npm run migrate
+```
+
+The app checks the database connection when it starts. It does not create or
+change tables automatically during normal startup.
+
+## Health check
+
+After deployment, open the Railway public backend URL. It should return:
+
 ```json
 { "message": "Society Management System API" }
 ```

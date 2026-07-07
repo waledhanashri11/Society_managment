@@ -4,7 +4,7 @@ const { Pool } = require('pg');
 
 dotenv.config({ path: path.resolve(__dirname, '..', '.env') });
 
-if (!process.env.DATABASE_URL) {
+if (!process.env.DATABASE_URL && process.env.NODE_ENV !== 'production') {
   dotenv.config({ path: path.resolve(__dirname, '..', '.env.database') });
 }
 
