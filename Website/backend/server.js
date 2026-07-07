@@ -1,11 +1,22 @@
 const express = require('express');
 const cors = require('cors');
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 const { initDatabase } = require('./config/database');
 
 const app = express();
 
-app.use(cors());
+// CORS must be registered before JSON parsing and API routes.
+const corsOptions = {
+  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  optionsSuccessStatus: 204
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 app.use(express.json());
 
 const authRoutes = require('./routes/auth');
@@ -35,12 +46,26 @@ const PORT = process.env.PORT || 5000;
 const startServer = async () => {
   try {
     await initDatabase();
-    app.listen(PORT, () => {
+    const server = app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
+    });
+
+    server.on('error', (error) => {
+      if (error.code === 'EADDRINUSE') {
+        console.error(`Port ${PORT} is already in use. Stop the existing backend process or run this server on another port.`);
+        process.exit(1);
+      }
+
+      console.error('Server error:', error);
+      process.exit(1);
     });
   } catch (error) {
     console.error('Error starting server:', error);
   }
 };
 
-startServer();
+if (require.main === module) {
+  startServer();
+}
+
+module.exports = { app, startServer };
