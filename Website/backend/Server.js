@@ -6,9 +6,27 @@ const { initDatabase } = require('./config/database');
 
 const app = express();
 
+const allowedOrigins = [
+  'http://localhost:3000',
+  ...(process.env.FRONTEND_URL || '').split(',').map((origin) => origin.trim()).filter(Boolean)
+];
+
+const isAllowedOrigin = (origin) => {
+  if (!origin) return true;
+  if (allowedOrigins.includes(origin)) return true;
+  return /^https:\/\/[a-z0-9-]+(?:-[a-z0-9]+)?-waledhanashri11s-projects\.vercel\.app$/i.test(origin)
+    || /^https:\/\/[a-z0-9-]+\.vercel\.app$/i.test(origin);
+};
+
 // CORS must be registered before JSON parsing and API routes.
 const corsOptions = {
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  origin(origin, callback) {
+    if (isAllowedOrigin(origin)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error(`CORS blocked origin: ${origin}`));
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
