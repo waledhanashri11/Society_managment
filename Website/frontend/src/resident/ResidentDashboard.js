@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { maintenanceAPI, complaintAPI, noticeAPI } from '../services/api';
 import { getUser } from '../utils/auth';
 
@@ -11,17 +11,13 @@ const ResidentDashboard = () => {
   const [loading, setLoading] = useState(true);
   const user = getUser();
 
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  const ensureArray = (response) => {
+  const ensureArray = useCallback((response) => {
     if (Array.isArray(response)) return response;
     if (response?.data && Array.isArray(response.data)) return response.data;
     return [];
-  };
+  }, []);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       const [maintenanceRes, complaintsRes, noticesRes] = await Promise.all([
         maintenanceAPI.getUserMaintenance(),
@@ -36,7 +32,11 @@ const ResidentDashboard = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [ensureArray]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const handleComplaintSubmit = async (e) => {
     e.preventDefault();
