@@ -38,13 +38,13 @@ const createFlat = async (req, res) => {
   try {
     const { flat_no, floor_no, owner_id, maintenance_charge } = req.body;
 
-    const [rows] = await promisePool.query(
-      'INSERT INTO flats (flat_no, floor_no, owner_id, maintenance_charge) VALUES (?, ?, ?, ?) RETURNING id',
+    const [result] = await promisePool.query(
+      'INSERT INTO flats (flat_no, floor_no, owner_id, maintenance_charge) VALUES (?, ?, ?, ?)',
       [flat_no, floor_no, owner_id || null, maintenance_charge || 0]
     );
 
     res.status(201).json({
-      id: rows[0].id,
+      id: result.insertId,
       flat_no,
       floor_no,
       owner_id,

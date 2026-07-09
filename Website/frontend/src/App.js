@@ -3,6 +3,8 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import Landing from './pages/Landing';
 import Login from './pages/Login';
 import Register from './pages/Register';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
 import AdminLayout from './admin/AdminLayout';
 import AdminDashboard from './admin/AdminDashboard';
 import Residents from './admin/Residents';
@@ -12,8 +14,14 @@ import Complaints from './admin/Complaints';
 import Notices from './admin/Notices';
 import Staff from './admin/Staff';
 import Reports from './admin/Reports';
+import AdminSettings from './admin/AdminSettings';
 import ResidentLayout from './resident/ResidentLayout';
 import ResidentDashboard from './resident/ResidentDashboard';
+import ResidentMaintenance from './resident/ResidentMaintenance';
+import ResidentComplaints from './resident/ResidentComplaints';
+import ResidentNotices from './resident/ResidentNotices';
+import ResidentProfile from './resident/ResidentProfile';
+import ResidentPaymentHistory from './resident/ResidentPaymentHistory';
 import { getUser } from './utils/auth';
 
 const PrivateRoute = ({ children, role }) => {
@@ -33,6 +41,8 @@ function App() {
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
         
         <Route path="/admin" element={
           <PrivateRoute role="admin">
@@ -47,6 +57,7 @@ function App() {
           <Route path="notices" element={<Notices />} />
           <Route path="staff" element={<Staff />} />
           <Route path="reports" element={<Reports />} />
+          <Route path="settings" element={<AdminSettings />} />
         </Route>
 
         <Route path="/resident" element={
@@ -55,6 +66,11 @@ function App() {
           </PrivateRoute>
         }>
           <Route index element={<ResidentDashboard />} />
+          <Route path="maintenance" element={<ResidentMaintenance />} />
+          <Route path="complaints" element={<ResidentComplaints />} />
+          <Route path="notices" element={<ResidentNotices />} />
+          <Route path="profile" element={<ResidentProfile />} />
+          <Route path="payment-history" element={<ResidentPaymentHistory />} />
         </Route>
 
         <Route path="/" element={<Landing />} />

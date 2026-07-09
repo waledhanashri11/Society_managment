@@ -1,5 +1,6 @@
 # Dependencies
 node_modules/
+.agents/
 
 # Environment files and secrets
 .env

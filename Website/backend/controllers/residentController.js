@@ -42,9 +42,9 @@ const getDashboard = async (req, res) => {
 
     const [visitorSummaryRows] = await promisePool.query(
       `SELECT
-         SUM(CASE WHEN visit_time::date = CURRENT_DATE THEN 1 ELSE 0 END) AS today_visitors,
+         SUM(CASE WHEN DATE(visit_time) = CURDATE() THEN 1 ELSE 0 END) AS today_visitors,
          SUM(CASE WHEN visit_time > NOW() THEN 1 ELSE 0 END) AS upcoming_visitors,
-         SUM(CASE WHEN status = 'approved' AND visit_time::date = CURRENT_DATE THEN 1 ELSE 0 END) AS approved_visitors
+         SUM(CASE WHEN status = 'approved' AND DATE(visit_time) = CURDATE() THEN 1 ELSE 0 END) AS approved_visitors
        FROM visitors
        WHERE resident_id = ?`,
       [userId]

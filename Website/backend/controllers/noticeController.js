@@ -47,13 +47,13 @@ const createNotice = async (req, res) => {
   try {
     const { title, description } = req.body;
 
-    const [rows] = await promisePool.query(
-      'INSERT INTO notices (title, description) VALUES (?, ?) RETURNING id',
+    const [result] = await promisePool.query(
+      'INSERT INTO notices (title, description) VALUES (?, ?)',
       [title, description]
     );
 
     res.status(201).json({
-      id: rows[0].id,
+      id: result.insertId,
       title,
       description
     });

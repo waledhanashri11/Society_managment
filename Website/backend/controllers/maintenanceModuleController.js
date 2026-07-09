@@ -1,0 +1,249 @@
+const { promisePool } = require('../config/database');
+
+const respond = (res, status, message, data = null) =>
+  res.status(status).json({ success: status < 400, message, ...(data !== null && { data }) });
+
+const audit = async (userId, action, entityType, entityId, details = null) => {
+  await promisePool.query(
+    `INSERT INTO maintenance_audit_logs (user_id, action, entity_type, entity_id, details)
+     VALUES (?, ?, ?, ?, ?)`,
+    [userId, action, entityType, entityId || null, details ? JSON.stringify(details) : null]
+  );
+};
+
+const dashboard = async (req, res) => {
+  try {
+    const [[summary]] = await promisePool.query(`
+      SELECT
+        COALESCE(SUM(CASE WHEN payment_status = 'Paid' THEN paid_amount ELSE 0 END), 0) collected,
+        COALESCE(SUM(CASE WHEN payment_status != 'Paid' THEN remaining_amount ELSE 0 END), 0) pending,
+        COALESCE(SUM(CASE WHEN payment_status != 'Paid' AND due_date < CURDATE() THEN remaining_amount ELSE 0 END), 0) overdue,
+        COUNT(*) total_bills,
+        SUM(payment_status = 'Paid') paid_bills
+      FROM maintenance_bills
+    `);
+    const [[residents]] = await promisePool.query(`SELECT COUNT(*) total FROM users WHERE role = 'resident'`);
+    const [[expense]] = await promisePool.query(`
+      SELECT COALESCE(SUM(amount), 0) total FROM maintenance_expenses
+      WHERE MONTH(expense_date) = MONTH(CURDATE()) AND YEAR(expense_date) = YEAR(CURDATE())
+    `);
+    const [[monthIncome]] = await promisePool.query(`
+      SELECT COALESCE(SUM(paid_amount), 0) total FROM maintenance_bills
+      WHERE payment_status = 'Paid' AND MONTH(payment_date) = MONTH(CURDATE())
+      AND YEAR(payment_date) = YEAR(CURDATE())
+    `);
+    const [trend] = await promisePool.query(`
+      SELECT DATE_FORMAT(m.created_at, '%b') month,
+        COALESCE(SUM(CASE WHEN mb.payment_status = 'Paid' THEN mb.paid_amount ELSE 0 END), 0) collected,
+        COALESCE(SUM(CASE WHEN mb.payment_status != 'Paid' THEN mb.remaining_amount ELSE 0 END), 0) pending
+      FROM maintenance m LEFT JOIN maintenance_bills mb ON mb.maintenance_id = m.id
+      WHERE m.created_at >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
+      GROUP BY YEAR(m.created_at), MONTH(m.created_at), DATE_FORMAT(m.created_at, '%b')
+      ORDER BY YEAR(m.created_at), MONTH(m.created_at)
+    `);
+    const [expenseDistribution] = await promisePool.query(`
+      SELECT category name, SUM(amount) value FROM maintenance_expenses
+      WHERE expense_date >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
+      GROUP BY category ORDER BY value DESC LIMIT 6
+    `);
+    const [overdueFlats] = await promisePool.query(`
+      SELECT f.flat_no flat, u.name resident, SUM(mb.remaining_amount) amount
+      FROM maintenance_bills mb JOIN flats f ON f.id = mb.flat_id
+      JOIN users u ON u.id = mb.resident_id
+      WHERE mb.payment_status != 'Paid' AND mb.due_date < CURDATE()
+      GROUP BY f.id, f.flat_no, u.name ORDER BY amount DESC LIMIT 5
+    `);
+    const collectionPercentage = summary.total_bills
+      ? Math.round((Number(summary.paid_bills) / Number(summary.total_bills)) * 100)
+      : 0;
+    return respond(res, 200, 'Dashboard fetched', {
+      summary: {
+        collected: Number(summary.collected),
+        pending: Number(summary.pending),
+        overdue: Number(summary.overdue),
+        collectionPercentage,
+        residents: Number(residents.total),
+        monthIncome: Number(monthIncome.total),
+        monthExpense: Number(expense.total),
+        outstanding: Number(summary.pending)
+      },
+      trend,
+      expenseDistribution,
+      overdueFlats
+    });
+  } catch (error) {
+    console.error('Maintenance dashboard error:', error);
+    return respond(res, 500, 'Unable to load maintenance dashboard');
+  }
+};
+
+const listCategories = async (req, res) => {
+  try {
+    const [rows] = await promisePool.query('SELECT * FROM maintenance_categories ORDER BY active DESC, name');
+    return respond(res, 200, 'Categories fetched', rows);
+  } catch (error) {
+    return respond(res, 500, 'Unable to fetch categories');
+  }
+};
+
+const createCategory = async (req, res) => {
+  try {
+    const { name, amount = 0, calculationType = 'FIXED', active = true } = req.body;
+    if (!name || Number(amount) < 0) return respond(res, 400, 'A valid name and amount are required');
+    const [result] = await promisePool.query(
+      `INSERT INTO maintenance_categories (name, amount, calculation_type, active) VALUES (?, ?, ?, ?)`,
+      [name.trim(), amount, calculationType, Boolean(active)]
+    );
+    await audit(req.user.id, 'CREATE', 'CATEGORY', result.insertId, req.body);
+    return respond(res, 201, 'Category created', { id: result.insertId });
+  } catch (error) {
+    if (error.code === 'ER_DUP_ENTRY') return respond(res, 409, 'Category already exists');
+    return respond(res, 500, 'Unable to create category');
+  }
+};
+
+const updateCategory = async (req, res) => {
+  try {
+    const { name, amount, calculationType, active } = req.body;
+    const [result] = await promisePool.query(
+      `UPDATE maintenance_categories SET name = ?, amount = ?, calculation_type = ?, active = ? WHERE id = ?`,
+      [name, amount, calculationType || 'FIXED', Boolean(active), req.params.id]
+    );
+    if (!result.affectedRows) return respond(res, 404, 'Category not found');
+    await audit(req.user.id, 'UPDATE', 'CATEGORY', req.params.id, req.body);
+    return respond(res, 200, 'Category updated');
+  } catch (error) {
+    return respond(res, 500, 'Unable to update category');
+  }
+};
+
+const deleteCategory = async (req, res) => {
+  try {
+    const [result] = await promisePool.query('DELETE FROM maintenance_categories WHERE id = ?', [req.params.id]);
+    if (!result.affectedRows) return respond(res, 404, 'Category not found');
+    await audit(req.user.id, 'DELETE', 'CATEGORY', req.params.id);
+    return respond(res, 200, 'Category deleted');
+  } catch (error) {
+    return respond(res, 409, 'Category is in use and cannot be deleted');
+  }
+};
+
+const listExpenses = async (req, res) => {
+  try {
+    const { search = '', category = '', status = '' } = req.query;
+    const where = ['(vendor LIKE ? OR expense_number LIKE ? OR description LIKE ?)'];
+    const params = [`%${search}%`, `%${search}%`, `%${search}%`];
+    if (category) { where.push('category = ?'); params.push(category); }
+    if (status) { where.push('status = ?'); params.push(status); }
+    const [rows] = await promisePool.query(
+      `SELECT * FROM maintenance_expenses WHERE ${where.join(' AND ')} ORDER BY expense_date DESC, id DESC`,
+      params
+    );
+    return respond(res, 200, 'Expenses fetched', rows);
+  } catch (error) {
+    return respond(res, 500, 'Unable to fetch expenses');
+  }
+};
+
+const createExpense = async (req, res) => {
+  try {
+    const { category, vendor, amount, expenseDate, description, paymentMethod, status = 'Paid', invoiceUrl } = req.body;
+    if (!category || !vendor || Number(amount) <= 0 || !expenseDate) {
+      return respond(res, 400, 'Category, vendor, positive amount and date are required');
+    }
+    const number = `EXP-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
+    const [result] = await promisePool.query(
+      `INSERT INTO maintenance_expenses
+       (expense_number, category, vendor, amount, expense_date, invoice_url, description, payment_method, status, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [number, category, vendor, amount, expenseDate, invoiceUrl || null, description || null, paymentMethod || 'Bank Transfer', status, req.user.id]
+    );
+    await audit(req.user.id, 'CREATE', 'EXPENSE', result.insertId, { number, amount });
+    return respond(res, 201, 'Expense recorded', { id: result.insertId, expenseNumber: number });
+  } catch (error) {
+    return respond(res, 500, 'Unable to create expense');
+  }
+};
+
+const deleteExpense = async (req, res) => {
+  try {
+    const [result] = await promisePool.query('DELETE FROM maintenance_expenses WHERE id = ?', [req.params.id]);
+    if (!result.affectedRows) return respond(res, 404, 'Expense not found');
+    await audit(req.user.id, 'DELETE', 'EXPENSE', req.params.id);
+    return respond(res, 200, 'Expense deleted');
+  } catch (error) {
+    return respond(res, 500, 'Unable to delete expense');
+  }
+};
+
+const getLateFeeRule = async (req, res) => {
+  const [rows] = await promisePool.query('SELECT * FROM late_fee_rules WHERE active = 1 ORDER BY id DESC LIMIT 1');
+  return respond(res, 200, 'Late fee rule fetched', rows[0] || null);
+};
+
+const saveLateFeeRule = async (req, res) => {
+  try {
+    const { gracePeriod = 0, penaltyType = 'DAILY', penaltyAmount = 0, maximumLateFee = 0, active = true } = req.body;
+    await promisePool.query('UPDATE late_fee_rules SET active = 0');
+    const [result] = await promisePool.query(
+      `INSERT INTO late_fee_rules (grace_period, penalty_type, penalty_amount, maximum_late_fee, active)
+       VALUES (?, ?, ?, ?, ?)`,
+      [gracePeriod, penaltyType, penaltyAmount, maximumLateFee, Boolean(active)]
+    );
+    await audit(req.user.id, 'UPDATE', 'LATE_FEE_RULE', result.insertId, req.body);
+    return respond(res, 200, 'Late fee rule saved', { id: result.insertId });
+  } catch (error) {
+    return respond(res, 500, 'Unable to save late fee rule');
+  }
+};
+
+const waiveLateFee = async (req, res) => {
+  try {
+    const [result] = await promisePool.query(
+      `UPDATE maintenance_bills SET total_amount = total_amount - late_fee,
+       remaining_amount = GREATEST(0, remaining_amount - late_fee), late_fee = 0,
+       remarks = CONCAT(COALESCE(remarks, ''), ' Late fee waived.') WHERE id = ?`,
+      [req.params.id]
+    );
+    if (!result.affectedRows) return respond(res, 404, 'Bill not found');
+    await audit(req.user.id, 'WAIVE_LATE_FEE', 'BILL', req.params.id);
+    return respond(res, 200, 'Late fee waived');
+  } catch (error) {
+    return respond(res, 500, 'Unable to waive late fee');
+  }
+};
+
+const createDispute = async (req, res) => {
+  try {
+    const { billId, subject, description } = req.body;
+    const [[bill]] = await promisePool.query('SELECT resident_id FROM maintenance_bills WHERE id = ?', [billId]);
+    if (!bill || bill.resident_id !== req.user.id) return respond(res, 403, 'Bill is not available to this resident');
+    const [result] = await promisePool.query(
+      `INSERT INTO maintenance_disputes (bill_id, resident_id, subject, description) VALUES (?, ?, ?, ?)`,
+      [billId, req.user.id, subject, description]
+    );
+    return respond(res, 201, 'Dispute submitted', { id: result.insertId });
+  } catch (error) {
+    return respond(res, 500, 'Unable to submit dispute');
+  }
+};
+
+const listDisputes = async (req, res) => {
+  try {
+    const [rows] = await promisePool.query(`
+      SELECT d.*, u.name resident_name, f.flat_no, mb.bill_number
+      FROM maintenance_disputes d JOIN users u ON u.id = d.resident_id
+      JOIN maintenance_bills mb ON mb.id = d.bill_id JOIN flats f ON f.id = mb.flat_id
+      ORDER BY d.created_at DESC
+    `);
+    return respond(res, 200, 'Disputes fetched', rows);
+  } catch (error) {
+    return respond(res, 500, 'Unable to fetch disputes');
+  }
+};
+
+module.exports = {
+  dashboard, listCategories, createCategory, updateCategory, deleteCategory,
+  listExpenses, createExpense, deleteExpense, getLateFeeRule, saveLateFeeRule,
+  waiveLateFee, createDispute, listDisputes
+};

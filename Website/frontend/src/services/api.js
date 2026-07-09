@@ -26,6 +26,9 @@ api.interceptors.request.use(
 export const authAPI = {
   register: (data) => api.post('/auth/register', data),
   login: (data) => api.post('/auth/login', data),
+  forgotPassword: (data) => api.post('/auth/forgot-password', data),
+  resetPassword: (data) => api.post('/auth/reset-password', data),
+  changePassword: (data) => api.put('/auth/change-password', data),
 };
 
 export const userAPI = {
@@ -45,6 +48,7 @@ export const flatAPI = {
 };
 
 export const maintenanceAPI = {
+  getDashboard: () => api.get('/maintenance/dashboard'),
   getAll: () => api.get('/maintenance'),
   getById: (id) => api.get(`/maintenance/${id}`),
   create: (data) => api.post('/maintenance', data),
@@ -53,11 +57,25 @@ export const maintenanceAPI = {
   generateBills: (data) => api.post('/maintenance/generate', data),
   getBills: () => api.get('/maintenance/bills'),
   getBillById: (id) => api.get(`/maintenance/bills/${id}`),
+  markBillPaid: (id, data) => api.put(`/maintenance/bills/${id}/mark-paid`, data),
+  sendReminder: (id) => api.post(`/maintenance/bills/${id}/reminder`),
   submitPayment: (data) => api.post('/maintenance/payments', data),
   updatePayment: (id, data) => api.put(`/maintenance/payments/${id}`, data),
   getPayments: () => api.get('/maintenance/payments'),
   getReports: (type) => api.get(`/maintenance/reports?type=${type}`),
   getUserMaintenance: () => api.get('/maintenance/user/my-maintenance'),
+  getCategories: () => api.get('/maintenance/categories'),
+  createCategory: (data) => api.post('/maintenance/categories', data),
+  updateCategory: (id, data) => api.put(`/maintenance/categories/${id}`, data),
+  deleteCategory: (id) => api.delete(`/maintenance/categories/${id}`),
+  getExpenses: (params = {}) => api.get('/maintenance/expenses', { params }),
+  createExpense: (data) => api.post('/maintenance/expenses', data),
+  deleteExpense: (id) => api.delete(`/maintenance/expenses/${id}`),
+  getLateFeeRule: () => api.get('/maintenance/late-fee-rule'),
+  saveLateFeeRule: (data) => api.put('/maintenance/late-fee-rule', data),
+  waiveLateFee: (id) => api.put(`/maintenance/bills/${id}/waive-late-fee`),
+  createDispute: (data) => api.post('/maintenance/disputes', data),
+  getDisputes: () => api.get('/maintenance/disputes'),
 };
 
 export const complaintAPI = {
@@ -83,6 +101,17 @@ export const staffAPI = {
   create: (data) => api.post('/staff', data),
   update: (id, data) => api.put(`/staff/${id}`, data),
   delete: (id) => api.delete(`/staff/${id}`),
+};
+
+export const settingsAPI = {
+  get: () => api.get('/settings'),
+  getPayment: () => api.get('/settings/payment'),
+  update: (data) => api.put('/settings', data),
+};
+
+export const notificationAPI = {
+  getAdmin: () => api.get('/notifications/admin'),
+  markAdminRead: () => api.put('/notifications/admin/read'),
 };
 
 export { api };
