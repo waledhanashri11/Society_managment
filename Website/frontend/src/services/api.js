@@ -128,6 +128,8 @@ export const residentAPI = {
   getReportMaintenance: (params = {}) => api.get('/resident/reports/my-maintenance', { params }),
   getSocietyReportSummary: (params = {}) => api.get('/resident/reports/society-summary', { params }),
   getReportExpenses: (params = {}) => api.get('/resident/reports/expenses', { params }),
+  getMembersMaintenanceReport: (params = {}) => api.get('/resident/reports/members-maintenance', { params }),
+  getAllMaintenanceReport: (params = {}) => api.get('/resident/reports/all-maintenance', { params }),
 };
 
 export { api };

@@ -18,6 +18,30 @@ const addMonthYearFilters = (where, params, dateExpression, month, year) => {
   }
 };
 
+const getTableColumns = async (tableName) => {
+  const [columns] = await promisePool.query(`SHOW COLUMNS FROM ${tableName}`);
+  return columns.map((column) => column.Field);
+};
+
+const hasColumn = (columns, columnName) => columns.includes(columnName);
+
+const maintenanceReportColumns = async () => {
+  const columns = await getTableColumns('maintenance');
+  if (!columns.length) return null;
+
+  return {
+    columns,
+    penalty: hasColumn(columns, 'penalty_amount') ? 'penalty_amount' : '0',
+    total: hasColumn(columns, 'total_amount') ? 'total_amount' : 'amount',
+    paid: hasColumn(columns, 'paid_amount') ? 'paid_amount' : "CASE WHEN status = 'Paid' THEN amount ELSE 0 END",
+    remaining: hasColumn(columns, 'remaining_amount') ? 'remaining_amount' : "CASE WHEN status = 'Paid' THEN 0 ELSE amount END",
+    paymentDate: hasColumn(columns, 'payment_date') ? 'payment_date' : 'NULL',
+    title: hasColumn(columns, 'title') ? 'title' : "'Maintenance Bill'",
+    month: hasColumn(columns, 'month') ? 'month' : 'EXTRACT(MONTH FROM due_date)',
+    year: hasColumn(columns, 'year') ? 'year' : 'EXTRACT(YEAR FROM due_date)',
+  };
+};
+
 const getDashboard = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -263,6 +287,7 @@ const updateProfile = async (req, res) => {
 const getReportSummary = async (req, res) => {
   try {
     const userId = req.user.id;
+    const reportColumns = await maintenanceReportColumns();
 
     const [userRows] = await promisePool.query(
       `SELECT f.flat_no, f.wing, f.floor_no
@@ -272,12 +297,23 @@ const getReportSummary = async (req, res) => {
       [userId]
     );
 
+    if (!reportColumns) {
+      return res.json({
+        flat: userRows[0] || null,
+        totalBills: 0,
+        totalPaidAmount: 0,
+        totalPendingAmount: 0,
+        totalPenaltyAmount: 0,
+        currentMonthStatus: 'No Bill'
+      });
+    }
+
     const [summaryRows] = await promisePool.query(
       `SELECT
          COUNT(*) AS total_bills,
-         COALESCE(SUM(CASE WHEN status = 'Paid' THEN paid_amount ELSE 0 END), 0) AS total_paid_amount,
-         COALESCE(SUM(CASE WHEN status != 'Paid' THEN remaining_amount ELSE 0 END), 0) AS total_pending_amount,
-         COALESCE(SUM(penalty_amount), 0) AS total_penalty_amount
+         COALESCE(SUM(CASE WHEN status = 'Paid' THEN ${reportColumns.paid} ELSE 0 END), 0) AS total_paid_amount,
+         COALESCE(SUM(CASE WHEN status != 'Paid' THEN ${reportColumns.remaining} ELSE 0 END), 0) AS total_pending_amount,
+         COALESCE(SUM(${reportColumns.penalty}), 0) AS total_penalty_amount
        FROM maintenance
        WHERE resident_id = ?`,
       [userId]
@@ -311,6 +347,9 @@ const getReportSummary = async (req, res) => {
 const getReportMaintenance = async (req, res) => {
   try {
     const userId = req.user.id;
+    const reportColumns = await maintenanceReportColumns();
+    if (!reportColumns) return res.json([]);
+
     const { month, year } = req.query;
     const status = normalizeStatus(req.query.status);
     const where = ['m.resident_id = ?'];
@@ -323,14 +362,26 @@ const getReportMaintenance = async (req, res) => {
       params.push(status);
     }
 
+    const titleExpression = hasColumn(reportColumns.columns, 'title') ? 'm.title' : "'Maintenance Bill'";
+    const monthExpression = hasColumn(reportColumns.columns, 'month') ? 'm.month' : 'EXTRACT(MONTH FROM m.due_date)';
+    const yearExpression = hasColumn(reportColumns.columns, 'year') ? 'm.year' : 'EXTRACT(YEAR FROM m.due_date)';
+
     const [rows] = await promisePool.query(
-      `SELECT m.id, m.title, m.month, m.year, m.amount, m.penalty_amount,
-              m.total_amount, m.paid_amount, m.remaining_amount, m.due_date,
-              m.payment_date, m.status, f.flat_no, f.wing, f.floor_no
+      `SELECT m.id, ${titleExpression} AS title,
+              ${monthExpression} AS month,
+              ${yearExpression} AS year,
+              m.amount,
+              ${reportColumns.penalty === '0' ? '0' : `m.${reportColumns.penalty}`} AS penalty_amount,
+              ${reportColumns.total === 'amount' ? 'm.amount' : `m.${reportColumns.total}`} AS total_amount,
+              ${reportColumns.paid.includes('CASE') ? reportColumns.paid.replace(/\bstatus\b/g, 'm.status').replace(/\bamount\b/g, 'm.amount') : `m.${reportColumns.paid}`} AS paid_amount,
+              ${reportColumns.remaining.includes('CASE') ? reportColumns.remaining.replace(/\bstatus\b/g, 'm.status').replace(/\bamount\b/g, 'm.amount') : `m.${reportColumns.remaining}`} AS remaining_amount,
+              m.due_date,
+              ${reportColumns.paymentDate === 'NULL' ? 'NULL' : `m.${reportColumns.paymentDate}`} AS payment_date,
+              m.status, f.flat_no, f.wing, f.floor_no
        FROM maintenance m
        JOIN flats f ON f.id = m.flat_id
        WHERE ${where.join(' AND ')}
-       ORDER BY m.year DESC, m.month DESC, m.due_date DESC, m.id DESC`,
+       ORDER BY year DESC, month DESC, m.due_date DESC, m.id DESC`,
       params
     );
 
@@ -343,6 +394,8 @@ const getReportMaintenance = async (req, res) => {
 
 const getSocietyReportSummary = async (req, res) => {
   try {
+    const reportColumns = await maintenanceReportColumns();
+    const expenseColumns = await getTableColumns('maintenance_expenses');
     const { month, year } = req.query;
     const billWhere = ['1 = 1'];
     const billParams = [];
@@ -352,25 +405,32 @@ const getSocietyReportSummary = async (req, res) => {
     const expenseParams = [];
     addMonthYearFilters(expenseWhere, expenseParams, 'expense_date', month, year);
 
-    const [billRows] = await promisePool.query(
+    const [billRows] = reportColumns ? await promisePool.query(
       `SELECT
          COUNT(*) AS total_bills,
          SUM(CASE WHEN status = 'Paid' THEN 1 ELSE 0 END) AS paid_bills,
          SUM(CASE WHEN status != 'Paid' THEN 1 ELSE 0 END) AS pending_bills,
          SUM(CASE WHEN status != 'Paid' AND due_date < CURRENT_DATE THEN 1 ELSE 0 END) AS overdue_bills,
-         COALESCE(SUM(CASE WHEN status = 'Paid' THEN paid_amount ELSE 0 END), 0) AS total_collection,
-         COALESCE(SUM(total_amount), 0) AS total_billable
+         COALESCE(SUM(CASE WHEN status = 'Paid' THEN ${reportColumns.paid} ELSE 0 END), 0) AS total_collection,
+         COALESCE(SUM(${reportColumns.total}), 0) AS total_billable
        FROM maintenance
        WHERE ${billWhere.join(' AND ')}`,
       billParams
-    );
+    ) : [[{
+      total_bills: 0,
+      paid_bills: 0,
+      pending_bills: 0,
+      overdue_bills: 0,
+      total_collection: 0,
+      total_billable: 0
+    }]];
 
-    const [expenseRows] = await promisePool.query(
+    const [expenseRows] = expenseColumns.length ? await promisePool.query(
       `SELECT COALESCE(SUM(amount), 0) AS total_expenses
        FROM maintenance_expenses
        WHERE ${expenseWhere.join(' AND ')}`,
       expenseParams
-    );
+    ) : [[{ total_expenses: 0 }]];
 
     const bills = billRows[0] || {};
     const totalCollection = Number(bills.total_collection || 0);
@@ -394,6 +454,9 @@ const getSocietyReportSummary = async (req, res) => {
 
 const getReportExpenses = async (req, res) => {
   try {
+    const expenseColumns = await getTableColumns('maintenance_expenses');
+    if (!expenseColumns.length) return res.json([]);
+
     const { month, year } = req.query;
     const where = ['1 = 1'];
     const params = [];
@@ -415,6 +478,154 @@ const getReportExpenses = async (req, res) => {
   }
 };
 
+const getMembersMaintenanceReport = async (req, res) => {
+  try {
+    const reportColumns = await maintenanceReportColumns();
+    const { month, year } = req.query;
+    const status = normalizeStatus(req.query.status);
+    const joinFilters = [];
+    const params = [];
+
+    if (month) {
+      joinFilters.push('EXTRACT(MONTH FROM m.due_date) = ?');
+      params.push(Number(month));
+    }
+
+    if (year) {
+      joinFilters.push('EXTRACT(YEAR FROM m.due_date) = ?');
+      params.push(Number(year));
+    }
+
+    if (status) {
+      joinFilters.push('LOWER(m.status) = LOWER(?)');
+      params.push(status);
+    }
+
+    if (!reportColumns) {
+      const [members] = await promisePool.query(
+        `SELECT u.id, u.name, u.email, u.phone, f.flat_no, f.wing, f.floor_no
+         FROM users u
+         LEFT JOIN flats f ON f.id = u.flat_id
+         WHERE u.role = ? AND COALESCE(u.status, 'approved') = ?
+         ORDER BY f.wing, f.floor_no, f.flat_no, u.name`,
+        ['resident', 'approved']
+      );
+      return res.json(members.map((row) => ({
+        ...row,
+        total_bills: 0,
+        paid_amount: 0,
+        pending_amount: 0,
+        penalty_amount: 0,
+        maintenance_status: 'No Bill'
+      })));
+    }
+
+    const joinCondition = [
+      'm.resident_id = u.id',
+      ...joinFilters
+    ].join(' AND ');
+
+    const [rows] = await promisePool.query(
+      `SELECT
+         u.id,
+         u.name,
+         u.email,
+         u.phone,
+         f.flat_no,
+         f.wing,
+         f.floor_no,
+         COUNT(m.id) AS total_bills,
+         COALESCE(SUM(CASE WHEN m.status = 'Paid' THEN ${reportColumns.paid.includes('CASE') ? reportColumns.paid.replace(/\bstatus\b/g, 'm.status').replace(/\bamount\b/g, 'm.amount') : `m.${reportColumns.paid}`} ELSE 0 END), 0) AS paid_amount,
+         COALESCE(SUM(CASE WHEN m.status != 'Paid' THEN ${reportColumns.remaining.includes('CASE') ? reportColumns.remaining.replace(/\bstatus\b/g, 'm.status').replace(/\bamount\b/g, 'm.amount') : `m.${reportColumns.remaining}`} ELSE 0 END), 0) AS pending_amount,
+         COALESCE(SUM(${reportColumns.penalty === '0' ? '0' : `m.${reportColumns.penalty}`}), 0) AS penalty_amount,
+         COALESCE(
+           MAX(CASE WHEN m.status != 'Paid' THEN m.status END),
+           MAX(m.status),
+           'No Bill'
+         ) AS maintenance_status
+       FROM users u
+       LEFT JOIN flats f ON f.id = u.flat_id
+       LEFT JOIN maintenance m ON ${joinCondition}
+       WHERE u.role = ? AND COALESCE(u.status, 'approved') = ?
+       GROUP BY u.id, u.name, u.email, u.phone, f.flat_no, f.wing, f.floor_no
+       ORDER BY f.wing, f.floor_no, f.flat_no, u.name`,
+      [...params, 'resident', 'approved']
+    );
+
+    res.json(rows.map((row) => ({
+      ...row,
+      total_bills: Number(row.total_bills || 0),
+      paid_amount: Number(row.paid_amount || 0),
+      pending_amount: Number(row.pending_amount || 0),
+      penalty_amount: Number(row.penalty_amount || 0),
+    })));
+  } catch (error) {
+    console.error('Resident members maintenance report error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+const getAllMaintenanceReport = async (req, res) => {
+  try {
+    const reportColumns = await maintenanceReportColumns();
+    if (!reportColumns) return res.json([]);
+
+    const { month, year } = req.query;
+    const status = normalizeStatus(req.query.status);
+    const where = ['1 = 1'];
+    const params = [];
+
+    addMonthYearFilters(where, params, 'm.due_date', month, year);
+
+    if (status) {
+      where.push('LOWER(m.status) = LOWER(?)');
+      params.push(status);
+    }
+
+    const titleExpression = hasColumn(reportColumns.columns, 'title') ? 'm.title' : "'Monthly Maintenance'";
+    const monthExpression = hasColumn(reportColumns.columns, 'month') ? 'm.month' : 'EXTRACT(MONTH FROM m.due_date)';
+    const yearExpression = hasColumn(reportColumns.columns, 'year') ? 'm.year' : 'EXTRACT(YEAR FROM m.due_date)';
+    const paidExpression = reportColumns.paid.includes('CASE')
+      ? reportColumns.paid.replace(/\bstatus\b/g, 'm.status').replace(/\bamount\b/g, 'm.amount')
+      : `m.${reportColumns.paid}`;
+    const remainingExpression = reportColumns.remaining.includes('CASE')
+      ? reportColumns.remaining.replace(/\bstatus\b/g, 'm.status').replace(/\bamount\b/g, 'm.amount')
+      : `m.${reportColumns.remaining}`;
+
+    const [rows] = await promisePool.query(
+      `SELECT m.id,
+              u.name AS resident_name,
+              u.email AS resident_email,
+              f.flat_no,
+              f.wing,
+              f.floor_no,
+              ${titleExpression} AS title,
+              ${monthExpression} AS month,
+              ${yearExpression} AS year,
+              m.amount,
+              ${reportColumns.penalty === '0' ? '0' : `m.${reportColumns.penalty}`} AS penalty_amount,
+              ${reportColumns.total === 'amount' ? 'm.amount' : `m.${reportColumns.total}`} AS total_amount,
+              ${paidExpression} AS paid_amount,
+              ${remainingExpression} AS remaining_amount,
+              m.due_date,
+              ${reportColumns.paymentDate === 'NULL' ? 'NULL' : `m.${reportColumns.paymentDate}`} AS payment_date,
+              m.status AS payment_status,
+              m.status
+       FROM maintenance m
+       LEFT JOIN users u ON u.id = m.resident_id
+       LEFT JOIN flats f ON f.id = m.flat_id
+       WHERE ${where.join(' AND ')}
+       ORDER BY year DESC, month DESC, f.wing, f.floor_no, f.flat_no, u.name`,
+      params
+    );
+
+    res.json(rows);
+  } catch (error) {
+    console.error('Resident all maintenance report error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
 module.exports = {
   getDashboard,
   getMaintenance,
@@ -428,4 +639,6 @@ module.exports = {
   getReportMaintenance,
   getSocietyReportSummary,
   getReportExpenses,
+  getMembersMaintenanceReport,
+  getAllMaintenanceReport,
 };
