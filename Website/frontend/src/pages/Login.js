@@ -30,9 +30,9 @@ const Login = () => {
       setUser(response.data.user);
       
       if (response.data.user.role === 'admin') {
-        navigate('/admin');
+        navigate('/admin/dashboard');
       } else {
-        navigate('/resident');
+        navigate('/resident/dashboard');
       }
     } catch (err) {
       setError(err.response?.data?.message || 'Login failed. Please try again.');

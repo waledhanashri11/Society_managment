@@ -19,9 +19,9 @@
     "tailwindcss": "^3.4.17"
   },
   "scripts": {
-    "start": "react-scripts start",
-    "build": "react-scripts build",
-    "dev": "react-scripts start"
+    "start": "node scripts/react-scripts-canonical.js start",
+    "build": "node scripts/react-scripts-canonical.js build",
+    "dev": "node scripts/react-scripts-canonical.js start"
   },
   "eslintConfig": {
     "extends": [

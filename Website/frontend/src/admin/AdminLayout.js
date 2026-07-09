@@ -9,7 +9,7 @@ import { notificationAPI, settingsAPI } from '../services/api';
 import '../portal.css';
 
 const adminLinks = [
-  { to: '/admin', label: 'Dashboard', icon: Home, end: true },
+  { to: '/admin/dashboard', label: 'Dashboard', icon: Home },
   { to: '/admin/residents', label: 'Residents', icon: Users },
   { to: '/admin/flats', label: 'Flats', icon: Building2 },
   { to: '/admin/maintenance', label: 'Maintenance', icon: ClipboardList },

@@ -16,10 +16,17 @@ const {
   getPayments,
   markBillPaid,
   sendPaymentReminder,
-  getReports
+  getReports,
+  payMaintenanceBill,
+  getSettings,
+  saveSettings,
+  applyPenalty
 } = require('../controllers/maintenanceController');
 const moduleController = require('../controllers/maintenanceModuleController');
 
+router.get('/settings', auth, adminAuth, getSettings);
+router.post('/settings', auth, adminAuth, saveSettings);
+router.post('/apply-penalty', auth, adminAuth, applyPenalty);
 router.get('/dashboard', auth, adminAuth, moduleController.dashboard);
 router.get('/categories', auth, moduleController.listCategories);
 router.post('/categories', auth, adminAuth, moduleController.createCategory);
@@ -46,6 +53,7 @@ router.get('/payments', auth, adminAuth, getPayments);
 router.get('/reports', auth, adminAuth, getReports);
 router.get('/user/my-maintenance', auth, getUserMaintenance);
 router.get('/:id', auth, adminAuth, getMaintenanceById);
+router.put('/:id/pay', auth, adminAuth, payMaintenanceBill);
 router.put('/:id', auth, adminAuth, updateMaintenance);
 router.delete('/:id', auth, adminAuth, deleteMaintenance);
 

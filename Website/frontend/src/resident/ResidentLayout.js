@@ -1,21 +1,23 @@
 import React, { useEffect, useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
-  Bell, Building2, Car, ChevronDown, ClipboardList, CreditCard, Home, LogOut,
-  Menu, MessageSquareWarning, ReceiptIndianRupee, User, X
+  Bell, Building2, ChevronDown, ClipboardList, CreditCard, FileBarChart, Home, LogOut,
+  Menu, MessageSquareWarning, ReceiptIndianRupee, User, Users, X
 } from 'lucide-react';
 import { getUser, logout } from '../utils/auth';
 import { maintenanceAPI, noticeAPI } from '../services/api';
 import '../portal.css';
 
 const residentLinks = [
-  { to: '/resident', label: 'Dashboard', icon: Home, end: true },
+  { to: '/resident/dashboard', label: 'Dashboard', icon: Home },
   { to: '/resident/maintenance', label: 'Maintenance', icon: CreditCard },
   { to: '/resident/complaints', label: 'Complaints', icon: MessageSquareWarning },
   { to: '/resident/notices', label: 'Notices', icon: Bell },
-  { href: '#vehicles', label: 'My Vehicles', icon: Car },
+  { to: '/resident/members', label: 'Members', icon: Users },
+  { to: '/resident/reports', label: 'Reports', icon: FileBarChart },
+  
   { to: '/resident/profile', label: 'My Profile', icon: User },
-  { to: '/resident/payment-history', label: 'Payment History', icon: ClipboardList }
+  { to: '/resident/payments', label: 'Payments', icon: ClipboardList }
 ];
 
 const getProfilePhotoKey = (user) => `residentProfilePhoto:${user?.id || user?.email || 'current'}`;

@@ -8,9 +8,21 @@ const {
   getVisitors,
   getParcels,
   getActivities,
+  getMembers,
+  updateProfile,
+  getReportSummary,
+  getReportMaintenance,
+  getSocietyReportSummary,
+  getReportExpenses,
 } = require('../controllers/residentController');
 
 router.get('/dashboard', auth, getDashboard);
+router.get('/members', auth, getMembers);
+router.put('/profile', auth, updateProfile);
+router.get('/reports/my-summary', auth, getReportSummary);
+router.get('/reports/my-maintenance', auth, getReportMaintenance);
+router.get('/reports/society-summary', auth, getSocietyReportSummary);
+router.get('/reports/expenses', auth, getReportExpenses);
 router.get('/maintenance', auth, getMaintenance);
 router.get('/complaints', auth, getComplaints);
 router.get('/visitors', auth, getVisitors);

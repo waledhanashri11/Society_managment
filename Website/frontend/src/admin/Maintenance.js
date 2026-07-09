@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   Activity, AlertCircle, ArrowDownRight, ArrowUpRight, Bell, CalendarDays,
   CheckCircle2, ChevronDown, CircleDollarSign, Download, FileBarChart, FileText,
-  Filter, IndianRupee, LayoutDashboard, MoreHorizontal, Plus, ReceiptIndianRupee,
+  Filter, IndianRupee, LayoutDashboard, Plus, ReceiptIndianRupee,
   RefreshCcw, Search, SlidersHorizontal, TrendingUp, Wallet,
   X
 } from 'lucide-react';
@@ -67,15 +67,15 @@ function MiniChart({ data }) {
 }
 
 const Maintenance = () => {
-  const [tab, setTab] = useState('overview');
+  const [tab, setTab] = useState('bills');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
-  const [cycles, setCycles] = useState([]);
   const [bills, setBills] = useState([]);
   const [payments, setPayments] = useState([]);
   const [categories, setCategories] = useState([]);
   const [expenses, setExpenses] = useState([]);
+  const [settings, setSettings] = useState(null);
   const [dashboard, setDashboard] = useState({ summary: initialStats, trend: [], expenseDistribution: [], overdueFlats: [] });
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('All');
@@ -85,9 +85,12 @@ const Maintenance = () => {
   const [selected, setSelected] = useState(null);
   const [saving, setSaving] = useState(false);
   const current = new Date();
-  const [cycleForm, setCycleForm] = useState({ title: `${months[current.getMonth()]} Maintenance`, month: current.getMonth() + 1, year: current.getFullYear(), dueDate: '', description: '' });
+  
+  const [cycleForm, setCycleForm] = useState({ month: current.getMonth() + 1, year: current.getFullYear() });
+  const [settingsForm, setSettingsForm] = useState({ title: 'Monthly Maintenance', fixed_amount: '', due_day: 10, late_fee_type: 'fixed', late_fee_value: '', grace_days: 2 });
   const [categoryForm, setCategoryForm] = useState({ name: '', amount: '', calculationType: 'FIXED', active: true });
   const [expenseForm, setExpenseForm] = useState({ category: 'Repairs', vendor: '', amount: '', expenseDate: new Date().toISOString().slice(0, 10), paymentMethod: 'Bank Transfer', status: 'Paid', description: '' });
+  const [payForm, setPayForm] = useState({ paidAmount: '', paymentDate: new Date().toISOString().slice(0, 10) });
 
   const notify = (message) => {
     setToast(message);
@@ -98,34 +101,68 @@ const Maintenance = () => {
     setLoading(true);
     setError('');
     const requests = [
-      maintenanceAPI.getAll(), maintenanceAPI.getBills(), maintenanceAPI.getDashboard(),
-      maintenanceAPI.getCategories(), maintenanceAPI.getExpenses(), maintenanceAPI.getPayments()
+      maintenanceAPI.getBills(), maintenanceAPI.getDashboard(),
+      maintenanceAPI.getCategories(), maintenanceAPI.getExpenses(), maintenanceAPI.getPayments(),
+      maintenanceAPI.getSettings()
     ];
     const results = await Promise.allSettled(requests);
-    if (results[0].status === 'fulfilled') setCycles(unwrap(results[0].value));
-    if (results[1].status === 'fulfilled') setBills(unwrap(results[1].value));
-    if (results[2].status === 'fulfilled') setDashboard(unwrap(results[2].value, dashboard));
-    if (results[3].status === 'fulfilled') setCategories(unwrap(results[3].value));
-    if (results[4].status === 'fulfilled') setExpenses(unwrap(results[4].value));
-    if (results[5].status === 'fulfilled') setPayments(unwrap(results[5].value));
+    if (results[0].status === 'fulfilled') setBills(unwrap(results[0].value));
+    if (results[1].status === 'fulfilled') setDashboard(unwrap(results[1].value, dashboard));
+    if (results[2].status === 'fulfilled') setCategories(unwrap(results[2].value));
+    if (results[3].status === 'fulfilled') setExpenses(unwrap(results[3].value));
+    if (results[4].status === 'fulfilled') setPayments(unwrap(results[4].value));
+    if (results[5].status === 'fulfilled') setSettings(unwrap(results[5].value, null));
     if (results.every((result) => result.status === 'rejected')) setError('The maintenance service is unavailable. Start the backend and refresh this page.');
     setLoading(false);
   };
 
   useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    if (selected && modal === 'pay') {
+      setPayForm({
+        paidAmount: selected.remaining_amount !== undefined ? selected.remaining_amount : selected.amount,
+        paymentDate: new Date().toISOString().slice(0, 10)
+      });
+    }
+  }, [selected, modal]);
+
+  useEffect(() => {
+    if (settings) {
+      setSettingsForm({
+        title: settings.title || 'Monthly Maintenance',
+        fixed_amount: settings.fixed_amount || '',
+        due_day: settings.due_day || 10,
+        late_fee_type: settings.late_fee_type || 'fixed',
+        late_fee_value: settings.late_fee_value || '',
+        grace_days: settings.grace_days || 2
+      });
+    }
+  }, [settings]);
+
   const calculatedStats = useMemo(() => {
-    if (Number(dashboard.summary?.collected) || Number(dashboard.summary?.pending)) return dashboard.summary;
-    const collected = bills.reduce((sum, bill) => sum + (bill.payment_status === 'Paid' ? Number(bill.total_amount) : 0), 0);
-    const pending = bills.reduce((sum, bill) => sum + (bill.payment_status !== 'Paid' ? Number(bill.total_amount) : 0), 0);
-    const overdue = bills.reduce((sum, bill) => sum + (bill.payment_status !== 'Paid' && new Date(bill.due_date) < new Date() ? Number(bill.total_amount) : 0), 0);
-    const paid = bills.filter((bill) => bill.payment_status === 'Paid').length;
-    return { ...initialStats, collected, pending, overdue, outstanding: pending, collectionPercentage: bills.length ? Math.round(paid / bills.length * 100) : 0 };
+    const totalResidents = dashboard.summary?.residents || 0;
+    const collected = bills.reduce((sum, bill) => sum + Number(bill.paid_amount || 0), 0);
+    const pending = bills.reduce((sum, bill) => sum + Number(bill.remaining_amount || 0), 0);
+    const overdue = bills.reduce((sum, bill) => {
+      const isOverdue = (bill.payment_status || bill.status) === 'Overdue';
+      return sum + (isOverdue ? Number(bill.remaining_amount || 0) : 0);
+    }, 0);
+    const totalAmount = collected + pending;
+    const collectionPercentage = totalAmount ? Math.round((collected / totalAmount) * 100) : 0;
+    return {
+      collected,
+      pending,
+      overdue,
+      residents: totalResidents || new Set(bills.map((b) => b.resident_id).filter(Boolean)).size,
+      collectionPercentage
+    };
   }, [bills, dashboard.summary]);
 
   const filteredBills = useMemo(() => bills.filter((bill) => {
-    const text = `${bill.bill_number || ''} ${bill.invoice_number || ''} ${bill.resident_name || ''} ${bill.flat_no || ''}`.toLowerCase();
-    const matchesStatus = status === 'All' || bill.payment_status === status || (status === 'Overdue' && bill.payment_status !== 'Paid' && new Date(bill.due_date) < new Date());
+    const text = `${bill.bill_number || ''} ${bill.invoice_number || ''} ${bill.resident_name || ''} ${bill.flat_no || ''} ${bill.title || ''}`.toLowerCase();
+    const currentStatus = bill.payment_status || bill.status;
+    const matchesStatus = status === 'All' || currentStatus === status;
     const matchesMonth = monthFilter === 'All' || Number(bill.month) === Number(monthFilter);
     const matchesYear = yearFilter === 'All' || Number(bill.year) === Number(yearFilter);
     return text.includes(query.toLowerCase()) && matchesStatus && matchesMonth && matchesYear;
@@ -162,8 +199,8 @@ const Maintenance = () => {
         }
         const bucket = byKey.get(key);
         if (!bucket) return;
-        if (bill.payment_status === 'Paid') bucket.collected += Number(bill.paid_amount || bill.total_amount || bill.amount || 0);
-        else bucket.pending += Number(bill.remaining_amount || bill.total_amount || bill.amount || 0);
+        bucket.collected += Number(bill.paid_amount || 0);
+        bucket.pending += Number(bill.remaining_amount || 0);
       });
       return timeline;
     }
@@ -205,22 +242,22 @@ const Maintenance = () => {
   };
 
   const billRows = (items = filteredBills) => items.map((bill) => ({
-    bill_number: bill.bill_number || `BILL-${String(bill.id).padStart(5, '0')}`,
-    invoice_number: bill.invoice_number || `INV-${bill.id}`,
     resident: bill.resident_name || '',
     flat: bill.flat_no || '',
     month: months[(Number(bill.month) || 1) - 1],
     year: bill.year || '',
-    due_date: date(bill.due_date),
+    title: bill.title || '',
+    base_amount: Number(bill.amount || 0),
+    penalty: Number(bill.penalty_amount || 0),
     total_amount: Number(bill.total_amount || 0),
     paid_amount: Number(bill.paid_amount || 0),
     remaining_amount: Number(bill.remaining_amount || 0),
-    late_fee: Number(bill.late_fee || 0),
-    status: bill.payment_status || ''
+    due_date: date(bill.due_date),
+    status: bill.payment_status || bill.status || ''
   }));
 
   const exportCurrentView = () => {
-    if (tab === 'bills') return downloadCsv('maintenance-bills.csv', billRows());
+    if (tab === 'bills') return downloadCsv('maintenance-records.csv', billRows());
     if (tab === 'categories') return downloadCsv('maintenance-categories.csv', categories.map((item) => ({
       name: item.name,
       amount: Number(item.amount || 0),
@@ -242,8 +279,7 @@ const Maintenance = () => {
       { metric: 'Pending payments', value: calculatedStats.pending },
       { metric: 'Overdue amount', value: calculatedStats.overdue },
       { metric: 'Collection rate', value: `${calculatedStats.collectionPercentage || 0}%` },
-      { metric: 'Total bills', value: bills.length },
-      { metric: 'Total expenses', value: expenses.reduce((sum, item) => sum + Number(item.amount || 0), 0) },
+      { metric: 'Total residents', value: calculatedStats.residents },
       ...chartData.map((item) => ({ metric: `${item.month} collected`, value: item.collected })),
       ...chartData.map((item) => ({ metric: `${item.month} outstanding`, value: item.pending }))
     ]);
@@ -251,7 +287,7 @@ const Maintenance = () => {
 
   const exportReport = (type) => {
     if (type === 'Monthly collection') return downloadCsv('monthly-collection.csv', chartData.map((item) => ({ month: item.month, collected: item.collected, outstanding: item.pending })));
-    if (type === 'Pending dues') return downloadCsv('pending-dues.csv', billRows(bills.filter((bill) => bill.payment_status !== 'Paid')));
+    if (type === 'Pending dues') return downloadCsv('pending-dues.csv', billRows(bills.filter((bill) => (bill.payment_status || bill.status) !== 'Paid')));
     if (type === 'Expense report') return downloadCsv('expense-report.csv', expenses.map((item) => ({ expense_number: item.expense_number, category: item.category, vendor: item.vendor, amount: Number(item.amount || 0), status: item.status })));
     return exportCurrentView();
   };
@@ -260,7 +296,7 @@ const Maintenance = () => {
     const html = `
       <html>
         <head>
-          <title>${type} - ${bill.bill_number || bill.id}</title>
+          <title>${type} - ${bill.id}</title>
           <style>
             body { font-family: Arial, sans-serif; padding: 32px; color: #172033; }
             .box { max-width: 760px; margin: 0 auto; border: 1px solid #dfe5ee; border-radius: 14px; padding: 28px; }
@@ -277,16 +313,17 @@ const Maintenance = () => {
             <h1>${type}</h1>
             <div class="muted">Society Management System</div>
             <table>
-              <tr><th>Bill No.</th><td>${bill.bill_number || `BILL-${bill.id}`}</td></tr>
-              <tr><th>Invoice No.</th><td>${bill.invoice_number || `INV-${bill.id}`}</td></tr>
               <tr><th>Resident</th><td>${bill.resident_name || 'Resident'}</td></tr>
-              <tr><th>Flat</th><td>${bill.flat_no || ''}</td></tr>
+              <tr><th>Flat</th><td>Flat ${bill.flat_no || ''}</td></tr>
               <tr><th>Period</th><td>${months[(Number(bill.month) || 1) - 1]} ${bill.year || ''}</td></tr>
+              <tr><th>Title</th><td>${bill.title || ''}</td></tr>
               <tr><th>Due Date</th><td>${date(bill.due_date)}</td></tr>
-              <tr><th>Status</th><td>${bill.payment_status || ''}</td></tr>
-              <tr><th>Amount</th><td>${money(bill.amount)}</td></tr>
-              <tr><th>Late Fee</th><td>${money(bill.late_fee)}</td></tr>
-              <tr><th class="total">Total</th><td class="total">${money(bill.total_amount)}</td></tr>
+              <tr><th>Status</th><td>${bill.payment_status || bill.status || ''}</td></tr>
+              <tr><th>Base Amount</th><td>${money(bill.amount)}</td></tr>
+              <tr><th>Penalty Amount</th><td>${money(bill.penalty_amount)}</td></tr>
+              <tr><th class="total">Total Amount</th><td class="total">${money(bill.total_amount)}</td></tr>
+              <tr><th>Paid Amount</th><td>${money(bill.paid_amount)}</td></tr>
+              <tr><th>Remaining Amount</th><td>${money(bill.remaining_amount)}</td></tr>
             </table>
             <p class="muted right">Generated on ${new Date().toLocaleString('en-IN')}</p>
           </div>
@@ -300,22 +337,64 @@ const Maintenance = () => {
     }
     docWindow.document.write(html);
     docWindow.document.close();
+    notify('Document printed');
   };
 
   const markPaid = async (bill) => {
-    const transactionId = window.prompt('Enter transaction/reference ID', `ADMIN-${Date.now()}`);
-    if (!transactionId) return;
+    setSelected(bill);
+    setModal('pay');
+  };
+
+  const submitPay = async (e) => {
+    e.preventDefault();
+    setSaving(true);
     try {
-      await maintenanceAPI.markBillPaid(bill.id, {
-        paymentMethod: 'Manual',
-        transactionId,
-        remarks: 'Marked paid by admin'
+      await maintenanceAPI.pay(selected.id, {
+        paidAmount: Number(payForm.paidAmount),
+        paymentDate: payForm.paymentDate
       });
-      notify('Bill marked as paid');
+      notify('Payment marked successfully');
       setModal(null);
+      setSelected(null);
       await load();
     } catch (err) {
-      notify(err.response?.data?.message || 'Could not mark bill paid');
+      notify(err.response?.data?.message || 'Could not save payment');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const submitSettings = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await maintenanceAPI.saveSettings({
+        title: settingsForm.title,
+        fixed_amount: Number(settingsForm.fixed_amount),
+        due_day: Number(settingsForm.due_day),
+        late_fee_type: settingsForm.late_fee_type,
+        late_fee_value: Number(settingsForm.late_fee_value),
+        grace_days: Number(settingsForm.grace_days)
+      });
+      notify('Monthly maintenance rules saved');
+      await load();
+    } catch (err) {
+      notify(err.response?.data?.message || 'Could not save configurations');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleApplyPenalty = async () => {
+    setSaving(true);
+    try {
+      await maintenanceAPI.applyPenalty();
+      notify('Penalties calculated and applied successfully');
+      await load();
+    } catch (err) {
+      notify('Could not apply penalties');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -342,22 +421,21 @@ const Maintenance = () => {
   };
 
   const submitCycle = async (e) => {
-    e.preventDefault(); setSaving(true);
-    try {
-      const response = await maintenanceAPI.create(cycleForm);
-      const cycleId = response?.data?.data?.id;
-      if (modal === 'generate' && cycleId) await maintenanceAPI.generateBills({ maintenanceId: cycleId });
-      notify(modal === 'generate' ? 'Monthly bills generated successfully' : 'Maintenance cycle created');
-      setModal(null); await load();
-    } catch (err) { notify(err.response?.data?.message || 'Could not save maintenance cycle'); }
-    finally { setSaving(false); }
-  };
-
-  const generateExisting = async (id) => {
+    e.preventDefault();
     setSaving(true);
-    try { await maintenanceAPI.generateBills({ maintenanceId: id }); notify('Bills generated successfully'); setModal(null); await load(); }
-    catch (err) { notify(err.response?.data?.message || 'Could not generate bills'); }
-    finally { setSaving(false); }
+    try {
+      await maintenanceAPI.generateBills({
+        month: Number(cycleForm.month),
+        year: Number(cycleForm.year)
+      });
+      notify('Monthly bills generated successfully');
+      setModal(null);
+      await load();
+    } catch (err) {
+      notify(err.response?.data?.message || 'Could not generate bills');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const submitCategory = async (e) => {
@@ -384,11 +462,16 @@ const Maintenance = () => {
   };
 
   const statCards = [
-    { label: 'Total collected', value: money(calculatedStats.collected), note: '12.4% from last month', icon: IndianRupee, tone: 'blue', up: true },
-    { label: 'Pending payments', value: money(calculatedStats.pending), note: `${bills.filter((b) => b.payment_status !== 'Paid').length} bills awaiting`, icon: Wallet, tone: 'amber' },
-    { label: 'Overdue amount', value: money(calculatedStats.overdue), note: 'Needs attention', icon: AlertCircle, tone: 'red' },
-    { label: 'Collection rate', value: `${calculatedStats.collectionPercentage || 0}%`, note: 'Monthly performance', icon: TrendingUp, tone: 'green', up: true }
+    { label: 'Total Collected', value: money(calculatedStats.collected), note: 'Accumulated payments', icon: IndianRupee, tone: 'blue', up: true },
+    { label: 'Total Pending', value: money(calculatedStats.pending), note: 'Outstanding payments', icon: Wallet, tone: 'amber' },
+    { label: 'Overdue Amount', value: money(calculatedStats.overdue), note: 'Grace period expired', icon: AlertCircle, tone: 'red' },
+    { label: 'Total Residents', value: calculatedStats.residents, note: 'Registered members', icon: Activity, tone: 'indigo', up: true },
+    { label: 'Collection Rate', value: `${calculatedStats.collectionPercentage || 0}%`, note: 'Overall performance', icon: TrendingUp, tone: 'green', up: true }
   ];
+
+  const hasChartData = useMemo(() => {
+    return chartData.some(bucket => bucket.collected > 0 || bucket.pending > 0);
+  }, [chartData]);
 
   return (
     <div className="mm-shell">
@@ -400,6 +483,7 @@ const Maintenance = () => {
           <p>Track collections, bills, expenses and resident payments from one place.</p>
         </div>
         <div className="mm-head-actions">
+          <button className="mm-button mm-button-light" onClick={handleApplyPenalty} disabled={saving}><RefreshCcw size={17} className={saving ? 'spin' : ''} /> Check Overdue Penalties</button>
           <button className="mm-button mm-button-light" onClick={exportCurrentView}><Download size={17} /> Export CSV</button>
           <button className="mm-button mm-button-primary" onClick={() => setModal('generate')}><Plus size={18} /> Generate bills</button>
         </div>
@@ -408,6 +492,7 @@ const Maintenance = () => {
       <div className="mm-tabs" role="tablist">
         {[
           ['overview', LayoutDashboard, 'Overview'], ['bills', ReceiptIndianRupee, 'Bills'],
+          ['settings', SlidersHorizontal, 'Settings'],
           ['categories', SlidersHorizontal, 'Categories'], ['expenses', Wallet, 'Expenses'],
           ['payments', CheckCircle2, 'Payments'], ['reports', FileBarChart, 'Reports']
         ].map(([key, Icon, label]) => (
@@ -421,7 +506,7 @@ const Maintenance = () => {
         <div className="mm-skeleton-grid">{[1, 2, 3, 4].map((i) => <div key={i} className="mm-skeleton" />)}</div>
       ) : tab === 'overview' ? (
         <>
-          <div className="mm-stat-grid">
+          <div className="mm-stat-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
             {statCards.map(({ label, value, note, icon: Icon, tone, up }) => (
               <article className="mm-stat" key={label}>
                 <div className={`mm-stat-icon ${tone}`}><Icon size={20} /></div>
@@ -433,23 +518,25 @@ const Maintenance = () => {
           </div>
 
           <div className="mm-grid-main">
-            <section className="mm-panel mm-chart-panel">
-              <div className="mm-panel-head">
-                <div><h2>Collection overview</h2><p>Paid and outstanding maintenance for the last 6 months</p></div>
-                <button className="mm-select">Last 6 months <ChevronDown size={15} /></button>
-              </div>
-              <div className="mm-legend"><span><i className="paid" />Collected</span><span><i className="pending" />Outstanding</span></div>
-              <MiniChart data={chartData} />
-            </section>
+            {hasChartData ? (
+              <section className="mm-panel mm-chart-panel">
+                <div className="mm-panel-head">
+                  <div><h2>Collection overview</h2><p>Paid and outstanding maintenance for the last 6 months</p></div>
+                  <button className="mm-select">Last 6 months <ChevronDown size={15} /></button>
+                </div>
+                <div className="mm-legend"><span><i className="paid" />Collected</span><span><i className="pending" />Outstanding</span></div>
+                <MiniChart data={chartData} />
+              </section>
+            ) : null}
 
             <section className="mm-panel mm-health">
               <div className="mm-panel-head"><div><h2>Collection health</h2><p>Current billing cycle</p></div><Activity size={19} /></div>
               <div className="mm-ring" style={{ '--progress': `${calculatedStats.collectionPercentage || 0}%` }}>
                 <div><strong>{calculatedStats.collectionPercentage || 0}%</strong><span>collected</span></div>
               </div>
-              <div className="mm-health-row"><span><i className="dot green" />Paid bills</span><strong>{bills.filter((b) => b.payment_status === 'Paid').length}</strong></div>
-              <div className="mm-health-row"><span><i className="dot amber" />Pending</span><strong>{bills.filter((b) => b.payment_status === 'Pending').length}</strong></div>
-              <div className="mm-health-row"><span><i className="dot red" />Overdue</span><strong>{bills.filter((b) => b.payment_status !== 'Paid' && new Date(b.due_date) < new Date()).length}</strong></div>
+              <div className="mm-health-row"><span><i className="dot green" />Paid bills</span><strong>{bills.filter((b) => (b.payment_status || b.status) === 'Paid').length}</strong></div>
+              <div className="mm-health-row"><span><i className="dot amber" />Pending</span><strong>{bills.filter((b) => (b.payment_status || b.status) === 'Pending').length}</strong></div>
+              <div className="mm-health-row"><span><i className="dot red" />Overdue</span><strong>{bills.filter((b) => (b.payment_status || b.status) === 'Overdue').length}</strong></div>
             </section>
           </div>
 
@@ -460,11 +547,11 @@ const Maintenance = () => {
                 {bills.slice(0, 5).map((bill) => (
                   <div className="mm-list-row" key={bill.id}>
                     <div className="mm-avatar">{(bill.resident_name || 'R').slice(0, 1)}</div>
-                    <div className="mm-list-main"><strong>{bill.resident_name || 'Resident'}</strong><span>Flat {bill.flat_no || '—'} · {bill.bill_number || `BILL-${bill.id}`}</span></div>
-                    <div className="mm-list-amount"><strong>{money(bill.total_amount)}</strong><span className={statusClass(bill.payment_status)}>{bill.payment_status}</span></div>
+                    <div className="mm-list-main"><strong>{bill.resident_name || 'Resident'}</strong><span>Flat {bill.flat_no || '—'} · {bill.title}</span></div>
+                    <div className="mm-list-amount"><strong>{money(bill.total_amount)}</strong><span className={statusClass(bill.payment_status || bill.status)}>{bill.payment_status || bill.status}</span></div>
                   </div>
                 ))}
-              </div> : <Empty title="No bills yet" copy="Generate your first monthly billing cycle." />}
+              </div> : <Empty title="No maintenance bills generated yet" copy="Generate your first monthly billing cycle." />}
             </section>
 
             <section className="mm-panel">
@@ -484,26 +571,111 @@ const Maintenance = () => {
             <button className="mm-button mm-button-primary" onClick={() => setModal('generate')}><Plus size={17} /> Generate bills</button>
           </div>
           <div className="mm-toolbar">
-            <label className="mm-search"><Search size={17} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search bill, resident or flat..." /></label>
-            <label className="mm-filter"><Filter size={16} /><select value={status} onChange={(e) => setStatus(e.target.value)}><option>All</option><option>Paid</option><option>Pending</option><option>Under Review</option><option>Overdue</option></select></label>
+            <label className="mm-search"><Search size={17} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search resident name or flat..." /></label>
+            <label className="mm-filter"><Filter size={16} /><select value={status} onChange={(e) => setStatus(e.target.value)}><option>All</option><option>Paid</option><option>Pending</option><option>Partial</option><option>Under Review</option><option>Overdue</option></select></label>
             <label className="mm-filter"><select value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)}><option>All</option>{months.map((month, index) => <option key={month} value={index + 1}>{month}</option>)}</select></label>
             <label className="mm-filter"><select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)}><option>All</option>{yearOptions.map((year) => <option key={year}>{year}</option>)}</select></label>
           </div>
           <div className="mm-table-wrap">
-            <table className="mm-table"><thead><tr><th>Bill</th><th>Resident</th><th>Period</th><th>Due date</th><th>Amount</th><th>Status</th><th /></tr></thead>
-              <tbody>{filteredBills.map((bill) => (
-                <tr key={bill.id}>
-                  <td><strong>{bill.bill_number || `BILL-${String(bill.id).padStart(5, '0')}`}</strong><small>{bill.invoice_number || `INV-${bill.id}`}</small></td>
-                  <td><strong>{bill.resident_name || 'Resident'}</strong><small>Flat {bill.flat_no || '—'}</small></td>
-                  <td>{months[(Number(bill.month) || 1) - 1]} {bill.year}</td><td>{date(bill.due_date)}</td>
-                  <td><strong>{money(bill.total_amount)}</strong>{Number(bill.late_fee) > 0 && <small className="mm-late">+{money(bill.late_fee)} late fee</small>}</td>
-                  <td><span className={statusClass(bill.payment_status)}>{bill.payment_status}</span></td>
-                  <td><button className="mm-icon-btn" onClick={() => { setSelected(bill); setModal('bill'); }}><MoreHorizontal size={18} /></button></td>
-                </tr>
-              ))}</tbody>
-            </table>
-            {!filteredBills.length && <Empty title="No matching bills" copy="Try changing the search or status filter." />}
+            {filteredBills.length > 0 ? (
+              <table className="mm-table">
+                <thead>
+                  <tr>
+                    <th>Resident</th>
+                    <th>Flat</th>
+                    <th>Month</th>
+                    <th>Year</th>
+                    <th>Base Amount</th>
+                    <th>Penalty</th>
+                    <th>Total Amount</th>
+                    <th>Paid</th>
+                    <th>Remaining</th>
+                    <th>Due Date</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>{filteredBills.map((bill) => {
+                  const currentStatus = bill.payment_status || bill.status;
+                  return (
+                    <tr key={bill.id}>
+                      <td><strong>{bill.resident_name || 'Resident'}</strong></td>
+                      <td>Flat {bill.flat_no || '—'}</td>
+                      <td>{months[(Number(bill.month) || 1) - 1]}</td>
+                      <td>{bill.year}</td>
+                      <td>{money(bill.amount)}</td>
+                      <td className="text-red-500 font-semibold">{money(bill.penalty_amount)}</td>
+                      <td><strong>{money(bill.total_amount)}</strong></td>
+                      <td className="text-green-600 font-semibold">{money(bill.paid_amount)}</td>
+                      <td><strong>{money(bill.remaining_amount)}</strong></td>
+                      <td>{date(bill.due_date)}</td>
+                      <td><span className={statusClass(currentStatus)}>{currentStatus}</span></td>
+                      <td>
+                        <div className="mm-action-group" style={{ display: 'flex', gap: '6px' }}>
+                          {currentStatus !== 'Paid' && (
+                            <button className="mm-mini-action green" onClick={() => markPaid(bill)}>Mark Paid</button>
+                          )}
+                          <button className="mm-mini-action blue" onClick={() => { setSelected(bill); setModal('bill'); }}>Details</button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}</tbody>
+              </table>
+            ) : (
+              <Empty title="No maintenance bills generated yet" copy="Try changing the search or status filter, or generate new bills." />
+            )}
           </div>
+        </section>
+      ) : tab === 'settings' ? (
+        <section className="mm-panel" style={{ maxWidth: '600px', margin: '0 auto' }}>
+          <div className="mm-panel-head">
+            <div>
+              <h2>Monthly Maintenance Rules</h2>
+              <p>Configure the default title, fixed charge, due date, grace period, and late fee penalties.</p>
+            </div>
+          </div>
+          <form onSubmit={submitSettings} className="mm-form p-4">
+            <label className="mm-field mm-field-full">
+              <span>Maintenance Title</span>
+              <input required value={settingsForm.title} onChange={(e) => setSettingsForm({ ...settingsForm, title: e.target.value })} placeholder="e.g. Monthly Maintenance" />
+            </label>
+            <div className="mm-form-row">
+              <label className="mm-field">
+                <span>Fixed Monthly Amount</span>
+                <div className="mm-money-input">
+                  <IndianRupee size={16} />
+                  <input type="number" min="0" required value={settingsForm.fixed_amount} onChange={(e) => setSettingsForm({ ...settingsForm, fixed_amount: e.target.value })} placeholder="e.g. 2000" />
+                </div>
+              </label>
+              <label className="mm-field">
+                <span>Due Day of Month</span>
+                <input type="number" min="1" max="28" required value={settingsForm.due_day} onChange={(e) => setSettingsForm({ ...settingsForm, due_day: e.target.value })} placeholder="e.g. 10" />
+              </label>
+            </div>
+            <div className="mm-form-row">
+              <label className="mm-field">
+                <span>Late Fee Penalty Type</span>
+                <select value={settingsForm.late_fee_type} onChange={(e) => setSettingsForm({ ...settingsForm, late_fee_type: e.target.value })}>
+                  <option value="fixed">Fixed Amount (₹)</option>
+                  <option value="percentage">Percentage (%)</option>
+                </select>
+              </label>
+              <label className="mm-field">
+                <span>Penalty Rate / Value</span>
+                <input type="number" min="0" required value={settingsForm.late_fee_value} onChange={(e) => setSettingsForm({ ...settingsForm, late_fee_value: e.target.value })} placeholder="e.g. 100 or 5" />
+              </label>
+            </div>
+            <label className="mm-field mm-field-full">
+              <span>Grace Days</span>
+              <input type="number" min="0" required value={settingsForm.grace_days} onChange={(e) => setSettingsForm({ ...settingsForm, grace_days: e.target.value })} placeholder="e.g. 2" />
+            </label>
+            <div className="mm-form-actions">
+              <button className="mm-button mm-button-primary" disabled={saving} style={{ width: '100%', marginTop: '12px' }}>
+                {saving ? 'Saving Rules...' : 'Save Configuration'}
+              </button>
+            </div>
+          </form>
         </section>
       ) : tab === 'payments' ? (
         <section className="mm-panel mm-table-panel">
@@ -563,16 +735,83 @@ const Maintenance = () => {
         </section>
       )}
 
-      {(modal === 'generate' || modal === 'cycle') && <Modal title={modal === 'generate' ? 'Generate monthly bills' : 'Create maintenance cycle'} subtitle="Create a billing cycle for all occupied flats." onClose={() => setModal(null)}>
-        <form onSubmit={submitCycle} className="mm-form">
-          {modal === 'generate' && cycles.length > 0 && <div className="mm-existing-cycle"><span>Already created a cycle?</span><select defaultValue="" onChange={(e) => e.target.value && generateExisting(e.target.value)} disabled={saving}><option value="">Select and generate...</option>{cycles.map((cycle) => <option key={cycle.id} value={cycle.id}>{cycle.title} · {cycle.month}/{cycle.year}</option>)}</select></div>}
-          <label className="mm-field mm-field-full"><span>Cycle title</span><input required value={cycleForm.title} onChange={(e) => setCycleForm({ ...cycleForm, title: e.target.value })} /></label>
-          <div className="mm-form-row"><label className="mm-field"><span>Month</span><select value={cycleForm.month} onChange={(e) => setCycleForm({ ...cycleForm, month: e.target.value })}>{months.map((month, index) => <option value={index + 1} key={month}>{month}</option>)}</select></label><label className="mm-field"><span>Year</span><input type="number" min="2020" required value={cycleForm.year} onChange={(e) => setCycleForm({ ...cycleForm, year: e.target.value })} /></label></div>
-          <label className="mm-field mm-field-full"><span>Payment due date</span><input type="date" required value={cycleForm.dueDate} onChange={(e) => setCycleForm({ ...cycleForm, dueDate: e.target.value })} /></label>
-          <label className="mm-field mm-field-full"><span>Note (optional)</span><textarea rows="3" value={cycleForm.description} onChange={(e) => setCycleForm({ ...cycleForm, description: e.target.value })} placeholder="Shown internally for this billing cycle" /></label>
-          <div className="mm-form-actions"><button type="button" className="mm-button mm-button-light" onClick={() => setModal(null)}>Cancel</button><button className="mm-button mm-button-primary" disabled={saving}>{saving ? <RefreshCcw className="spin" size={17} /> : <CalendarDays size={17} />}{modal === 'generate' ? 'Create & generate' : 'Create cycle'}</button></div>
-        </form>
-      </Modal>}
+      {modal === 'generate' && (
+        <Modal title="Generate Monthly Bills" subtitle="Generate a billing record for all assigned resident flats automatically." onClose={() => setModal(null)}>
+          <form onSubmit={submitCycle} className="mm-form">
+            {settings ? (
+              <>
+                <div className="rounded-lg bg-slate-50 p-4 mb-4 border border-slate-100 text-sm">
+                  <div className="mb-2"><strong>Default Title:</strong> {settings.title}</div>
+                  <div className="mb-2"><strong>Fixed Charge:</strong> {money(settings.fixed_amount)}</div>
+                  <div className="mb-2"><strong>Due Date Rule:</strong> {settings.due_day}th day of month</div>
+                  <div><strong>Late Fee Penalty:</strong> {settings.late_fee_value}{settings.late_fee_type === 'percentage' ? '%' : ' ₹'} (grace: {settings.grace_days} days)</div>
+                </div>
+                <div className="mm-form-row">
+                  <label className="mm-field">
+                    <span>Billing Month</span>
+                    <select value={cycleForm.month} onChange={(e) => setCycleForm({ ...cycleForm, month: e.target.value })}>
+                      {months.map((month, index) => <option value={index + 1} key={month}>{month}</option>)}
+                    </select>
+                  </label>
+                  <label className="mm-field">
+                    <span>Billing Year</span>
+                    <input type="number" min="2020" required value={cycleForm.year} onChange={(e) => setCycleForm({ ...cycleForm, year: e.target.value })} />
+                  </label>
+                </div>
+                <div className="mm-form-actions">
+                  <button type="button" className="mm-button mm-button-light" onClick={() => setModal(null)}>Cancel</button>
+                  <button className="mm-button mm-button-primary" disabled={saving}>
+                    {saving ? <RefreshCcw className="spin" size={17} /> : <CalendarDays size={17} />}
+                    Generate Bills
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="p-4 text-center">
+                <AlertCircle size={30} className="mx-auto text-amber-500 mb-2" />
+                <p className="font-semibold text-slate-800 text-sm">No maintenance rules configured</p>
+                <p className="text-xs text-slate-500 mb-4">Please set the monthly maintenance rule first in the Settings tab.</p>
+                <button type="button" className="mm-button mm-button-primary mx-auto" onClick={() => { setModal(null); setTab('settings'); }}>Go to Settings</button>
+              </div>
+            )}
+          </form>
+        </Modal>
+      )}
+
+      {modal === 'pay' && selected && (
+        <Modal title="Mark as Paid" subtitle={`${selected.resident_name} · Flat ${selected.flat_no}`} onClose={() => { setModal(null); setSelected(null); }}>
+          <form onSubmit={submitPay} className="mm-form">
+            <label className="mm-field mm-field-full">
+              <span>Paid Amount</span>
+              <div className="mm-money-input">
+                <IndianRupee size={16} />
+                <input 
+                  type="number" 
+                  min="0" 
+                  required 
+                  value={payForm.paidAmount} 
+                  onChange={(e) => setPayForm({ ...payForm, paidAmount: e.target.value })} 
+                />
+              </div>
+            </label>
+            <label className="mm-field mm-field-full">
+              <span>Payment Date</span>
+              <input 
+                type="date" 
+                required 
+                value={payForm.paymentDate} 
+                onChange={(e) => setPayForm({ ...payForm, paymentDate: e.target.value })} 
+              />
+            </label>
+            <div className="mm-form-actions">
+              <button type="button" className="mm-button mm-button-light" onClick={() => { setModal(null); setSelected(null); }}>Cancel</button>
+              <button className="mm-button mm-button-primary" disabled={saving}>
+                {saving ? 'Saving...' : 'Save Payment'}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
 
       {modal === 'category' && <Modal title={selected ? 'Edit category' : 'Add maintenance category'} subtitle="This item appears in each resident's bill breakdown." onClose={() => setModal(null)}>
         <form onSubmit={submitCategory} className="mm-form">
@@ -593,14 +832,21 @@ const Maintenance = () => {
         </form>
       </Modal>}
 
-      {modal === 'bill' && selected && <Modal wide title={selected.bill_number || `Bill #${selected.id}`} subtitle={`${selected.resident_name} · Flat ${selected.flat_no}`} onClose={() => setModal(null)}>
-        <div className="mm-bill-preview"><div><span>Total amount</span><strong>{money(selected.total_amount)}</strong></div><div><span>Due date</span><strong>{date(selected.due_date)}</strong></div><div><span>Late fee</span><strong>{money(selected.late_fee)}</strong></div><div><span>Status</span><strong className={statusClass(selected.payment_status)}>{selected.payment_status}</strong></div></div>
+      {modal === 'bill' && selected && <Modal wide title={selected.title || `Bill #${selected.id}`} subtitle={`${selected.resident_name} · Flat ${selected.flat_no}`} onClose={() => setModal(null)}>
+        <div className="mm-bill-preview">
+          <div><span>Base Amount</span><strong>{money(selected.amount)}</strong></div>
+          <div><span>Penalty Fee</span><strong>{money(selected.penalty_amount)}</strong></div>
+          <div><span>Total amount</span><strong>{money(selected.total_amount)}</strong></div>
+          <div><span>Paid amount</span><strong>{money(selected.paid_amount)}</strong></div>
+          <div><span>Remaining amount</span><strong>{money(selected.remaining_amount)}</strong></div>
+          <div><span>Due date</span><strong>{date(selected.due_date)}</strong></div>
+          <div><span>Status</span><strong className={statusClass(selected.payment_status || selected.status)}>{selected.payment_status || selected.status}</strong></div>
+        </div>
         <div className="mm-bill-actions">
           <button className="mm-button mm-button-light" onClick={() => printDocument('Maintenance Invoice', selected)}><FileText size={17} /> Invoice PDF</button>
-          {selected.payment_status === 'Paid' && <button className="mm-button mm-button-light" onClick={() => printDocument('Payment Receipt', selected)}><ReceiptIndianRupee size={17} /> Receipt PDF</button>}
-          {selected.payment_status !== 'Paid' && <button className="mm-button mm-button-light" onClick={() => markPaid(selected)}><CheckCircle2 size={17} /> Mark Paid</button>}
-          {Number(selected.late_fee) > 0 && <button className="mm-button mm-button-light" onClick={async () => { await maintenanceAPI.waiveLateFee(selected.id); notify('Late fee waived'); setModal(null); load(); }}>Waive late fee</button>}
-          {selected.payment_status !== 'Paid' && <button className="mm-button mm-button-primary" onClick={() => sendReminder(selected)}><Bell size={17} /> Send reminder</button>}
+          {(selected.payment_status || selected.status) === 'Paid' && <button className="mm-button mm-button-light" onClick={() => printDocument('Payment Receipt', selected)}><ReceiptIndianRupee size={17} /> Receipt PDF</button>}
+          {(selected.payment_status || selected.status) !== 'Paid' && <button className="mm-button mm-button-light" onClick={() => markPaid(selected)}><CheckCircle2 size={17} /> Mark Paid</button>}
+          {(selected.payment_status || selected.status) !== 'Paid' && <button className="mm-button mm-button-primary" onClick={() => sendReminder(selected)}><Bell size={17} /> Send reminder</button>}
         </div>
       </Modal>}
     </div>

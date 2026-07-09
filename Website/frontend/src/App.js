@@ -22,6 +22,8 @@ import ResidentComplaints from './resident/ResidentComplaints';
 import ResidentNotices from './resident/ResidentNotices';
 import ResidentProfile from './resident/ResidentProfile';
 import ResidentPaymentHistory from './resident/ResidentPaymentHistory';
+import ResidentMembers from './resident/ResidentMembers';
+import ResidentReports from './resident/ResidentReports';
 import { getUser } from './utils/auth';
 
 const PrivateRoute = ({ children, role }) => {
@@ -30,7 +32,7 @@ const PrivateRoute = ({ children, role }) => {
     return <Navigate to="/login" />;
   }
   if (role && user.role !== role) {
-    return <Navigate to={user.role === 'admin' ? '/admin' : '/resident'} />;
+    return <Navigate to={user.role === 'admin' ? '/admin/dashboard' : '/resident/dashboard'} />;
   }
   return children;
 };
@@ -49,7 +51,8 @@ function App() {
             <AdminLayout />
           </PrivateRoute>
         }>
-          <Route index element={<AdminDashboard />} />
+          <Route index element={<Navigate to="dashboard" replace />} />
+          <Route path="dashboard" element={<AdminDashboard />} />
           <Route path="residents" element={<Residents />} />
           <Route path="flats" element={<Flats />} />
           <Route path="maintenance" element={<Maintenance />} />
@@ -65,11 +68,15 @@ function App() {
             <ResidentLayout />
           </PrivateRoute>
         }>
-          <Route index element={<ResidentDashboard />} />
+          <Route index element={<Navigate to="dashboard" replace />} />
+          <Route path="dashboard" element={<ResidentDashboard />} />
           <Route path="maintenance" element={<ResidentMaintenance />} />
           <Route path="complaints" element={<ResidentComplaints />} />
           <Route path="notices" element={<ResidentNotices />} />
           <Route path="profile" element={<ResidentProfile />} />
+          <Route path="members" element={<ResidentMembers />} />
+          <Route path="reports" element={<ResidentReports />} />
+          <Route path="payments" element={<ResidentPaymentHistory />} />
           <Route path="payment-history" element={<ResidentPaymentHistory />} />
         </Route>
 

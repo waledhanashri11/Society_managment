@@ -36,11 +36,13 @@ export const userAPI = {
   getById: (id) => api.get(`/users/${id}`),
   create: (data) => api.post('/users', data),
   update: (id, data) => api.put(`/users/${id}`, data),
+  updateStatus: (id, status) => api.put(`/users/${id}/status`, { status }),
   delete: (id) => api.delete(`/users/${id}`),
 };
 
 export const flatAPI = {
   getAll: () => api.get('/flats'),
+  getAvailable: () => api.get('/flats/available'),
   getById: (id) => api.get(`/flats/${id}`),
   create: (data) => api.post('/flats', data),
   update: (id, data) => api.put(`/flats/${id}`, data),
@@ -49,6 +51,9 @@ export const flatAPI = {
 
 export const maintenanceAPI = {
   getDashboard: () => api.get('/maintenance/dashboard'),
+  getSettings: () => api.get('/maintenance/settings'),
+  saveSettings: (data) => api.post('/maintenance/settings', data),
+  applyPenalty: () => api.post('/maintenance/apply-penalty'),
   getAll: () => api.get('/maintenance'),
   getById: (id) => api.get(`/maintenance/${id}`),
   create: (data) => api.post('/maintenance', data),
@@ -57,6 +62,7 @@ export const maintenanceAPI = {
   generateBills: (data) => api.post('/maintenance/generate', data),
   getBills: () => api.get('/maintenance/bills'),
   getBillById: (id) => api.get(`/maintenance/bills/${id}`),
+  pay: (id, data) => api.put(`/maintenance/${id}/pay`, data),
   markBillPaid: (id, data) => api.put(`/maintenance/bills/${id}/mark-paid`, data),
   sendReminder: (id) => api.post(`/maintenance/bills/${id}/reminder`),
   submitPayment: (data) => api.post('/maintenance/payments', data),
@@ -112,6 +118,16 @@ export const settingsAPI = {
 export const notificationAPI = {
   getAdmin: () => api.get('/notifications/admin'),
   markAdminRead: () => api.put('/notifications/admin/read'),
+};
+
+export const residentAPI = {
+  getDashboard: () => api.get('/resident/dashboard'),
+  getMembers: () => api.get('/resident/members'),
+  updateProfile: (data) => api.put('/resident/profile', data),
+  getReportSummary: () => api.get('/resident/reports/my-summary'),
+  getReportMaintenance: (params = {}) => api.get('/resident/reports/my-maintenance', { params }),
+  getSocietyReportSummary: (params = {}) => api.get('/resident/reports/society-summary', { params }),
+  getReportExpenses: (params = {}) => api.get('/resident/reports/expenses', { params }),
 };
 
 export { api };

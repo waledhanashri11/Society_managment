@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Bell, Car, CreditCard, Download, FileText, MessageSquarePlus,
+  Bell, Building2, Car, CreditCard, Download, FileText, MessageSquarePlus,
   MessageSquareWarning, QrCode, ReceiptIndianRupee, Send
 } from 'lucide-react';
-import { complaintAPI, maintenanceAPI, noticeAPI, settingsAPI } from '../services/api';
+import { complaintAPI, maintenanceAPI, noticeAPI, residentAPI, settingsAPI } from '../services/api';
 import { getUser } from '../utils/auth';
 
 const unwrap = (response) => response?.data?.data ?? response?.data ?? [];
@@ -21,6 +21,7 @@ const ResidentDashboard = () => {
   const [bills, setBills] = useState([]);
   const [complaints, setComplaints] = useState([]);
   const [notices, setNotices] = useState([]);
+  const [flatDetails, setFlatDetails] = useState(null);
   const [paymentSettings, setPaymentSettings] = useState({});
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState('');
@@ -41,12 +42,14 @@ const ResidentDashboard = () => {
       maintenanceAPI.getUserMaintenance(),
       complaintAPI.getUserComplaints(),
       noticeAPI.getAll(),
-      settingsAPI.getPayment()
+      settingsAPI.getPayment(),
+      residentAPI.getDashboard()
     ]);
     if (results[0].status === 'fulfilled') setBills(unwrap(results[0].value));
     if (results[1].status === 'fulfilled') setComplaints(unwrap(results[1].value));
     if (results[2].status === 'fulfilled') setNotices(unwrap(results[2].value));
     if (results[3].status === 'fulfilled') setPaymentSettings(results[3].value.data || {});
+    if (results[4].status === 'fulfilled') setFlatDetails(results[4].value.data?.user || null);
     setLoading(false);
   };
 
@@ -199,6 +202,18 @@ const ResidentDashboard = () => {
           </div>
         </section>
 
+        <section className="portal-panel">
+          <div className="portal-panel-head"><div><h2>My Flat</h2><p>Your assigned residence details.</p></div><Building2 size={17} /></div>
+          <div className="grid grid-cols-2 gap-3 p-4 text-sm">
+            <div className="rounded-lg bg-slate-50 p-3"><span className="block text-xs font-bold uppercase text-slate-500">Flat</span><strong className="mt-1 block text-slate-900">Flat {flatDetails?.flat_no || 'N/A'}</strong></div>
+            <div className="rounded-lg bg-slate-50 p-3"><span className="block text-xs font-bold uppercase text-slate-500">Wing</span><strong className="mt-1 block text-slate-900">{flatDetails?.wing || '-'}</strong></div>
+            <div className="rounded-lg bg-slate-50 p-3"><span className="block text-xs font-bold uppercase text-slate-500">Floor</span><strong className="mt-1 block text-slate-900">{flatDetails?.floor_no ?? '-'}</strong></div>
+            <div className="rounded-lg bg-green-50 p-3"><span className="block text-xs font-bold uppercase text-green-700">Status</span><strong className="mt-1 block text-green-800">{flatDetails?.flat_status || 'Assigned'}</strong></div>
+          </div>
+        </section>
+      </div>
+
+      <div className="portal-dashboard-grid">
         <section className="portal-panel">
           <div className="portal-panel-head"><div><h2>Resident Summary</h2><p>Quick counts with full pages in the sidebar.</p></div></div>
           <div className="portal-status-summary">

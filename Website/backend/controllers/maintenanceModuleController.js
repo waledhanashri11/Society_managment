@@ -15,47 +15,58 @@ const dashboard = async (req, res) => {
   try {
     const [[summary]] = await promisePool.query(`
       SELECT
-        COALESCE(SUM(CASE WHEN payment_status = 'Paid' THEN paid_amount ELSE 0 END), 0) collected,
-        COALESCE(SUM(CASE WHEN payment_status != 'Paid' THEN remaining_amount ELSE 0 END), 0) pending,
-        COALESCE(SUM(CASE WHEN payment_status != 'Paid' AND due_date < CURDATE() THEN remaining_amount ELSE 0 END), 0) overdue,
-        COUNT(*) total_bills,
-        SUM(payment_status = 'Paid') paid_bills
-      FROM maintenance_bills
+        COALESCE(SUM(paid_amount), 0) AS collected,
+        COALESCE(SUM(remaining_amount), 0) AS pending,
+        COALESCE(SUM(CASE WHEN status = 'Overdue' OR (status != 'Paid' AND due_date < CURRENT_DATE) THEN remaining_amount ELSE 0 END), 0) AS overdue,
+        COUNT(*) AS total_bills,
+        COALESCE(SUM(CASE WHEN status = 'Paid' THEN 1 ELSE 0 END), 0) AS paid_bills
+      FROM maintenance
     `);
-    const [[residents]] = await promisePool.query(`SELECT COUNT(*) total FROM users WHERE role = 'resident'`);
+
+    const [[residents]] = await promisePool.query(`SELECT COUNT(*) AS total FROM users WHERE role = 'resident'`);
+
     const [[expense]] = await promisePool.query(`
-      SELECT COALESCE(SUM(amount), 0) total FROM maintenance_expenses
-      WHERE MONTH(expense_date) = MONTH(CURDATE()) AND YEAR(expense_date) = YEAR(CURDATE())
+      SELECT COALESCE(SUM(amount), 0) AS total FROM maintenance_expenses
+      WHERE EXTRACT(MONTH FROM expense_date) = EXTRACT(MONTH FROM CURRENT_DATE)
+        AND EXTRACT(YEAR FROM expense_date) = EXTRACT(YEAR FROM CURRENT_DATE)
     `);
+
     const [[monthIncome]] = await promisePool.query(`
-      SELECT COALESCE(SUM(paid_amount), 0) total FROM maintenance_bills
-      WHERE payment_status = 'Paid' AND MONTH(payment_date) = MONTH(CURDATE())
-      AND YEAR(payment_date) = YEAR(CURDATE())
+      SELECT COALESCE(SUM(paid_amount), 0) AS total FROM maintenance
+      WHERE status = 'Paid'
+        AND EXTRACT(MONTH FROM payment_date) = EXTRACT(MONTH FROM CURRENT_DATE)
+        AND EXTRACT(YEAR FROM payment_date) = EXTRACT(YEAR FROM CURRENT_DATE)
     `);
+
     const [trend] = await promisePool.query(`
-      SELECT DATE_FORMAT(m.created_at, '%b') month,
-        COALESCE(SUM(CASE WHEN mb.payment_status = 'Paid' THEN mb.paid_amount ELSE 0 END), 0) collected,
-        COALESCE(SUM(CASE WHEN mb.payment_status != 'Paid' THEN mb.remaining_amount ELSE 0 END), 0) pending
-      FROM maintenance m LEFT JOIN maintenance_bills mb ON mb.maintenance_id = m.id
-      WHERE m.created_at >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
-      GROUP BY YEAR(m.created_at), MONTH(m.created_at), DATE_FORMAT(m.created_at, '%b')
-      ORDER BY YEAR(m.created_at), MONTH(m.created_at)
+      SELECT TO_CHAR(created_at, 'Mon') AS month,
+        COALESCE(SUM(paid_amount), 0) AS collected,
+        COALESCE(SUM(remaining_amount), 0) AS pending
+      FROM maintenance
+      WHERE created_at >= CURRENT_DATE - INTERVAL '6 months'
+      GROUP BY EXTRACT(YEAR FROM created_at), EXTRACT(MONTH FROM created_at), TO_CHAR(created_at, 'Mon')
+      ORDER BY EXTRACT(YEAR FROM created_at), EXTRACT(MONTH FROM created_at)
     `);
+
     const [expenseDistribution] = await promisePool.query(`
-      SELECT category name, SUM(amount) value FROM maintenance_expenses
-      WHERE expense_date >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
+      SELECT category AS name, SUM(amount) AS value FROM maintenance_expenses
+      WHERE expense_date >= CURRENT_DATE - INTERVAL '6 months'
       GROUP BY category ORDER BY value DESC LIMIT 6
     `);
+
     const [overdueFlats] = await promisePool.query(`
-      SELECT f.flat_no flat, u.name resident, SUM(mb.remaining_amount) amount
-      FROM maintenance_bills mb JOIN flats f ON f.id = mb.flat_id
-      JOIN users u ON u.id = mb.resident_id
-      WHERE mb.payment_status != 'Paid' AND mb.due_date < CURDATE()
+      SELECT f.flat_no AS flat, u.name AS resident, SUM(m.remaining_amount) AS amount
+      FROM maintenance m
+      JOIN flats f ON f.id = m.flat_id
+      JOIN users u ON u.id = m.resident_id
+      WHERE m.status != 'Paid' AND m.due_date < CURRENT_DATE
       GROUP BY f.id, f.flat_no, u.name ORDER BY amount DESC LIMIT 5
     `);
+
     const collectionPercentage = summary.total_bills
       ? Math.round((Number(summary.paid_bills) / Number(summary.total_bills)) * 100)
       : 0;
+
     return respond(res, 200, 'Dashboard fetched', {
       summary: {
         collected: Number(summary.collected),

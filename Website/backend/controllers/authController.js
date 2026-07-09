@@ -4,6 +4,11 @@ const crypto = require('crypto');
 const { promisePool } = require('../config/database');
 
 const hashResetToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
+const parseFlatId = (flatId) => {
+  if (flatId === undefined || flatId === null || flatId === '') return null;
+  const numericFlatId = Number(flatId);
+  return Number.isInteger(numericFlatId) && numericFlatId > 0 ? numericFlatId : null;
+};
 
 const isMissingSmtpValue = (value, placeholder) => !value || value === placeholder || value.includes('your_');
 
@@ -56,44 +61,109 @@ const sendPasswordResetEmail = async ({ to, name, resetLink }) => {
 };
 
 const register = async (req, res) => {
+  const connection = await promisePool.getConnection();
   try {
-    const { name, email, password, role } = req.body;
+    const { name, email, password, role, flat_id, phone } = req.body;
+    const userRole = role || 'resident';
+    const assignedFlatId = parseFlatId(flat_id);
 
-    const [existingUsers] = await promisePool.query(
+    if (!name || !email || !password) {
+      return res.status(400).json({ message: 'Name, email and password are required' });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ message: 'Password must be at least 6 characters' });
+    }
+
+    await connection.beginTransaction();
+
+    const [existingUsers] = await connection.query(
       'SELECT id FROM users WHERE email = ?',
       [email]
     );
 
     if (existingUsers.length > 0) {
+      await connection.rollback();
       return res.status(400).json({ message: 'User already exists' });
+    }
+
+    if (userRole === 'resident') {
+      if (!assignedFlatId) {
+        await connection.rollback();
+        return res.status(400).json({ message: 'Assigned Flat is required for residents' });
+      }
+
+      const [flats] = await connection.query(
+        'SELECT id, owner_id FROM flats WHERE id = ? FOR UPDATE',
+        [assignedFlatId]
+      );
+
+      if (flats.length === 0) {
+        await connection.rollback();
+        return res.status(404).json({ message: 'Selected flat was not found' });
+      }
+
+      if (flats[0].owner_id) {
+        await connection.rollback();
+        return res.status(409).json({ message: 'Selected flat is already assigned to another resident' });
+      }
+
+      const [assignedUsers] = await connection.query(
+        'SELECT id FROM users WHERE flat_id = ? AND role = ? LIMIT 1',
+        [assignedFlatId, 'resident']
+      );
+
+      if (assignedUsers.length > 0) {
+        await connection.rollback();
+        return res.status(409).json({ message: 'Selected flat is already assigned to another resident' });
+      }
     }
 
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    const [result] = await promisePool.query(
-      'INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)',
-      [name, email, hashedPassword, role || 'resident']
+    const [result] = await connection.query(
+      'INSERT INTO users (name, email, password, phone, role, status, flat_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [name, email, hashedPassword, phone || null, userRole, userRole === 'resident' ? 'pending' : 'approved', userRole === 'resident' ? assignedFlatId : null]
     );
 
-    const token = jwt.sign(
-      { id: result.insertId, email, role: role || 'resident' },
-      process.env.JWT_SECRET,
-      { expiresIn: '24h' }
-    );
+    if (userRole === 'resident') {
+      await connection.query(
+        'UPDATE flats SET owner_id = ?, status = ? WHERE id = ?',
+        [result.insertId, 'Occupied', assignedFlatId]
+      );
+    }
+
+    await connection.commit();
+
+    const userStatus = userRole === 'resident' ? 'pending' : 'approved';
+    const token = userStatus === 'approved'
+      ? jwt.sign(
+        { id: result.insertId, email, role: userRole },
+        process.env.JWT_SECRET,
+        { expiresIn: '24h' }
+      )
+      : null;
 
     res.status(201).json({
       token,
+      message: userStatus === 'pending' ? 'Registration submitted. Please wait for admin approval.' : 'Registration successful',
       user: {
         id: result.insertId,
         name,
         email,
-        role: role || 'resident'
+        role: userRole,
+        phone: phone || null,
+        status: userStatus,
+        flat_id: userRole === 'resident' ? assignedFlatId : null
       }
     });
   } catch (error) {
+    await connection.rollback();
     console.error('Register error:', error);
     res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
   }
 };
 
@@ -111,6 +181,15 @@ const login = async (req, res) => {
     }
 
     const user = users[0];
+
+    if (user.status && user.status !== 'approved') {
+      return res.status(403).json({
+        message: user.status === 'pending'
+          ? 'Your account is pending admin approval'
+          : 'Your account has been rejected. Please contact the society admin.'
+      });
+    }
+
     const isMatch = await bcrypt.compare(password, user.password);
 
     if (!isMatch) {
@@ -129,7 +208,10 @@ const login = async (req, res) => {
         id: user.id,
         name: user.name,
         email: user.email,
-        role: user.role
+        phone: user.phone || null,
+        role: user.role,
+        status: user.status || 'approved',
+        flat_id: user.flat_id || null
       }
     });
   } catch (error) {

@@ -103,6 +103,63 @@ const promisePool = {
 const initDatabase = async () => {
   await pool.query('SELECT 1');
   console.log('PostgreSQL database connection established');
+
+  const fs = require('fs/promises');
+  const path = require('path');
+  const migrationsDirectory = path.join(__dirname, 'migrations');
+  const client = await pool.connect();
+
+  try {
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS schema_migrations (
+        filename TEXT PRIMARY KEY,
+        applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    try {
+      await client.query('ALTER TABLE schema_migrations ENABLE ROW LEVEL SECURITY');
+    } catch (e) {
+      // Ignore if RLS is already enabled
+    }
+
+    const files = (await fs.readdir(migrationsDirectory))
+      .filter((file) => file.endsWith('.sql'))
+      .sort();
+
+    for (const filename of files) {
+      const existing = await client.query(
+        'SELECT 1 FROM schema_migrations WHERE filename = $1',
+        [filename]
+      );
+
+      if (existing.rowCount > 0) {
+        console.log(`Skipping migration: ${filename}`);
+        continue;
+      }
+
+      const sql = await fs.readFile(path.join(migrationsDirectory, filename), 'utf8');
+
+      await client.query('BEGIN');
+      try {
+        await client.query(sql);
+        await client.query(
+          'INSERT INTO schema_migrations (filename) VALUES ($1)',
+          [filename]
+        );
+        await client.query('COMMIT');
+        console.log(`Applied migration: ${filename}`);
+      } catch (error) {
+        await client.query('ROLLBACK');
+        console.error(`Failed to apply migration ${filename}:`, error);
+        throw error;
+      }
+    }
+  } catch (error) {
+    console.error('Error running migrations:', error);
+    throw error;
+  } finally {
+    client.release();
+  }
 };
 
 module.exports = { pool, promisePool, initDatabase };
