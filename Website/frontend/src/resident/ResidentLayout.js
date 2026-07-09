@@ -89,14 +89,6 @@ const ResidentLayout = () => {
     if (menuName === 'notifications') setUnreadCount(0);
   };
 
-  const goToHash = (hash) => {
-    closeMenus();
-    navigate('/resident');
-    window.setTimeout(() => {
-      window.location.hash = hash;
-    }, 0);
-  };
-
   const goToPath = (path) => {
     closeMenus();
     navigate(path);
@@ -113,15 +105,11 @@ const ResidentLayout = () => {
         </div>
         <div className="portal-nav-label">My society</div>
         <nav className="portal-nav">
-          {residentLinks.map(({ to, href, label, icon: Icon, end }) => to ? (
+          {residentLinks.map(({ to, label, icon: Icon, end }) => (
             <NavLink key={label} to={to} end={end} onClick={() => setOpen(false)}
               className={({ isActive }) => `portal-nav-link ${isActive ? 'active' : ''}`}>
               <Icon size={17} /><span>{label}</span>
             </NavLink>
-          ) : (
-            <a key={label} href={href} className="portal-nav-link" onClick={() => setOpen(false)}>
-              <Icon size={17} /><span>{label}</span>
-            </a>
           ))}
         </nav>
         <div className="portal-sidebar-foot">
@@ -155,7 +143,7 @@ const ResidentLayout = () => {
                   ) : notifications.map((item) => {
                     const Icon = item.type === 'payment' ? ReceiptIndianRupee : Bell;
                     return (
-                      <button key={item.id} onClick={() => item.path ? goToPath(item.path) : goToHash(item.hash)}>
+                      <button key={item.id} onClick={() => goToPath(item.path || '/resident/dashboard')}>
                         <Icon size={16} />
                         <span><strong>{item.title}</strong><small>{item.message}</small></span>
                       </button>
@@ -190,7 +178,7 @@ const ResidentLayout = () => {
                     <User size={16} />
                     <span><strong>My profile</strong><small>View resident details</small></span>
                   </button>
-                  <button onClick={() => goToHash('#maintenance')}>
+                  <button onClick={() => goToPath('/resident/maintenance')}>
                     <CreditCard size={16} />
                     <span><strong>Payments</strong><small>Open maintenance bills</small></span>
                   </button>

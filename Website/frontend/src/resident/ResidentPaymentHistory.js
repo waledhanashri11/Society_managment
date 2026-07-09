@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Download, ReceiptIndianRupee } from 'lucide-react';
 import { maintenanceAPI } from '../services/api';
 import { getUser } from '../utils/auth';
+import { TableSkeleton } from '../components/Skeletons';
 
 const unwrap = (response) => response?.data?.data ?? response?.data ?? [];
 const money = (value) => `₹ ${Number(value || 0).toLocaleString('en-IN')}`;
@@ -56,7 +57,21 @@ const ResidentPaymentHistory = () => {
     docWindow.document.close();
   };
 
-  if (loading) return <div className="loading-spinner">Loading payment history...</div>;
+  if (loading) {
+    return (
+      <div className="portal-module">
+        <div className="portal-page-title">
+          <div>
+            <h1>Payment History</h1>
+            <p>Loading payment records...</p>
+          </div>
+        </div>
+        <section className="portal-panel portal-table-card">
+          <TableSkeleton rows={5} columns={5} />
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="portal-module">

@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { maintenanceAPI, settingsAPI } from '../services/api';
 import { getUser } from '../utils/auth';
+import { TableSkeleton } from '../components/Skeletons';
 
 const unwrap = (response) => response?.data?.data ?? response?.data ?? [];
 const money = (value) => `₹ ${Number(value || 0).toLocaleString('en-IN')}`;
@@ -117,7 +118,21 @@ const ResidentMaintenance = () => {
     docWindow.document.close();
   };
 
-  if (loading) return <div className="loading-spinner">Loading maintenance...</div>;
+  if (loading) {
+    return (
+      <div className="portal-module">
+        <div className="portal-page-title">
+          <div>
+            <h1>Maintenance</h1>
+            <p>Loading your maintenance bills...</p>
+          </div>
+        </div>
+        <section className="portal-panel portal-table-card">
+          <TableSkeleton rows={5} columns={4} />
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="portal-module">

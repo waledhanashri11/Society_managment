@@ -4,6 +4,7 @@ import {
   MessageSquareWarning, Users
 } from 'lucide-react';
 import { complaintAPI, flatAPI, maintenanceAPI, noticeAPI, userAPI } from '../services/api';
+import { DashboardSkeleton } from '../components/Skeletons';
 
 const unwrap = (response) => response?.data?.data ?? response?.data ?? [];
 const money = (value) => `₹ ${Number(value || 0).toLocaleString('en-IN')}`;
@@ -39,7 +40,7 @@ const AdminDashboard = () => {
     { label: 'Pending Payments', value: money(stats.pending), note: `${data.bills.filter((bill) => bill.payment_status !== 'Paid').length} bills pending`, icon: AlertTriangle, tone: 'red' }
   ];
 
-  if (loading) return <div className="loading-spinner">Loading dashboard…</div>;
+  if (loading) return <DashboardSkeleton />;
 
   return (
     <div>

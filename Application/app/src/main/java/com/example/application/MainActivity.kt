@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.view.ViewGroup
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
+import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
@@ -61,6 +62,8 @@ private fun SocietyManagementWebView() {
 
                     settings.javaScriptEnabled = true
                     settings.domStorageEnabled = true
+                    settings.databaseEnabled = true
+                    settings.cacheMode = WebSettings.LOAD_DEFAULT
                     settings.loadWithOverviewMode = true
                     settings.useWideViewPort = true
 

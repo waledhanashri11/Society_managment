@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { complaintAPI, maintenanceAPI, noticeAPI, residentAPI, settingsAPI } from '../services/api';
 import { getUser } from '../utils/auth';
+import { DashboardSkeleton } from '../components/Skeletons';
 
 const unwrap = (response) => response?.data?.data ?? response?.data ?? [];
 const money = (value) => `₹ ${Number(value || 0).toLocaleString('en-IN')}`;
@@ -167,10 +168,10 @@ const ResidentDashboard = () => {
     { label: 'Pay Maintenance', icon: CreditCard, action: () => openPayment() },
     { label: 'Complaints', icon: MessageSquarePlus, action: () => navigate('/resident/complaints') },
     { label: 'Notices', icon: Bell, action: () => navigate('/resident/notices') },
-    { label: 'My Vehicles', icon: Car, href: '#vehicles' }
+    { label: 'My Vehicles', icon: Car, action: () => navigate('/resident/profile') }
   ];
 
-  if (loading) return <div className="loading-spinner">Loading your dashboard...</div>;
+  if (loading) return <DashboardSkeleton />;
 
   return (
     <div>
@@ -194,8 +195,8 @@ const ResidentDashboard = () => {
         <section className="portal-panel">
           <div className="portal-panel-head"><div><h2>Quick Actions</h2><p>Everything you use most often</p></div></div>
           <div className="resident-quick-grid">
-            {quickActions.map(({ label, icon: Icon, href, action }) => (
-              <button className="resident-quick" key={label} onClick={action || (() => { window.location.hash = href; })}>
+            {quickActions.map(({ label, icon: Icon, action }) => (
+              <button className="resident-quick" key={label} onClick={action}>
                 <span><Icon size={18} /></span>{label}
               </button>
             ))}

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { authAPI, flatAPI } from '../services/api';
 import { setToken, setUser } from '../utils/auth';
 
@@ -184,7 +184,7 @@ const Register = () => {
           </button>
 
           <p className="text-center mt-3">
-            Already have an account? <a href="/login">Login</a>
+            Already have an account? <Link to="/login">Login</Link>
           </p>
         </form>
       </div>
