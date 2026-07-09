@@ -39,13 +39,13 @@ const createComplaint = async (req, res) => {
     const { title, description } = req.body;
     const userId = req.user.id;
 
-    const [rows] = await promisePool.query(
-      'INSERT INTO complaints (user_id, title, description) VALUES (?, ?, ?) RETURNING id',
+    const [result] = await promisePool.query(
+      'INSERT INTO complaints (user_id, title, description) VALUES (?, ?, ?)',
       [userId, title, description]
     );
 
     res.status(201).json({
-      id: rows[0].id,
+      id: result.insertId,
       user_id: userId,
       title,
       description,

@@ -1,61 +1,204 @@
-import React from 'react';
-import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { logout } from '../utils/auth';
+import React, { useEffect, useState } from 'react';
+import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import {
+  Bell, Building2, ChevronDown, ClipboardList, CreditCard, FileBarChart, Home, LogOut, Menu,
+  Megaphone, MessageSquareWarning, Settings, ShieldCheck, UserCircle, Users, X
+} from 'lucide-react';
+import { getUser, logout } from '../utils/auth';
+import { notificationAPI, settingsAPI } from '../services/api';
+import '../portal.css';
 
-const links = [
-  { to: '/admin', label: 'Dashboard' },
-  { to: '/admin/residents', label: 'Residents' },
-  { to: '/admin/flats', label: 'Flats' },
-  { to: '/admin/maintenance', label: 'Maintenance' },
-  { to: '/admin/complaints', label: 'Complaints' },
-  { to: '/admin/notices', label: 'Notices' },
-  { to: '/admin/staff', label: 'Staff' },
-  { to: '/admin/reports', label: 'Reports' }
+const adminLinks = [
+  { to: '/admin', label: 'Dashboard', icon: Home, end: true },
+  { to: '/admin/residents', label: 'Residents', icon: Users },
+  { to: '/admin/flats', label: 'Flats', icon: Building2 },
+  { to: '/admin/maintenance', label: 'Maintenance', icon: ClipboardList },
+  { to: '/admin/complaints', label: 'Complaints', icon: MessageSquareWarning },
+  { to: '/admin/notices', label: 'Notices', icon: Megaphone },
+  { to: '/admin/staff', label: 'Staff', icon: ShieldCheck },
+  { to: '/admin/reports', label: 'Reports', icon: FileBarChart },
+  { to: '/admin/settings', label: 'Settings', icon: Settings }
 ];
 
 const AdminLayout = () => {
   const navigate = useNavigate();
-  const location = useLocation();
+  const user = getUser();
+  const [open, setOpen] = useState(false);
+  const [activeMenu, setActiveMenu] = useState('');
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [settings, setSettings] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('adminSettings') || 'null') || {};
+    } catch (error) {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    const refreshSettings = (event) => {
+      if (event.detail) {
+        setSettings(event.detail);
+        return;
+      }
+      try {
+        setSettings(JSON.parse(localStorage.getItem('adminSettings') || 'null') || {});
+      } catch (error) {
+        setSettings({});
+      }
+    };
+
+    window.addEventListener('adminSettingsUpdated', refreshSettings);
+    window.addEventListener('storage', refreshSettings);
+    return () => {
+      window.removeEventListener('adminSettingsUpdated', refreshSettings);
+      window.removeEventListener('storage', refreshSettings);
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    settingsAPI.get()
+      .then(({ data }) => {
+        if (!active) return;
+        setSettings(data);
+        localStorage.setItem('adminSettings', JSON.stringify(data));
+      })
+      .catch(() => {});
+
+    notificationAPI.getAdmin()
+      .then(({ data }) => {
+        if (!active) return;
+        setNotifications(data.notifications || []);
+        setUnreadCount(data.unreadCount || 0);
+      })
+      .catch(() => {
+        if (!active) return;
+        setNotifications([
+          { id: 'pending-payments', title: 'Payments overview', message: 'Open maintenance dues', path: '/admin/maintenance' },
+          { id: 'open-complaints', title: 'Complaint dashboard', message: 'Review resident complaints', path: '/admin/complaints' },
+          { id: 'notices', title: 'Notice center', message: 'Create society updates', path: '/admin/notices' }
+        ]);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const handleLogout = () => {
     logout();
     navigate('/login');
   };
 
+  const toggleMenu = (menuName) => {
+    setActiveMenu((current) => (current === menuName ? '' : menuName));
+    if (menuName === 'notifications') {
+      setUnreadCount(0);
+      notificationAPI.markAdminRead().catch(() => {});
+    }
+  };
+
+  const closeMenus = () => setActiveMenu('');
+
   return (
-    <div className="flex min-h-screen bg-slate-100">
-      <aside className="w-64 flex-shrink-0 border-r border-slate-200 bg-slate-950 text-slate-100">
-        <div className="p-6">
-          <h4 className="text-xl font-semibold">Admin Panel</h4>
-          <p className="mt-1 text-sm text-slate-400">Society management console</p>
-          <nav className="mt-8 space-y-2">
-            {links.map((link) => {
-              const active = location.pathname === link.to;
-              return (
-                <Link
-                  key={link.to}
-                  to={link.to}
-                  className={`block rounded-xl px-4 py-3 text-sm font-medium transition ${
-                    active ? 'bg-cyan-500 text-slate-950' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                  }`}
-                >
-                  {link.label}
-                </Link>
-              );
-            })}
-            <button
-              className="mt-4 w-full rounded-xl border border-slate-800 px-4 py-3 text-left text-sm font-medium text-slate-300 transition hover:bg-slate-800 hover:text-white"
-              onClick={handleLogout}
-            >
-              Logout
-            </button>
-          </nav>
+    <div className="portal-layout portal-admin" onClick={closeMenus}>
+      {open && <button className="portal-scrim" onClick={() => setOpen(false)} aria-label="Close menu" />}
+      <aside className={`portal-sidebar ${open ? 'is-open' : ''}`}>
+        <div className="portal-brand">
+          <span className="portal-brand-mark"><Building2 size={21} /></span>
+          <span><strong>SocietyHub</strong><small>{settings.societyName || 'Management System'}</small></span>
+          <button className="portal-mobile-close" onClick={() => setOpen(false)}><X size={19} /></button>
+        </div>
+        <div className="portal-nav-label">Workspace</div>
+        <nav className="portal-nav">
+          {adminLinks.map(({ to, label, icon: Icon, end }) => (
+            <NavLink key={to} to={to} end={end} onClick={() => setOpen(false)}
+              className={({ isActive }) => `portal-nav-link ${isActive ? 'active' : ''}`}>
+              <Icon size={17} /><span>{label}</span>
+            </NavLink>
+          ))}
+        </nav>
+        <div className="portal-sidebar-foot">
+          <button className="portal-nav-link" onClick={handleLogout}><LogOut size={17} /><span>Logout</span></button>
         </div>
       </aside>
 
-      <main className="flex-1 p-6 lg:p-8">
-        <Outlet />
-      </main>
+      <div className="portal-main">
+        <header className="portal-topbar">
+          <button className="portal-menu-button" onClick={() => setOpen(true)}><Menu size={21} /></button>
+          <div className="portal-breadcrumb">
+            <span>{settings.societyName || 'Society Management'}</span><small>Admin workspace</small>
+          </div>
+          <div className="portal-top-actions">
+            <div className="portal-action-menu" onClick={(event) => event.stopPropagation()}>
+              <button
+                className="portal-notification"
+                aria-label="Notifications"
+                aria-expanded={activeMenu === 'notifications'}
+                onClick={() => toggleMenu('notifications')}
+              >
+                <Bell size={18} />
+                {unreadCount > 0 && <i />}
+              </button>
+              {activeMenu === 'notifications' && (
+                <div className="portal-dropdown portal-notification-panel">
+                  <div className="portal-dropdown-head">
+                    <strong>Notifications</strong>
+                    <span>{unreadCount > 0 ? `${unreadCount} new` : 'Read'}</span>
+                  </div>
+                  {notifications.length === 0 ? (
+                    <div className="portal-dropdown-empty">No notifications right now.</div>
+                  ) : notifications.map((item) => {
+                    const Icon = item.type === 'complaints' ? MessageSquareWarning : item.type === 'notices' ? Megaphone : CreditCard;
+                    return (
+                      <button key={item.id} onClick={() => { navigate(item.path); closeMenus(); }}>
+                        <Icon size={16} />
+                        <span><strong>{item.title}</strong><small>{item.message}</small></span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="portal-action-menu" onClick={(event) => event.stopPropagation()}>
+              <button
+                className="portal-profile-button"
+                aria-label="Account menu"
+                aria-expanded={activeMenu === 'account'}
+                onClick={() => toggleMenu('account')}
+              >
+                <span>{(settings.adminName || user?.name || 'A').charAt(0).toUpperCase()}</span>
+                <div><strong>{settings.adminName || user?.name || 'Admin'}</strong><small>Administrator</small></div>
+                <ChevronDown size={15} />
+              </button>
+              {activeMenu === 'account' && (
+                <div className="portal-dropdown portal-account-panel">
+                  <div className="portal-account-card">
+                    <span>{(settings.adminName || user?.name || 'A').charAt(0).toUpperCase()}</span>
+                    <div><strong>{settings.adminName || user?.name || 'Admin'}</strong><small>{settings.email || user?.email || 'Admin account'}</small></div>
+                  </div>
+                  <button onClick={() => { navigate('/admin/settings'); closeMenus(); }}>
+                    <Settings size={16} />
+                    <span><strong>Account settings</strong><small>Edit profile and preferences</small></span>
+                  </button>
+                  <button onClick={() => { navigate('/admin'); closeMenus(); }}>
+                    <UserCircle size={16} />
+                    <span><strong>Admin dashboard</strong><small>Back to overview</small></span>
+                  </button>
+                  <button className="danger" onClick={handleLogout}>
+                    <LogOut size={16} />
+                    <span><strong>Logout</strong><small>End this session</small></span>
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </header>
+        <main className="portal-content"><Outlet /></main>
+      </div>
     </div>
   );
 };

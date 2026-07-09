@@ -1,21 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Edit3, IndianRupee, Plus, ShieldCheck, Trash2 } from 'lucide-react';
 import { staffAPI } from '../services/api';
+
+const money = (value) => `₹${Number(value || 0).toLocaleString('en-IN')}`;
 
 const Staff = () => {
   const [staff, setStaff] = useState([]);
   const [showModal, setShowModal] = useState(false);
   const [editingStaff, setEditingStaff] = useState(null);
-  const [formData, setFormData] = useState({
-    name: '',
-    role: '',
-    phone: '',
-    salary: ''
-  });
+  const [formData, setFormData] = useState({ name: '', role: '', phone: '', salary: '' });
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetchStaff();
-  }, []);
+  useEffect(() => { fetchStaff(); }, []);
 
   const fetchStaff = async () => {
     try {
@@ -28,48 +24,32 @@ const Staff = () => {
     }
   };
 
+  const monthlyPayroll = useMemo(() => staff.reduce((sum, member) => sum + Number(member.salary || 0), 0), [staff]);
+
   const handleAdd = () => {
     setEditingStaff(null);
-    setFormData({
-      name: '',
-      role: '',
-      phone: '',
-      salary: ''
-    });
+    setFormData({ name: '', role: '', phone: '', salary: '' });
     setShowModal(true);
   };
 
-  const handleEdit = (staffMember) => {
-    setEditingStaff(staffMember);
-    setFormData({
-      name: staffMember.name,
-      role: staffMember.role,
-      phone: staffMember.phone,
-      salary: staffMember.salary
-    });
+  const handleEdit = (member) => {
+    setEditingStaff(member);
+    setFormData({ name: member.name, role: member.role, phone: member.phone, salary: member.salary });
     setShowModal(true);
   };
 
   const handleDelete = async (id) => {
     if (window.confirm('Are you sure you want to delete this staff member?')) {
-      try {
-        await staffAPI.delete(id);
-        fetchStaff();
-      } catch (error) {
-        console.error('Error deleting staff:', error);
-        alert('Error deleting staff');
-      }
+      try { await staffAPI.delete(id); fetchStaff(); }
+      catch (error) { console.error('Error deleting staff:', error); alert('Error deleting staff'); }
     }
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async (event) => {
+    event.preventDefault();
     try {
-      if (editingStaff) {
-        await staffAPI.update(editingStaff.id, formData);
-      } else {
-        await staffAPI.create(formData);
-      }
+      if (editingStaff) await staffAPI.update(editingStaff.id, formData);
+      else await staffAPI.create(formData);
       setShowModal(false);
       fetchStaff();
     } catch (error) {
@@ -78,86 +58,53 @@ const Staff = () => {
     }
   };
 
-  const handleChange = (e) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value
-    });
-  };
+  const handleChange = (event) => setFormData((current) => ({ ...current, [event.target.name]: event.target.value }));
 
-  if (loading) {
-    return <div className="rounded-2xl bg-white p-6 text-slate-600 shadow-sm">Loading...</div>;
-  }
+  if (loading) return <div className="portal-empty">Loading staff...</div>;
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-2xl font-semibold text-slate-900">Staff</h2>
-          <p className="mt-1 text-sm text-slate-500">Manage society staff records and payments.</p>
-        </div>
-        <button className="rounded-xl bg-cyan-600 px-4 py-2.5 font-semibold text-white transition hover:bg-cyan-700" onClick={handleAdd}>
-          Add Staff
-        </button>
+    <div className="portal-module">
+      <div className="portal-page-title">
+        <div><h1>Staff</h1><p>Manage society staff, roles, contact numbers and salaries.</p></div>
+        <button className="portal-primary-btn" onClick={handleAdd}><Plus size={17} /> Add Staff</button>
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 text-left text-slate-500">
-                <th className="pb-3">Name</th>
-                <th className="pb-3">Role</th>
-                <th className="pb-3">Phone</th>
-                <th className="pb-3">Salary</th>
-                <th className="pb-3">Actions</th>
-              </tr>
-            </thead>
+      <div className="portal-kpis">
+        <div className="portal-kpi"><span>Total Staff</span><strong>{staff.length}</strong><small>Active support team</small><div className="portal-kpi-icon"><ShieldCheck size={18} /></div></div>
+        <div className="portal-kpi green"><span>Monthly Payroll</span><strong>{money(monthlyPayroll)}</strong><small>Salary commitment</small><div className="portal-kpi-icon"><IndianRupee size={18} /></div></div>
+      </div>
+
+      <section className="portal-panel portal-table-card">
+        <div className="portal-panel-head"><div><h2>Staff Directory</h2><p>Operational team members and salary details.</p></div></div>
+        <div className="portal-table-wrap">
+          <table className="portal-data-table">
+            <thead><tr><th>Name</th><th>Role</th><th>Phone</th><th>Salary</th><th>Actions</th></tr></thead>
             <tbody>
               {staff.map((member) => (
-                <tr key={member.id} className="border-b border-slate-100 last:border-0">
-                  <td className="py-3">{member.name}</td>
-                  <td className="py-3">{member.role}</td>
-                  <td className="py-3">{member.phone}</td>
-                  <td className="py-3">₹{parseFloat(member.salary).toLocaleString()}</td>
-                  <td className="py-3">
-                    <div className="flex flex-wrap gap-2">
-                      <button className="rounded-full bg-amber-500 px-3 py-1.5 text-sm font-semibold text-slate-950 transition hover:bg-amber-400" onClick={() => handleEdit(member)}>Edit</button>
-                      <button className="rounded-full bg-rose-600 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-rose-700" onClick={() => handleDelete(member.id)}>Delete</button>
-                    </div>
-                  </td>
+                <tr key={member.id}>
+                  <td><strong>{member.name}</strong></td>
+                  <td>{member.role}</td>
+                  <td>{member.phone}</td>
+                  <td>{money(member.salary)}</td>
+                  <td><div className="portal-row-actions"><button onClick={() => handleEdit(member)}><Edit3 size={14} /> Edit</button><button className="danger" onClick={() => handleDelete(member.id)}><Trash2 size={14} /> Delete</button></div></td>
                 </tr>
               ))}
             </tbody>
           </table>
+          {!staff.length && <div className="portal-empty">No staff members found.</div>}
         </div>
-      </div>
+      </section>
 
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
-          <div className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-xl">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-slate-900">{editingStaff ? 'Edit Staff' : 'Add Staff'}</h3>
-              <button type="button" className="text-sm text-slate-500 hover:text-slate-700" onClick={() => setShowModal(false)}>Close</button>
-            </div>
-            <form onSubmit={handleSubmit} className="mt-4 space-y-4">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Name</label>
-                <input type="text" className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100" name="name" value={formData.name} onChange={handleChange} required />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Role</label>
-                <input type="text" className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100" name="role" value={formData.role} onChange={handleChange} required />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Phone</label>
-                <input type="text" className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100" name="phone" value={formData.phone} onChange={handleChange} required />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Salary (₹)</label>
-                <input type="number" className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100" name="salary" value={formData.salary} onChange={handleChange} required />
-              </div>
-              <button type="submit" className="rounded-xl bg-cyan-600 px-4 py-2.5 font-semibold text-white transition hover:bg-cyan-700">{editingStaff ? 'Update' : 'Add'}</button>
+        <div className="portal-modal-backdrop" onMouseDown={() => setShowModal(false)}>
+          <div className="portal-modal" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="portal-modal-head"><div><h3>{editingStaff ? 'Edit Staff' : 'Add Staff'}</h3><p>Keep role and salary information updated.</p></div><button onClick={() => setShowModal(false)}>×</button></div>
+            <form onSubmit={handleSubmit} className="portal-form">
+              <label><span>Name</span><input name="name" value={formData.name} onChange={handleChange} required /></label>
+              <label><span>Role</span><input name="role" value={formData.role} onChange={handleChange} required /></label>
+              <label><span>Phone</span><input name="phone" value={formData.phone} onChange={handleChange} required /></label>
+              <label><span>Salary</span><input type="number" name="salary" value={formData.salary} onChange={handleChange} required /></label>
+              <div className="portal-form-actions"><button type="button" className="portal-light-btn" onClick={() => setShowModal(false)}>Cancel</button><button className="portal-primary-btn">{editingStaff ? 'Update Staff' : 'Add Staff'}</button></div>
             </form>
           </div>
         </div>

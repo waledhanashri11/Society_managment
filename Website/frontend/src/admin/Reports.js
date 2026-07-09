@@ -1,5 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
+import { CheckCircle2, FileBarChart, IndianRupee, MessageSquareWarning, WalletCards } from 'lucide-react';
 import { maintenanceAPI, complaintAPI } from '../services/api';
+
+const money = (value) => `₹${Number(value || 0).toLocaleString('en-IN')}`;
 
 const Reports = () => {
   const [reports, setReports] = useState({
@@ -12,35 +15,23 @@ const Reports = () => {
   });
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetchReports();
-  }, []);
+  useEffect(() => { fetchReports(); }, []);
 
   const fetchReports = async () => {
     try {
-      const [maintenanceRes, complaintsRes] = await Promise.all([
-        maintenanceAPI.getAll(),
-        complaintAPI.getAll()
-      ]);
-
+      const [maintenanceRes, complaintsRes] = await Promise.all([maintenanceAPI.getAll(), complaintAPI.getAll()]);
       const maintenance = maintenanceRes.data;
       const complaints = complaintsRes.data;
-
-      const paidAmount = maintenance
-        .filter((m) => m.status === 'paid')
-        .reduce((sum, m) => sum + parseFloat(m.amount), 0);
-
-      const pendingAmount = maintenance
-        .filter((m) => m.status === 'pending')
-        .reduce((sum, m) => sum + parseFloat(m.amount), 0);
+      const paidAmount = maintenance.filter((item) => item.status === 'paid').reduce((sum, item) => sum + parseFloat(item.amount || 0), 0);
+      const pendingAmount = maintenance.filter((item) => item.status === 'pending').reduce((sum, item) => sum + parseFloat(item.amount || 0), 0);
 
       setReports({
         totalCollection: paidAmount,
         pendingDues: pendingAmount,
         totalComplaints: complaints.length,
-        resolvedComplaints: complaints.filter((c) => c.status === 'resolved').length,
-        pendingComplaints: complaints.filter((c) => c.status === 'pending').length,
-        inProgressComplaints: complaints.filter((c) => c.status === 'in_progress').length
+        resolvedComplaints: complaints.filter((item) => item.status === 'resolved').length,
+        pendingComplaints: complaints.filter((item) => item.status === 'pending').length,
+        inProgressComplaints: complaints.filter((item) => item.status === 'in_progress').length
       });
     } catch (error) {
       console.error('Error fetching reports:', error);
@@ -49,72 +40,50 @@ const Reports = () => {
     }
   };
 
-  if (loading) {
-    return <div className="rounded-2xl bg-white p-6 text-slate-600 shadow-sm">Loading...</div>;
-  }
+  if (loading) return <div className="portal-empty">Loading reports...</div>;
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-semibold text-slate-900">Reports</h2>
-        <p className="mt-1 text-sm text-slate-500">Monitor collections and complaint trends.</p>
+    <div className="portal-module">
+      <div className="portal-page-title">
+        <div><h1>Reports & Analytics</h1><p>Financial collection and complaint resolution overview.</p></div>
+        <div className="portal-date-chip"><FileBarChart size={15} /> This Year</div>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-2">
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h3 className="text-lg font-semibold text-slate-900">Financial Report</h3>
-          <div className="mt-4 space-y-4">
-            <div>
-              <p className="text-sm text-slate-500">Total Collection</p>
-              <p className="mt-1 text-3xl font-semibold text-emerald-600">₹{reports.totalCollection.toLocaleString()}</p>
-            </div>
-            <div>
-              <p className="text-sm text-slate-500">Pending Dues</p>
-              <p className="mt-1 text-3xl font-semibold text-amber-600">₹{reports.pendingDues.toLocaleString()}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h3 className="text-lg font-semibold text-slate-900">Complaint Statistics</h3>
-          <div className="mt-4 grid gap-4 sm:grid-cols-3">
-            <div className="rounded-2xl bg-slate-50 p-4">
-              <p className="text-sm text-slate-500">Total</p>
-              <p className="mt-1 text-2xl font-semibold text-slate-900">{reports.totalComplaints}</p>
-            </div>
-            <div className="rounded-2xl bg-slate-50 p-4">
-              <p className="text-sm text-slate-500">Pending</p>
-              <p className="mt-1 text-2xl font-semibold text-amber-600">{reports.pendingComplaints}</p>
-            </div>
-            <div className="rounded-2xl bg-slate-50 p-4">
-              <p className="text-sm text-slate-500">In Progress</p>
-              <p className="mt-1 text-2xl font-semibold text-sky-600">{reports.inProgressComplaints}</p>
-            </div>
-          </div>
-          <div className="mt-4 rounded-2xl bg-slate-50 p-4">
-            <p className="text-sm text-slate-500">Resolved</p>
-            <p className="mt-1 text-2xl font-semibold text-emerald-600">{reports.resolvedComplaints}</p>
-          </div>
-        </div>
+      <div className="portal-kpis">
+        <div className="portal-kpi green"><span>Total Collection</span><strong>{money(reports.totalCollection)}</strong><small>Paid maintenance</small><div className="portal-kpi-icon"><IndianRupee size={18} /></div></div>
+        <div className="portal-kpi orange"><span>Pending Dues</span><strong>{money(reports.pendingDues)}</strong><small>Awaiting payment</small><div className="portal-kpi-icon"><WalletCards size={18} /></div></div>
+        <div className="portal-kpi"><span>Total Complaints</span><strong>{reports.totalComplaints}</strong><small>All resident requests</small><div className="portal-kpi-icon"><MessageSquareWarning size={18} /></div></div>
+        <div className="portal-kpi green"><span>Resolved</span><strong>{reports.resolvedComplaints}</strong><small>Completed complaints</small><div className="portal-kpi-icon"><CheckCircle2 size={18} /></div></div>
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h3 className="text-lg font-semibold text-slate-900">Summary</h3>
-        <div className="mt-4 grid gap-4 md:grid-cols-3">
-          <div className="rounded-2xl bg-slate-50 p-4 text-center">
-            <p className="text-2xl font-semibold text-slate-900">₹{reports.totalCollection.toLocaleString()}</p>
-            <p className="mt-1 text-sm text-slate-500">Total Revenue</p>
+      <div className="portal-dashboard-grid">
+        <section className="portal-panel">
+          <div className="portal-panel-head"><div><h2>Financial Report</h2><p>Collection versus pending dues.</p></div></div>
+          <div className="portal-report-bars">
+            <div><span>Total Collection</span><strong>{money(reports.totalCollection)}</strong><i style={{ width: `${Math.min(100, reports.totalCollection / Math.max(1, reports.totalCollection + reports.pendingDues) * 100)}%` }} /></div>
+            <div><span>Pending Dues</span><strong>{money(reports.pendingDues)}</strong><i className="orange" style={{ width: `${Math.min(100, reports.pendingDues / Math.max(1, reports.totalCollection + reports.pendingDues) * 100)}%` }} /></div>
           </div>
-          <div className="rounded-2xl bg-slate-50 p-4 text-center">
-            <p className="text-2xl font-semibold text-slate-900">₹{reports.pendingDues.toLocaleString()}</p>
-            <p className="mt-1 text-sm text-slate-500">Pending Collection</p>
+        </section>
+
+        <section className="portal-panel">
+          <div className="portal-panel-head"><div><h2>Complaint Statistics</h2><p>Status split for all complaints.</p></div></div>
+          <div className="portal-status-summary">
+            <div><span>Pending</span><strong>{reports.pendingComplaints}</strong></div>
+            <div><span>In Progress</span><strong>{reports.inProgressComplaints}</strong></div>
+            <div><span>Resolved</span><strong>{reports.resolvedComplaints}</strong></div>
           </div>
-          <div className="rounded-2xl bg-slate-50 p-4 text-center">
-            <p className="text-2xl font-semibold text-slate-900">{reports.resolvedComplaints}/{reports.totalComplaints}</p>
-            <p className="mt-1 text-sm text-slate-500">Complaints Resolved</p>
-          </div>
-        </div>
+        </section>
       </div>
+
+      <section className="portal-panel">
+        <div className="portal-panel-head"><div><h2>Summary</h2><p>Quick operational snapshot.</p></div></div>
+        <div className="settings-status-grid">
+          <div><span>Total Revenue</span><strong>{money(reports.totalCollection)}</strong></div>
+          <div><span>Pending Collection</span><strong>{money(reports.pendingDues)}</strong></div>
+          <div><span>Complaints Resolved</span><strong>{reports.resolvedComplaints}/{reports.totalComplaints}</strong></div>
+          <div><span>Open Complaints</span><strong>{reports.pendingComplaints + reports.inProgressComplaints}</strong></div>
+        </div>
+      </section>
     </div>
   );
 };

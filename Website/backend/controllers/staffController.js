@@ -35,13 +35,13 @@ const createStaff = async (req, res) => {
   try {
     const { name, role, phone, salary } = req.body;
 
-    const [rows] = await promisePool.query(
-      'INSERT INTO staff (name, role, phone, salary) VALUES (?, ?, ?, ?) RETURNING id',
+    const [result] = await promisePool.query(
+      'INSERT INTO staff (name, role, phone, salary) VALUES (?, ?, ?, ?)',
       [name, role, phone, salary]
     );
 
     res.status(201).json({
-      id: rows[0].id,
+      id: result.insertId,
       name,
       role,
       phone,

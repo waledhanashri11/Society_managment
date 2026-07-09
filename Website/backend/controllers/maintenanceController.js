@@ -78,6 +78,41 @@ const createMaintenance = async (req, res) => {
       return sendResponse(res, 400, 'Validation failed', null, errors);
     }
 
+    const [columns] = await promisePool.query('SHOW COLUMNS FROM maintenance');
+    const columnNames = columns.map((column) => column.Field);
+    const insertFields = ['month', 'year', 'due_date'];
+    const insertValues = [month, year, dueDate];
+
+    if (columnNames.includes('amount')) {
+      insertFields.push('amount');
+      insertValues.push(0.0);
+    }
+
+    if (columnNames.includes('status')) {
+      insertFields.push('status');
+      insertValues.push('pending');
+    }
+
+    if (columnNames.includes('title')) {
+      insertFields.push('title');
+      insertValues.push(title);
+    }
+
+    if (columnNames.includes('description')) {
+      insertFields.push('description');
+      insertValues.push(description || '');
+    }
+
+    if (columnNames.includes('created_by')) {
+      insertFields.push('created_by');
+      insertValues.push(req.user.id);
+    }
+
+    if (columnNames.includes('maintenance_status')) {
+      insertFields.push('maintenance_status');
+      insertValues.push('ACTIVE');
+    }
+
     const [existing] = await promisePool.query(
       'SELECT id FROM maintenance WHERE month = ? AND year = ? LIMIT 1',
       [month, year]
@@ -87,15 +122,13 @@ const createMaintenance = async (req, res) => {
       return sendResponse(res, 409, 'Maintenance for this month/year already exists', null, ['A maintenance cycle already exists for the selected month and year']);
     }
 
-    const [rows] = await promisePool.query(
-      `INSERT INTO maintenance
-       (month, year, due_date, amount, status, title, description, created_by, maintenance_status)
-       VALUES (?, ?, ?, 0, 'pending', ?, ?, ?, 'ACTIVE')
-       RETURNING id`,
-      [month, year, dueDate, title, description || '', req.user.id]
+    const placeholders = insertFields.map(() => '?').join(', ');
+    const [result] = await promisePool.query(
+      `INSERT INTO maintenance (${insertFields.join(', ')}) VALUES (${placeholders})`,
+      insertValues
     );
 
-    return sendResponse(res, 201, 'Maintenance created successfully', { id: rows[0].id, title, month, year, dueDate, description: description || '' });
+    return sendResponse(res, 201, 'Maintenance created successfully', { id: result.insertId, title, month, year, dueDate, description: description || '' });
   } catch (error) {
     console.error('Create maintenance error:', error);
     return sendResponse(res, 500, 'Server error', null, ['Unable to create maintenance']);
@@ -126,24 +159,27 @@ const generateMaintenanceBills = async (req, res) => {
     }
 
     const values = [];
-    for (const flat of flats) {
+    for (const [index, flat] of flats.entries()) {
       const amount = Number(flat.maintenance_charge || 0);
       const dueDate = maintenance.due_date;
       const lateFee = calculateLateFee(dueDate);
       const totalAmount = amount + lateFee;
-      values.push(maintenanceId, flat.owner_id, flat.id, amount, lateFee, totalAmount, dueDate, 'Pending');
+      const serial = String(index + 1).padStart(4, '0');
+      const billNumber = `BILL-${maintenance.year}${String(maintenance.month).padStart(2, '0')}-${serial}`;
+      const invoiceNumber = `INV-${maintenance.year}${String(maintenance.month).padStart(2, '0')}-${serial}`;
+      values.push([
+        maintenanceId, flat.owner_id, flat.id, billNumber, invoiceNumber,
+        amount, lateFee, totalAmount, 0, totalAmount, dueDate, 'Pending'
+      ]);
     }
 
     if (values.length > 0) {
-      const rowCount = flats.length;
-      const placeholders = Array.from(
-        { length: rowCount },
-        () => '(?, ?, ?, ?, ?, ?, ?, ?)'
-      ).join(', ');
       await promisePool.query(
-        `INSERT INTO maintenance_bills (maintenance_id, resident_id, flat_id, amount, late_fee, total_amount, due_date, payment_status)
-         VALUES ${placeholders}`,
-        values
+        `INSERT INTO maintenance_bills
+         (maintenance_id, resident_id, flat_id, bill_number, invoice_number, amount, late_fee,
+          total_amount, paid_amount, remaining_amount, due_date, payment_status)
+         VALUES ?`,
+        [values]
       );
     }
 
@@ -173,12 +209,31 @@ const updateMaintenance = async (req, res) => {
       return sendResponse(res, 404, 'Maintenance record not found');
     }
 
-    await promisePool.query(
-      `UPDATE maintenance
-       SET month = ?, year = ?, due_date = ?, title = ?, description = ?, maintenance_status = ?
-       WHERE id = ?`,
-      [month, year, dueDate, title || '', description || '', maintenanceStatus || 'ACTIVE', id]
-    );
+    const [columns] = await promisePool.query('SHOW COLUMNS FROM maintenance');
+    const columnNames = columns.map((column) => column.Field);
+    const updateFields = ['month = ?', 'year = ?', 'due_date = ?'];
+    const updateValues = [month, year, dueDate];
+
+    if (columnNames.includes('title')) {
+      updateFields.push('title = ?');
+      updateValues.push(title || '');
+    }
+
+    if (columnNames.includes('description')) {
+      updateFields.push('description = ?');
+      updateValues.push(description || '');
+    }
+
+    if (columnNames.includes('maintenance_status')) {
+      updateFields.push('maintenance_status = ?');
+      updateValues.push(maintenanceStatus || 'ACTIVE');
+    } else if (columnNames.includes('status')) {
+      updateFields.push('status = ?');
+      updateValues.push('pending');
+    }
+
+    updateValues.push(id);
+    await promisePool.query(`UPDATE maintenance SET ${updateFields.join(', ')} WHERE id = ?`, updateValues);
 
     return sendResponse(res, 200, 'Maintenance updated successfully');
   } catch (error) {
@@ -284,12 +339,58 @@ const createPayment = async (req, res) => {
       return sendResponse(res, 409, 'Duplicate payment transaction', null, ['This transaction ID has already been used']);
     }
 
-    await promisePool.query(
-      `INSERT INTO payments
-       (bill_id, payment_method, transaction_id, amount, payment_status, paid_at, screenshot_url)
-       VALUES (?, ?, ?, ?, 'Under Review', NOW(), ?)`,
-      [billId, paymentMethod, transactionId, amount, screenshotUrl || null]
-    );
+    const [paymentColumns] = await promisePool.query('SHOW COLUMNS FROM payments');
+    const paymentColumnNames = paymentColumns.map((column) => column.Field);
+    const insertFields = [];
+    const insertValues = [];
+
+    if (paymentColumnNames.includes('bill_id')) {
+      insertFields.push('bill_id');
+      insertValues.push(billId);
+    }
+
+    if (paymentColumnNames.includes('payment_method')) {
+      insertFields.push('payment_method');
+      insertValues.push(paymentMethod);
+    }
+
+    if (paymentColumnNames.includes('transaction_id')) {
+      insertFields.push('transaction_id');
+      insertValues.push(transactionId);
+    }
+
+    if (paymentColumnNames.includes('amount')) {
+      insertFields.push('amount');
+      insertValues.push(amount);
+    }
+
+    if (paymentColumnNames.includes('payment_status')) {
+      insertFields.push('payment_status');
+      insertValues.push('Under Review');
+    }
+
+    if (paymentColumnNames.includes('paid_at')) {
+      insertFields.push('paid_at');
+      insertValues.push(new Date());
+    }
+
+    if (paymentColumnNames.includes('screenshot_url')) {
+      insertFields.push('screenshot_url');
+      insertValues.push(screenshotUrl || null);
+    }
+
+    if (paymentColumnNames.includes('maintenance_id')) {
+      insertFields.push('maintenance_id');
+      insertValues.push(billRows[0].maintenance_id);
+    }
+
+    if (insertFields.length > 0) {
+      const placeholders = insertFields.map(() => '?').join(', ');
+      await promisePool.query(
+        `INSERT INTO payments (${insertFields.join(', ')}) VALUES (${placeholders})`,
+        insertValues
+      );
+    }
 
     await promisePool.query(
       'UPDATE maintenance_bills SET payment_status = ?, payment_date = NOW() WHERE id = ?',
@@ -323,8 +424,11 @@ const updatePayment = async (req, res) => {
       [paymentStatus, id]
     );
     await promisePool.query(
-      'UPDATE maintenance_bills SET payment_status = ?, remarks = ? WHERE id = ?',
-      [paymentStatus, remarks || null, payment.bill_id]
+      `UPDATE maintenance_bills SET payment_status = ?, remarks = ?,
+       paid_amount = CASE WHEN ? = 'Paid' THEN total_amount ELSE paid_amount END,
+       remaining_amount = CASE WHEN ? = 'Paid' THEN 0 ELSE remaining_amount END
+       WHERE id = ?`,
+      [paymentStatus, remarks || null, paymentStatus, paymentStatus, payment.bill_id]
     );
 
     if (paymentStatus === 'Paid') {
@@ -355,6 +459,61 @@ const getPayments = async (req, res) => {
   }
 };
 
+const markBillPaid = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { paymentMethod = 'Manual', transactionId = `ADMIN-${Date.now()}`, remarks = 'Marked paid by admin' } = req.body;
+
+    const [billRows] = await promisePool.query('SELECT * FROM maintenance_bills WHERE id = ?', [id]);
+    if (billRows.length === 0) {
+      return sendResponse(res, 404, 'Bill not found');
+    }
+
+    const bill = billRows[0];
+    const amount = Number(bill.total_amount || 0);
+
+    await promisePool.query(
+      `INSERT INTO payments (bill_id, payment_method, transaction_id, amount, payment_status, paid_at)
+       VALUES (?, ?, ?, ?, 'Paid', NOW())`,
+      [id, paymentMethod, transactionId, amount]
+    );
+
+    await promisePool.query(
+      `UPDATE maintenance_bills
+       SET payment_status = 'Paid', payment_date = NOW(), paid_amount = total_amount,
+           remaining_amount = 0, remarks = ?
+       WHERE id = ?`,
+      [remarks, id]
+    );
+
+    return sendResponse(res, 200, 'Bill marked as paid successfully');
+  } catch (error) {
+    console.error('Mark bill paid error:', error);
+    return sendResponse(res, 500, 'Server error', null, ['Unable to mark bill as paid']);
+  }
+};
+
+const sendPaymentReminder = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const [result] = await promisePool.query(
+      `UPDATE maintenance_bills
+       SET remarks = CONCAT(COALESCE(remarks, ''), ?)
+       WHERE id = ?`,
+      [` Reminder sent on ${new Date().toLocaleString('en-IN')}.`, id]
+    );
+
+    if (!result.affectedRows) {
+      return sendResponse(res, 404, 'Bill not found');
+    }
+
+    return sendResponse(res, 200, 'Payment reminder recorded successfully');
+  } catch (error) {
+    console.error('Send payment reminder error:', error);
+    return sendResponse(res, 500, 'Server error', null, ['Unable to send payment reminder']);
+  }
+};
+
 const getReports = async (req, res) => {
   try {
     const { type } = req.query;
@@ -362,15 +521,11 @@ const getReports = async (req, res) => {
 
     switch (type) {
       case 'monthly-collection':
-        query = `SELECT EXTRACT(MONTH FROM payment_date)::INTEGER AS month, EXTRACT(YEAR FROM payment_date)::INTEGER AS year, SUM(total_amount) AS amount
-                 FROM maintenance_bills WHERE payment_status = 'Paid' AND payment_date IS NOT NULL
-                 GROUP BY EXTRACT(YEAR FROM payment_date), EXTRACT(MONTH FROM payment_date)
-                 ORDER BY year DESC, month DESC`;
+        query = `SELECT MONTH(payment_date) AS month, YEAR(payment_date) AS year, SUM(total_amount) AS amount
+                 FROM maintenance_bills WHERE payment_status = 'Paid' AND payment_date IS NOT NULL GROUP BY YEAR(payment_date), MONTH(payment_date) ORDER BY year DESC, month DESC`;
         break;
       case 'yearly-collection':
-        query = `SELECT EXTRACT(YEAR FROM payment_date)::INTEGER AS year, SUM(total_amount) AS amount
-                 FROM maintenance_bills WHERE payment_status = 'Paid' AND payment_date IS NOT NULL
-                 GROUP BY EXTRACT(YEAR FROM payment_date) ORDER BY year DESC`;
+        query = `SELECT YEAR(payment_date) AS year, SUM(total_amount) AS amount FROM maintenance_bills WHERE payment_status = 'Paid' AND payment_date IS NOT NULL GROUP BY YEAR(payment_date) ORDER BY year DESC`;
         break;
       case 'pending-bills':
         query = `SELECT mb.*, u.name AS resident_name, f.flat_no FROM maintenance_bills mb JOIN users u ON mb.resident_id = u.id JOIN flats f ON mb.flat_id = f.id WHERE mb.payment_status != 'Paid' ORDER BY mb.due_date ASC`;
@@ -379,13 +534,13 @@ const getReports = async (req, res) => {
         query = `SELECT mb.*, u.name AS resident_name, f.flat_no FROM maintenance_bills mb JOIN users u ON mb.resident_id = u.id JOIN flats f ON mb.flat_id = f.id WHERE mb.payment_status = 'Paid' ORDER BY mb.payment_date DESC`;
         break;
       case 'defaulters':
-        query = `SELECT mb.*, u.name AS resident_name, f.flat_no FROM maintenance_bills mb JOIN users u ON mb.resident_id = u.id JOIN flats f ON mb.flat_id = f.id WHERE mb.payment_status != 'Paid' AND mb.due_date < CURRENT_DATE ORDER BY mb.due_date ASC`;
+        query = `SELECT mb.*, u.name AS resident_name, f.flat_no FROM maintenance_bills mb JOIN users u ON mb.resident_id = u.id JOIN flats f ON mb.flat_id = f.id WHERE mb.payment_status != 'Paid' AND mb.due_date < CURDATE() ORDER BY mb.due_date ASC`;
         break;
       case 'income-summary':
         query = `SELECT SUM(total_amount) AS total_collection, SUM(CASE WHEN payment_status = 'Paid' THEN total_amount ELSE 0 END) AS paid_collection, SUM(CASE WHEN payment_status != 'Paid' THEN total_amount ELSE 0 END) AS pending_collection FROM maintenance_bills`;
         break;
       default:
-        query = `SELECT COUNT(*) AS total_bills, SUM(CASE WHEN payment_status = 'Paid' THEN 1 ELSE 0 END) AS paid_bills, SUM(CASE WHEN payment_status != 'Paid' THEN 1 ELSE 0 END) AS pending_bills, SUM(CASE WHEN due_date < CURRENT_DATE AND payment_status != 'Paid' THEN 1 ELSE 0 END) AS overdue_bills, SUM(CASE WHEN payment_status = 'Paid' THEN total_amount ELSE 0 END) AS total_collection, SUM(CASE WHEN payment_status != 'Paid' THEN total_amount ELSE 0 END) AS pending_collection FROM maintenance_bills`;
+        query = `SELECT COUNT(*) AS total_bills, SUM(CASE WHEN payment_status = 'Paid' THEN 1 ELSE 0 END) AS paid_bills, SUM(CASE WHEN payment_status != 'Paid' THEN 1 ELSE 0 END) AS pending_bills, SUM(CASE WHEN due_date < CURDATE() AND payment_status != 'Paid' THEN 1 ELSE 0 END) AS overdue_bills, SUM(CASE WHEN payment_status = 'Paid' THEN total_amount ELSE 0 END) AS total_collection, SUM(CASE WHEN payment_status != 'Paid' THEN total_amount ELSE 0 END) AS pending_collection FROM maintenance_bills`;
     }
 
     const [rows] = await promisePool.query(query);
@@ -409,5 +564,7 @@ module.exports = {
   createPayment,
   updatePayment,
   getPayments,
+  markBillPaid,
+  sendPaymentReminder,
   getReports
 };

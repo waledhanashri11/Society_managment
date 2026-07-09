@@ -48,21 +48,20 @@ const createUser = async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    const [rows] = await promisePool.query(
-      'INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?) RETURNING id',
+    const [result] = await promisePool.query(
+      'INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)',
       [name, email, hashedPassword, role || 'resident']
     );
-    const userId = rows[0].id;
 
     if (flat_id) {
       await promisePool.query(
         'UPDATE flats SET owner_id = ? WHERE id = ?',
-        [userId, flat_id]
+        [result.insertId, flat_id]
       );
     }
 
     res.status(201).json({
-      id: userId,
+      id: result.insertId,
       name,
       email,
       role: role || 'resident'

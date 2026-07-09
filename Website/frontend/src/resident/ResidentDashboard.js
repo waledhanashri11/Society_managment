@@ -1,231 +1,318 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { maintenanceAPI, complaintAPI, noticeAPI } from '../services/api';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+  Bell, Car, CreditCard, Download, FileText, MessageSquarePlus,
+  MessageSquareWarning, QrCode, ReceiptIndianRupee, Send
+} from 'lucide-react';
+import { complaintAPI, maintenanceAPI, noticeAPI, settingsAPI } from '../services/api';
 import { getUser } from '../utils/auth';
 
+const unwrap = (response) => response?.data?.data ?? response?.data ?? [];
+const money = (value) => `₹ ${Number(value || 0).toLocaleString('en-IN')}`;
+const monthName = (month) => new Date(2026, Number(month || 1) - 1).toLocaleDateString('en-IN', { month: 'short' });
+const fullDate = (value) => value ? new Date(value).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+
+const getProfilePhotoKey = (user) => `residentProfilePhoto:${user?.id || user?.email || 'current'}`;
+
 const ResidentDashboard = () => {
-  const [maintenance, setMaintenance] = useState([]);
+  const navigate = useNavigate();
+  const user = getUser();
+  const profilePhotoKey = getProfilePhotoKey(user);
+  const [bills, setBills] = useState([]);
   const [complaints, setComplaints] = useState([]);
   const [notices, setNotices] = useState([]);
-  const [showComplaintModal, setShowComplaintModal] = useState(false);
-  const [complaintForm, setComplaintForm] = useState({ title: '', description: '' });
+  const [paymentSettings, setPaymentSettings] = useState({});
   const [loading, setLoading] = useState(true);
-  const user = getUser();
+  const [toast, setToast] = useState('');
+  const [showComplaint, setShowComplaint] = useState(false);
+  const [showPayment, setShowPayment] = useState(false);
+  const [selectedBill, setSelectedBill] = useState(null);
+  const [profilePhoto, setProfilePhoto] = useState(() => localStorage.getItem(profilePhotoKey) || '');
+  const [complaint, setComplaint] = useState({ title: '', description: '' });
+  const [payment, setPayment] = useState({ paymentMethod: 'UPI', transactionId: '', amount: '', screenshotUrl: '' });
 
-  const ensureArray = useCallback((response) => {
-    if (Array.isArray(response)) return response;
-    if (response?.data && Array.isArray(response.data)) return response.data;
-    return [];
-  }, []);
+  const notify = (message) => {
+    setToast(message);
+    window.setTimeout(() => setToast(''), 2600);
+  };
 
-  const fetchData = useCallback(async () => {
-    try {
-      const [maintenanceRes, complaintsRes, noticesRes] = await Promise.all([
-        maintenanceAPI.getUserMaintenance(),
-        complaintAPI.getUserComplaints(),
-        noticeAPI.getAll()
-      ]);
-      setMaintenance(ensureArray(maintenanceRes.data));
-      setComplaints(ensureArray(complaintsRes.data));
-      setNotices(ensureArray(noticesRes.data));
-    } catch (error) {
-      console.error('Error fetching data:', error);
-    } finally {
-      setLoading(false);
-    }
-  }, [ensureArray]);
+  const load = async () => {
+    const results = await Promise.allSettled([
+      maintenanceAPI.getUserMaintenance(),
+      complaintAPI.getUserComplaints(),
+      noticeAPI.getAll(),
+      settingsAPI.getPayment()
+    ]);
+    if (results[0].status === 'fulfilled') setBills(unwrap(results[0].value));
+    if (results[1].status === 'fulfilled') setComplaints(unwrap(results[1].value));
+    if (results[2].status === 'fulfilled') setNotices(unwrap(results[2].value));
+    if (results[3].status === 'fulfilled') setPaymentSettings(results[3].value.data || {});
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    const refreshPhoto = (event) => {
+      if (event.detail?.key && event.detail.key !== profilePhotoKey) return;
+      setProfilePhoto(localStorage.getItem(profilePhotoKey) || '');
+    };
 
-  const handleComplaintSubmit = async (e) => {
-    e.preventDefault();
+    window.addEventListener('residentProfilePhotoUpdated', refreshPhoto);
+    window.addEventListener('storage', refreshPhoto);
+    return () => {
+      window.removeEventListener('residentProfilePhotoUpdated', refreshPhoto);
+      window.removeEventListener('storage', refreshPhoto);
+    };
+  }, [profilePhotoKey]);
+
+  const pendingBills = useMemo(() => bills.filter((bill) => bill.payment_status !== 'Paid'), [bills]);
+  const latestDueBill = pendingBills[0];
+
+  const summary = useMemo(() => {
+    const paid = bills.filter((bill) => bill.payment_status === 'Paid');
+    return {
+      due: pendingBills.reduce((sum, bill) => sum + Number(bill.remaining_amount || bill.total_amount || 0), 0),
+      paid: paid.reduce((sum, bill) => sum + Number(bill.paid_amount || bill.total_amount || 0), 0),
+      nextDue: pendingBills[0]?.due_date,
+      underReview: bills.filter((bill) => bill.payment_status === 'Under Review').length
+    };
+  }, [bills, pendingBills]);
+
+  const openPayment = (bill = latestDueBill) => {
+    if (!bill) {
+      notify('No pending bill to pay');
+      return;
+    }
+    setSelectedBill(bill);
+    setPayment({
+      paymentMethod: 'UPI',
+      transactionId: '',
+      amount: String(bill.remaining_amount || bill.total_amount || ''),
+      screenshotUrl: ''
+    });
+    setShowPayment(true);
+  };
+
+  const submitPayment = async (event) => {
+    event.preventDefault();
+    if (!selectedBill) return;
     try {
-      await complaintAPI.create(complaintForm);
-      setShowComplaintModal(false);
-      setComplaintForm({ title: '', description: '' });
-      fetchData();
+      await maintenanceAPI.submitPayment({
+        billId: selectedBill.id,
+        paymentMethod: payment.paymentMethod,
+        transactionId: payment.transactionId,
+        amount: payment.amount,
+        screenshotUrl: payment.screenshotUrl
+      });
+      notify('Payment submitted for admin review');
+      setShowPayment(false);
+      await load();
     } catch (error) {
-      console.error('Error creating complaint:', error);
-      alert('Error creating complaint');
+      notify(error.response?.data?.message || 'Could not submit payment');
     }
   };
 
-  const getStatusBadge = (status) => {
-    const map = {
-      pending: 'bg-amber-100 text-amber-800',
-      in_progress: 'bg-sky-100 text-sky-800',
-      resolved: 'bg-emerald-100 text-emerald-800',
-      paid: 'bg-emerald-100 text-emerald-800'
-    };
-    const cls = map[status] || 'bg-slate-100 text-slate-800';
-    return <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${cls}`}>{status.replace('_', ' ')}</span>;
+  const submitComplaint = async (event) => {
+    event.preventDefault();
+    await complaintAPI.create(complaint);
+    setComplaint({ title: '', description: '' });
+    setShowComplaint(false);
+    notify('Complaint submitted');
+    load();
   };
 
-  if (loading) {
-    return <div className="rounded-2xl bg-white p-6 text-slate-600 shadow-sm">Loading...</div>;
-  }
+  const raiseBillDispute = async (bill) => {
+    const subject = window.prompt('Dispute subject', `Issue with ${bill.bill_number || 'maintenance bill'}`);
+    if (!subject) return;
+    const description = window.prompt('Describe the issue');
+    if (!description) return;
+    try {
+      await maintenanceAPI.createDispute({ billId: bill.id, subject, description });
+      notify('Bill dispute submitted');
+    } catch (error) {
+      notify(error.response?.data?.message || 'Could not submit dispute');
+    }
+  };
+
+  const printDocument = (type, bill) => {
+    const html = `
+      <html><head><title>${type}</title><style>
+      body{font-family:Arial,sans-serif;padding:32px;color:#172033}.box{max-width:760px;margin:0 auto;border:1px solid #dfe5ee;border-radius:14px;padding:28px}
+      h1{margin:0;font-size:26px}.muted{color:#667085;margin-top:6px}table{width:100%;border-collapse:collapse;margin-top:24px}
+      td,th{border-bottom:1px solid #edf0f3;padding:12px;text-align:left}.total{font-size:22px;font-weight:800}.right{text-align:right}
+      </style></head><body><div class="box">
+      <h1>${type}</h1><div class="muted">Society Management System</div>
+      <table>
+      <tr><th>Bill No.</th><td>${bill.bill_number || `BILL-${bill.id}`}</td></tr>
+      <tr><th>Resident</th><td>${user?.name || 'Resident'}</td></tr>
+      <tr><th>Flat</th><td>${bill.flat_no || ''}</td></tr>
+      <tr><th>Period</th><td>${monthName(bill.month)} ${bill.year || ''}</td></tr>
+      <tr><th>Due Date</th><td>${fullDate(bill.due_date)}</td></tr>
+      <tr><th>Status</th><td>${bill.payment_status}</td></tr>
+      <tr><th>Late Fee</th><td>${money(bill.late_fee)}</td></tr>
+      <tr><th class="total">Total</th><td class="total">${money(bill.total_amount)}</td></tr>
+      </table><p class="muted right">Generated on ${new Date().toLocaleString('en-IN')}</p>
+      </div><script>window.print();</script></body></html>`;
+    const docWindow = window.open('', '_blank', 'width=900,height=700');
+    if (!docWindow) return notify('Popup blocked. Allow popups to print.');
+    docWindow.document.write(html);
+    docWindow.document.close();
+  };
+
+  const quickActions = [
+    { label: 'Pay Maintenance', icon: CreditCard, action: () => openPayment() },
+    { label: 'Complaints', icon: MessageSquarePlus, action: () => navigate('/resident/complaints') },
+    { label: 'Notices', icon: Bell, action: () => navigate('/resident/notices') },
+    { label: 'My Vehicles', icon: Car, href: '#vehicles' }
+  ];
+
+  if (loading) return <div className="loading-spinner">Loading your dashboard...</div>;
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-semibold text-slate-900">Welcome, {user?.name}</h2>
+    <div>
+      {toast && <div className="resident-toast">{toast}</div>}
+      <div className="portal-page-title">
+        <div><h1>Dashboard</h1><p>Your home, payments and society updates at a glance.</p></div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <div className="rounded-2xl p-5 shadow-sm bg-cyan-600 text-white">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-sm opacity-80">Maintenance Records</p>
-              <p className="mt-2 text-3xl font-semibold">{maintenance.length}</p>
-            </div>
-            <div className="text-3xl">📋</div>
-          </div>
+      <section className="resident-welcome">
+        <div className="resident-identity">
+          <span className={`resident-avatar ${profilePhoto ? 'has-photo' : ''}`}>
+            {profilePhoto ? <img src={profilePhoto} alt="Resident profile" /> : (user?.name || 'R').charAt(0)}
+          </span>
+          <div><small>Welcome back,</small><strong>{user?.name || 'Resident'}</strong><span>Resident account</span></div>
         </div>
-
-        <div className="rounded-2xl p-5 shadow-sm bg-amber-500 text-slate-950">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-sm opacity-80">Pending Payments</p>
-              <p className="mt-2 text-3xl font-semibold">{maintenance.filter(m => m.status === 'pending').length}</p>
-            </div>
-            <div className="text-3xl">⚠️</div>
-          </div>
-        </div>
-
-        <div className="rounded-2xl p-5 shadow-sm bg-sky-600 text-white">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-sm opacity-80">My Complaints</p>
-              <p className="mt-2 text-3xl font-semibold">{complaints.length}</p>
-            </div>
-            <div className="text-3xl">📝</div>
-          </div>
-        </div>
-      </div>
-
-      <div className="grid gap-6 md:grid-cols-2">
-        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="flex items-center justify-between">
-            <h3 className="text-lg font-semibold text-slate-900">Maintenance Status</h3>
-          </div>
-
-          <div className="mt-4">
-            {maintenance.length === 0 ? (
-              <p className="text-sm text-slate-500">No maintenance records found</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-200 text-left text-slate-500">
-                      <th className="pb-3">Month/Year</th>
-                      <th className="pb-3">Amount</th>
-                      <th className="pb-3">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {maintenance.map((m) => (
-                      <tr key={m.id} className="border-b border-slate-100 last:border-0">
-                        <td className="py-3">{m.month}/{m.year}</td>
-                        <td className="py-3">₹{parseFloat(m.amount).toLocaleString()}</td>
-                        <td className="py-3">{getStatusBadge(m.status)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </section>
-
-        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="flex items-center justify-between">
-            <h3 className="text-lg font-semibold text-slate-900">My Complaints</h3>
-            <button
-              className="rounded-xl bg-cyan-600 px-3 py-2 text-sm font-semibold text-white hover:bg-cyan-700"
-              onClick={() => setShowComplaintModal(true)}
-            >
-              Raise Complaint
-            </button>
-          </div>
-
-          <div className="mt-4">
-            {complaints.length === 0 ? (
-              <p className="text-sm text-slate-500">No complaints found</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-200 text-left text-slate-500">
-                      <th className="pb-3">Title</th>
-                      <th className="pb-3">Status</th>
-                      <th className="pb-3">Reply</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {complaints.map((c) => (
-                      <tr key={c.id} className="border-b border-slate-100 last:border-0">
-                        <td className="py-3">{c.title}</td>
-                        <td className="py-3">{getStatusBadge(c.status)}</td>
-                        <td className="py-3">{c.reply || '-'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </section>
-      </div>
-
-      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h3 className="text-lg font-semibold text-slate-900">Society Notices</h3>
-        <div className="mt-4 grid gap-4 md:grid-cols-2">
-          {notices.length === 0 ? (
-            <p className="text-sm text-slate-500">No notices available</p>
-          ) : (
-            notices.map((notice) => (
-              <article key={notice.id} className="rounded-2xl border border-slate-100 bg-white p-4">
-                <h6 className="font-semibold">{notice.title}</h6>
-                <p className="mt-2 text-sm text-slate-600">{notice.description}</p>
-                <small className="text-xs text-slate-400">{new Date(notice.created_at).toLocaleString()}</small>
-              </article>
-            ))
-          )}
-        </div>
+        <div className="resident-balance"><span>Outstanding Due</span><strong>{money(summary.due)}</strong><small>{summary.nextDue ? `Due on ${fullDate(summary.nextDue)}` : 'Nothing due right now'}</small><button className="resident-pay" onClick={() => openPayment()}>Pay Now</button></div>
+        <div className="resident-balance"><span>Total Paid</span><strong>{money(summary.paid)}</strong><small>{summary.underReview} payment under review</small></div>
       </section>
 
-      {showComplaintModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
-          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
-            <div className="flex items-center justify-between">
-              <h5 className="text-lg font-semibold">Raise Complaint</h5>
-              <button className="text-sm text-slate-500 hover:text-slate-700" onClick={() => setShowComplaintModal(false)}>Close</button>
-            </div>
-            <form onSubmit={handleComplaintSubmit} className="mt-4 space-y-4">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Title</label>
-                <input
-                  type="text"
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100"
-                  value={complaintForm.title}
-                  onChange={(e) => setComplaintForm({ ...complaintForm, title: e.target.value })}
-                  required
-                />
+      <div className="portal-dashboard-grid">
+        <section className="portal-panel">
+          <div className="portal-panel-head"><div><h2>Quick Actions</h2><p>Everything you use most often</p></div></div>
+          <div className="resident-quick-grid">
+            {quickActions.map(({ label, icon: Icon, href, action }) => (
+              <button className="resident-quick" key={label} onClick={action || (() => { window.location.hash = href; })}>
+                <span><Icon size={18} /></span>{label}
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <section className="portal-panel">
+          <div className="portal-panel-head"><div><h2>Resident Summary</h2><p>Quick counts with full pages in the sidebar.</p></div></div>
+          <div className="portal-status-summary">
+            <div><span>Complaints</span><strong>{complaints.length}</strong></div>
+            <div><span>Notices</span><strong>{notices.length}</strong></div>
+            <div><span>Pending Bills</span><strong>{pendingBills.length}</strong></div>
+          </div>
+        </section>
+      </div>
+
+      <div className="resident-bottom-grid">
+        <section className="portal-panel" id="maintenance">
+          <div className="portal-panel-head">
+            <div><h2>Maintenance Preview</h2><p>Latest bills shown here, full page in sidebar.</p></div>
+            <button className="resident-pay" onClick={() => navigate('/resident/maintenance')}>View All</button>
+          </div>
+          {bills.length ? (
+            <div style={{ overflowX: 'auto' }}><table className="resident-payments">
+              <thead><tr><th>Month</th><th>Amount</th><th>Status</th><th>Actions</th></tr></thead>
+              <tbody>{bills.slice(0, 3).map((bill) => (
+                <tr key={bill.id}>
+                  <td><strong>{monthName(bill.month)} {bill.year}</strong><small>{bill.bill_number || `BILL-${bill.id}`}</small></td>
+                  <td>{money(bill.total_amount)}</td>
+                  <td><span className={`portal-status ${String(bill.payment_status).toLowerCase().replace(' ', '_')}`}>{bill.payment_status}</span></td>
+                  <td>
+                    <div className="resident-bill-actions">
+                      {bill.payment_status !== 'Paid' && <button onClick={() => openPayment(bill)}><CreditCard size={11} /> Pay</button>}
+                      <button onClick={() => printDocument('Maintenance Invoice', bill)}><FileText size={11} /> Invoice</button>
+                      {bill.payment_status === 'Paid' && <button onClick={() => printDocument('Payment Receipt', bill)}><Download size={11} /> Receipt</button>}
+                      {bill.payment_status !== 'Paid' && <button onClick={() => raiseBillDispute(bill)}><MessageSquareWarning size={11} /> Dispute</button>}
+                    </div>
+                  </td>
+                </tr>
+              ))}</tbody>
+            </table></div>
+          ) : <div className="portal-empty"><ReceiptIndianRupee size={23} /><br />No maintenance bills have been issued yet.</div>}
+        </section>
+
+      </div>
+
+      <div className="resident-bottom-grid">
+        <section className="portal-panel">
+          <div className="portal-panel-head">
+            <div><h2>Recent Complaints</h2><p>Latest requests from your account</p></div>
+            <button className="resident-pay" onClick={() => navigate('/resident/complaints')}>View All</button>
+          </div>
+          <div className="portal-feed">
+            {complaints.slice(0, 3).map((item) => (
+              <div className="portal-feed-item" key={item.id}>
+                <span className="portal-feed-icon"><MessageSquareWarning size={14} /></span>
+                <div className="portal-feed-main"><strong>{item.title}</strong><span>{fullDate(item.created_at)}</span></div>
+                <span className={`portal-status ${item.status}`}>{String(item.status).replace('_', ' ')}</span>
               </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Description</label>
-                <textarea
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100"
-                  value={complaintForm.description}
-                  onChange={(e) => setComplaintForm({ ...complaintForm, description: e.target.value })}
-                  rows="4"
-                  required
-                />
+            ))}
+            {!complaints.length && <div className="portal-empty">No complaints raised yet.</div>}
+          </div>
+        </section>
+
+        <section className="portal-panel">
+          <div className="portal-panel-head">
+            <div><h2>Latest Notices</h2><p>Recent society announcements</p></div>
+            <button className="resident-pay" onClick={() => navigate('/resident/notices')}>View All</button>
+          </div>
+          <div className="portal-feed">
+            {notices.slice(0, 3).map((item) => (
+              <div className="portal-feed-item" key={item.id}>
+                <span className="portal-feed-icon"><Bell size={14} /></span>
+                <div className="portal-feed-main"><strong>{item.title}</strong><span>{fullDate(item.created_at)}</span></div>
               </div>
-              <div className="flex justify-end">
-                <button type="submit" className="rounded-xl bg-cyan-600 px-4 py-2.5 font-semibold text-white hover:bg-cyan-700">Submit</button>
+            ))}
+            {!notices.length && <div className="portal-empty">No notices yet.</div>}
+          </div>
+        </section>
+      </div>
+
+      {showPayment && selectedBill && (
+        <div className="mm-modal-backdrop" onMouseDown={() => setShowPayment(false)}>
+          <div className="mm-modal" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="mm-modal-head"><div><h3>Submit payment proof</h3><p>{selectedBill.bill_number || `Bill #${selectedBill.id}`} · {money(selectedBill.total_amount)}</p></div></div>
+            <form className="mm-form" onSubmit={submitPayment}>
+              <div className="resident-qr-card">
+                {paymentSettings.paymentQrImage ? (
+                  <img src={paymentSettings.paymentQrImage} alt="Maintenance payment scanner" />
+                ) : (
+                  <div className="resident-qr-empty">
+                    <QrCode size={38} />
+                    <strong>Payment scanner not uploaded yet</strong>
+                    <span>Please contact society admin.</span>
+                  </div>
+                )}
+                <div>
+                  <strong>{paymentSettings.societyName || 'Society Payment'}</strong>
+                  {paymentSettings.paymentUpiId && <span>UPI ID: {paymentSettings.paymentUpiId}</span>}
+                  <p>{paymentSettings.paymentNote || 'Scan the QR, complete payment, then submit your transaction details below.'}</p>
+                </div>
               </div>
+              <label className="mm-field"><span>Payment Method</span><select value={payment.paymentMethod} onChange={(e) => setPayment({ ...payment, paymentMethod: e.target.value })}><option>UPI</option><option>Bank Transfer</option><option>Cash</option><option>Cheque</option></select></label>
+              <label className="mm-field"><span>Amount</span><input type="number" min="1" required value={payment.amount} onChange={(e) => setPayment({ ...payment, amount: e.target.value })} /></label>
+              <label className="mm-field mm-field-full"><span>Transaction ID</span><input required value={payment.transactionId} onChange={(e) => setPayment({ ...payment, transactionId: e.target.value })} placeholder="UPI/ref/cheque number" /></label>
+              <label className="mm-field mm-field-full"><span>Screenshot URL (optional)</span><input value={payment.screenshotUrl} onChange={(e) => setPayment({ ...payment, screenshotUrl: e.target.value })} placeholder="Paste payment proof link" /></label>
+              <div className="mm-form-actions"><button type="button" className="mm-button mm-button-light" onClick={() => setShowPayment(false)}>Cancel</button><button className="mm-button mm-button-primary"><Send size={16} /> Submit for Review</button></div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showComplaint && (
+        <div className="mm-modal-backdrop" onMouseDown={() => setShowComplaint(false)}>
+          <div className="mm-modal" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="mm-modal-head"><div><h3>Raise a complaint</h3><p>Tell the society team what needs attention.</p></div></div>
+            <form className="mm-form" onSubmit={submitComplaint}>
+              <label className="mm-field"><span>Subject</span><input required value={complaint.title} onChange={(e) => setComplaint({ ...complaint, title: e.target.value })} /></label>
+              <label className="mm-field"><span>Description</span><textarea required rows="4" value={complaint.description} onChange={(e) => setComplaint({ ...complaint, description: e.target.value })} /></label>
+              <div className="mm-form-actions"><button type="button" className="mm-button mm-button-light" onClick={() => setShowComplaint(false)}>Cancel</button><button className="mm-button mm-button-primary">Submit Complaint</button></div>
             </form>
           </div>
         </div>
