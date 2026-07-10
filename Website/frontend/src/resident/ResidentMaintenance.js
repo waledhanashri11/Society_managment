@@ -187,7 +187,7 @@ const ResidentMaintenance = () => {
             <form className="mm-form" onSubmit={submitPayment}>
               <div className="resident-qr-card">
                 {paymentSettings.paymentQrImage ? (
-                  <img src={paymentSettings.paymentQrImage} alt="Maintenance payment scanner" />
+                  <img src={paymentSettings.paymentQrImage} alt="Maintenance payment scanner" loading="lazy" decoding="async" />
                 ) : (
                   <div className="resident-qr-empty">
                     <QrCode size={38} />

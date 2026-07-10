@@ -2,6 +2,7 @@ package com.example.application
 
 import android.annotation.SuppressLint
 import android.os.Bundle
+import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -28,20 +29,33 @@ import com.example.application.ui.theme.ApplicationTheme
 private const val SOCIETY_MANAGEMENT_URL = "https://society-managment-o8iq.vercel.app"
 
 class MainActivity : ComponentActivity() {
+    private var webView: WebView? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         setContent {
             ApplicationTheme {
-                SocietyManagementWebView()
+                SocietyManagementWebView(
+                    savedWebViewState = savedInstanceState,
+                    onWebViewCreated = { webView = it }
+                )
             }
         }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        webView?.saveState(outState)
+        super.onSaveInstanceState(outState)
     }
 }
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-private fun SocietyManagementWebView() {
+private fun SocietyManagementWebView(
+    savedWebViewState: Bundle?,
+    onWebViewCreated: (WebView) -> Unit
+) {
     var webView by remember { mutableStateOf<WebView?>(null) }
     var canGoBack by remember { mutableStateOf(false) }
     var loadingProgress by remember { mutableIntStateOf(0) }
@@ -59,11 +73,13 @@ private fun SocietyManagementWebView() {
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT
                     )
+                    setLayerType(View.LAYER_TYPE_HARDWARE, null)
 
                     settings.javaScriptEnabled = true
                     settings.domStorageEnabled = true
                     settings.databaseEnabled = true
                     settings.cacheMode = WebSettings.LOAD_DEFAULT
+                    settings.loadsImagesAutomatically = true
                     settings.loadWithOverviewMode = true
                     settings.useWideViewPort = true
 
@@ -90,11 +106,18 @@ private fun SocietyManagementWebView() {
                     }
 
                     webView = this
-                    loadUrl(SOCIETY_MANAGEMENT_URL)
+                    onWebViewCreated(this)
+
+                    if (savedWebViewState != null) {
+                        restoreState(savedWebViewState)
+                    } else {
+                        loadUrl(SOCIETY_MANAGEMENT_URL)
+                    }
                 }
             },
             update = { view ->
                 webView = view
+                onWebViewCreated(view)
                 canGoBack = view.canGoBack()
             }
         )

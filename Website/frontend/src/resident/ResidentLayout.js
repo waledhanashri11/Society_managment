@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
   Bell, Building2, ChevronDown, ClipboardList, CreditCard, FileBarChart, Home, LogOut,
@@ -30,6 +30,7 @@ const ResidentLayout = () => {
   const [activeMenu, setActiveMenu] = useState('');
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [notificationsLoaded, setNotificationsLoaded] = useState(false);
   const [profilePhoto, setProfilePhoto] = useState(() => localStorage.getItem(profilePhotoKey) || '');
   const handleLogout = () => { logout(); navigate('/login'); };
   const closeMenus = () => setActiveMenu('');
@@ -48,14 +49,12 @@ const ResidentLayout = () => {
     };
   }, [profilePhotoKey]);
 
-  useEffect(() => {
-    let active = true;
-
+  const loadNotifications = useCallback(() => {
+    if (notificationsLoaded) return;
     Promise.allSettled([
       noticeAPI.getAll(),
       maintenanceAPI.getUserMaintenance()
     ]).then((results) => {
-      if (!active) return;
       const notices = results[0].status === 'fulfilled' ? results[0].value.data || [] : [];
       const bills = results[1].status === 'fulfilled' ? results[1].value.data || [] : [];
       const pendingBills = bills.filter((bill) => bill.payment_status !== 'Paid');
@@ -77,16 +76,16 @@ const ResidentLayout = () => {
       ];
       setNotifications(items);
       setUnreadCount(items.length);
+      setNotificationsLoaded(true);
     }).catch(() => {});
-
-    return () => {
-      active = false;
-    };
-  }, []);
+  }, [notificationsLoaded]);
 
   const toggleMenu = (menuName) => {
     setActiveMenu((current) => (current === menuName ? '' : menuName));
-    if (menuName === 'notifications') setUnreadCount(0);
+    if (menuName === 'notifications') {
+      loadNotifications();
+      setUnreadCount(0);
+    }
   };
 
   const goToPath = (path) => {
@@ -161,7 +160,7 @@ const ResidentLayout = () => {
                 onClick={() => toggleMenu('account')}
               >
                 <span className={profilePhoto ? 'has-photo' : ''}>
-                  {profilePhoto ? <img src={profilePhoto} alt="Resident profile" /> : (user?.name || 'R').charAt(0).toUpperCase()}
+                  {profilePhoto ? <img src={profilePhoto} alt="Resident profile" loading="lazy" decoding="async" /> : (user?.name || 'R').charAt(0).toUpperCase()}
                 </span>
                 <div><strong>{user?.name || 'Resident'}</strong><small>Resident</small></div>
                 <ChevronDown size={15} />
@@ -170,7 +169,7 @@ const ResidentLayout = () => {
                 <div className="portal-dropdown portal-account-panel">
                   <div className="portal-account-card">
                     <span className={profilePhoto ? 'has-photo' : ''}>
-                      {profilePhoto ? <img src={profilePhoto} alt="Resident profile" /> : (user?.name || 'R').charAt(0).toUpperCase()}
+                      {profilePhoto ? <img src={profilePhoto} alt="Resident profile" loading="lazy" decoding="async" /> : (user?.name || 'R').charAt(0).toUpperCase()}
                     </span>
                     <div><strong>{user?.name || 'Resident'}</strong><small>{user?.email || 'Resident account'}</small></div>
                   </div>

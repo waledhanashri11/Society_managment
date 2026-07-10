@@ -305,7 +305,7 @@ const AdminSettings = () => {
             <div className="settings-qr-preview">
               {settings.paymentQrImage ? (
                 <>
-                  <img src={settings.paymentQrImage} alt="Maintenance payment scanner" />
+                  <img src={settings.paymentQrImage} alt="Maintenance payment scanner" loading="lazy" decoding="async" />
                   <button type="button" onClick={removeQrImage}><X size={14} /> Remove</button>
                 </>
               ) : (

@@ -1,10 +1,10 @@
-import React from 'react';
+import React, { memo } from 'react';
 
-const SkeletonBlock = ({ className = '' }) => (
+const SkeletonBlock = memo(({ className = '' }) => (
   <div className={`bg-gray-200 animate-pulse rounded ${className}`} />
-);
+));
 
-export const CardSkeleton = ({ count = 4 }) => (
+export const CardSkeleton = memo(({ count = 4 }) => (
   <div className="portal-kpis">
     {Array.from({ length: count }).map((_, index) => (
       <article className="portal-kpi" key={index}>
@@ -14,9 +14,9 @@ export const CardSkeleton = ({ count = 4 }) => (
       </article>
     ))}
   </div>
-);
+));
 
-export const TableSkeleton = ({ rows = 5, columns = 4 }) => (
+export const TableSkeleton = memo(({ rows = 5, columns = 4 }) => (
   <div className="portal-table-wrap">
     <table className="portal-data-table">
       <tbody>
@@ -32,9 +32,9 @@ export const TableSkeleton = ({ rows = 5, columns = 4 }) => (
       </tbody>
     </table>
   </div>
-);
+));
 
-export const FormSkeleton = ({ fields = 4 }) => (
+export const FormSkeleton = memo(({ fields = 4 }) => (
   <div className="portal-panel">
     {Array.from({ length: fields }).map((_, index) => (
       <div className="mb-3" key={index}>
@@ -43,9 +43,9 @@ export const FormSkeleton = ({ fields = 4 }) => (
       </div>
     ))}
   </div>
-);
+));
 
-export const DashboardSkeleton = () => (
+export const DashboardSkeleton = memo(() => (
   <div>
     <div className="portal-page-title">
       <div>
@@ -66,6 +66,6 @@ export const DashboardSkeleton = () => (
       </section>
     </div>
   </div>
-);
+));
 
 export default SkeletonBlock;

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
   Bell, Building2, ChevronDown, ClipboardList, CreditCard, FileBarChart, Home, LogOut, Menu,
@@ -27,6 +27,7 @@ const AdminLayout = () => {
   const [activeMenu, setActiveMenu] = useState('');
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [notificationsLoaded, setNotificationsLoaded] = useState(false);
   const [settings, setSettings] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem('adminSettings') || 'null') || {};
@@ -67,25 +68,29 @@ const AdminLayout = () => {
       })
       .catch(() => {});
 
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const loadNotifications = useCallback(() => {
+    if (notificationsLoaded) return;
+
     notificationAPI.getAdmin()
       .then(({ data }) => {
-        if (!active) return;
         setNotifications(data.notifications || []);
         setUnreadCount(data.unreadCount || 0);
+        setNotificationsLoaded(true);
       })
       .catch(() => {
-        if (!active) return;
         setNotifications([
           { id: 'pending-payments', title: 'Payments overview', message: 'Open maintenance dues', path: '/admin/maintenance' },
           { id: 'open-complaints', title: 'Complaint dashboard', message: 'Review resident complaints', path: '/admin/complaints' },
           { id: 'notices', title: 'Notice center', message: 'Create society updates', path: '/admin/notices' }
         ]);
+        setNotificationsLoaded(true);
       });
-
-    return () => {
-      active = false;
-    };
-  }, []);
+  }, [notificationsLoaded]);
 
   const handleLogout = () => {
     logout();
@@ -95,6 +100,7 @@ const AdminLayout = () => {
   const toggleMenu = (menuName) => {
     setActiveMenu((current) => (current === menuName ? '' : menuName));
     if (menuName === 'notifications') {
+      loadNotifications();
       setUnreadCount(0);
       notificationAPI.markAdminRead().catch(() => {});
     }

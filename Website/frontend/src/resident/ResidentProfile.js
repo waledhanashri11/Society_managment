@@ -97,7 +97,7 @@ const ResidentProfile = () => {
       <section className="portal-panel resident-profile-page">
         <div className="resident-profile-hero">
           <span className={`resident-profile-photo resident-profile-photo-large ${profilePhoto ? 'has-photo' : ''}`}>
-            {profilePhoto ? <img src={profilePhoto} alt="Resident profile" /> : (user?.name || 'R').charAt(0)}
+            {profilePhoto ? <img src={profilePhoto} alt="Resident profile" loading="lazy" decoding="async" /> : (user?.name || 'R').charAt(0)}
           </span>
           <div>
             <h2>{profile?.name || user?.name || 'Resident'}</h2>

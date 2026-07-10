@@ -183,7 +183,7 @@ const ResidentDashboard = () => {
       <section className="resident-welcome">
         <div className="resident-identity">
           <span className={`resident-avatar ${profilePhoto ? 'has-photo' : ''}`}>
-            {profilePhoto ? <img src={profilePhoto} alt="Resident profile" /> : (user?.name || 'R').charAt(0)}
+            {profilePhoto ? <img src={profilePhoto} alt="Resident profile" loading="lazy" decoding="async" /> : (user?.name || 'R').charAt(0)}
           </span>
           <div><small>Welcome back,</small><strong>{user?.name || 'Resident'}</strong><span>Resident account</span></div>
         </div>
@@ -297,7 +297,7 @@ const ResidentDashboard = () => {
             <form className="mm-form" onSubmit={submitPayment}>
               <div className="resident-qr-card">
                 {paymentSettings.paymentQrImage ? (
-                  <img src={paymentSettings.paymentQrImage} alt="Maintenance payment scanner" />
+                  <img src={paymentSettings.paymentQrImage} alt="Maintenance payment scanner" loading="lazy" decoding="async" />
                 ) : (
                   <div className="resident-qr-empty">
                     <QrCode size={38} />
