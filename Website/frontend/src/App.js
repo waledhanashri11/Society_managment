@@ -1,9 +1,14 @@
 import React, { lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { getUser } from './utils/auth';
+import Login from './pages/Login';
+import ResidentLayout from './resident/ResidentLayout';
+import ResidentDashboard from './resident/ResidentDashboard';
+import ResidentMaintenance from './resident/ResidentMaintenance';
+import ResidentComplaints from './resident/ResidentComplaints';
+import ResidentNotices from './resident/ResidentNotices';
 
 const Landing = lazy(() => import('./pages/Landing'));
-const Login = lazy(() => import('./pages/Login'));
 const Register = lazy(() => import('./pages/Register'));
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
 const ResetPassword = lazy(() => import('./pages/ResetPassword'));
@@ -19,11 +24,6 @@ const Staff = lazy(() => import('./admin/Staff'));
 const Reports = lazy(() => import('./admin/Reports'));
 const AdminSettings = lazy(() => import('./admin/AdminSettings'));
 
-const ResidentLayout = lazy(() => import('./resident/ResidentLayout'));
-const ResidentDashboard = lazy(() => import('./resident/ResidentDashboard'));
-const ResidentMaintenance = lazy(() => import('./resident/ResidentMaintenance'));
-const ResidentComplaints = lazy(() => import('./resident/ResidentComplaints'));
-const ResidentNotices = lazy(() => import('./resident/ResidentNotices'));
 const ResidentProfile = lazy(() => import('./resident/ResidentProfile'));
 const ResidentPaymentHistory = lazy(() => import('./resident/ResidentPaymentHistory'));
 const ResidentMembers = lazy(() => import('./resident/ResidentMembers'));
