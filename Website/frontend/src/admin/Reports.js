@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 
 import {
   AlertTriangle,
@@ -88,7 +88,7 @@ const Reports = () => {
     }));
   };
 
-  const matchesMonthYear = (value, fallbackMonth, fallbackYear) => {
+  const matchesMonthYear = useCallback((value, fallbackMonth, fallbackYear) => {
     const date = value ? new Date(value) : null;
     const hasValidDate = date && !Number.isNaN(date.getTime());
 
@@ -104,7 +104,7 @@ const Reports = () => {
     if (filters.year && Number(filters.year) !== rowYear) return false;
 
     return true;
-  };
+  }, [filters.month, filters.year]);
 
   const filteredBills = useMemo(() => {
     return bills.filter((bill) => {
@@ -128,19 +128,19 @@ const Reports = () => {
 
       return true;
     });
-  }, [bills, filters]);
+  }, [bills, filters.status, matchesMonthYear]);
 
   const filteredComplaints = useMemo(() => {
     return complaints.filter((complaint) =>
       matchesMonthYear(complaint.created_at)
     );
-  }, [complaints, filters]);
+  }, [complaints, matchesMonthYear]);
 
   const filteredExpenses = useMemo(() => {
     return expenses.filter((expense) =>
       matchesMonthYear(expense.expense_date || expense.date)
     );
-  }, [expenses, filters]);
+  }, [expenses, matchesMonthYear]);
 
   const reports = useMemo(() => {
     const totalCollection = filteredBills
