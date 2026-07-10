@@ -4,6 +4,7 @@ import {
   IndianRupee, MessageSquareWarning, RefreshCw, WalletCards
 } from 'lucide-react';
 import { complaintAPI, residentAPI } from '../services/api';
+import { CardSkeleton, TableSkeleton } from '../components/Skeletons';
 
 const money = (value) => `Rs. ${Number(value || 0).toLocaleString('en-IN')}`;
 const fullDate = (value) => value ? new Date(value).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '-';
@@ -175,8 +176,6 @@ const ResidentReports = () => {
     printWindow.document.close();
   };
 
-  if (loading) return <div className="portal-empty">Loading reports...</div>;
-
   return (
     <div className="portal-module">
       <div className="portal-page-title">
@@ -196,18 +195,18 @@ const ResidentReports = () => {
         <button className="portal-primary-btn self-end" onClick={load}><RefreshCw size={15} /> Refresh Data</button>
       </div>
 
-      <div className="portal-kpis">
+      {loading ? <CardSkeleton count={4} /> : <div className="portal-kpis">
         <div className="portal-kpi green"><span>Total Collection</span><strong>{money(reports.totalCollection)}</strong><small>{reports.paidBills} paid bills</small><div className="portal-kpi-icon"><IndianRupee size={18} /></div></div>
         <div className="portal-kpi orange"><span>My Pending Dues</span><strong>{money(reports.pendingDues)}</strong><small>{summary.totalBills || 0} my bills</small><div className="portal-kpi-icon"><WalletCards size={18} /></div></div>
         <div className="portal-kpi red"><span>Total Expenses</span><strong>{money(reports.totalExpenses)}</strong><small>Society spending</small><div className="portal-kpi-icon"><AlertTriangle size={18} /></div></div>
         <div className="portal-kpi green"><span>Net Balance</span><strong>{money(reports.netBalance)}</strong><small>{reports.collectionRate}% collection rate</small><div className="portal-kpi-icon"><CheckCircle2 size={18} /></div></div>
         <div className="portal-kpi"><span>Total Complaints</span><strong>{reports.totalComplaints}</strong><small>My requests</small><div className="portal-kpi-icon"><MessageSquareWarning size={18} /></div></div>
         <div className="portal-kpi green"><span>Resolved</span><strong>{reports.resolvedComplaints}</strong><small>Completed complaints</small><div className="portal-kpi-icon"><CheckCircle2 size={18} /></div></div>
-      </div>
+      </div>}
 
       <section className="portal-panel mb-4">
         <div className="portal-panel-head"><div><h2>Society Annual Report</h2><p>Collection, expenses and bill status summary.</p></div><FileBarChart size={16} /></div>
-        <div className="settings-status-grid">
+        {loading ? <CardSkeleton count={4} /> : <div className="settings-status-grid">
           <div><span>Total Society Collection</span><strong>{money(reports.totalCollection)}</strong></div>
           <div><span>Total Society Expenses</span><strong>{money(reports.totalExpenses)}</strong></div>
           <div><span>Net Balance</span><strong>{money(reports.netBalance)}</strong></div>
@@ -215,28 +214,32 @@ const ResidentReports = () => {
           <div><span>Paid Bills Count</span><strong>{reports.paidBills}</strong></div>
           <div><span>Pending Bills Count</span><strong>{reports.pendingBills}</strong></div>
           <div><span>Overdue Bills Count</span><strong>{reports.overdueBills}</strong></div>
-        </div>
+        </div>}
       </section>
 
       <section className="portal-panel portal-table-card mb-4">
         <div className="portal-panel-head"><div><h2>Maintenance Report</h2><p>Read-only society member maintenance summary.</p></div></div>
         <div className="portal-table-wrap">
+          {loading ? <TableSkeleton rows={5} columns={5} /> : (
           <table className="portal-data-table">
             <thead><tr><th>Resident</th><th>Flat</th><th>Wing</th><th>Floor</th><th>Total Bills</th><th>Paid Amount</th><th>Pending Amount</th><th>Penalty</th><th>Status</th></tr></thead>
             <tbody>{membersMaintenance.map((item) => <tr key={item.id}><td><strong>{item.name || '-'}</strong></td><td>{item.flat_no || '-'}</td><td>{item.wing || '-'}</td><td>{item.floor_no ?? '-'}</td><td>{item.total_bills || 0}</td><td>{money(item.paid_amount)}</td><td>{money(item.pending_amount)}</td><td>{money(item.penalty_amount)}</td><td><span className={`portal-status ${statusKey(item.maintenance_status).replace(' ', '_')}`}>{item.maintenance_status || 'No Bill'}</span></td></tr>)}</tbody>
           </table>
-          {!membersMaintenance.length && <div className="portal-empty">No report data found.</div>}
+          )}
+          {!loading && !membersMaintenance.length && <div className="portal-empty">No report data found.</div>}
         </div>
       </section>
 
       <section className="portal-panel portal-table-card mb-4">
         <div className="portal-panel-head"><div><h2>My Bill Details</h2><p>Only your logged-in account history is shown.</p></div></div>
         <div className="portal-table-wrap">
+          {loading ? <TableSkeleton rows={5} columns={5} /> : (
           <table className="portal-data-table">
             <thead><tr><th>Month</th><th>Year</th><th>Title</th><th>Base Amount</th><th>Penalty</th><th>Total</th><th>Paid</th><th>Remaining</th><th>Due Date</th><th>Payment Date</th><th>Status</th></tr></thead>
             <tbody>{myBills.map((bill) => <tr key={bill.id}><td>{monthName(bill.month)}</td><td>{bill.year || '-'}</td><td>{bill.title || 'Maintenance Bill'}</td><td>{money(bill.amount)}</td><td>{money(bill.penalty_amount)}</td><td>{money(bill.total_amount)}</td><td>{money(bill.paid_amount)}</td><td>{money(bill.remaining_amount)}</td><td>{fullDate(bill.due_date)}</td><td>{fullDate(bill.payment_date)}</td><td><span className={`portal-status ${statusKey(bill.status).replace(' ', '_')}`}>{bill.status}</span></td></tr>)}</tbody>
           </table>
-          {!myBills.length && <div className="portal-empty">No report data found.</div>}
+          )}
+          {!loading && !myBills.length && <div className="portal-empty">No report data found.</div>}
         </div>
       </section>
 
@@ -244,21 +247,23 @@ const ResidentReports = () => {
         <section className="portal-panel portal-table-card">
           <div className="portal-panel-head"><div><h2>Expenses Report</h2><p>Society expenses are read-only for residents.</p></div></div>
           <div className="portal-table-wrap">
+            {loading ? <TableSkeleton rows={5} columns={5} /> : (
             <table className="portal-data-table">
               <thead><tr><th>Expense Title</th><th>Category</th><th>Amount</th><th>Date</th><th>Description</th></tr></thead>
               <tbody>{expenses.map((expense) => <tr key={expense.id}><td><strong>{expense.expense_title || expense.expense_number}</strong></td><td>{expense.category}</td><td>{money(expense.amount)}</td><td>{fullDate(expense.date)}</td><td>{expense.description || <span className="portal-muted-text">No description</span>}</td></tr>)}</tbody>
             </table>
-            {!expenses.length && <div className="portal-empty">No report data found.</div>}
+            )}
+            {!loading && !expenses.length && <div className="portal-empty">No report data found.</div>}
           </div>
         </section>
 
         <section className="portal-panel">
           <div className="portal-panel-head"><div><h2>Complaint Statistics</h2><p>Status split for your complaints.</p></div></div>
-          <div className="portal-status-summary">
+          {loading ? <CardSkeleton count={3} /> : <div className="portal-status-summary">
             <div><span>Pending</span><strong>{reports.pendingComplaints}</strong></div>
             <div><span>In Progress</span><strong>{reports.inProgressComplaints}</strong></div>
             <div><span>Resolved</span><strong>{reports.resolvedComplaints}</strong></div>
-          </div>
+          </div>}
         </section>
       </div>
     </div>

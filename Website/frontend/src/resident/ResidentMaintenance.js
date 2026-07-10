@@ -124,8 +124,13 @@ const ResidentMaintenance = () => {
         <div className="portal-page-title">
           <div>
             <h1>Maintenance</h1>
-            <p>Loading your maintenance bills...</p>
+            <p>View bills, scan payment QR, submit proof and download receipts.</p>
           </div>
+        </div>
+        <div className="portal-status-summary" style={{ marginBottom: 14 }}>
+          <div><span>Outstanding Due</span><strong>—</strong></div>
+          <div><span>Total Paid</span><strong>—</strong></div>
+          <div><span>Under Review</span><strong>—</strong></div>
         </div>
         <section className="portal-panel portal-table-card">
           <TableSkeleton rows={5} columns={4} />

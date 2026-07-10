@@ -63,8 +63,13 @@ const ResidentPaymentHistory = () => {
         <div className="portal-page-title">
           <div>
             <h1>Payment History</h1>
-            <p>Loading payment records...</p>
+            <p>Track paid, pending and under-review maintenance payments.</p>
           </div>
+        </div>
+        <div className="portal-status-summary" style={{ marginBottom: 14 }}>
+          <div><span>Paid</span><strong>—</strong></div>
+          <div><span>Under Review</span><strong>—</strong></div>
+          <div><span>Pending</span><strong>—</strong></div>
         </div>
         <section className="portal-panel portal-table-card">
           <TableSkeleton rows={5} columns={5} />

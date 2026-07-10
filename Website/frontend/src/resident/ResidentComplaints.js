@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { MessageSquarePlus, MessageSquareWarning, Send } from 'lucide-react';
 import { complaintAPI } from '../services/api';
+import { TableSkeleton } from '../components/Skeletons';
 
 const fullDate = (value) => value ? new Date(value).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 
@@ -44,8 +45,6 @@ const ResidentComplaints = () => {
     }
   };
 
-  if (loading) return <div className="loading-spinner">Loading complaints...</div>;
-
   return (
     <div className="portal-module">
       {toast && <div className="resident-toast">{toast}</div>}
@@ -60,7 +59,9 @@ const ResidentComplaints = () => {
       </div>
 
       <section className="portal-panel portal-table-card">
-        {complaints.length ? (
+        {loading ? (
+          <TableSkeleton rows={5} columns={4} />
+        ) : complaints.length ? (
           <div className="portal-table-wrap">
             <table className="portal-data-table">
               <thead>
