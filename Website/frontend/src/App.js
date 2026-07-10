@@ -7,14 +7,14 @@ import ResidentDashboard from './resident/ResidentDashboard';
 import ResidentMaintenance from './resident/ResidentMaintenance';
 import ResidentComplaints from './resident/ResidentComplaints';
 import ResidentNotices from './resident/ResidentNotices';
+import AdminLayout from './admin/AdminLayout';
+import AdminDashboard from './admin/AdminDashboard';
 
 const Landing = lazy(() => import('./pages/Landing'));
 const Register = lazy(() => import('./pages/Register'));
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
 const ResetPassword = lazy(() => import('./pages/ResetPassword'));
 
-const AdminLayout = lazy(() => import('./admin/AdminLayout'));
-const AdminDashboard = lazy(() => import('./admin/AdminDashboard'));
 const Residents = lazy(() => import('./admin/Residents'));
 const Flats = lazy(() => import('./admin/Flats'));
 const Maintenance = lazy(() => import('./admin/Maintenance'));

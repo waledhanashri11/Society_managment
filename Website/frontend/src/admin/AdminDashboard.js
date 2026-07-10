@@ -4,7 +4,7 @@ import {
   MessageSquareWarning, Users
 } from 'lucide-react';
 import { complaintAPI, flatAPI, maintenanceAPI, noticeAPI, userAPI } from '../services/api';
-import { DashboardSkeleton } from '../components/Skeletons';
+import { CardSkeleton, TableSkeleton } from '../components/Skeletons';
 
 const unwrap = (response) => response?.data?.data ?? response?.data ?? [];
 const money = (value) => `₹ ${Number(value || 0).toLocaleString('en-IN')}`;
@@ -40,8 +40,6 @@ const AdminDashboard = () => {
     { label: 'Pending Payments', value: money(stats.pending), note: `${data.bills.filter((bill) => bill.payment_status !== 'Paid').length} bills pending`, icon: AlertTriangle, tone: 'red' }
   ];
 
-  if (loading) return <DashboardSkeleton />;
-
   return (
     <div>
       <div className="portal-page-title">
@@ -49,14 +47,18 @@ const AdminDashboard = () => {
         <div className="portal-date-chip"><CalendarDays size={14} /> July 2026</div>
       </div>
 
-      <div className="portal-kpis">
+      {loading ? (
+        <CardSkeleton count={4} />
+      ) : (
+        <div className="portal-kpis">
         {kpis.map(({ label, value, note, icon: Icon, tone }) => (
           <article className={`portal-kpi ${tone}`} key={label}>
             <span>{label}</span><strong>{value}</strong><small>{note}</small>
             <div className="portal-kpi-icon"><Icon size={16} /></div>
           </article>
         ))}
-      </div>
+        </div>
+      )}
 
       <div className="portal-dashboard-grid">
         <section className="portal-panel">
@@ -64,7 +66,7 @@ const AdminDashboard = () => {
             <div><h2>Monthly Collection</h2><p>Collection vs expenses</p></div>
             <div className="portal-chart-legend"><span><i />Collection</span><span><i />Expenses</span></div>
           </div>
-          <div className="portal-line-chart">
+          {loading ? <TableSkeleton rows={4} columns={3} /> : <div className="portal-line-chart">
             <div className="portal-chart-grid" />
             <svg viewBox="0 0 600 150" preserveAspectRatio="none" aria-label="Monthly collection graph">
               <defs>
@@ -76,19 +78,19 @@ const AdminDashboard = () => {
               {[['0','112'],['100','82'],['200','65'],['300','93'],['400','44'],['500','75'],['600','35']].map(([cx,cy]) => <circle key={cx} cx={cx} cy={cy} r="4" fill="white" stroke="#079447" strokeWidth="3" />)}
             </svg>
             <div className="portal-chart-labels"><span>Jan</span><span>Feb</span><span>Mar</span><span>Apr</span><span>May</span><span>Jun</span><span>Jul</span></div>
-          </div>
+          </div>}
         </section>
 
         <section className="portal-panel">
           <div className="portal-panel-head"><div><h2>Maintenance Overview</h2><p>Current collection status</p></div></div>
-          <div className="portal-donut-wrap">
+          {loading ? <CardSkeleton count={1} /> : <div className="portal-donut-wrap">
             <div className="portal-donut" />
             <div className="portal-donut-labels">
               <span><i />Paid<strong>{data.bills.filter((bill) => bill.payment_status === 'Paid').length || 70}</strong></span>
               <span><i />Pending<strong>{data.bills.filter((bill) => bill.payment_status === 'Pending').length || 25}</strong></span>
               <span><i />Overdue<strong>{data.bills.filter((bill) => bill.payment_status !== 'Paid' && new Date(bill.due_date) < new Date()).length || 5}</strong></span>
             </div>
-          </div>
+          </div>}
         </section>
       </div>
 
@@ -96,7 +98,7 @@ const AdminDashboard = () => {
         <section className="portal-panel">
           <div className="portal-panel-head"><div><h2>Recent Complaints</h2><p>Latest resident requests</p></div><button className="portal-link-button">View all</button></div>
           <div className="portal-feed">
-            {(data.complaints.length ? data.complaints : [
+            {loading ? <TableSkeleton rows={4} columns={3} /> : (data.complaints.length ? data.complaints : [
               { id: 'd1', title: 'Water leakage in bathroom', status: 'pending', user_name: 'Flat A-101' },
               { id: 'd2', title: 'Lift not working', status: 'in_progress', user_name: 'Tower A' },
               { id: 'd3', title: 'Parking issue', status: 'resolved', user_name: 'Flat B-202' }
@@ -113,7 +115,7 @@ const AdminDashboard = () => {
         <section className="portal-panel">
           <div className="portal-panel-head"><div><h2>Recent Notices</h2><p>Society announcements</p></div><button className="portal-link-button">View all</button></div>
           <div className="portal-feed">
-            {(data.notices.length ? data.notices : [
+            {loading ? <TableSkeleton rows={4} columns={2} /> : (data.notices.length ? data.notices : [
               { id: 'n1', title: 'Society meeting on 25 July', created_at: '2026-07-05' },
               { id: 'n2', title: 'Water supply maintenance', created_at: '2026-07-03' },
               { id: 'n3', title: 'Garbage collection timing', created_at: '2026-07-01' }
