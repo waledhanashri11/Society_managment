@@ -80,7 +80,7 @@ const Login = () => {
             className="btn btn-primary w-100"
             disabled={loading}
           >
-            {loading ? 'Logging in...' : 'Login'}
+            Login
           </button>
 
           <p className="text-center mt-3">

@@ -162,7 +162,7 @@ const Register = () => {
                 required
                 disabled={flatsLoading || loading}
               >
-                <option value="">{flatsLoading ? 'Loading available flats...' : 'Select available flat'}</option>
+                <option value="">{flatsLoading ? 'Preparing available flats' : 'Select available flat'}</option>
                 {availableFlats.map((flat) => (
                   <option key={flat.id} value={flat.id}>
                     Wing {flat.wing || 'A'} - Flat {flat.flat_no} - Floor {flat.floor_no}
@@ -180,7 +180,7 @@ const Register = () => {
             className="btn btn-primary w-100"
             disabled={loading || (needsFlat && (flatsLoading || !availableFlats.length))}
           >
-            {loading ? 'Registering...' : 'Register'}
+            Register
           </button>
 
           <p className="text-center mt-3">

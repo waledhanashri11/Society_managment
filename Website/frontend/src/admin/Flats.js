@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Building2, CheckCircle2, Edit3, IndianRupee, Plus, Trash2, XCircle } from 'lucide-react';
 import { flatAPI, userAPI } from '../services/api';
+import { CardSkeleton, TableSkeleton } from '../components/Skeletons';
 
 const money = (value) => `Rs. ${Number(value || 0).toLocaleString('en-IN')}`;
 
@@ -87,8 +88,6 @@ const Flats = () => {
 
   const handleChange = (event) => setFormData((current) => ({ ...current, [event.target.name]: event.target.value }));
 
-  if (loading) return <div className="portal-empty">Loading flats...</div>;
-
   return (
     <div className="portal-module">
       <div className="portal-page-title">
@@ -103,15 +102,15 @@ const Flats = () => {
         </div>
       )}
 
-      <div className="portal-kpis">
+      {loading ? <CardSkeleton count={2} /> : <div className="portal-kpis">
         <div className="portal-kpi"><span>Total Flats</span><strong>{flats.length}</strong><small>{flats.filter((flat) => flat.owner_id).length} assigned</small><div className="portal-kpi-icon"><Building2 size={18} /></div></div>
         <div className="portal-kpi green"><span>Monthly Charges</span><strong>{money(totalMaintenance)}</strong><small>Expected per cycle</small><div className="portal-kpi-icon"><IndianRupee size={18} /></div></div>
-      </div>
+      </div>}
 
       <section className="portal-panel portal-table-card">
         <div className="portal-panel-head"><div><h2>Flat Inventory</h2><p>Assigned resident and maintenance charge details.</p></div></div>
         <div className="portal-table-wrap">
-          <table className="portal-data-table">
+          {loading ? <TableSkeleton rows={5} columns={6} /> : <table className="portal-data-table">
             <thead><tr><th>Flat No</th><th>Wing</th><th>Floor</th><th>Status</th><th>Assigned Resident</th><th>Maintenance Charge</th><th>Actions</th></tr></thead>
             <tbody>
               {flats.map((flat) => (
@@ -126,8 +125,8 @@ const Flats = () => {
                 </tr>
               ))}
             </tbody>
-          </table>
-          {!flats.length && <div className="portal-empty">No flats found.</div>}
+          </table>}
+          {!loading && !flats.length && <div className="portal-empty">No flats found.</div>}
         </div>
       </section>
 

@@ -394,7 +394,7 @@ const Reports = () => {
         <div className="portal-page-title">
           <div>
             <h1>Reports & Analytics</h1>
-            <p>Loading report data...</p>
+            <p>Admin-wide financial, expense and complaint reports.</p>
           </div>
         </div>
 

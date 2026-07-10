@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Edit3, IndianRupee, Plus, ShieldCheck, Trash2 } from 'lucide-react';
 import { staffAPI } from '../services/api';
+import { CardSkeleton, TableSkeleton } from '../components/Skeletons';
 
 const money = (value) => `₹${Number(value || 0).toLocaleString('en-IN')}`;
 
@@ -60,8 +61,6 @@ const Staff = () => {
 
   const handleChange = (event) => setFormData((current) => ({ ...current, [event.target.name]: event.target.value }));
 
-  if (loading) return <div className="portal-empty">Loading staff...</div>;
-
   return (
     <div className="portal-module">
       <div className="portal-page-title">
@@ -69,15 +68,15 @@ const Staff = () => {
         <button className="portal-primary-btn" onClick={handleAdd}><Plus size={17} /> Add Staff</button>
       </div>
 
-      <div className="portal-kpis">
+      {loading ? <CardSkeleton count={2} /> : <div className="portal-kpis">
         <div className="portal-kpi"><span>Total Staff</span><strong>{staff.length}</strong><small>Active support team</small><div className="portal-kpi-icon"><ShieldCheck size={18} /></div></div>
         <div className="portal-kpi green"><span>Monthly Payroll</span><strong>{money(monthlyPayroll)}</strong><small>Salary commitment</small><div className="portal-kpi-icon"><IndianRupee size={18} /></div></div>
-      </div>
+      </div>}
 
       <section className="portal-panel portal-table-card">
         <div className="portal-panel-head"><div><h2>Staff Directory</h2><p>Operational team members and salary details.</p></div></div>
         <div className="portal-table-wrap">
-          <table className="portal-data-table">
+          {loading ? <TableSkeleton rows={5} columns={5} /> : <table className="portal-data-table">
             <thead><tr><th>Name</th><th>Role</th><th>Phone</th><th>Salary</th><th>Actions</th></tr></thead>
             <tbody>
               {staff.map((member) => (
@@ -90,8 +89,8 @@ const Staff = () => {
                 </tr>
               ))}
             </tbody>
-          </table>
-          {!staff.length && <div className="portal-empty">No staff members found.</div>}
+          </table>}
+          {!loading && !staff.length && <div className="portal-empty">No staff members found.</div>}
         </div>
       </section>
 

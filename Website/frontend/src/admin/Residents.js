@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { CalendarDays, CheckCircle2, Edit3, Plus, ShieldCheck, Trash2, Users, XCircle } from 'lucide-react';
 import { userAPI, flatAPI } from '../services/api';
+import { CardSkeleton, TableSkeleton } from '../components/Skeletons';
 
 const Residents = () => {
   const [residents, setResidents] = useState([]);
@@ -95,8 +96,6 @@ const Residents = () => {
     setFormData((current) => ({ ...current, [event.target.name]: event.target.value }));
   };
 
-  if (loading) return <div className="portal-empty">Loading residents...</div>;
-
   return (
     <div className="portal-module">
       <div className="portal-page-title">
@@ -114,15 +113,15 @@ const Residents = () => {
         </div>
       )}
 
-      <div className="portal-kpis">
+      {loading ? <CardSkeleton count={2} /> : <div className="portal-kpis">
         <div className="portal-kpi"><span>Total Residents</span><strong>{residents.length}</strong><small>Active resident accounts</small><div className="portal-kpi-icon"><Users size={18} /></div></div>
         <div className="portal-kpi green"><span>Occupied Flats</span><strong>{occupiedFlats}</strong><small>{flats.length} total flats</small><div className="portal-kpi-icon"><CalendarDays size={18} /></div></div>
-      </div>
+      </div>}
 
       <section className="portal-panel portal-table-card">
         <div className="portal-panel-head"><div><h2>Resident Directory</h2><p>Names, assigned flats and account dates.</p></div></div>
         <div className="portal-table-wrap">
-          <table className="portal-data-table">
+          {loading ? <TableSkeleton rows={5} columns={6} /> : <table className="portal-data-table">
             <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Assigned Flat</th><th>Wing</th><th>Floor</th><th>Status</th><th>Created At</th><th>Actions</th></tr></thead>
             <tbody>
               {residents.map((resident) => (
@@ -146,8 +145,8 @@ const Residents = () => {
                 </tr>
               ))}
             </tbody>
-          </table>
-          {!residents.length && <div className="portal-empty">No residents found.</div>}
+          </table>}
+          {!loading && !residents.length && <div className="portal-empty">No residents found.</div>}
         </div>
       </section>
 

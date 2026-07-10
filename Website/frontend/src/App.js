@@ -9,6 +9,7 @@ import ResidentComplaints from './resident/ResidentComplaints';
 import ResidentNotices from './resident/ResidentNotices';
 import AdminLayout from './admin/AdminLayout';
 import AdminDashboard from './admin/AdminDashboard';
+import { DashboardSkeleton } from './components/Skeletons';
 
 const Landing = lazy(() => import('./pages/Landing'));
 const Register = lazy(() => import('./pages/Register'));
@@ -30,9 +31,7 @@ const ResidentMembers = lazy(() => import('./resident/ResidentMembers'));
 const ResidentReports = lazy(() => import('./resident/ResidentReports'));
 
 const RouteLoader = () => (
-  <div className="loading-spinner" role="status" aria-live="polite">
-    Loading...
-  </div>
+  <DashboardSkeleton />
 );
 
 const PrivateRoute = ({ children, role }) => {

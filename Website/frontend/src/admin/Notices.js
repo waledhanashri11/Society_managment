@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Megaphone, Plus, Trash2 } from 'lucide-react';
 import { noticeAPI } from '../services/api';
+import { CardSkeleton } from '../components/Skeletons';
 
 const Notices = () => {
   const [notices, setNotices] = useState([]);
@@ -47,8 +48,6 @@ const Notices = () => {
 
   const handleChange = (event) => setFormData((current) => ({ ...current, [event.target.name]: event.target.value }));
 
-  if (loading) return <div className="portal-empty">Loading notices...</div>;
-
   return (
     <div className="portal-module">
       <div className="portal-page-title">
@@ -56,7 +55,7 @@ const Notices = () => {
         <button className="portal-primary-btn" onClick={handleAdd}><Plus size={17} /> Create Notice</button>
       </div>
 
-      <div className="portal-notice-grid">
+      {loading ? <CardSkeleton count={4} /> : <div className="portal-notice-grid">
         {notices.map((notice) => (
           <article key={notice.id} className="portal-notice-card">
             <div className="portal-notice-icon"><Megaphone size={18} /></div>
@@ -68,8 +67,8 @@ const Notices = () => {
             <button className="portal-icon-danger" onClick={() => handleDelete(notice.id)} aria-label="Delete notice"><Trash2 size={15} /></button>
           </article>
         ))}
-      </div>
-      {!notices.length && <section className="portal-panel"><div className="portal-empty">No notices published yet.</div></section>}
+      </div>}
+      {!loading && !notices.length && <section className="portal-panel"><div className="portal-empty">No notices published yet.</div></section>}
 
       {showModal && (
         <div className="portal-modal-backdrop" onMouseDown={() => setShowModal(false)}>
