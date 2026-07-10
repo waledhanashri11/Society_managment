@@ -24,6 +24,12 @@ const statusClass = (status = '') => {
   const key = status.toLowerCase().replace(/\s/g, '-');
   return `mm-status mm-status-${key}`;
 };
+const backendOrigin = (process.env.REACT_APP_API_URL || 'http://localhost:5000/api').replace(/\/api\/?$/, '').replace(/\/$/, '');
+const fileUrl = (value) => {
+  if (!value) return '';
+  if (/^(https?:|data:)/i.test(value)) return value;
+  return `${backendOrigin}${value}`;
+};
 
 function Modal({ title, subtitle, onClose, children, wide = false }) {
   return (
@@ -400,10 +406,13 @@ const Maintenance = () => {
 
   const updatePaymentStatus = async (payment, paymentStatus) => {
     try {
-      await maintenanceAPI.updatePayment(payment.id, {
-        paymentStatus,
-        remarks: paymentStatus === 'Paid' ? 'Approved by admin' : 'Rejected by admin'
-      });
+      if (paymentStatus === 'Paid') {
+        await maintenanceAPI.approvePayment(payment.id);
+      } else {
+        const rejectionReason = window.prompt('Enter rejection reason');
+        if (!rejectionReason) return;
+        await maintenanceAPI.rejectPayment(payment.id, { rejectionReason });
+      }
       notify(paymentStatus === 'Paid' ? 'Payment approved' : 'Payment rejected');
       await load();
     } catch (err) {
@@ -679,22 +688,31 @@ const Maintenance = () => {
         </section>
       ) : tab === 'payments' ? (
         <section className="mm-panel mm-table-panel">
-          <div className="mm-panel-head"><div><h2>Payment approvals</h2><p>Review resident payment submissions and update bill status.</p></div><button className="mm-button mm-button-light" onClick={() => downloadCsv('payment-approvals.csv', payments.map((payment) => ({ resident: payment.resident_name, flat: payment.flat_no, method: payment.payment_method, transaction: payment.transaction_id, amount: payment.amount, status: payment.payment_status })))}><Download size={17} /> Export CSV</button></div>
+          <div className="mm-panel-head"><div><h2>Payment Verification</h2><p>Review UPI payment proofs before marking bills as paid.</p></div><button className="mm-button mm-button-light" onClick={() => downloadCsv('payment-approvals.csv', payments.map((payment) => ({ resident: payment.resident_name, flat: payment.flat_no, bill: payment.bill_number || `BILL-${payment.bill_id}`, month: `${payment.month || ''}/${payment.year || ''}`, utr: payment.utr_number || payment.transaction_id, amount: payment.amount, payment_date: payment.paid_at, status: payment.payment_status })))}><Download size={17} /> Export CSV</button></div>
           <div className="mm-table-wrap">
             <table className="mm-table">
-              <thead><tr><th>Resident</th><th>Flat</th><th>Method</th><th>Transaction</th><th>Amount</th><th>Status</th><th>Actions</th></tr></thead>
+              <thead><tr><th>Resident</th><th>Flat</th><th>Bill</th><th>Month</th><th>Amount</th><th>Payment Date</th><th>UTR</th><th>Screenshot</th><th>Status</th><th>Actions</th></tr></thead>
               <tbody>{payments.map((payment) => (
                 <tr key={payment.id}>
                   <td><strong>{payment.resident_name}</strong><small>{date(payment.created_at)}</small></td>
                   <td>{payment.flat_no}</td>
-                  <td>{payment.payment_method}</td>
-                  <td>{payment.transaction_id}</td>
+                  <td>{payment.bill_number || `BILL-${payment.bill_id}`}</td>
+                  <td>{months[(Number(payment.month) || 1) - 1]} {payment.year || ''}</td>
                   <td><strong>{money(payment.amount)}</strong></td>
+                  <td>{date(payment.paid_at)}</td>
+                  <td>{payment.utr_number || payment.transaction_id}</td>
+                  <td>
+                    {payment.screenshot_url || payment.screenshot ? (
+                      <button className="mm-mini-action" onClick={() => window.open(fileUrl(payment.screenshot_url || payment.screenshot), '_blank')}>View</button>
+                    ) : (
+                      <span className="text-xs text-slate-400">No file</span>
+                    )}
+                  </td>
                   <td><span className={statusClass(payment.payment_status)}>{payment.payment_status}</span></td>
                   <td>
                     <div className="mm-action-group">
-                      <button className="mm-mini-action green" onClick={() => updatePaymentStatus(payment, 'Paid')}>Approve</button>
-                      <button className="mm-mini-action red" onClick={() => updatePaymentStatus(payment, 'Rejected')}>Reject</button>
+                      {payment.payment_status !== 'Paid' && <button className="mm-mini-action green" onClick={() => updatePaymentStatus(payment, 'Paid')}>Approve</button>}
+                      {payment.payment_status !== 'Rejected' && payment.payment_status !== 'Paid' && <button className="mm-mini-action red" onClick={() => updatePaymentStatus(payment, 'Rejected')}>Reject</button>}
                     </div>
                   </td>
                 </tr>

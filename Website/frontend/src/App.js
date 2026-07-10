@@ -3,6 +3,9 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { getUser } from './utils/auth';
 
 const Landing = lazy(() => import('./pages/Landing'));
+const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'));
+const TermsOfService = lazy(() => import('./pages/TermsOfService'));
+const RefundRules = lazy(() => import('./pages/RefundRules'));
 const Login = lazy(() => import('./pages/Login'));
 const Register = lazy(() => import('./pages/Register'));
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
@@ -37,12 +40,15 @@ const RouteLoader = () => (
 
 const PrivateRoute = ({ children, role }) => {
   const user = getUser();
+
   if (!user) {
     return <Navigate to="/login" replace />;
   }
+
   if (role && user.role !== role) {
     return <Navigate to={user.role === 'admin' ? '/admin/dashboard' : '/resident/dashboard'} replace />;
   }
+
   return children;
 };
 
@@ -51,16 +57,23 @@ function App() {
     <Router>
       <Suspense fallback={<RouteLoader />}>
         <Routes>
+          <Route path="/" element={<Landing />} />
+          <Route path="/privacy" element={<PrivacyPolicy />} />
+          <Route path="/terms" element={<TermsOfService />} />
+          <Route path="/refunds" element={<RefundRules />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
 
-          <Route path="/admin" element={
-            <PrivateRoute role="admin">
-              <AdminLayout />
-            </PrivateRoute>
-          }>
+          <Route
+            path="/admin"
+            element={
+              <PrivateRoute role="admin">
+                <AdminLayout />
+              </PrivateRoute>
+            }
+          >
             <Route index element={<Navigate to="dashboard" replace />} />
             <Route path="dashboard" element={<AdminDashboard />} />
             <Route path="residents" element={<Residents />} />
@@ -73,11 +86,14 @@ function App() {
             <Route path="settings" element={<AdminSettings />} />
           </Route>
 
-          <Route path="/resident" element={
-            <PrivateRoute role="resident">
-              <ResidentLayout />
-            </PrivateRoute>
-          }>
+          <Route
+            path="/resident"
+            element={
+              <PrivateRoute role="resident">
+                <ResidentLayout />
+              </PrivateRoute>
+            }
+          >
             <Route index element={<Navigate to="dashboard" replace />} />
             <Route path="dashboard" element={<ResidentDashboard />} />
             <Route path="maintenance" element={<ResidentMaintenance />} />
@@ -90,7 +106,7 @@ function App() {
             <Route path="payment-history" element={<ResidentPaymentHistory />} />
           </Route>
 
-          <Route path="/" element={<Landing />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Suspense>
     </Router>

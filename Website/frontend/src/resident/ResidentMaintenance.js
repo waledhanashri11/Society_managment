@@ -8,19 +8,29 @@ import { getUser } from '../utils/auth';
 import { TableSkeleton } from '../components/Skeletons';
 
 const unwrap = (response) => response?.data?.data ?? response?.data ?? [];
-const money = (value) => `₹ ${Number(value || 0).toLocaleString('en-IN')}`;
+const money = (value) => `Rs. ${Number(value || 0).toLocaleString('en-IN')}`;
 const monthName = (month) => new Date(2026, Number(month || 1) - 1).toLocaleDateString('en-IN', { month: 'short' });
-const fullDate = (value) => value ? new Date(value).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+const fullDate = (value) => value ? new Date(value).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '-';
+const today = () => new Date().toISOString().slice(0, 10);
+const statusClass = (status) => String(status || 'Pending').toLowerCase().replace(/\s+/g, '_');
 
 const ResidentMaintenance = () => {
   const user = getUser();
   const [bills, setBills] = useState([]);
   const [paymentSettings, setPaymentSettings] = useState({});
   const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState('');
   const [showPayment, setShowPayment] = useState(false);
+  const [paidConfirmed, setPaidConfirmed] = useState(false);
   const [selectedBill, setSelectedBill] = useState(null);
-  const [payment, setPayment] = useState({ paymentMethod: 'UPI', transactionId: '', amount: '', screenshotUrl: '' });
+  const [payment, setPayment] = useState({
+    paymentMethod: 'UPI',
+    transactionId: '',
+    amount: '',
+    screenshotUrl: '',
+    paymentDate: today()
+  });
 
   const notify = (message) => {
     setToast(message);
@@ -46,7 +56,7 @@ const ResidentMaintenance = () => {
   const summary = useMemo(() => ({
     due: pendingBills.reduce((sum, bill) => sum + Number(bill.remaining_amount || bill.total_amount || 0), 0),
     paid: paidBills.reduce((sum, bill) => sum + Number(bill.paid_amount || bill.total_amount || 0), 0),
-    underReview: bills.filter((bill) => bill.payment_status === 'Under Review').length
+    underReview: bills.filter((bill) => ['Under Review', 'Pending Verification'].includes(bill.payment_status)).length
   }), [bills, paidBills, pendingBills]);
 
   const openPayment = (bill = pendingBills[0]) => {
@@ -56,27 +66,51 @@ const ResidentMaintenance = () => {
       paymentMethod: 'UPI',
       transactionId: '',
       amount: String(bill.remaining_amount || bill.total_amount || ''),
-      screenshotUrl: ''
+      screenshotUrl: '',
+      paymentDate: today()
     });
+    setPaidConfirmed(false);
     setShowPayment(true);
+  };
+
+  const closePayment = () => {
+    setShowPayment(false);
+    setPaidConfirmed(false);
+    setSelectedBill(null);
+  };
+
+  const handleScreenshot = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return setPayment((current) => ({ ...current, screenshotUrl: '' }));
+    if (!file.type.startsWith('image/')) return notify('Please upload an image screenshot');
+
+    const reader = new FileReader();
+    reader.onload = () => setPayment((current) => ({ ...current, screenshotUrl: reader.result }));
+    reader.readAsDataURL(file);
   };
 
   const submitPayment = async (event) => {
     event.preventDefault();
     if (!selectedBill) return;
+    if (!payment.transactionId.trim()) return notify('Transaction / UTR number is required');
+
+    setSubmitting(true);
     try {
       await maintenanceAPI.submitPayment({
         billId: selectedBill.id,
         paymentMethod: payment.paymentMethod,
-        transactionId: payment.transactionId,
+        utrNumber: payment.transactionId.trim(),
         amount: payment.amount,
-        screenshotUrl: payment.screenshotUrl
+        screenshot: payment.screenshotUrl,
+        paymentDate: payment.paymentDate
       });
-      notify('Payment submitted for admin review');
-      setShowPayment(false);
+      notify('Payment submitted for admin verification');
+      closePayment();
       await load();
     } catch (error) {
       notify(error.response?.data?.message || 'Could not submit payment');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -108,7 +142,7 @@ const ResidentMaintenance = () => {
       <tr><th>Period</th><td>${monthName(bill.month)} ${bill.year || ''}</td></tr>
       <tr><th>Due Date</th><td>${fullDate(bill.due_date)}</td></tr>
       <tr><th>Status</th><td>${bill.payment_status}</td></tr>
-      <tr><th>Late Fee</th><td>${money(bill.late_fee)}</td></tr>
+      <tr><th>Late Fee</th><td>${money(bill.late_fee || bill.penalty_amount)}</td></tr>
       <tr><th class="total">Total</th><td class="total">${money(bill.total_amount)}</td></tr>
       </table><p class="muted right">Generated on ${new Date().toLocaleString('en-IN')}</p>
       </div><script>window.print();</script></body></html>`;
@@ -150,7 +184,7 @@ const ResidentMaintenance = () => {
       <div className="portal-status-summary" style={{ marginBottom: 14 }}>
         <div><span>Outstanding Due</span><strong>{money(summary.due)}</strong></div>
         <div><span>Total Paid</span><strong>{money(summary.paid)}</strong></div>
-        <div><span>Under Review</span><strong>{summary.underReview}</strong></div>
+        <div><span>Pending Verification</span><strong>{summary.underReview}</strong></div>
       </div>
 
       <section className="portal-panel portal-table-card">
@@ -162,10 +196,10 @@ const ResidentMaintenance = () => {
                 <tr key={bill.id}>
                   <td><strong>{monthName(bill.month)} {bill.year}</strong><small>{bill.bill_number || `BILL-${bill.id}`}</small></td>
                   <td>{money(bill.total_amount)}</td>
-                  <td><span className={`portal-status ${String(bill.payment_status).toLowerCase().replace(' ', '_')}`}>{bill.payment_status}</span></td>
+                  <td><span className={`portal-status ${statusClass(bill.payment_status)}`}>{bill.payment_status || 'Pending'}</span></td>
                   <td>
                     <div className="resident-bill-actions">
-                      {bill.payment_status !== 'Paid' && <button onClick={() => openPayment(bill)}><CreditCard size={11} /> Pay</button>}
+                      {bill.payment_status !== 'Paid' && <button onClick={() => openPayment(bill)}><CreditCard size={11} /> Pay via UPI</button>}
                       <button onClick={() => printDocument('Maintenance Invoice', bill)}><FileText size={11} /> Invoice</button>
                       {bill.payment_status === 'Paid' && <button onClick={() => printDocument('Payment Receipt', bill)}><Download size={11} /> Receipt</button>}
                       {bill.payment_status !== 'Paid' && <button onClick={() => raiseBillDispute(bill)}><MessageSquareWarning size={11} /> Dispute</button>}
@@ -181,31 +215,59 @@ const ResidentMaintenance = () => {
       </section>
 
       {showPayment && selectedBill && (
-        <div className="mm-modal-backdrop" onMouseDown={() => setShowPayment(false)}>
-          <div className="mm-modal" onMouseDown={(event) => event.stopPropagation()}>
-            <div className="mm-modal-head"><div><h3>Submit payment proof</h3><p>{selectedBill.bill_number || `Bill #${selectedBill.id}`} · {money(selectedBill.total_amount)}</p></div></div>
-            <form className="mm-form" onSubmit={submitPayment}>
-              <div className="resident-qr-card">
-                {paymentSettings.paymentQrImage ? (
-                  <img src={paymentSettings.paymentQrImage} alt="Maintenance payment scanner" loading="lazy" decoding="async" />
-                ) : (
-                  <div className="resident-qr-empty">
-                    <QrCode size={38} />
-                    <strong>Payment scanner not uploaded yet</strong>
-                    <span>Please contact society admin.</span>
-                  </div>
-                )}
+        <div className="portal-modal-backdrop" onMouseDown={closePayment}>
+          <div className="portal-modal" onMouseDown={(event) => event.stopPropagation()}>
+            <form onSubmit={submitPayment} style={{ display: 'flex', flexDirection: 'column', maxHeight: '92vh', margin: 0 }}>
+              <div className="portal-modal-head">
                 <div>
-                  <strong>{paymentSettings.societyName || 'Society Payment'}</strong>
-                  {paymentSettings.paymentUpiId && <span>UPI ID: {paymentSettings.paymentUpiId}</span>}
-                  <p>{paymentSettings.paymentNote || 'Scan the QR, complete payment, then submit your transaction details below.'}</p>
+                  <h3>Pay via UPI</h3>
+                  <p>{selectedBill.bill_number || `Bill #${selectedBill.id}`} - {money(selectedBill.total_amount)}</p>
                 </div>
               </div>
-              <label className="mm-field"><span>Payment Method</span><select value={payment.paymentMethod} onChange={(event) => setPayment({ ...payment, paymentMethod: event.target.value })}><option>UPI</option><option>Bank Transfer</option><option>Cash</option><option>Cheque</option></select></label>
-              <label className="mm-field"><span>Amount</span><input type="number" min="1" required value={payment.amount} onChange={(event) => setPayment({ ...payment, amount: event.target.value })} /></label>
-              <label className="mm-field mm-field-full"><span>Transaction ID</span><input required value={payment.transactionId} onChange={(event) => setPayment({ ...payment, transactionId: event.target.value })} placeholder="UPI/ref/cheque number" /></label>
-              <label className="mm-field mm-field-full"><span>Screenshot URL (optional)</span><input value={payment.screenshotUrl} onChange={(event) => setPayment({ ...payment, screenshotUrl: event.target.value })} placeholder="Paste payment proof link" /></label>
-              <div className="mm-form-actions"><button type="button" className="mm-button mm-button-light" onClick={() => setShowPayment(false)}>Cancel</button><button className="mm-button mm-button-primary"><Send size={16} /> Submit for Review</button></div>
+              <div className="portal-form" style={{ overflowY: 'auto', flex: '1 1 auto', display: 'grid', gap: '13px', padding: '18px 20px 20px' }}>
+                <div className="resident-qr-card" style={{ gridColumn: '1 / -1' }}>
+                  {paymentSettings.paymentQrImage ? (
+                    <img src={paymentSettings.paymentQrImage} alt="Maintenance payment scanner" />
+                  ) : (
+                    <div className="resident-qr-empty">
+                      <QrCode size={38} />
+                      <strong>Payment scanner not uploaded yet</strong>
+                      <span>Please contact society admin.</span>
+                    </div>
+                  )}
+                  <div>
+                    <strong>{paymentSettings.societyName || 'Society Payment'}</strong>
+                    {paymentSettings.paymentUpiId && <span>UPI ID: {paymentSettings.paymentUpiId}</span>}
+                    <p>{paymentSettings.paymentNote || 'Scan this QR using Google Pay, PhonePe, Paytm, BHIM or any UPI app. After payment, click I have paid and submit your UTR details.'}</p>
+                  </div>
+                </div>
+
+                <div className="settings-status-grid portal-field-full">
+                  <div><span>Bill Number</span><strong>{selectedBill.bill_number || `BILL-${selectedBill.id}`}</strong></div>
+                  <div><span>Maintenance Amount</span><strong>{money(selectedBill.remaining_amount || selectedBill.total_amount)}</strong></div>
+                  <div><span>Due Date</span><strong>{fullDate(selectedBill.due_date)}</strong></div>
+                  <div><span>Status</span><strong>{selectedBill.payment_status || 'Pending Payment'}</strong></div>
+                </div>
+
+                {paidConfirmed && (
+                  <>
+                    <label><span>Payment Method</span><select value={payment.paymentMethod} onChange={(event) => setPayment({ ...payment, paymentMethod: event.target.value })}><option>UPI</option><option>Bank Transfer</option><option>Cash</option><option>Cheque</option></select></label>
+                    <label><span>Amount</span><input type="number" min="1" required value={payment.amount} onChange={(event) => setPayment({ ...payment, amount: event.target.value })} /></label>
+                    <label><span>Payment Date</span><input type="date" required value={payment.paymentDate} onChange={(event) => setPayment({ ...payment, paymentDate: event.target.value })} /></label>
+                    <label className="portal-field-full"><span>Transaction / UTR Number</span><input required value={payment.transactionId} onChange={(event) => setPayment({ ...payment, transactionId: event.target.value })} placeholder="UPI UTR / reference number" /></label>
+                    <label className="portal-field-full"><span>Payment Screenshot Upload</span><input type="file" accept="image/*" onChange={handleScreenshot} /><small>Optional but recommended.</small></label>
+                    {payment.screenshotUrl && <img src={payment.screenshotUrl} alt="Payment screenshot preview" className="portal-field-full max-h-48 w-full rounded-lg border border-slate-200 object-contain" />}
+                  </>
+                )}
+              </div>
+              <div className="portal-form-actions" style={{ flex: '0 0 auto', display: 'flex', justifyContent: 'flex-end', gap: '9px', padding: '15px 20px', borderTop: '1px solid var(--portal-line)', background: '#fdfdfd', borderBottomLeftRadius: '14px', borderBottomRightRadius: '14px' }}>
+                <button type="button" className="portal-light-btn" onClick={closePayment}>Cancel</button>
+                {!paidConfirmed ? (
+                  <button type="button" className="portal-primary-btn" onClick={() => setPaidConfirmed(true)}><CreditCard size={14} /> I've Paid</button>
+                ) : (
+                  <button className="portal-primary-btn" disabled={submitting}><Send size={14} /> {submitting ? 'Submitting...' : 'Submit Payment'}</button>
+                )}
+              </div>
             </form>
           </div>
         </div>

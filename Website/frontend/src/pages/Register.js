@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { authAPI, flatAPI } from '../services/api';
+import { authAPI } from '../services/api';
+
 import { setToken, setUser } from '../utils/auth';
 
 const Register = () => {
@@ -12,29 +13,10 @@ const Register = () => {
     role: 'resident',
     flat_id: ''
   });
-  const [availableFlats, setAvailableFlats] = useState([]);
-  const [flatsLoading, setFlatsLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-
-  useEffect(() => {
-    const loadAvailableFlats = async () => {
-      try {
-        const response = await flatAPI.getAvailable();
-        setAvailableFlats(response.data);
-      } catch (err) {
-        setError('Could not load available flats. Please try again later.');
-      } finally {
-        setFlatsLoading(false);
-      }
-    };
-
-    loadAvailableFlats();
-  }, []);
-
-  const needsFlat = useMemo(() => formData.role === 'resident', [formData.role]);
 
   const handleChange = (e) => {
     setFormData({
@@ -47,12 +29,6 @@ const Register = () => {
     e.preventDefault();
     setError('');
     setSuccess('');
-
-    if (needsFlat && !formData.flat_id) {
-      setError('Please select an available flat.');
-      return;
-    }
-
     setLoading(true);
 
     try {
@@ -60,8 +36,6 @@ const Register = () => {
       if (!response.data.token || response.data.user?.status === 'pending') {
         setSuccess(response.data.message || 'Registration submitted. Please wait for admin approval.');
         setFormData({ name: '', email: '', phone: '', password: '', role: 'resident', flat_id: '' });
-        const flats = await flatAPI.getAvailable();
-        setAvailableFlats(flats.data);
         return;
       }
 
@@ -151,37 +125,14 @@ const Register = () => {
             </select>
           </div>
 
-          {needsFlat && (
-            <div className="mb-3">
-              <label className="form-label">Assigned Flat</label>
-              <select
-                className="form-control"
-                name="flat_id"
-                value={formData.flat_id}
-                onChange={handleChange}
-                required
-                disabled={flatsLoading || loading}
-              >
-                <option value="">{flatsLoading ? 'Loading available flats...' : 'Select available flat'}</option>
-                {availableFlats.map((flat) => (
-                  <option key={flat.id} value={flat.id}>
-                    Wing {flat.wing || 'A'} - Flat {flat.flat_no} - Floor {flat.floor_no}
-                  </option>
-                ))}
-              </select>
-              {!flatsLoading && !availableFlats.length && (
-                <small className="text-danger">No flats are available for registration right now.</small>
-              )}
-            </div>
-          )}
-
           <button
             type="submit"
-            className="btn btn-primary w-100"
-            disabled={loading || (needsFlat && (flatsLoading || !availableFlats.length))}
+            className="btn btn-primary w-100 font-bold"
+            disabled={loading}
           >
             {loading ? 'Registering...' : 'Register'}
           </button>
+
 
           <p className="text-center mt-3">
             Already have an account? <Link to="/login">Login</Link>

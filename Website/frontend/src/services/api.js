@@ -157,6 +157,11 @@ export const maintenanceAPI = {
   sendReminder: (id) => api.post(`/maintenance/bills/${id}/reminder`),
   submitPayment: (data) => mutate(api.post('/maintenance/payments', data), '/maintenance'),
   updatePayment: (id, data) => mutate(api.put(`/maintenance/payments/${id}`, data), '/maintenance'),
+  approvePayment: (id) => mutate(api.put(`/maintenance/payments/${id}/approve`), '/maintenance'),
+  rejectPayment: (id, data) => mutate(api.put(`/maintenance/payments/${id}/reject`, data), '/maintenance'),
+  getPendingVerificationPayments: (config = {}) => cachedGet('/maintenance/payments/pending-verification', config),
+  getPaymentHistory: (config = {}) => cachedGet('/maintenance/payments/history', config),
+  getPaymentReceipt: (id, config = {}) => cachedGet(`/maintenance/payments/${id}/receipt`, config),
   getPayments: (config = {}) => cachedGet('/maintenance/payments', config),
   getReports: (type, config = {}) => cachedGet('/maintenance/reports', { ...config, params: { ...(config.params || {}), type } }),
   getUserMaintenance: (config = {}) => cachedGet('/maintenance/user/my-maintenance', config),
@@ -211,6 +216,7 @@ export const notificationAPI = {
 };
 
 export const residentAPI = {
+
   getDashboard: (config = {}) => cachedGet('/resident/dashboard', config),
   getMembers: (config = {}) => cachedGet('/resident/members', config),
   updateProfile: (data) => mutate(api.put('/resident/profile', data), '/resident'),
@@ -220,6 +226,7 @@ export const residentAPI = {
   getReportExpenses: (params = {}, config = {}) => cachedGet('/resident/reports/expenses', { ...config, params }),
   getMembersMaintenanceReport: (params = {}, config = {}) => cachedGet('/resident/reports/members-maintenance', { ...config, params }),
   getAllMaintenanceReport: (params = {}, config = {}) => cachedGet('/resident/reports/all-maintenance', { ...config, params }),
+  getComplaintsReport: (config = {}) => cachedGet('/resident/reports/complaints', config),
 };
 
 export { api };

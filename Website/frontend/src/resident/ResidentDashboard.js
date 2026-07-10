@@ -142,9 +142,9 @@ const ResidentDashboard = () => {
   const printDocument = (type, bill) => {
     const html = `
       <html><head><title>${type}</title><style>
-      body{font-family:Arial,sans-serif;padding:32px;color:#172033}.box{max-width:760px;margin:0 auto;border:1px solid #dfe5ee;border-radius:14px;padding:28px}
+      body{font-family:Arial,sans-serif;padding:32px;color:#172033}.box{max-width:760px;margin:0 auto;border:1px solid #1c6adf;border-radius:14px;padding:28px}
       h1{margin:0;font-size:26px}.muted{color:#667085;margin-top:6px}table{width:100%;border-collapse:collapse;margin-top:24px}
-      td,th{border-bottom:1px solid #edf0f3;padding:12px;text-align:left}.total{font-size:22px;font-weight:800}.right{text-align:right}
+      td,th{border-bottom:1px solid #0f78e0;padding:12px;text-align:left}.total{font-size:22px;font-weight:800}.right{text-align:right}
       </style></head><body><div class="box">
       <h1>${type}</h1><div class="muted">Society Management System</div>
       <table>
@@ -214,19 +214,16 @@ const ResidentDashboard = () => {
         </section>
       </div>
 
-      <div className="portal-dashboard-grid">
-        <section className="portal-panel">
+      <section className="portal-panel resident-summary-panel">
           <div className="portal-panel-head"><div><h2>Resident Summary</h2><p>Quick counts with full pages in the sidebar.</p></div></div>
           <div className="portal-status-summary">
             <div><span>Complaints</span><strong>{complaints.length}</strong></div>
             <div><span>Notices</span><strong>{notices.length}</strong></div>
             <div><span>Pending Bills</span><strong>{pendingBills.length}</strong></div>
           </div>
-        </section>
-      </div>
+      </section>
 
-      <div className="resident-bottom-grid">
-        <section className="portal-panel" id="maintenance">
+      <section className="portal-panel resident-maintenance-panel" id="maintenance">
           <div className="portal-panel-head">
             <div><h2>Maintenance Preview</h2><p>Latest bills shown here, full page in sidebar.</p></div>
             <button className="resident-pay" onClick={() => navigate('/resident/maintenance')}>View All</button>
@@ -251,9 +248,7 @@ const ResidentDashboard = () => {
               ))}</tbody>
             </table></div>
           ) : <div className="portal-empty"><ReceiptIndianRupee size={23} /><br />No maintenance bills have been issued yet.</div>}
-        </section>
-
-      </div>
+      </section>
 
       <div className="resident-bottom-grid">
         <section className="portal-panel">
@@ -278,11 +273,17 @@ const ResidentDashboard = () => {
             <div><h2>Latest Notices</h2><p>Recent society announcements</p></div>
             <button className="resident-pay" onClick={() => navigate('/resident/notices')}>View All</button>
           </div>
-          <div className="portal-feed">
+          <div className="resident-notice-list">
             {notices.slice(0, 3).map((item) => (
-              <div className="portal-feed-item" key={item.id}>
-                <span className="portal-feed-icon"><Bell size={14} /></span>
-                <div className="portal-feed-main"><strong>{item.title}</strong><span>{fullDate(item.created_at)}</span></div>
+              <div className="resident-notice-item" key={item.id}>
+                <span className="resident-notice-icon"><Bell size={14} /></span>
+                <div className="resident-notice-main">
+                  <div>
+                    <strong>{item.title}</strong>
+                    <time>{fullDate(item.created_at)}</time>
+                  </div>
+                  {item.description && <p>{item.description}</p>}
+                </div>
               </div>
             ))}
             {!notices.length && <div className="portal-empty">No notices yet.</div>}
@@ -291,44 +292,66 @@ const ResidentDashboard = () => {
       </div>
 
       {showPayment && selectedBill && (
-        <div className="mm-modal-backdrop" onMouseDown={() => setShowPayment(false)}>
-          <div className="mm-modal" onMouseDown={(event) => event.stopPropagation()}>
-            <div className="mm-modal-head"><div><h3>Submit payment proof</h3><p>{selectedBill.bill_number || `Bill #${selectedBill.id}`} · {money(selectedBill.total_amount)}</p></div></div>
-            <form className="mm-form" onSubmit={submitPayment}>
-              <div className="resident-qr-card">
-                {paymentSettings.paymentQrImage ? (
-                  <img src={paymentSettings.paymentQrImage} alt="Maintenance payment scanner" loading="lazy" decoding="async" />
-                ) : (
-                  <div className="resident-qr-empty">
-                    <QrCode size={38} />
-                    <strong>Payment scanner not uploaded yet</strong>
-                    <span>Please contact society admin.</span>
-                  </div>
-                )}
+
+        <div className="portal-modal-backdrop" onMouseDown={() => setShowPayment(false)}>
+          <div className="portal-modal" onMouseDown={(event) => event.stopPropagation()}>
+            <form onSubmit={submitPayment} style={{ display: 'flex', flexDirection: 'column', maxHeight: '92vh', margin: 0 }}>
+              <div className="portal-modal-head">
+
                 <div>
-                  <strong>{paymentSettings.societyName || 'Society Payment'}</strong>
-                  {paymentSettings.paymentUpiId && <span>UPI ID: {paymentSettings.paymentUpiId}</span>}
-                  <p>{paymentSettings.paymentNote || 'Scan the QR, complete payment, then submit your transaction details below.'}</p>
+                  <h3>Submit payment proof</h3>
+                  <p>{selectedBill.bill_number || `Bill #${selectedBill.id}`} · {money(selectedBill.total_amount)}</p>
                 </div>
               </div>
-              <label className="mm-field"><span>Payment Method</span><select value={payment.paymentMethod} onChange={(e) => setPayment({ ...payment, paymentMethod: e.target.value })}><option>UPI</option><option>Bank Transfer</option><option>Cash</option><option>Cheque</option></select></label>
-              <label className="mm-field"><span>Amount</span><input type="number" min="1" required value={payment.amount} onChange={(e) => setPayment({ ...payment, amount: e.target.value })} /></label>
-              <label className="mm-field mm-field-full"><span>Transaction ID</span><input required value={payment.transactionId} onChange={(e) => setPayment({ ...payment, transactionId: e.target.value })} placeholder="UPI/ref/cheque number" /></label>
-              <label className="mm-field mm-field-full"><span>Screenshot URL (optional)</span><input value={payment.screenshotUrl} onChange={(e) => setPayment({ ...payment, screenshotUrl: e.target.value })} placeholder="Paste payment proof link" /></label>
-              <div className="mm-form-actions"><button type="button" className="mm-button mm-button-light" onClick={() => setShowPayment(false)}>Cancel</button><button className="mm-button mm-button-primary"><Send size={16} /> Submit for Review</button></div>
+              <div className="portal-form" style={{ overflowY: 'auto', flex: '1 1 auto', display: 'grid', gap: '13px', padding: '18px 20px 20px' }}>
+                <div className="resident-qr-card" style={{ gridColumn: '1 / -1' }}>
+                  {paymentSettings.paymentQrImage ? (
+                    <img src={paymentSettings.paymentQrImage} alt="Maintenance payment scanner" />
+                  ) : (
+                    <div className="resident-qr-empty">
+                      <QrCode size={38} />
+                      <strong>Payment scanner not uploaded yet</strong>
+                      <span>Please contact society admin.</span>
+                    </div>
+                  )}
+                  <div>
+                    <strong>{paymentSettings.societyName || 'Society Payment'}</strong>
+                    {paymentSettings.paymentUpiId && <span>UPI ID: {paymentSettings.paymentUpiId}</span>}
+                    <p>{paymentSettings.paymentNote || 'Scan the QR, complete payment, then submit your transaction details below.'}</p>
+                  </div>
+                </div>
+                <label><span>Payment Method</span><select value={payment.paymentMethod} onChange={(e) => setPayment({ ...payment, paymentMethod: e.target.value })}><option>UPI</option><option>Bank Transfer</option><option>Cash</option><option>Cheque</option></select></label>
+                <label><span>Amount</span><input type="number" min="1" required value={payment.amount} onChange={(e) => setPayment({ ...payment, amount: e.target.value })} /></label>
+                <label className="portal-field-full"><span>Transaction ID</span><input required value={payment.transactionId} onChange={(e) => setPayment({ ...payment, transactionId: e.target.value })} placeholder="UPI/ref/cheque number" /></label>
+                <label className="portal-field-full"><span>Screenshot URL (optional)</span><input value={payment.screenshotUrl} onChange={(e) => setPayment({ ...payment, screenshotUrl: e.target.value })} placeholder="Paste payment proof link" /></label>
+              </div>
+              <div className="portal-form-actions" style={{ flex: '0 0 auto', display: 'flex', justifyContent: 'flex-end', gap: '9px', padding: '15px 20px', borderTop: '1px solid var(--portal-line)', background: '#fdfdfd', borderBottomLeftRadius: '14px', borderBottomRightRadius: '14px' }}>
+                <button type="button" className="portal-light-btn" onClick={() => setShowPayment(false)}>Cancel</button>
+                <button className="portal-primary-btn"><Send size={14} /> Submit for Review</button>
+              </div>
             </form>
           </div>
         </div>
       )}
 
       {showComplaint && (
-        <div className="mm-modal-backdrop" onMouseDown={() => setShowComplaint(false)}>
-          <div className="mm-modal" onMouseDown={(event) => event.stopPropagation()}>
-            <div className="mm-modal-head"><div><h3>Raise a complaint</h3><p>Tell the society team what needs attention.</p></div></div>
-            <form className="mm-form" onSubmit={submitComplaint}>
-              <label className="mm-field"><span>Subject</span><input required value={complaint.title} onChange={(e) => setComplaint({ ...complaint, title: e.target.value })} /></label>
-              <label className="mm-field"><span>Description</span><textarea required rows="4" value={complaint.description} onChange={(e) => setComplaint({ ...complaint, description: e.target.value })} /></label>
-              <div className="mm-form-actions"><button type="button" className="mm-button mm-button-light" onClick={() => setShowComplaint(false)}>Cancel</button><button className="mm-button mm-button-primary">Submit Complaint</button></div>
+        <div className="portal-modal-backdrop" onMouseDown={() => setShowComplaint(false)}>
+          <div className="portal-modal" onMouseDown={(event) => event.stopPropagation()}>
+            <form onSubmit={submitComplaint} style={{ display: 'flex', flexDirection: 'column', maxHeight: '92vh', margin: 0 }}>
+              <div className="portal-modal-head">
+                <div>
+                  <h3>Raise a complaint</h3>
+                  <p>Tell the society team what needs attention.</p>
+                </div>
+              </div>
+              <div className="portal-form" style={{ overflowY: 'auto', flex: '1 1 auto', display: 'grid', gap: '13px', padding: '18px 20px 20px' }}>
+                <label className="portal-field-full"><span>Subject</span><input required value={complaint.title} onChange={(e) => setComplaint({ ...complaint, title: e.target.value })} /></label>
+                <label className="portal-field-full"><span>Description</span><textarea required rows="4" value={complaint.description} onChange={(e) => setComplaint({ ...complaint, description: e.target.value })} /></label>
+              </div>
+              <div className="portal-form-actions" style={{ flex: '0 0 auto', display: 'flex', justifyContent: 'flex-end', gap: '9px', padding: '15px 20px', borderTop: '1px solid var(--portal-line)', background: '#fdfdfd', borderBottomLeftRadius: '14px', borderBottomRightRadius: '14px' }}>
+                <button type="button" className="portal-light-btn" onClick={() => setShowComplaint(false)}>Cancel</button>
+                <button className="portal-primary-btn">Submit Complaint</button>
+              </div>
             </form>
           </div>
         </div>

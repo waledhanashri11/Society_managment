@@ -87,12 +87,7 @@ const register = async (req, res) => {
       return res.status(400).json({ message: 'User already exists' });
     }
 
-    if (userRole === 'resident') {
-      if (!assignedFlatId) {
-        await connection.rollback();
-        return res.status(400).json({ message: 'Assigned Flat is required for residents' });
-      }
-
+    if (userRole === 'resident' && assignedFlatId) {
       const [flats] = await connection.query(
         'SELECT id, owner_id FROM flats WHERE id = ? FOR UPDATE',
         [assignedFlatId]
@@ -127,7 +122,7 @@ const register = async (req, res) => {
       [name, email, hashedPassword, phone || null, userRole, userRole === 'resident' ? 'pending' : 'approved', userRole === 'resident' ? assignedFlatId : null]
     );
 
-    if (userRole === 'resident') {
+    if (userRole === 'resident' && assignedFlatId) {
       await connection.query(
         'UPDATE flats SET owner_id = ?, status = ? WHERE id = ?',
         [result.insertId, 'Occupied', assignedFlatId]
