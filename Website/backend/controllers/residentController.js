@@ -386,7 +386,7 @@ const getSocietyReportSummary = async (req, res) => {
     const { month, year } = req.query;
     const billWhere = ['1 = 1'];
     const billParams = [];
-    addMonthYearFilters(billWhere, billParams, 'due_date', month, year);
+    addMonthYearFilters(billWhere, billParams, 'm.due_date', month, year);
 
     const expenseWhere = ['1 = 1'];
     const expenseParams = [];
@@ -395,13 +395,13 @@ const getSocietyReportSummary = async (req, res) => {
     const [billRows] = await promisePool.query(
       `SELECT
          COUNT(*) AS total_bills,
-         SUM(CASE WHEN status = 'Paid' THEN 1 ELSE 0 END) AS paid_bills,
-         SUM(CASE WHEN status = 'Partial' THEN 1 ELSE 0 END) AS partial_bills,
-         SUM(CASE WHEN status = 'Pending' OR status = 'Overdue' THEN 1 ELSE 0 END) AS pending_bills,
-         SUM(CASE WHEN status = 'Overdue' OR (status != 'Paid' AND due_date < CURRENT_DATE) THEN 1 ELSE 0 END) AS overdue_bills,
-         COALESCE(SUM(paid_amount), 0) AS total_collection,
-         COALESCE(SUM(remaining_amount), 0) AS total_pending,
-         COALESCE(SUM(total_amount), 0) AS total_billable
+         SUM(CASE WHEN m.status = 'Paid' THEN 1 ELSE 0 END) AS paid_bills,
+         SUM(CASE WHEN m.status = 'Partial' THEN 1 ELSE 0 END) AS partial_bills,
+         SUM(CASE WHEN m.status = 'Pending' OR m.status = 'Overdue' THEN 1 ELSE 0 END) AS pending_bills,
+         SUM(CASE WHEN m.status = 'Overdue' OR (m.status != 'Paid' AND m.due_date < CURRENT_DATE) THEN 1 ELSE 0 END) AS overdue_bills,
+         COALESCE(SUM(m.paid_amount), 0) AS total_collection,
+         COALESCE(SUM(m.remaining_amount), 0) AS total_pending,
+         COALESCE(SUM(m.total_amount), 0) AS total_billable
        FROM maintenance m
        JOIN users u
          ON u.id = m.resident_id

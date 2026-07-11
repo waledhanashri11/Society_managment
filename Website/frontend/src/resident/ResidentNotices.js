@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Bell, Megaphone } from 'lucide-react';
 import { noticeAPI } from '../services/api';
+import { CardSkeleton } from '../components/Skeletons';
 
 const fullDate = (value) => value ? new Date(value).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 
@@ -21,8 +22,6 @@ const ResidentNotices = () => {
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <div className="loading-spinner">Loading notices...</div>;
-
   return (
     <div className="portal-module">
       {toast && <div className="resident-toast">{toast}</div>}
@@ -31,10 +30,12 @@ const ResidentNotices = () => {
           <h1>Notices</h1>
           <p>All society notices and announcements in one place.</p>
         </div>
-        <div className="portal-date-chip"><Bell size={15} /> {notices.length} Notices</div>
+        <div className="portal-date-chip"><Bell size={15} /> {loading ? '...' : notices.length} Notices</div>
       </div>
 
-      {notices.length ? (
+      {loading ? (
+        <CardSkeleton count={4} />
+      ) : notices.length ? (
         <div className="portal-notice-grid">
           {notices.map((notice) => (
             <section className="portal-notice-card" key={notice.id}>

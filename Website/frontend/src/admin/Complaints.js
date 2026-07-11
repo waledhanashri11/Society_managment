@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, Edit3, MessageSquareWarning, Trash2 } from 'lucide-react';
 import { complaintAPI } from '../services/api';
+import { CardSkeleton, TableSkeleton } from '../components/Skeletons';
 
 const Complaints = () => {
   const [complaints, setComplaints] = useState([]);
@@ -55,8 +56,6 @@ const Complaints = () => {
 
   const handleChange = (event) => setFormData((current) => ({ ...current, [event.target.name]: event.target.value }));
 
-  if (loading) return <div className="portal-empty">Loading complaints...</div>;
-
   return (
     <div className="portal-module">
       <div className="portal-page-title">
@@ -64,16 +63,16 @@ const Complaints = () => {
         <div className="portal-date-chip"><MessageSquareWarning size={15} /> Complaint Desk</div>
       </div>
 
-      <div className="portal-kpis">
+      {loading ? <CardSkeleton count={3} /> : <div className="portal-kpis">
         <div className="portal-kpi"><span>Total Complaints</span><strong>{stats.total}</strong><small>All requests</small><div className="portal-kpi-icon"><MessageSquareWarning size={18} /></div></div>
         <div className="portal-kpi orange"><span>Open / In Progress</span><strong>{stats.open}</strong><small>Needs follow-up</small><div className="portal-kpi-icon"><Edit3 size={18} /></div></div>
         <div className="portal-kpi green"><span>Resolved</span><strong>{stats.resolved}</strong><small>Closed issues</small><div className="portal-kpi-icon"><CheckCircle2 size={18} /></div></div>
-      </div>
+      </div>}
 
       <section className="portal-panel portal-table-card">
         <div className="portal-panel-head"><div><h2>Complaint Queue</h2><p>Review, reply and update complaint status.</p></div></div>
         <div className="portal-table-wrap">
-          <table className="portal-data-table">
+          {loading ? <TableSkeleton rows={5} columns={6} /> : <table className="portal-data-table">
             <thead><tr><th>Title</th><th>Description</th><th>Resident</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead>
             <tbody>
               {complaints.map((complaint) => (
@@ -87,8 +86,8 @@ const Complaints = () => {
                 </tr>
               ))}
             </tbody>
-          </table>
-          {!complaints.length && <div className="portal-empty">No complaints found.</div>}
+          </table>}
+          {!loading && !complaints.length && <div className="portal-empty">No complaints found.</div>}
         </div>
       </section>
 

@@ -3,6 +3,7 @@ import { FiEdit3, FiTrash2 } from 'react-icons/fi';
 import { complaintAPI } from '../services/api';
 import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
+import { TableSkeleton } from '../components/Skeletons';
 
 const Complaints = () => {
   const [complaints, setComplaints] = useState([]);
@@ -80,7 +81,15 @@ const Complaints = () => {
   };
 
   if (loading) {
-    return <div className="flex min-h-[40vh] items-center justify-center text-slate-500">Loading...</div>;
+    return (
+      <div className="space-y-6">
+        <div>
+          <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Complaints</p>
+          <h2 className="text-3xl font-semibold text-slate-900">Manage resident issues</h2>
+        </div>
+        <TableSkeleton rows={5} columns={6} />
+      </div>
+    );
   }
 
   return (

@@ -1,5 +1,6 @@
 import React, { lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { DashboardSkeleton } from './components/Skeletons';
 import { getUser } from './utils/auth';
 
 const Landing = lazy(() => import('./pages/Landing'));
@@ -32,11 +33,7 @@ const ResidentPaymentHistory = lazy(() => import('./resident/ResidentPaymentHist
 const ResidentMembers = lazy(() => import('./resident/ResidentMembers'));
 const ResidentReports = lazy(() => import('./resident/ResidentReports'));
 
-const RouteLoader = () => (
-  <div className="loading-spinner" role="status" aria-live="polite">
-    Loading...
-  </div>
-);
+const RouteLoader = () => <DashboardSkeleton />;
 
 const PrivateRoute = ({ children, role }) => {
   const user = getUser();

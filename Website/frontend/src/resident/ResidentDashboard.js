@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { complaintAPI, maintenanceAPI, noticeAPI, residentAPI, settingsAPI } from '../services/api';
 import { getUser } from '../utils/auth';
-import { DashboardSkeleton } from '../components/Skeletons';
+import { CardSkeleton, TableSkeleton } from '../components/Skeletons';
 
 const unwrap = (response) => response?.data?.data ?? response?.data ?? [];
 const money = (value) => `₹ ${Number(value || 0).toLocaleString('en-IN')}`;
@@ -171,8 +171,6 @@ const ResidentDashboard = () => {
     { label: 'My Vehicles', icon: Car, action: () => navigate('/resident/profile') }
   ];
 
-  if (loading) return <DashboardSkeleton />;
-
   return (
     <div>
       {toast && <div className="resident-toast">{toast}</div>}
@@ -181,14 +179,20 @@ const ResidentDashboard = () => {
       </div>
 
       <section className="resident-welcome">
-        <div className="resident-identity">
-          <span className={`resident-avatar ${profilePhoto ? 'has-photo' : ''}`}>
-            {profilePhoto ? <img src={profilePhoto} alt="Resident profile" loading="lazy" decoding="async" /> : (user?.name || 'R').charAt(0)}
-          </span>
-          <div><small>Welcome back,</small><strong>{user?.name || 'Resident'}</strong><span>Resident account</span></div>
-        </div>
-        <div className="resident-balance"><span>Outstanding Due</span><strong>{money(summary.due)}</strong><small>{summary.nextDue ? `Due on ${fullDate(summary.nextDue)}` : 'Nothing due right now'}</small><button className="resident-pay" onClick={() => openPayment()}>Pay Now</button></div>
-        <div className="resident-balance"><span>Total Paid</span><strong>{money(summary.paid)}</strong><small>{summary.underReview} payment under review</small></div>
+        {loading ? (
+          <CardSkeleton count={3} />
+        ) : (
+          <>
+            <div className="resident-identity">
+              <span className={`resident-avatar ${profilePhoto ? 'has-photo' : ''}`}>
+                {profilePhoto ? <img src={profilePhoto} alt="Resident profile" loading="lazy" decoding="async" /> : (user?.name || 'R').charAt(0)}
+              </span>
+              <div><small>Welcome back,</small><strong>{user?.name || 'Resident'}</strong><span>Resident account</span></div>
+            </div>
+            <div className="resident-balance"><span>Outstanding Due</span><strong>{money(summary.due)}</strong><small>{summary.nextDue ? `Due on ${fullDate(summary.nextDue)}` : 'Nothing due right now'}</small><button className="resident-pay" onClick={() => openPayment()}>Pay Now</button></div>
+            <div className="resident-balance"><span>Total Paid</span><strong>{money(summary.paid)}</strong><small>{summary.underReview} payment under review</small></div>
+          </>
+        )}
       </section>
 
       <div className="portal-dashboard-grid">
@@ -205,12 +209,14 @@ const ResidentDashboard = () => {
 
         <section className="portal-panel">
           <div className="portal-panel-head"><div><h2>My Flat</h2><p>Your assigned residence details.</p></div><Building2 size={17} /></div>
-          <div className="grid grid-cols-2 gap-3 p-4 text-sm">
-            <div className="rounded-lg bg-slate-50 p-3"><span className="block text-xs font-bold uppercase text-slate-500">Flat</span><strong className="mt-1 block text-slate-900">Flat {flatDetails?.flat_no || 'N/A'}</strong></div>
-            <div className="rounded-lg bg-slate-50 p-3"><span className="block text-xs font-bold uppercase text-slate-500">Wing</span><strong className="mt-1 block text-slate-900">{flatDetails?.wing || '-'}</strong></div>
-            <div className="rounded-lg bg-slate-50 p-3"><span className="block text-xs font-bold uppercase text-slate-500">Floor</span><strong className="mt-1 block text-slate-900">{flatDetails?.floor_no ?? '-'}</strong></div>
-            <div className="rounded-lg bg-green-50 p-3"><span className="block text-xs font-bold uppercase text-green-700">Status</span><strong className="mt-1 block text-green-800">{flatDetails?.flat_status || 'Assigned'}</strong></div>
-          </div>
+          {loading ? <CardSkeleton count={2} /> : (
+            <div className="grid grid-cols-2 gap-3 p-4 text-sm">
+              <div className="rounded-lg bg-slate-50 p-3"><span className="block text-xs font-bold uppercase text-slate-500">Flat</span><strong className="mt-1 block text-slate-900">Flat {flatDetails?.flat_no || 'N/A'}</strong></div>
+              <div className="rounded-lg bg-slate-50 p-3"><span className="block text-xs font-bold uppercase text-slate-500">Wing</span><strong className="mt-1 block text-slate-900">{flatDetails?.wing || '-'}</strong></div>
+              <div className="rounded-lg bg-slate-50 p-3"><span className="block text-xs font-bold uppercase text-slate-500">Floor</span><strong className="mt-1 block text-slate-900">{flatDetails?.floor_no ?? '-'}</strong></div>
+              <div className="rounded-lg bg-green-50 p-3"><span className="block text-xs font-bold uppercase text-green-700">Status</span><strong className="mt-1 block text-green-800">{flatDetails?.flat_status || 'Assigned'}</strong></div>
+            </div>
+          )}
         </section>
       </div>
 
@@ -228,7 +234,9 @@ const ResidentDashboard = () => {
             <div><h2>Maintenance Preview</h2><p>Latest bills shown here, full page in sidebar.</p></div>
             <button className="resident-pay" onClick={() => navigate('/resident/maintenance')}>View All</button>
           </div>
-          {bills.length ? (
+          {loading ? (
+            <TableSkeleton rows={3} columns={4} />
+          ) : bills.length ? (
             <div style={{ overflowX: 'auto' }}><table className="resident-payments">
               <thead><tr><th>Month</th><th>Amount</th><th>Status</th><th>Actions</th></tr></thead>
               <tbody>{bills.slice(0, 3).map((bill) => (
@@ -257,14 +265,14 @@ const ResidentDashboard = () => {
             <button className="resident-pay" onClick={() => navigate('/resident/complaints')}>View All</button>
           </div>
           <div className="portal-feed">
-            {complaints.slice(0, 3).map((item) => (
+            {loading ? <TableSkeleton rows={3} columns={3} /> : complaints.slice(0, 3).map((item) => (
               <div className="portal-feed-item" key={item.id}>
                 <span className="portal-feed-icon"><MessageSquareWarning size={14} /></span>
                 <div className="portal-feed-main"><strong>{item.title}</strong><span>{fullDate(item.created_at)}</span></div>
                 <span className={`portal-status ${item.status}`}>{String(item.status).replace('_', ' ')}</span>
               </div>
             ))}
-            {!complaints.length && <div className="portal-empty">No complaints raised yet.</div>}
+            {!loading && !complaints.length && <div className="portal-empty">No complaints raised yet.</div>}
           </div>
         </section>
 
@@ -274,7 +282,7 @@ const ResidentDashboard = () => {
             <button className="resident-pay" onClick={() => navigate('/resident/notices')}>View All</button>
           </div>
           <div className="resident-notice-list">
-            {notices.slice(0, 3).map((item) => (
+            {loading ? <TableSkeleton rows={3} columns={2} /> : notices.slice(0, 3).map((item) => (
               <div className="resident-notice-item" key={item.id}>
                 <span className="resident-notice-icon"><Bell size={14} /></span>
                 <div className="resident-notice-main">
@@ -286,7 +294,7 @@ const ResidentDashboard = () => {
                 </div>
               </div>
             ))}
-            {!notices.length && <div className="portal-empty">No notices yet.</div>}
+            {!loading && !notices.length && <div className="portal-empty">No notices yet.</div>}
           </div>
         </section>
       </div>
