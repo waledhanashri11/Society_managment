@@ -5,7 +5,6 @@ import { authAPI } from '../services/api';
 const ForgotPassword = () => {
   const [email, setEmail] = useState('');
   const [message, setMessage] = useState('');
-  const [resetLink, setResetLink] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -13,15 +12,11 @@ const ForgotPassword = () => {
     event.preventDefault();
     setError('');
     setMessage('');
-    setResetLink('');
     setLoading(true);
 
     try {
       const { data } = await authAPI.forgotPassword({ email });
       setMessage(data.message || 'If this email exists, a reset link has been sent.');
-      if (data.resetLink) {
-        setResetLink(data.resetLink);
-      }
     } catch (apiError) {
       setError(apiError.response?.data?.message || 'Could not send reset link.');
     } finally {
@@ -37,12 +32,6 @@ const ForgotPassword = () => {
         <form onSubmit={handleSubmit}>
           {error && <div className="alert alert-danger">{error}</div>}
           {message && <div className="alert alert-success">{message}</div>}
-          {resetLink && (
-            <div className="auth-dev-link">
-              <span>Development reset link:</span>
-              <a href={resetLink}>{resetLink}</a>
-            </div>
-          )}
 
           <div className="mb-3">
             <label className="form-label">Email</label>

@@ -10,15 +10,21 @@ const parseFlatId = (flatId) => {
   return Number.isInteger(numericFlatId) && numericFlatId > 0 ? numericFlatId : null;
 };
 
+const isProduction = process.env.NODE_ENV === 'production';
 const isMissingSmtpValue = (value, placeholder) => !value || value === placeholder || value.includes('your_');
 
+const isSmtpConfigured = () => (
+  process.env.SMTP_HOST &&
+  !isMissingSmtpValue(process.env.SMTP_USER, 'your_real_email@gmail.com') &&
+  !isMissingSmtpValue(process.env.SMTP_PASS, 'your_gmail_app_password')
+);
+
 const sendPasswordResetEmail = async ({ to, name, resetLink }) => {
-  if (
-    !process.env.SMTP_HOST ||
-    isMissingSmtpValue(process.env.SMTP_USER, 'your_real_email@gmail.com') ||
-    isMissingSmtpValue(process.env.SMTP_PASS, 'your_gmail_app_password')
-  ) {
-    console.log(`Password reset link for ${to}: ${resetLink}`);
+  if (!isSmtpConfigured()) {
+    if (!isProduction) {
+      console.log(`Password reset link for ${to}: ${resetLink}`);
+    }
+    console.error('Password reset email was not sent: SMTP is not configured with real credentials.');
     return { sent: false, reason: 'SMTP is not configured with real credentials' };
   }
 
@@ -301,12 +307,15 @@ const forgotPassword = async (req, res) => {
       resetLink
     });
 
-    res.json({
-      message: emailResult.sent
-        ? 'Password reset link sent to your email.'
-        : `${emailResult.reason}. Reset link created for testing.`,
-      resetLink: emailResult.sent ? undefined : resetLink
-    });
+    if (!emailResult.sent) {
+      return res.status(503).json({
+        message: isProduction
+          ? 'Password reset email service is not configured. Please contact support.'
+          : `${emailResult.reason}. Check the backend terminal for the local testing reset link.`
+      });
+    }
+
+    res.json({ message: 'Password reset link sent to your email.' });
   } catch (error) {
     console.error('Forgot password error:', error);
     res.status(500).json({ message: 'Server error' });
