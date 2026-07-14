@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { authAPI, flatAPI } from '../services/api';
+
 import { setToken, setUser } from '../utils/auth';
 
 const Register = () => {
@@ -12,29 +13,30 @@ const Register = () => {
     role: 'resident',
     flat_id: ''
   });
-  const [availableFlats, setAvailableFlats] = useState([]);
-  const [flatsLoading, setFlatsLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
+  const [availableFlats, setAvailableFlats] = useState([]);
+  const [flatsLoading, setFlatsLoading] = useState(false);
   const navigate = useNavigate();
+  const needsFlat = useMemo(() => formData.role === 'resident', [formData.role]);
 
   useEffect(() => {
     const loadAvailableFlats = async () => {
+      if (!needsFlat) return;
+      setFlatsLoading(true);
       try {
         const response = await flatAPI.getAvailable();
-        setAvailableFlats(response.data);
+        setAvailableFlats(response.data?.data || response.data || []);
       } catch (err) {
-        setError('Could not load available flats. Please try again later.');
+        setAvailableFlats([]);
       } finally {
         setFlatsLoading(false);
       }
     };
 
     loadAvailableFlats();
-  }, []);
-
-  const needsFlat = useMemo(() => formData.role === 'resident', [formData.role]);
+  }, [needsFlat]);
 
   const handleChange = (e) => {
     setFormData({
@@ -47,12 +49,6 @@ const Register = () => {
     e.preventDefault();
     setError('');
     setSuccess('');
-
-    if (needsFlat && !formData.flat_id) {
-      setError('Please select an available flat.');
-      return;
-    }
-
     setLoading(true);
 
     try {
@@ -60,8 +56,6 @@ const Register = () => {
       if (!response.data.token || response.data.user?.status === 'pending') {
         setSuccess(response.data.message || 'Registration submitted. Please wait for admin approval.');
         setFormData({ name: '', email: '', phone: '', password: '', role: 'resident', flat_id: '' });
-        const flats = await flatAPI.getAvailable();
-        setAvailableFlats(flats.data);
         return;
       }
 
@@ -174,14 +168,14 @@ const Register = () => {
               )}
             </div>
           )}
-
           <button
             type="submit"
-            className="btn btn-primary w-100"
-            disabled={loading || (needsFlat && (flatsLoading || !availableFlats.length))}
+            className="btn btn-primary w-100 font-bold"
+            disabled={loading}
           >
             Register
           </button>
+
 
           <p className="text-center mt-3">
             Already have an account? <Link to="/login">Login</Link>

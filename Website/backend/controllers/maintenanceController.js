@@ -1,4 +1,6 @@
 const { promisePool } = require('../config/database');
+const fs = require('fs');
+const path = require('path');
 
 const LATE_FEE = 100;
 
@@ -425,9 +427,19 @@ const getBillById = async (req, res) => {
 
 const createPayment = async (req, res) => {
   try {
-    const { billId, paymentMethod, transactionId, amount, screenshotUrl } = req.body;
-    if (!billId || !paymentMethod || !transactionId || !amount) {
-      return sendResponse(res, 400, 'Bill ID, payment method, transaction ID and amount are required');
+    const {
+      billId,
+      paymentMethod = 'UPI',
+      transactionId,
+      utrNumber,
+      amount,
+      screenshotUrl,
+      screenshot,
+      paymentDate
+    } = req.body;
+    const utr = String(utrNumber || transactionId || '').trim();
+    if (!billId || !utr || !amount) {
+      return sendResponse(res, 400, 'Bill ID, UTR number and amount are required');
     }
 
     const [billRows] = await promisePool.query('SELECT * FROM maintenance WHERE id = ?', [billId]);
@@ -440,26 +452,210 @@ const createPayment = async (req, res) => {
       return sendResponse(res, 403, 'You can only access your own bills');
     }
 
-    const [paymentRows] = await promisePool.query('SELECT id FROM payments WHERE bill_id = ? AND transaction_id = ?', [billId, transactionId]);
-    if (paymentRows.length > 0) {
-      return sendResponse(res, 409, 'Duplicate payment transaction', null, ['This transaction ID has already been used']);
+    if (bill.status === 'Paid') {
+      return sendResponse(res, 400, 'This bill is already paid');
     }
+
+    const [paymentRows] = await promisePool.query('SELECT id FROM payments WHERE bill_id = ? AND transaction_id = ?', [billId, utr]);
+    if (paymentRows.length > 0) {
+      return sendResponse(res, 409, 'Duplicate payment transaction', null, ['This UTR number has already been used']);
+    }
+
+    const screenshotPath = savePaymentScreenshot(screenshot || screenshotUrl);
 
     await promisePool.query(
       `INSERT INTO payments (bill_id, payment_method, transaction_id, amount, payment_status, paid_at, screenshot_url)
-       VALUES (?, ?, ?, ?, 'Under Review', NOW(), ?)`,
-      [billId, paymentMethod, transactionId, amount, screenshotUrl || null]
+       VALUES (?, ?, ?, ?, 'Pending Verification', ?, ?)`,
+      [billId, paymentMethod, utr, amount, paymentDate || new Date(), screenshotPath]
     );
 
     await promisePool.query(
-      "UPDATE maintenance SET status = 'Under Review', payment_date = NOW() WHERE id = ?",
-      [billId]
+      "UPDATE maintenance SET status = 'Pending Verification', payment_date = ? WHERE id = ?",
+      [paymentDate || new Date(), billId]
     );
 
-    return sendResponse(res, 201, 'Payment submitted successfully');
+    return sendResponse(res, 201, 'Payment submitted successfully. It is pending admin verification.');
   } catch (error) {
     console.error('Create payment error:', error);
     return sendResponse(res, 500, 'Server error', null, ['Unable to submit payment']);
+  }
+};
+
+const savePaymentScreenshot = (imageData) => {
+  if (!imageData) return null;
+  if (!String(imageData).startsWith('data:image/')) return imageData;
+
+  const match = String(imageData).match(/^data:(image\/(?:png|jpeg|jpg|webp));base64,(.+)$/);
+  if (!match) return null;
+
+  const extension = match[1].includes('png') ? 'png' : match[1].includes('webp') ? 'webp' : 'jpg';
+  const uploadDir = path.join(__dirname, '..', 'uploads', 'payment-screenshots');
+  fs.mkdirSync(uploadDir, { recursive: true });
+
+  const fileName = `payment-${Date.now()}-${Math.round(Math.random() * 1e9)}.${extension}`;
+  fs.writeFileSync(path.join(uploadDir, fileName), Buffer.from(match[2], 'base64'));
+  return `/uploads/payment-screenshots/${fileName}`;
+};
+
+const approvePayment = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const [paymentRows] = await promisePool.query('SELECT * FROM payments WHERE id = ?', [id]);
+    if (paymentRows.length === 0) {
+      return sendResponse(res, 404, 'Payment record not found');
+    }
+
+    const payment = paymentRows[0];
+    const receiptNumber = payment.receipt_number || `RCP-${payment.bill_id}-${Date.now()}`;
+
+    await promisePool.query(
+      `UPDATE payments
+       SET payment_status = 'Paid',
+           verified_by = ?,
+           verified_at = NOW(),
+           rejection_reason = NULL,
+           receipt_number = ?,
+           remarks = COALESCE(remarks, 'Approved by admin'),
+           updated_at = NOW()
+       WHERE id = ?`,
+      [req.user.id, receiptNumber, id]
+    );
+
+    await promisePool.query(
+      `UPDATE maintenance
+       SET status = 'Paid',
+           paid_amount = total_amount,
+           remaining_amount = 0,
+           payment_date = COALESCE(?, NOW()),
+           remarks = CONCAT(COALESCE(remarks, ''), ?),
+           updated_at = NOW()
+       WHERE id = ?`,
+      [payment.paid_at || new Date(), ` Payment approved on ${new Date().toLocaleString('en-IN')}.`, payment.bill_id]
+    );
+
+    return sendResponse(res, 200, 'Payment approved successfully', { receiptNumber });
+  } catch (error) {
+    console.error('Approve payment error:', error);
+    return sendResponse(res, 500, 'Server error', null, ['Unable to approve payment']);
+  }
+};
+
+const rejectPayment = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { rejectionReason, remarks } = req.body;
+    const reason = String(rejectionReason || remarks || '').trim();
+    if (!reason) {
+      return sendResponse(res, 400, 'Rejection reason is required');
+    }
+
+    const [paymentRows] = await promisePool.query('SELECT * FROM payments WHERE id = ?', [id]);
+    if (paymentRows.length === 0) {
+      return sendResponse(res, 404, 'Payment record not found');
+    }
+
+    const payment = paymentRows[0];
+    await promisePool.query(
+      `UPDATE payments
+       SET payment_status = 'Rejected',
+           verified_by = ?,
+           verified_at = NOW(),
+           rejection_reason = ?,
+           remarks = ?,
+           updated_at = NOW()
+       WHERE id = ?`,
+      [req.user.id, reason, reason, id]
+    );
+
+    await promisePool.query(
+      `UPDATE maintenance
+       SET status = 'Rejected',
+           payment_date = NULL,
+           remarks = CONCAT(COALESCE(remarks, ''), ?),
+           updated_at = NOW()
+       WHERE id = ?`,
+      [` Payment rejected: ${reason}.`, payment.bill_id]
+    );
+
+    return sendResponse(res, 200, 'Payment rejected successfully');
+  } catch (error) {
+    console.error('Reject payment error:', error);
+    return sendResponse(res, 500, 'Server error', null, ['Unable to reject payment']);
+  }
+};
+
+const getPendingVerificationPayments = async (req, res) => {
+  try {
+    const [payments] = await promisePool.query(`
+      SELECT p.*, p.transaction_id AS utr_number, p.screenshot_url AS screenshot,
+             m.bill_number, m.title, m.month, m.year, m.due_date, m.total_amount,
+             u.name AS resident_name, f.flat_no
+      FROM payments p
+      JOIN maintenance m ON p.bill_id = m.id
+      JOIN users u ON m.resident_id = u.id
+      JOIN flats f ON m.flat_id = f.id
+      WHERE p.payment_status = 'Pending Verification'
+      ORDER BY p.created_at DESC
+    `);
+    return sendResponse(res, 200, 'Pending verification payments fetched successfully', payments);
+  } catch (error) {
+    console.error('Get pending payments error:', error);
+    return sendResponse(res, 500, 'Server error', null, ['Unable to fetch pending payments']);
+  }
+};
+
+const getPaymentHistory = async (req, res) => {
+  try {
+    const where = req.user.role === 'admin' ? '1 = 1' : 'm.resident_id = ?';
+    const params = req.user.role === 'admin' ? [] : [req.user.id];
+    const [payments] = await promisePool.query(
+      `SELECT p.*, p.transaction_id AS utr_number, p.screenshot_url AS screenshot,
+              m.bill_number, m.title, m.month, m.year, m.due_date, m.total_amount,
+              u.name AS resident_name, f.flat_no
+       FROM payments p
+       JOIN maintenance m ON p.bill_id = m.id
+       JOIN users u ON m.resident_id = u.id
+       JOIN flats f ON m.flat_id = f.id
+       WHERE ${where}
+       ORDER BY p.created_at DESC`,
+      params
+    );
+    return sendResponse(res, 200, 'Payment history fetched successfully', payments);
+  } catch (error) {
+    console.error('Get payment history error:', error);
+    return sendResponse(res, 500, 'Server error', null, ['Unable to fetch payment history']);
+  }
+};
+
+const getPaymentReceipt = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const [payments] = await promisePool.query(
+      `SELECT p.*, p.transaction_id AS utr_number, p.screenshot_url AS screenshot,
+              m.resident_id, m.bill_number, m.title, m.month, m.year, m.due_date, m.total_amount, m.payment_date,
+              u.name AS resident_name, f.flat_no, verifier.name AS verified_by_name
+       FROM payments p
+       JOIN maintenance m ON p.bill_id = m.id
+       JOIN users u ON m.resident_id = u.id
+       JOIN flats f ON m.flat_id = f.id
+       LEFT JOIN users verifier ON verifier.id = p.verified_by
+       WHERE p.id = ?`,
+      [id]
+    );
+    if (payments.length === 0) {
+      return sendResponse(res, 404, 'Payment receipt not found');
+    }
+    const receipt = payments[0];
+    if (req.user.role !== 'admin' && receipt.resident_id !== req.user.id) {
+      return sendResponse(res, 403, 'You can only access your own receipt');
+    }
+    if (receipt.payment_status !== 'Paid') {
+      return sendResponse(res, 400, 'Receipt is available only after payment approval');
+    }
+    return sendResponse(res, 200, 'Payment receipt fetched successfully', receipt);
+  } catch (error) {
+    console.error('Get payment receipt error:', error);
+    return sendResponse(res, 500, 'Server error', null, ['Unable to fetch receipt']);
   }
 };
 
@@ -467,6 +663,14 @@ const updatePayment = async (req, res) => {
   try {
     const { id } = req.params;
     const { paymentStatus, remarks } = req.body;
+    if (paymentStatus === 'Paid') {
+      return approvePayment(req, res);
+    }
+    if (paymentStatus === 'Rejected') {
+      req.body.rejectionReason = remarks || req.body.rejectionReason || 'Rejected by admin';
+      return rejectPayment(req, res);
+    }
+
     const [paymentRows] = await promisePool.query('SELECT * FROM payments WHERE id = ?', [id]);
     if (paymentRows.length === 0) {
       return sendResponse(res, 404, 'Payment record not found');
@@ -479,15 +683,15 @@ const updatePayment = async (req, res) => {
     }
 
     await promisePool.query(
-      'UPDATE payments SET payment_status = ?, updated_at = NOW() WHERE id = ?',
-      [paymentStatus, id]
+      'UPDATE payments SET payment_status = ?, remarks = ?, updated_at = NOW() WHERE id = ?',
+      [paymentStatus, remarks || null, id]
     );
     await promisePool.query(
-      `UPDATE maintenance SET status = ?, remarks = ?,
+      `UPDATE maintenance SET status = ?,
        paid_amount = CASE WHEN ? = 'Paid' THEN total_amount ELSE paid_amount END,
        remaining_amount = CASE WHEN ? = 'Paid' THEN 0 ELSE remaining_amount END
        WHERE id = ?`,
-      [paymentStatus, remarks || null, paymentStatus, paymentStatus, payment.bill_id]
+      [paymentStatus, paymentStatus, paymentStatus, payment.bill_id]
     );
 
     if (paymentStatus === 'Paid') {
@@ -504,7 +708,9 @@ const updatePayment = async (req, res) => {
 const getPayments = async (req, res) => {
   try {
     const [payments] = await promisePool.query(`
-      SELECT p.*, m.total_amount AS total_amount, u.name AS resident_name, f.flat_no
+      SELECT p.*, p.transaction_id AS utr_number, p.screenshot_url AS screenshot,
+             m.bill_number, m.title, m.month, m.year, m.due_date, m.total_amount AS total_amount,
+             u.name AS resident_name, f.flat_no
       FROM payments p
       JOIN maintenance m ON p.bill_id = m.id
       JOIN users u ON m.resident_id = u.id
@@ -631,6 +837,11 @@ module.exports = {
   getBillById,
   createPayment,
   updatePayment,
+  approvePayment,
+  rejectPayment,
+  getPendingVerificationPayments,
+  getPaymentHistory,
+  getPaymentReceipt,
   getPayments,
   markBillPaid,
   sendPaymentReminder,

@@ -132,7 +132,7 @@
 .mm-table td small.mm-late { color: var(--red); }
 .mm-status { display: inline-flex !important; width: fit-content; border-radius: 99px; padding: 4px 8px; font-size: 9px !important; font-weight: 700; line-height: 1; white-space: nowrap; }
 .mm-status-paid { color: #027a48 !important; background: #ecfdf3; }
-.mm-status-pending, .mm-status-under-review { color: #b54708 !important; background: #fff6e8; }
+.mm-status-pending, .mm-status-under-review, .mm-status-pending-verification { color: #b54708 !important; background: #fff6e8; }
 .mm-status-rejected, .mm-status-overdue, .mm-status-cancelled { color: #b42318 !important; background: #fef3f2; }
 
 .mm-category-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 11px; }

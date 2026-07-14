@@ -287,7 +287,6 @@ const updateProfile = async (req, res) => {
 const getReportSummary = async (req, res) => {
   try {
     const userId = req.user.id;
-    const reportColumns = await maintenanceReportColumns();
 
     const [userRows] = await promisePool.query(
       `SELECT f.flat_no, f.wing, f.floor_no
@@ -297,23 +296,12 @@ const getReportSummary = async (req, res) => {
       [userId]
     );
 
-    if (!reportColumns) {
-      return res.json({
-        flat: userRows[0] || null,
-        totalBills: 0,
-        totalPaidAmount: 0,
-        totalPendingAmount: 0,
-        totalPenaltyAmount: 0,
-        currentMonthStatus: 'No Bill'
-      });
-    }
-
     const [summaryRows] = await promisePool.query(
       `SELECT
          COUNT(*) AS total_bills,
-         COALESCE(SUM(CASE WHEN status = 'Paid' THEN ${reportColumns.paid} ELSE 0 END), 0) AS total_paid_amount,
-         COALESCE(SUM(CASE WHEN status != 'Paid' THEN ${reportColumns.remaining} ELSE 0 END), 0) AS total_pending_amount,
-         COALESCE(SUM(${reportColumns.penalty}), 0) AS total_penalty_amount
+         COALESCE(SUM(paid_amount), 0) AS total_paid_amount,
+         COALESCE(SUM(remaining_amount), 0) AS total_pending_amount,
+         COALESCE(SUM(penalty_amount), 0) AS total_penalty_amount
        FROM maintenance
        WHERE resident_id = ?`,
       [userId]
@@ -394,36 +382,34 @@ const getReportMaintenance = async (req, res) => {
 
 const getSocietyReportSummary = async (req, res) => {
   try {
-    const reportColumns = await maintenanceReportColumns();
     const expenseColumns = await getTableColumns('maintenance_expenses');
     const { month, year } = req.query;
     const billWhere = ['1 = 1'];
     const billParams = [];
-    addMonthYearFilters(billWhere, billParams, 'due_date', month, year);
+    addMonthYearFilters(billWhere, billParams, 'm.due_date', month, year);
 
     const expenseWhere = ['1 = 1'];
     const expenseParams = [];
     addMonthYearFilters(expenseWhere, expenseParams, 'expense_date', month, year);
 
-    const [billRows] = reportColumns ? await promisePool.query(
+    const [billRows] = await promisePool.query(
       `SELECT
          COUNT(*) AS total_bills,
-         SUM(CASE WHEN status = 'Paid' THEN 1 ELSE 0 END) AS paid_bills,
-         SUM(CASE WHEN status != 'Paid' THEN 1 ELSE 0 END) AS pending_bills,
-         SUM(CASE WHEN status != 'Paid' AND due_date < CURRENT_DATE THEN 1 ELSE 0 END) AS overdue_bills,
-         COALESCE(SUM(CASE WHEN status = 'Paid' THEN ${reportColumns.paid} ELSE 0 END), 0) AS total_collection,
-         COALESCE(SUM(${reportColumns.total}), 0) AS total_billable
-       FROM maintenance
+         SUM(CASE WHEN m.status = 'Paid' THEN 1 ELSE 0 END) AS paid_bills,
+         SUM(CASE WHEN m.status = 'Partial' THEN 1 ELSE 0 END) AS partial_bills,
+         SUM(CASE WHEN m.status = 'Pending' OR m.status = 'Overdue' THEN 1 ELSE 0 END) AS pending_bills,
+         SUM(CASE WHEN m.status = 'Overdue' OR (m.status != 'Paid' AND m.due_date < CURRENT_DATE) THEN 1 ELSE 0 END) AS overdue_bills,
+         COALESCE(SUM(m.paid_amount), 0) AS total_collection,
+         COALESCE(SUM(m.remaining_amount), 0) AS total_pending,
+         COALESCE(SUM(m.total_amount), 0) AS total_billable
+       FROM maintenance m
+       JOIN users u
+         ON u.id = m.resident_id
+        AND u.role = 'resident'
+        AND COALESCE(u.status, 'approved') = 'approved'
        WHERE ${billWhere.join(' AND ')}`,
       billParams
-    ) : [[{
-      total_bills: 0,
-      paid_bills: 0,
-      pending_bills: 0,
-      overdue_bills: 0,
-      total_collection: 0,
-      total_billable: 0
-    }]];
+    );
 
     const [expenseRows] = expenseColumns.length ? await promisePool.query(
       `SELECT COALESCE(SUM(amount), 0) AS total_expenses
@@ -443,7 +429,7 @@ const getSocietyReportSummary = async (req, res) => {
       netBalance: totalCollection - totalExpenses,
       collectionRate: totalBillable > 0 ? Math.round((totalCollection / totalBillable) * 100) : 0,
       paidBillsCount: Number(bills.paid_bills || 0),
-      pendingBillsCount: Number(bills.pending_bills || 0),
+      pendingBillsCount: Number(bills.pending_bills || 0) + Number(bills.partial_bills || 0),
       overdueBillsCount: Number(bills.overdue_bills || 0)
     });
   } catch (error) {
@@ -612,7 +598,10 @@ const getAllMaintenanceReport = async (req, res) => {
               m.status AS payment_status,
               m.status
        FROM maintenance m
-       LEFT JOIN users u ON u.id = m.resident_id
+       JOIN users u
+         ON u.id = m.resident_id
+        AND u.role = 'resident'
+        AND COALESCE(u.status, 'approved') = 'approved'
        LEFT JOIN flats f ON f.id = m.flat_id
        WHERE ${where.join(' AND ')}
        ORDER BY year DESC, month DESC, f.wing, f.floor_no, f.flat_no, u.name`,
@@ -622,6 +611,27 @@ const getAllMaintenanceReport = async (req, res) => {
     res.json(rows);
   } catch (error) {
     console.error('Resident all maintenance report error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+const getAllComplaintsReport = async (req, res) => {
+  try {
+    const [rows] = await promisePool.query(
+      `SELECT c.id, c.title, c.description, c.status, c.reply, c.created_at,
+              u.name AS user_name, u.email AS user_email,
+              f.flat_no, f.wing, f.floor_no
+       FROM complaints c
+       JOIN users u
+         ON u.id = c.user_id
+        AND u.role = 'resident'
+        AND COALESCE(u.status, 'approved') = 'approved'
+       LEFT JOIN flats f ON f.id = u.flat_id
+       ORDER BY c.created_at DESC`
+    );
+    res.json(rows);
+  } catch (error) {
+    console.error('Resident all complaints report error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 };
@@ -641,4 +651,5 @@ module.exports = {
   getReportExpenses,
   getMembersMaintenanceReport,
   getAllMaintenanceReport,
+  getAllComplaintsReport,
 };

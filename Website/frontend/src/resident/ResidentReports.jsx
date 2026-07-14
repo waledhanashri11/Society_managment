@@ -3,7 +3,7 @@ import {
   AlertTriangle, CheckCircle2, Download, FileBarChart, FileSpreadsheet,
   IndianRupee, MessageSquareWarning, RefreshCw, WalletCards
 } from 'lucide-react';
-import { complaintAPI, residentAPI } from '../services/api';
+import { residentAPI } from '../services/api';
 import { CardSkeleton, TableSkeleton } from '../components/Skeletons';
 
 const money = (value) => `Rs. ${Number(value || 0).toLocaleString('en-IN')}`;
@@ -17,9 +17,7 @@ const isOpen = (status) => !isPaid(status) && statusKey(status) !== 'no bill';
 const ResidentReports = () => {
   const currentYear = new Date().getFullYear();
   const [filters, setFilters] = useState({ month: '', year: String(currentYear), status: '' });
-  const [summary, setSummary] = useState({});
-  const [myBills, setMyBills] = useState([]);
-  const [membersMaintenance, setMembersMaintenance] = useState([]);
+  const [bills, setBills] = useState([]);
   const [societySummary, setSocietySummary] = useState({});
   const [expenses, setExpenses] = useState([]);
   const [complaints, setComplaints] = useState([]);
@@ -43,20 +41,16 @@ const ResidentReports = () => {
     setError('');
 
     const results = await Promise.allSettled([
-      residentAPI.getReportSummary(),
-      residentAPI.getReportMaintenance(maintenanceParams),
       residentAPI.getSocietyReportSummary(params),
       residentAPI.getReportExpenses(params),
-      residentAPI.getMembersMaintenanceReport(maintenanceParams),
-      complaintAPI.getUserComplaints()
+      residentAPI.getAllMaintenanceReport(maintenanceParams),
+      residentAPI.getComplaintsReport()
     ]);
 
-    if (results[0].status === 'fulfilled') setSummary(results[0].value.data || {});
-    if (results[1].status === 'fulfilled') setMyBills(results[1].value.data || []);
-    if (results[2].status === 'fulfilled') setSocietySummary(results[2].value.data || {});
-    if (results[3].status === 'fulfilled') setExpenses(results[3].value.data || []);
-    if (results[4].status === 'fulfilled') setMembersMaintenance(results[4].value.data || []);
-    if (results[5].status === 'fulfilled') setComplaints(results[5].value.data || []);
+    if (results[0].status === 'fulfilled') setSocietySummary(results[0].value.data || {});
+    if (results[1].status === 'fulfilled') setExpenses(results[1].value.data || []);
+    if (results[2].status === 'fulfilled') setBills(results[2].value.data || []);
+    if (results[3].status === 'fulfilled') setComplaints(results[3].value.data || []);
 
     if (results.some((result) => result.status === 'rejected')) {
       setError('Some report data could not be loaded. Please refresh after the backend/database is ready.');
@@ -75,34 +69,52 @@ const ResidentReports = () => {
     return complaints.filter((complaint) => {
       const created = complaint.created_at ? new Date(complaint.created_at) : null;
       if (!created || Number.isNaN(created.getTime())) return true;
-      if (filters.month && created.getMonth() + 1 !== Number(filters.month)) return false;
-      if (filters.year && created.getFullYear() !== Number(filters.year)) return false;
+      if (filters.month && created.getUTCMonth() + 1 !== Number(filters.month)) return false;
+      if (filters.year && created.getUTCFullYear() !== Number(filters.year)) return false;
       return true;
     });
   }, [complaints, filters.month, filters.year]);
+
+  const filteredBills = useMemo(() => {
+    return bills.filter((bill) => {
+      if (!String(bill.resident_name || '').trim()) return false;
+      if (!String(bill.flat_no || '').trim()) return false;
+      const billStatus = bill.payment_status || bill.status;
+      if (filters.status && statusKey(billStatus) !== statusKey(filters.status)) return false;
+      return true;
+    });
+  }, [bills, filters.status]);
+
+  const filteredExpenses = expenses;
 
   const reports = useMemo(() => {
     const resolvedComplaints = filteredComplaints.filter((item) => item.status === 'resolved').length;
     const pendingComplaints = filteredComplaints.filter((item) => item.status === 'pending').length;
     const inProgressComplaints = filteredComplaints.filter((item) => item.status === 'in_progress').length;
-    const paidBills = membersMaintenance.reduce((sum, item) => sum + Number(item.maintenance_status === 'Paid' ? item.total_bills || 0 : 0), 0);
-    const pendingBills = membersMaintenance.reduce((sum, item) => sum + Number(isOpen(item.maintenance_status) ? item.total_bills || 0 : 0), 0);
+    const totalCollection = filteredBills
+      .filter((bill) => isPaid(bill.payment_status || bill.status))
+      .reduce((sum, bill) => sum + Number(bill.paid_amount || bill.total_amount || bill.amount || 0), 0);
+    const pendingDues = filteredBills
+      .filter((bill) => isOpen(bill.payment_status || bill.status))
+      .reduce((sum, bill) => sum + Number(bill.remaining_amount || bill.total_amount || bill.amount || 0), 0);
+    const totalBillable = filteredBills.reduce((sum, bill) => sum + Number(bill.total_amount || bill.amount || 0), 0);
+    const totalExpenses = filteredExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
 
     return {
-      totalCollection: Number(societySummary.totalSocietyCollection || 0),
-      pendingDues: Number(summary.totalPendingAmount || 0),
-      totalExpenses: Number(societySummary.totalSocietyExpenses || 0),
-      netBalance: Number(societySummary.netBalance || 0),
-      collectionRate: Number(societySummary.collectionRate || 0),
+      totalCollection,
+      pendingDues,
+      totalExpenses,
+      netBalance: totalCollection - totalExpenses,
+      collectionRate: totalBillable > 0 ? Math.round((totalCollection / totalBillable) * 100) : Number(societySummary.collectionRate || 0),
       totalComplaints: filteredComplaints.length,
       resolvedComplaints,
       pendingComplaints,
       inProgressComplaints,
-      paidBills: Number(societySummary.paidBillsCount || paidBills || 0),
-      pendingBills: Number(societySummary.pendingBillsCount || pendingBills || 0),
-      overdueBills: Number(societySummary.overdueBillsCount || 0)
+      paidBills: filteredBills.filter((bill) => isPaid(bill.payment_status || bill.status)).length,
+      pendingBills: filteredBills.filter((bill) => isOpen(bill.payment_status || bill.status)).length,
+      overdueBills: filteredBills.filter((bill) => isOpen(bill.payment_status || bill.status) && bill.due_date && new Date(bill.due_date) < new Date()).length
     };
-  }, [filteredComplaints, membersMaintenance, societySummary, summary.totalPendingAmount]);
+  }, [filteredBills, filteredComplaints, filteredExpenses, societySummary.collectionRate]);
 
   const downloadCsv = () => {
     const rows = [
@@ -113,18 +125,12 @@ const ResidentReports = () => {
       ['Net Balance', reports.netBalance],
       [],
       ['Maintenance Report'],
-      ['Resident', 'Flat', 'Wing', 'Floor', 'Total Bills', 'Paid Amount', 'Pending Amount', 'Penalty', 'Status'],
-      ...membersMaintenance.map((item) => [
-        item.name, item.flat_no, item.wing, item.floor_no, item.total_bills,
-        item.paid_amount, item.pending_amount, item.penalty_amount, item.maintenance_status
-      ]),
-      [],
-      ['My Bills'],
-      ['Month', 'Year', 'Title', 'Base Amount', 'Penalty', 'Total Amount', 'Paid Amount', 'Remaining Amount', 'Due Date', 'Payment Date', 'Status'],
-      ...myBills.map((bill) => [
-        monthName(bill.month), bill.year, bill.title, bill.amount, bill.penalty_amount,
-        bill.total_amount, bill.paid_amount, bill.remaining_amount,
-        fullDate(bill.due_date), fullDate(bill.payment_date), bill.status
+      ['Resident', 'Flat', 'Month', 'Year', 'Title', 'Base Amount', 'Penalty', 'Total Amount', 'Paid Amount', 'Remaining Amount', 'Due Date', 'Payment Date', 'Status'],
+      ...filteredBills.map((bill) => [
+        bill.resident_name, bill.flat_no, monthName(bill.month), bill.year, bill.title,
+        bill.amount, bill.penalty_amount, bill.total_amount, bill.paid_amount,
+        bill.remaining_amount, fullDate(bill.due_date), fullDate(bill.payment_date),
+        bill.payment_status || bill.status
       ]),
       [],
       ['Expenses'],
@@ -156,19 +162,19 @@ const ResidentReports = () => {
       .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:16px 0}
       .card{border:1px solid #dfe5ee;border-radius:8px;padding:10px}.card span{display:block;color:#667085;font-size:11px}.card strong{font-size:16px}
       </style></head><body>
-      <h1>Resident Reports</h1>
+      <h1>Reports & Analytics</h1>
       <div class="cards">
         <div class="card"><span>Total Collection</span><strong>${money(reports.totalCollection)}</strong></div>
-        <div class="card"><span>My Pending Dues</span><strong>${money(reports.pendingDues)}</strong></div>
+        <div class="card"><span>Pending Dues</span><strong>${money(reports.pendingDues)}</strong></div>
         <div class="card"><span>Expenses</span><strong>${money(reports.totalExpenses)}</strong></div>
         <div class="card"><span>Net Balance</span><strong>${money(reports.netBalance)}</strong></div>
       </div>
       <h2>Maintenance Report</h2>
-      <table><thead><tr><th>Resident</th><th>Flat</th><th>Total Bills</th><th>Paid</th><th>Pending</th><th>Status</th></tr></thead>
-      <tbody>${membersMaintenance.map((item) => `<tr><td>${item.name || ''}</td><td>${item.flat_no || ''}</td><td>${item.total_bills || 0}</td><td>${money(item.paid_amount)}</td><td>${money(item.pending_amount)}</td><td>${item.maintenance_status || ''}</td></tr>`).join('')}</tbody></table>
+      <table><thead><tr><th>Resident</th><th>Flat</th><th>Month</th><th>Total</th><th>Paid</th><th>Remaining</th><th>Status</th></tr></thead>
+      <tbody>${filteredBills.map((bill) => `<tr><td>${bill.resident_name || ''}</td><td>${bill.flat_no || ''}</td><td>${monthName(bill.month)} ${bill.year || ''}</td><td>${money(bill.total_amount)}</td><td>${money(bill.paid_amount)}</td><td>${money(bill.remaining_amount)}</td><td>${bill.payment_status || bill.status || ''}</td></tr>`).join('')}</tbody></table>
       <h2>Expenses</h2>
       <table><thead><tr><th>Expense</th><th>Category</th><th>Amount</th><th>Date</th></tr></thead>
-      <tbody>${expenses.map((expense) => `<tr><td>${expense.expense_title || ''}</td><td>${expense.category || ''}</td><td>${money(expense.amount)}</td><td>${fullDate(expense.date)}</td></tr>`).join('')}</tbody></table>
+      <tbody>${filteredExpenses.map((expense) => `<tr><td>${expense.expense_title || ''}</td><td>${expense.category || ''}</td><td>${money(expense.amount)}</td><td>${fullDate(expense.date)}</td></tr>`).join('')}</tbody></table>
       <script>window.print();</script></body></html>`;
     const printWindow = window.open('', '_blank', 'width=1000,height=750');
     if (!printWindow) return;
@@ -179,7 +185,7 @@ const ResidentReports = () => {
   return (
     <div className="portal-module">
       <div className="portal-page-title">
-        <div><h1>Reports & Analytics</h1><p>Read-only financial, expense and complaint reports.</p></div>
+        <div><h1>Reports & Analytics</h1><p>Admin-wide financial, expense and complaint reports.</p></div>
         <div className="flex flex-wrap gap-2">
           <button className="portal-light-btn" onClick={downloadPdf}><Download size={15} /> PDF</button>
           <button className="portal-light-btn" onClick={downloadCsv}><FileSpreadsheet size={15} /> CSV</button>
@@ -197,10 +203,10 @@ const ResidentReports = () => {
 
       {loading ? <CardSkeleton count={4} /> : <div className="portal-kpis">
         <div className="portal-kpi green"><span>Total Collection</span><strong>{money(reports.totalCollection)}</strong><small>{reports.paidBills} paid bills</small><div className="portal-kpi-icon"><IndianRupee size={18} /></div></div>
-        <div className="portal-kpi orange"><span>My Pending Dues</span><strong>{money(reports.pendingDues)}</strong><small>{summary.totalBills || 0} my bills</small><div className="portal-kpi-icon"><WalletCards size={18} /></div></div>
+        <div className="portal-kpi orange"><span>Pending Dues</span><strong>{money(reports.pendingDues)}</strong><small>{reports.pendingBills} bills awaiting payment</small><div className="portal-kpi-icon"><WalletCards size={18} /></div></div>
         <div className="portal-kpi red"><span>Total Expenses</span><strong>{money(reports.totalExpenses)}</strong><small>Society spending</small><div className="portal-kpi-icon"><AlertTriangle size={18} /></div></div>
         <div className="portal-kpi green"><span>Net Balance</span><strong>{money(reports.netBalance)}</strong><small>{reports.collectionRate}% collection rate</small><div className="portal-kpi-icon"><CheckCircle2 size={18} /></div></div>
-        <div className="portal-kpi"><span>Total Complaints</span><strong>{reports.totalComplaints}</strong><small>My requests</small><div className="portal-kpi-icon"><MessageSquareWarning size={18} /></div></div>
+        <div className="portal-kpi"><span>Total Complaints</span><strong>{reports.totalComplaints}</strong><small>All resident requests</small><div className="portal-kpi-icon"><MessageSquareWarning size={18} /></div></div>
         <div className="portal-kpi green"><span>Resolved</span><strong>{reports.resolvedComplaints}</strong><small>Completed complaints</small><div className="portal-kpi-icon"><CheckCircle2 size={18} /></div></div>
       </div>}
 
@@ -218,28 +224,15 @@ const ResidentReports = () => {
       </section>
 
       <section className="portal-panel portal-table-card mb-4">
-        <div className="portal-panel-head"><div><h2>Maintenance Report</h2><p>Read-only society member maintenance summary.</p></div></div>
+        <div className="portal-panel-head"><div><h2>Maintenance Report</h2><p>All resident maintenance bills.</p></div></div>
         <div className="portal-table-wrap">
           {loading ? <TableSkeleton rows={5} columns={5} /> : (
           <table className="portal-data-table">
-            <thead><tr><th>Resident</th><th>Flat</th><th>Wing</th><th>Floor</th><th>Total Bills</th><th>Paid Amount</th><th>Pending Amount</th><th>Penalty</th><th>Status</th></tr></thead>
-            <tbody>{membersMaintenance.map((item) => <tr key={item.id}><td><strong>{item.name || '-'}</strong></td><td>{item.flat_no || '-'}</td><td>{item.wing || '-'}</td><td>{item.floor_no ?? '-'}</td><td>{item.total_bills || 0}</td><td>{money(item.paid_amount)}</td><td>{money(item.pending_amount)}</td><td>{money(item.penalty_amount)}</td><td><span className={`portal-status ${statusKey(item.maintenance_status).replace(' ', '_')}`}>{item.maintenance_status || 'No Bill'}</span></td></tr>)}</tbody>
+            <thead><tr><th>Resident</th><th>Flat</th><th>Month</th><th>Year</th><th>Title</th><th>Base Amount</th><th>Penalty</th><th>Total</th><th>Paid</th><th>Remaining</th><th>Due Date</th><th>Payment Date</th><th>Status</th></tr></thead>
+            <tbody>{filteredBills.map((bill) => <tr key={bill.id}><td><strong>{bill.resident_name || '-'}</strong></td><td>{bill.flat_no || '-'}</td><td>{monthName(bill.month)}</td><td>{bill.year || '-'}</td><td>{bill.title || 'Maintenance Bill'}</td><td>{money(bill.amount)}</td><td>{money(bill.penalty_amount)}</td><td>{money(bill.total_amount)}</td><td>{money(bill.paid_amount)}</td><td>{money(bill.remaining_amount)}</td><td>{fullDate(bill.due_date)}</td><td>{fullDate(bill.payment_date)}</td><td><span className={`portal-status ${statusKey(bill.payment_status || bill.status).replace(' ', '_')}`}>{bill.payment_status || bill.status}</span></td></tr>)}</tbody>
           </table>
           )}
-          {!loading && !membersMaintenance.length && <div className="portal-empty">No report data found.</div>}
-        </div>
-      </section>
-
-      <section className="portal-panel portal-table-card mb-4">
-        <div className="portal-panel-head"><div><h2>My Bill Details</h2><p>Only your logged-in account history is shown.</p></div></div>
-        <div className="portal-table-wrap">
-          {loading ? <TableSkeleton rows={5} columns={5} /> : (
-          <table className="portal-data-table">
-            <thead><tr><th>Month</th><th>Year</th><th>Title</th><th>Base Amount</th><th>Penalty</th><th>Total</th><th>Paid</th><th>Remaining</th><th>Due Date</th><th>Payment Date</th><th>Status</th></tr></thead>
-            <tbody>{myBills.map((bill) => <tr key={bill.id}><td>{monthName(bill.month)}</td><td>{bill.year || '-'}</td><td>{bill.title || 'Maintenance Bill'}</td><td>{money(bill.amount)}</td><td>{money(bill.penalty_amount)}</td><td>{money(bill.total_amount)}</td><td>{money(bill.paid_amount)}</td><td>{money(bill.remaining_amount)}</td><td>{fullDate(bill.due_date)}</td><td>{fullDate(bill.payment_date)}</td><td><span className={`portal-status ${statusKey(bill.status).replace(' ', '_')}`}>{bill.status}</span></td></tr>)}</tbody>
-          </table>
-          )}
-          {!loading && !myBills.length && <div className="portal-empty">No report data found.</div>}
+          {!loading && !filteredBills.length && <div className="portal-empty">No report data found.</div>}
         </div>
       </section>
 
@@ -258,7 +251,7 @@ const ResidentReports = () => {
         </section>
 
         <section className="portal-panel">
-          <div className="portal-panel-head"><div><h2>Complaint Statistics</h2><p>Status split for your complaints.</p></div></div>
+          <div className="portal-panel-head"><div><h2>Complaint Statistics</h2><p>Status split for all complaints.</p></div></div>
           {loading ? <CardSkeleton count={3} /> : <div className="portal-status-summary">
             <div><span>Pending</span><strong>{reports.pendingComplaints}</strong></div>
             <div><span>In Progress</span><strong>{reports.inProgressComplaints}</strong></div>

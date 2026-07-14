@@ -16,6 +16,7 @@ const {
   getReportExpenses,
   getMembersMaintenanceReport,
   getAllMaintenanceReport,
+  getAllComplaintsReport,
 } = require('../controllers/residentController');
 
 router.get('/dashboard', auth, getDashboard);
@@ -27,6 +28,7 @@ router.get('/reports/society-summary', auth, getSocietyReportSummary);
 router.get('/reports/expenses', auth, getReportExpenses);
 router.get('/reports/members-maintenance', auth, getMembersMaintenanceReport);
 router.get('/reports/all-maintenance', auth, getAllMaintenanceReport);
+router.get('/reports/complaints', auth, getAllComplaintsReport);
 router.get('/maintenance', auth, getMaintenance);
 router.get('/complaints', auth, getComplaints);
 router.get('/visitors', auth, getVisitors);

@@ -35,7 +35,7 @@ const monthName = (month) =>
 const csvEscape = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
 const statusKey = (status) => String(status || '').toLowerCase();
 const isPaid = (status) => statusKey(status) === 'paid';
-const isOpen = (status) => !isPaid(status);
+const isOpen = (status) => !isPaid(status) && statusKey(status) !== 'no bill';
 
 const Reports = () => {
   const currentYear = new Date().getFullYear();
@@ -90,6 +90,7 @@ const Reports = () => {
 
   const matchesMonthYear = useCallback((value, fallbackMonth, fallbackYear) => {
     const date = value ? new Date(value) : null;
+
     const hasValidDate = date && !Number.isNaN(date.getTime());
 
     const rowMonth = hasValidDate
@@ -143,6 +144,7 @@ const Reports = () => {
   }, [expenses, matchesMonthYear]);
 
   const reports = useMemo(() => {
+
     const totalCollection = filteredBills
       .filter((bill) => isPaid(bill.payment_status || bill.status))
       .reduce(
@@ -196,6 +198,7 @@ const Reports = () => {
       pendingComplaints,
       inProgressComplaints,
       totalBills: filteredBills.length,
+
       paidBills: filteredBills.filter((bill) =>
         isPaid(bill.payment_status || bill.status)
       ).length,

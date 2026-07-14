@@ -13,6 +13,11 @@ const {
   getBillById,
   createPayment,
   updatePayment,
+  approvePayment,
+  rejectPayment,
+  getPendingVerificationPayments,
+  getPaymentHistory,
+  getPaymentReceipt,
   getPayments,
   markBillPaid,
   sendPaymentReminder,
@@ -48,6 +53,11 @@ router.get('/bills/:id', auth, getBillById);
 router.put('/bills/:id/mark-paid', auth, adminAuth, markBillPaid);
 router.post('/bills/:id/reminder', auth, adminAuth, sendPaymentReminder);
 router.post('/payments', auth, createPayment);
+router.get('/payments/pending-verification', auth, adminAuth, getPendingVerificationPayments);
+router.get('/payments/history', auth, getPaymentHistory);
+router.get('/payments/:id/receipt', auth, getPaymentReceipt);
+router.put('/payments/:id/approve', auth, adminAuth, approvePayment);
+router.put('/payments/:id/reject', auth, adminAuth, rejectPayment);
 router.put('/payments/:id', auth, adminAuth, updatePayment);
 router.get('/payments', auth, adminAuth, getPayments);
 router.get('/reports', auth, adminAuth, getReports);
