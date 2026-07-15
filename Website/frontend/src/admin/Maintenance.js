@@ -6,6 +6,7 @@ import {
   RefreshCcw, Search, SlidersHorizontal, TrendingUp, Wallet,
   X
 } from 'lucide-react';
+import { useLocation } from 'react-router-dom';
 import { maintenanceAPI } from '../services/api';
 import './maintenance.css';
 
@@ -24,6 +25,7 @@ const statusClass = (status = '') => {
   const key = status.toLowerCase().replace(/\s/g, '-');
   return `mm-status mm-status-${key}`;
 };
+const cycleNumber = (year, month) => Number(year) * 12 + Number(month);
 const backendOrigin = (process.env.REACT_APP_API_URL || 'http://localhost:5000/api').replace(/\/api\/?$/, '').replace(/\/$/, '');
 const fileUrl = (value) => {
   if (!value) return '';
@@ -90,6 +92,7 @@ const Maintenance = () => {
   const [modal, setModal] = useState(null);
   const [selected, setSelected] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [viewingScreenshot, setViewingScreenshot] = useState('');
   const current = new Date();
   
   const [cycleForm, setCycleForm] = useState({ month: current.getMonth() + 1, year: current.getFullYear() });
@@ -97,7 +100,14 @@ const Maintenance = () => {
   const [categoryForm, setCategoryForm] = useState({ name: '', amount: '', calculationType: 'FIXED', active: true });
   const [expenseForm, setExpenseForm] = useState({ category: 'Repairs', vendor: '', amount: '', expenseDate: new Date().toISOString().slice(0, 10), paymentMethod: 'Bank Transfer', status: 'Paid', description: '' });
   const [payForm, setPayForm] = useState({ paidAmount: '', paymentDate: new Date().toISOString().slice(0, 10) });
-
+  const location = useLocation();
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const tabParam = params.get('tab');
+    if (tabParam) {
+      setTab(tabParam);
+    }
+  }, [location]);
   const notify = (message) => {
     setToast(message);
     window.setTimeout(() => setToast(''), 2800);
@@ -146,13 +156,58 @@ const Maintenance = () => {
     }
   }, [settings]);
 
+  const nextPendingMonthDetails = useMemo(() => {
+    const billsList = Array.isArray(bills) ? bills : [];
+    const generatedCycles = Array.from(
+      new Set(
+        billsList
+          .filter((bill) => bill && bill.year && bill.month && bill.resident_id && bill.flat_id)
+          .map((bill) => Number(bill.year) * 12 + Number(bill.month))
+      )
+    ).sort((a, b) => b - a);
+
+    const now = new Date();
+    const nowYear = now.getFullYear();
+    const nowMonth = now.getMonth() + 1;
+    const nowCycle = nowYear * 12 + nowMonth;
+
+    let nextCycle;
+    if (!generatedCycles.length) {
+      nextCycle = nowCycle;
+    } else {
+      nextCycle = generatedCycles[0] + 1;
+    }
+
+    const nextYear = Math.floor((nextCycle - 1) / 12);
+    const nextMonth = nextCycle - (nextYear * 12);
+    const isFuture = nextCycle > nowCycle;
+
+    return {
+      month: nextMonth,
+      year: nextYear,
+      cycle: nextCycle,
+      isFuture,
+      label: months[nextMonth - 1] ? `${months[nextMonth - 1]} ${nextYear}` : `${nextMonth} ${nextYear}`
+    };
+  }, [bills]);
+
+  useEffect(() => {
+    if (modal === 'generate' && nextPendingMonthDetails) {
+      setCycleForm({
+        month: nextPendingMonthDetails.month,
+        year: nextPendingMonthDetails.year
+      });
+    }
+  }, [modal, nextPendingMonthDetails]);
+
   const calculatedStats = useMemo(() => {
-    const totalResidents = dashboard.summary?.residents || 0;
-    const collected = bills.reduce((sum, bill) => sum + Number(bill.paid_amount || 0), 0);
-    const pending = bills.reduce((sum, bill) => sum + Number(bill.remaining_amount || 0), 0);
-    const overdue = bills.reduce((sum, bill) => {
-      const isOverdue = (bill.payment_status || bill.status) === 'Overdue';
-      return sum + (isOverdue ? Number(bill.remaining_amount || 0) : 0);
+    const billsList = Array.isArray(bills) ? bills : [];
+    const totalResidents = dashboard?.summary?.residents || 0;
+    const collected = billsList.reduce((sum, bill) => sum + Number(bill?.paid_amount || 0), 0);
+    const pending = billsList.reduce((sum, bill) => sum + Number(bill?.remaining_amount || 0), 0);
+    const overdue = billsList.reduce((sum, bill) => {
+      const isOverdue = (bill?.payment_status || bill?.status) === 'Overdue';
+      return sum + (isOverdue ? Number(bill?.remaining_amount || 0) : 0);
     }, 0);
     const totalAmount = collected + pending;
     const collectionPercentage = totalAmount ? Math.round((collected / totalAmount) * 100) : 0;
@@ -160,22 +215,27 @@ const Maintenance = () => {
       collected,
       pending,
       overdue,
-      residents: totalResidents || new Set(bills.map((b) => b.resident_id).filter(Boolean)).size,
+      residents: totalResidents || new Set(billsList.map((b) => b?.resident_id).filter(Boolean)).size,
       collectionPercentage
     };
-  }, [bills, dashboard.summary]);
+  }, [bills, dashboard]);
 
-  const filteredBills = useMemo(() => bills.filter((bill) => {
-    const text = `${bill.bill_number || ''} ${bill.invoice_number || ''} ${bill.resident_name || ''} ${bill.flat_no || ''} ${bill.title || ''}`.toLowerCase();
-    const currentStatus = bill.payment_status || bill.status;
-    const matchesStatus = status === 'All' || currentStatus === status;
-    const matchesMonth = monthFilter === 'All' || Number(bill.month) === Number(monthFilter);
-    const matchesYear = yearFilter === 'All' || Number(bill.year) === Number(yearFilter);
-    return text.includes(query.toLowerCase()) && matchesStatus && matchesMonth && matchesYear;
-  }), [bills, query, status, monthFilter, yearFilter]);
+  const filteredBills = useMemo(() => {
+    const billsList = Array.isArray(bills) ? bills : [];
+    return billsList.filter((bill) => {
+      if (!bill) return false;
+      const text = `${bill.bill_number || ''} ${bill.invoice_number || ''} ${bill.resident_name || ''} ${bill.flat_no || ''} ${bill.title || ''}`.toLowerCase();
+      const currentStatus = bill.payment_status || bill.status;
+      const matchesStatus = status === 'All' || currentStatus === status;
+      const matchesMonth = monthFilter === 'All' || Number(bill.month) === Number(monthFilter);
+      const matchesYear = yearFilter === 'All' || Number(bill.year) === Number(yearFilter);
+      return text.includes(query.toLowerCase()) && matchesStatus && matchesMonth && matchesYear;
+    });
+  }, [bills, query, status, monthFilter, yearFilter]);
 
   const yearOptions = useMemo(() => {
-    const years = [...new Set(bills.map((bill) => Number(bill.year)).filter(Boolean))].sort((a, b) => b - a);
+    const billsList = Array.isArray(bills) ? bills : [];
+    const years = [...new Set(billsList.map((bill) => bill && Number(bill.year)).filter(Boolean))].sort((a, b) => b - a);
     return years.length ? years : [new Date().getFullYear()];
   }, [bills]);
 
@@ -192,8 +252,10 @@ const Maintenance = () => {
     });
     const byKey = new Map(timeline.map((item) => [item.key, item]));
 
-    if (bills.length) {
-      bills.forEach((bill) => {
+    const billsList = Array.isArray(bills) ? bills : [];
+    if (billsList.length) {
+      billsList.forEach((bill) => {
+        if (!bill) return;
         const monthNumber = Number(bill.month);
         const yearNumber = Number(bill.year);
         let key = '';
@@ -211,7 +273,8 @@ const Maintenance = () => {
       return timeline;
     }
 
-    (dashboard.trend || []).forEach((item) => {
+    (dashboard?.trend || []).forEach((item) => {
+      if (!item) return;
       const monthIndex = shortMonths.findIndex((month) => month.toLowerCase() === String(item.month).slice(0, 3).toLowerCase());
       if (monthIndex < 0) return;
       const bucket = timeline.find((value) => value.month === shortMonths[monthIndex]);
@@ -221,7 +284,7 @@ const Maintenance = () => {
     });
 
     return timeline;
-  }, [bills, dashboard.trend]);
+  }, [bills, dashboard]);
 
   const csvEscape = (value) => {
     const text = value === null || value === undefined ? '' : String(value);
@@ -247,20 +310,26 @@ const Maintenance = () => {
     notify('CSV file downloaded');
   };
 
-  const billRows = (items = filteredBills) => items.map((bill) => ({
-    resident: bill.resident_name || '',
-    flat: bill.flat_no || '',
-    month: months[(Number(bill.month) || 1) - 1],
-    year: bill.year || '',
-    title: bill.title || '',
-    base_amount: Number(bill.amount || 0),
-    penalty: Number(bill.penalty_amount || 0),
-    total_amount: Number(bill.total_amount || 0),
-    paid_amount: Number(bill.paid_amount || 0),
-    remaining_amount: Number(bill.remaining_amount || 0),
-    due_date: date(bill.due_date),
-    status: bill.payment_status || bill.status || ''
-  }));
+  const billRows = (items = filteredBills) => {
+    const itemsList = Array.isArray(items) ? items : [];
+    return itemsList.map((bill) => {
+      if (!bill) return {};
+      return {
+        resident: bill.resident_name || '',
+        flat: bill.flat_no || '',
+        month: months[(Number(bill.month) || 1) - 1] || '',
+        year: bill.year || '',
+        title: bill.title || '',
+        base_amount: Number(bill.amount || 0),
+        penalty: Number(bill.penalty_amount || 0),
+        total_amount: Number(bill.total_amount || 0),
+        paid_amount: Number(bill.paid_amount || 0),
+        remaining_amount: Number(bill.remaining_amount || 0),
+        due_date: date(bill.due_date),
+        status: bill.payment_status || bill.status || ''
+      };
+    });
+  };
 
   const exportCurrentView = () => {
     if (tab === 'bills') return downloadCsv('maintenance-records.csv', billRows());
@@ -299,6 +368,14 @@ const Maintenance = () => {
   };
 
   const printDocument = (type, bill) => {
+    const itemsHtml = bill.items && bill.items.length > 0
+      ? bill.items.map(item => `<tr><th>${item.name}</th><td>${money(item.amount)}</td></tr>`).join('')
+      : '';
+      
+    const prevOutstandingHtml = Number(bill.previous_outstanding || 0) > 0
+      ? `<tr><th>Previous Outstanding</th><td>${money(bill.previous_outstanding)}</td></tr>`
+      : '';
+
     const html = `
       <html>
         <head>
@@ -325,11 +402,13 @@ const Maintenance = () => {
               <tr><th>Title</th><td>${bill.title || ''}</td></tr>
               <tr><th>Due Date</th><td>${date(bill.due_date)}</td></tr>
               <tr><th>Status</th><td>${bill.payment_status || bill.status || ''}</td></tr>
-              <tr><th>Base Amount</th><td>${money(bill.amount)}</td></tr>
+              <tr><th>Base Maintenance Charge</th><td>${money(bill.amount)}</td></tr>
+              ${itemsHtml}
               <tr><th>Penalty Amount</th><td>${money(bill.penalty_amount)}</td></tr>
-              <tr><th class="total">Total Amount</th><td class="total">${money(bill.total_amount)}</td></tr>
+              ${prevOutstandingHtml}
+              <tr><th class="total">Total Amount</th><td class="total">${money(Number(bill.total_amount || 0) + Number(bill.previous_outstanding || 0))}</td></tr>
               <tr><th>Paid Amount</th><td>${money(bill.paid_amount)}</td></tr>
-              <tr><th>Remaining Amount</th><td>${money(bill.remaining_amount)}</td></tr>
+              <tr><th>Remaining Amount</th><td>${money(Number(bill.remaining_amount || 0) + Number(bill.previous_outstanding || 0))}</td></tr>
             </table>
             <p class="muted right">Generated on ${new Date().toLocaleString('en-IN')}</p>
           </div>
@@ -344,6 +423,17 @@ const Maintenance = () => {
     docWindow.document.write(html);
     docWindow.document.close();
     notify('Document printed');
+  };
+
+  const viewBillDetails = async (bill) => {
+    try {
+      const response = await maintenanceAPI.getBillById(bill.id);
+      const fullBill = response.data?.data?.bill || response.data?.bill || bill;
+      setSelected(fullBill);
+      setModal('bill');
+    } catch (err) {
+      notify('Failed to load bill details');
+    }
   };
 
   const markPaid = async (bill) => {
@@ -429,15 +519,77 @@ const Maintenance = () => {
     }
   };
 
+  const validateGenerationCycle = () => {
+    const billsList = Array.isArray(bills) ? bills : [];
+    const generatedCycles = Array.from(
+      new Set(
+        billsList
+          .filter((bill) => bill && bill.year && bill.month && bill.resident_id && bill.flat_id)
+          .map((bill) => cycleNumber(bill.year, bill.month))
+      )
+    ).sort((a, b) => b - a);
+
+    const now = new Date();
+    const nowYear = now.getFullYear();
+    const nowMonth = now.getMonth() + 1;
+    const nowCycle = nowYear * 12 + nowMonth;
+
+    if (!cycleForm || !cycleForm.year || !cycleForm.month) {
+      return 'Invalid selected month or year.';
+    }
+
+    const selectedCycle = cycleNumber(cycleForm.year, cycleForm.month);
+    
+    // Future check
+    if (selectedCycle > nowCycle) {
+      return 'Future maintenance bills cannot be generated.';
+    }
+
+    // Previous months are blocked only after the first bill exists.
+    if (!generatedCycles.length) {
+      return '';
+    }
+
+    const latestCycle = generatedCycles[0];
+    const nextPendingCycle = latestCycle + 1;
+
+    if (selectedCycle === nextPendingCycle) {
+      return '';
+    }
+
+    if (selectedCycle < nextPendingCycle) {
+      if (generatedCycles.includes(selectedCycle)) {
+        const monthName = months[cycleForm.month - 1] || cycleForm.month;
+        return `Maintenance bills for ${monthName} ${cycleForm.year} have already been generated.`;
+      }
+      return 'Previous months cannot be generated.';
+    }
+
+    if (selectedCycle > nextPendingCycle) {
+      const nextPendingYear = Math.floor((nextPendingCycle - 1) / 12);
+      const nextPendingMonth = nextPendingCycle - (nextPendingYear * 12);
+      const nextPendingMonthName = months[nextPendingMonth - 1] || nextPendingMonth;
+      return `${nextPendingMonthName} ${nextPendingYear} maintenance has not been generated yet. Please generate ${nextPendingMonthName} first.`;
+    }
+
+    return '';
+  };
+
   const submitCycle = async (e) => {
     e.preventDefault();
+    const validationMessage = validateGenerationCycle();
+    if (validationMessage) {
+      notify(validationMessage);
+      return;
+    }
+
     setSaving(true);
     try {
-      await maintenanceAPI.generateBills({
+      const res = await maintenanceAPI.generateBills({
         month: Number(cycleForm.month),
         year: Number(cycleForm.year)
       });
-      notify('Monthly bills generated successfully');
+      notify(res.data?.message || 'Monthly bills generated successfully');
       setModal(null);
       await load();
     } catch (err) {
@@ -624,7 +776,7 @@ const Maintenance = () => {
                           {currentStatus !== 'Paid' && (
                             <button className="mm-mini-action green" onClick={() => markPaid(bill)}>Mark Paid</button>
                           )}
-                          <button className="mm-mini-action blue" onClick={() => { setSelected(bill); setModal('bill'); }}>Details</button>
+                          <button className="mm-mini-action blue" onClick={() => viewBillDetails(bill)}>Details</button>
                         </div>
                       </td>
                     </tr>
@@ -703,7 +855,7 @@ const Maintenance = () => {
                   <td>{payment.utr_number || payment.transaction_id}</td>
                   <td>
                     {payment.screenshot_url || payment.screenshot ? (
-                      <button className="mm-mini-action" onClick={() => window.open(fileUrl(payment.screenshot_url || payment.screenshot), '_blank')}>View</button>
+                      <button className="mm-mini-action" onClick={() => setViewingScreenshot(payment.screenshot_url || payment.screenshot)}>View</button>
                     ) : (
                       <span className="text-xs text-slate-400">No file</span>
                     )}
@@ -762,23 +914,38 @@ const Maintenance = () => {
                   <div className="mb-2"><strong>Default Title:</strong> {settings.title}</div>
                   <div className="mb-2"><strong>Fixed Charge:</strong> {money(settings.fixed_amount)}</div>
                   <div className="mb-2"><strong>Due Date Rule:</strong> {settings.due_day}th day of month</div>
-                  <div><strong>Late Fee Penalty:</strong> {settings.late_fee_value}{settings.late_fee_type === 'percentage' ? '%' : ' ₹'} (grace: {settings.grace_days} days)</div>
+                  <div className="mb-2"><strong>Late Fee Penalty:</strong> {settings.late_fee_value}{settings.late_fee_type === 'percentage' ? '%' : ' ₹'} (grace: {settings.grace_days} days)</div>
+                  <hr className="my-2 border-slate-200" style={{ borderColor: '#e2e8f0' }} />
+                  <div className="font-semibold text-indigo-600" style={{ color: '#4f46e5', fontWeight: 600 }}>Next Billing Month: {nextPendingMonthDetails?.label}</div>
                 </div>
+                {validateGenerationCycle() && (
+                  <div className="rounded-lg bg-amber-50 border border-amber-200 text-amber-800 p-3 mb-4 text-xs flex items-center gap-2" style={{ backgroundColor: '#fffbeb', border: '1px solid #fef3c7', color: '#92400e', borderRadius: '0.5rem', padding: '0.75rem', marginBottom: '1rem', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <AlertCircle size={16} />
+                    <span>{validateGenerationCycle()}</span>
+                  </div>
+                )}
                 <div className="mm-form-row">
                   <label className="mm-field">
                     <span>Billing Month</span>
-                    <select value={cycleForm.month} onChange={(e) => setCycleForm({ ...cycleForm, month: e.target.value })}>
-                      {months.map((month, index) => <option value={index + 1} key={month}>{month}</option>)}
+                    <select value={cycleForm.month} onChange={(e) => setCycleForm({ ...cycleForm, month: Number(e.target.value) })}>
+                      {months.map((month, index) => {
+                        const monthVal = index + 1;
+                        return (
+                          <option value={monthVal} key={month}>
+                            {month}
+                          </option>
+                        );
+                      })}
                     </select>
                   </label>
                   <label className="mm-field">
                     <span>Billing Year</span>
-                    <input type="number" min="2020" required value={cycleForm.year} onChange={(e) => setCycleForm({ ...cycleForm, year: e.target.value })} />
+                    <input type="number" min="2020" value={cycleForm.year} onChange={(e) => setCycleForm({ ...cycleForm, year: Number(e.target.value) })} />
                   </label>
                 </div>
                 <div className="mm-form-actions">
                   <button type="button" className="mm-button mm-button-light" onClick={() => setModal(null)}>Cancel</button>
-                  <button className="mm-button mm-button-primary" disabled={saving}>
+                  <button type="submit" className="mm-button mm-button-primary" disabled={saving || Boolean(validateGenerationCycle())}>
                     {saving ? <RefreshCcw className="spin" size={17} /> : <CalendarDays size={17} />}
                     Generate Bills
                   </button>
@@ -850,13 +1017,20 @@ const Maintenance = () => {
         </form>
       </Modal>}
 
-      {modal === 'bill' && selected && <Modal wide title={selected.title || `Bill #${selected.id}`} subtitle={`${selected.resident_name} · Flat ${selected.flat_no}`} onClose={() => setModal(null)}>
-        <div className="mm-bill-preview">
-          <div><span>Base Amount</span><strong>{money(selected.amount)}</strong></div>
+       {modal === 'bill' && selected && <Modal wide title={selected.title || `Bill #${selected.id}`} subtitle={`${selected.resident_name} · Flat ${selected.flat_no}`} onClose={() => setModal(null)}>
+        <div className="mm-bill-preview" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 20px', padding: '15px 20px' }}>
+          <div><span>Base Amount Charge</span><strong>{money(selected.amount)}</strong></div>
+          {selected.items && selected.items.map((item, idx) => (
+            <div key={idx}><span>{item.name}</span><strong>{money(item.amount)}</strong></div>
+          ))}
           <div><span>Penalty Fee</span><strong>{money(selected.penalty_amount)}</strong></div>
-          <div><span>Total amount</span><strong>{money(selected.total_amount)}</strong></div>
+          {Number(selected.previous_outstanding || 0) > 0 && (
+            <div><span>Previous Outstanding</span><strong>{money(selected.previous_outstanding)}</strong></div>
+          )}
+          <hr style={{ gridColumn: '1 / -1', margin: '4px 0', borderColor: '#edf2f7' }} />
+          <div><span>Total amount</span><strong>{money(Number(selected.total_amount) + Number(selected.previous_outstanding || 0))}</strong></div>
           <div><span>Paid amount</span><strong>{money(selected.paid_amount)}</strong></div>
-          <div><span>Remaining amount</span><strong>{money(selected.remaining_amount)}</strong></div>
+          <div><span>Remaining amount</span><strong>{money(Number(selected.remaining_amount) + Number(selected.previous_outstanding || 0))}</strong></div>
           <div><span>Due date</span><strong>{date(selected.due_date)}</strong></div>
           <div><span>Status</span><strong className={statusClass(selected.payment_status || selected.status)}>{selected.payment_status || selected.status}</strong></div>
         </div>
@@ -867,6 +1041,17 @@ const Maintenance = () => {
           {(selected.payment_status || selected.status) !== 'Paid' && <button className="mm-button mm-button-primary" onClick={() => sendReminder(selected)}><Bell size={17} /> Send reminder</button>}
         </div>
       </Modal>}
+
+      {viewingScreenshot && (
+        <Modal title="Payment Receipt" onClose={() => setViewingScreenshot('')}>
+          <div style={{ textAlign: 'center', padding: '15px' }}>
+            <img src={fileUrl(viewingScreenshot)} alt="Payment proof receipt" style={{ maxWidth: '100%', maxHeight: '65vh', objectFit: 'contain', borderRadius: '8px', border: '1px solid var(--portal-line)' }} />
+          </div>
+          <div className="mm-form-actions" style={{ padding: '0 20px 20px', display: 'flex', justifyContent: 'flex-end' }}>
+            <button className="mm-button mm-button-light" onClick={() => setViewingScreenshot('')}>Close</button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 };

@@ -16,7 +16,7 @@ const validateResidentFlat = async (connection, flatId, residentId = null) => {
   }
 
   const [flats] = await connection.query(
-    'SELECT id, owner_id, status FROM flats WHERE id = ? FOR UPDATE',
+    'SELECT id, current_resident_id, status FROM flats WHERE id = ? FOR UPDATE',
     [flatId]
   );
 
@@ -25,7 +25,7 @@ const validateResidentFlat = async (connection, flatId, residentId = null) => {
   }
 
   const flat = flats[0];
-  if (flat.owner_id && Number(flat.owner_id) !== Number(residentId)) {
+  if (flat.current_resident_id && Number(flat.current_resident_id) !== Number(residentId)) {
     return { valid: false, status: 409, message: 'Selected flat is already assigned to another resident' };
   }
 
@@ -44,14 +44,14 @@ const validateResidentFlat = async (connection, flatId, residentId = null) => {
 const releaseResidentFlat = async (connection, residentId, flatId) => {
   if (!flatId) return;
   await connection.query(
-    'UPDATE flats SET owner_id = NULL, status = ? WHERE id = ? AND owner_id = ?',
+    'UPDATE flats SET current_resident_id = NULL, status = ? WHERE id = ? AND current_resident_id = ?',
     ['Available', flatId, residentId]
   );
 };
 
 const occupyResidentFlat = async (connection, residentId, flatId) => {
   await connection.query(
-    'UPDATE flats SET owner_id = ?, status = ? WHERE id = ?',
+    'UPDATE flats SET current_resident_id = ?, status = ? WHERE id = ?',
     [residentId, 'Occupied', flatId]
   );
 };
@@ -300,7 +300,7 @@ const deleteUser = async (req, res) => {
     }
 
     await releaseResidentFlat(connection, id, users[0].flat_id);
-    await connection.query('UPDATE flats SET owner_id = NULL, status = ? WHERE owner_id = ?', ['Available', id]);
+    await connection.query('UPDATE flats SET current_resident_id = NULL, status = ? WHERE current_resident_id = ?', ['Available', id]);
     await connection.query('DELETE FROM users WHERE id = ?', [id]);
 
     await connection.commit();

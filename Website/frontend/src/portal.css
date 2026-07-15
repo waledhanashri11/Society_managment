@@ -362,3 +362,28 @@
   0%, 100% { opacity: 1; }
   50% { opacity: 0.45; }
 }
+
+.portal-notification-badge {
+  position: absolute;
+  right: -2px;
+  top: -2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: #f04438;
+  color: white;
+  font-size: 10px;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid white;
+}
+
+.portal-dropdown button.unread {
+  background: #f4f8fd;
+}
+.portal-dropdown button.unread strong {
+  font-weight: 700;
+}

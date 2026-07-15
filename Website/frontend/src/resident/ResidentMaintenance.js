@@ -14,11 +14,14 @@ const fullDate = (value) => value ? new Date(value).toLocaleDateString('en-IN', 
 const today = () => new Date().toISOString().slice(0, 10);
 const statusClass = (status) => String(status || 'Pending').toLowerCase().replace(/\s+/g, '_');
 
+const SUPPORT_PARTIAL_PAYMENTS = true; // Set to false to disable partial payments
+
 const ResidentMaintenance = () => {
   const user = getUser();
   const [bills, setBills] = useState([]);
   const [paymentSettings, setPaymentSettings] = useState({});
   const [loading, setLoading] = useState(true);
+  const [loadingBill, setLoadingBill] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState('');
   const [showPayment, setShowPayment] = useState(false);
@@ -59,18 +62,30 @@ const ResidentMaintenance = () => {
     underReview: bills.filter((bill) => ['Under Review', 'Pending Verification'].includes(bill.payment_status)).length
   }), [bills, paidBills, pendingBills]);
 
-  const openPayment = (bill = pendingBills[0]) => {
+  const openPayment = async (bill = pendingBills[0]) => {
     if (!bill) return notify('No pending bill to pay');
-    setSelectedBill(bill);
-    setPayment({
-      paymentMethod: 'UPI',
-      transactionId: '',
-      amount: String(bill.remaining_amount || bill.total_amount || ''),
-      screenshotUrl: '',
-      paymentDate: today()
-    });
-    setPaidConfirmed(false);
-    setShowPayment(true);
+    setLoadingBill(true);
+    try {
+      const response = await maintenanceAPI.getBillById(bill.id);
+      const fullBill = response.data?.data?.bill || response.data?.bill || bill;
+      setSelectedBill(fullBill);
+      
+      const totalDue = Number(fullBill.remaining_amount || fullBill.total_amount || 0) + Number(fullBill.previous_outstanding || 0);
+
+      setPayment({
+        paymentMethod: 'UPI',
+        transactionId: '',
+        amount: String(totalDue),
+        screenshotUrl: '',
+        paymentDate: today()
+      });
+      setPaidConfirmed(false);
+      setShowPayment(true);
+    } catch (error) {
+      notify('Failed to load complete bill details');
+    } finally {
+      setLoadingBill(false);
+    }
   };
 
   const closePayment = () => {
@@ -128,6 +143,14 @@ const ResidentMaintenance = () => {
   };
 
   const printDocument = (type, bill) => {
+    const itemsHtml = bill.items && bill.items.length > 0
+      ? bill.items.map(item => `<tr><th>${item.name}</th><td>${money(item.amount)}</td></tr>`).join('')
+      : '';
+      
+    const prevOutstandingHtml = Number(bill.previous_outstanding || 0) > 0
+      ? `<tr><th>Previous Outstanding</th><td>${money(bill.previous_outstanding)}</td></tr>`
+      : '';
+
     const html = `
       <html><head><title>${type}</title><style>
       body{font-family:Arial,sans-serif;padding:32px;color:#172033}.box{max-width:760px;margin:0 auto;border:1px solid #dfe5ee;border-radius:14px;padding:28px}
@@ -142,14 +165,27 @@ const ResidentMaintenance = () => {
       <tr><th>Period</th><td>${monthName(bill.month)} ${bill.year || ''}</td></tr>
       <tr><th>Due Date</th><td>${fullDate(bill.due_date)}</td></tr>
       <tr><th>Status</th><td>${bill.payment_status}</td></tr>
+      <tr><th>Base Maintenance Charge</th><td>${money(bill.amount)}</td></tr>
+      ${itemsHtml}
       <tr><th>Late Fee</th><td>${money(bill.late_fee || bill.penalty_amount)}</td></tr>
-      <tr><th class="total">Total</th><td class="total">${money(bill.total_amount)}</td></tr>
+      ${prevOutstandingHtml}
+      <tr><th class="total">Total Payable</th><td class="total">${money(Number(bill.total_amount || 0) + Number(bill.previous_outstanding || 0))}</td></tr>
       </table><p class="muted right">Generated on ${new Date().toLocaleString('en-IN')}</p>
       </div><script>window.print();</script></body></html>`;
     const docWindow = window.open('', '_blank', 'width=900,height=700');
     if (!docWindow) return notify('Popup blocked. Allow popups to print.');
     docWindow.document.write(html);
     docWindow.document.close();
+  };
+
+  const handlePrint = async (type, bill) => {
+    try {
+      const response = await maintenanceAPI.getBillById(bill.id);
+      const fullBill = response.data?.data?.bill || response.data?.bill || bill;
+      printDocument(type, fullBill);
+    } catch (err) {
+      notify('Failed to load bill details for printing');
+    }
   };
 
   if (loading) {
@@ -205,8 +241,8 @@ const ResidentMaintenance = () => {
                   <td>
                     <div className="resident-bill-actions">
                       {bill.payment_status !== 'Paid' && <button onClick={() => openPayment(bill)}><CreditCard size={11} /> Pay via UPI</button>}
-                      <button onClick={() => printDocument('Maintenance Invoice', bill)}><FileText size={11} /> Invoice</button>
-                      {bill.payment_status === 'Paid' && <button onClick={() => printDocument('Payment Receipt', bill)}><Download size={11} /> Receipt</button>}
+                      <button onClick={() => handlePrint('Maintenance Invoice', bill)}><FileText size={11} /> Invoice</button>
+                      {bill.payment_status === 'Paid' && <button onClick={() => handlePrint('Payment Receipt', bill)}><Download size={11} /> Receipt</button>}
                       {bill.payment_status !== 'Paid' && <button onClick={() => raiseBillDispute(bill)}><MessageSquareWarning size={11} /> Dispute</button>}
                     </div>
                   </td>
@@ -226,7 +262,7 @@ const ResidentMaintenance = () => {
               <div className="portal-modal-head">
                 <div>
                   <h3>Pay via UPI</h3>
-                  <p>{selectedBill.bill_number || `Bill #${selectedBill.id}`} - {money(selectedBill.total_amount)}</p>
+                  <p>{selectedBill.bill_number || `Bill #${selectedBill.id}`} - {money(Number(selectedBill.total_amount || 0) + Number(selectedBill.previous_outstanding || 0))}</p>
                 </div>
               </div>
               <div className="portal-form" style={{ overflowY: 'auto', flex: '1 1 auto', display: 'grid', gap: '13px', padding: '18px 20px 20px' }}>
@@ -247,17 +283,60 @@ const ResidentMaintenance = () => {
                   </div>
                 </div>
 
-                <div className="settings-status-grid portal-field-full">
-                  <div><span>Bill Number</span><strong>{selectedBill.bill_number || `BILL-${selectedBill.id}`}</strong></div>
-                  <div><span>Maintenance Amount</span><strong>{money(selectedBill.remaining_amount || selectedBill.total_amount)}</strong></div>
-                  <div><span>Due Date</span><strong>{fullDate(selectedBill.due_date)}</strong></div>
-                  <div><span>Status</span><strong>{selectedBill.payment_status || 'Pending Payment'}</strong></div>
-                </div>
+                {loadingBill ? (
+                  <div className="portal-field-full" style={{ padding: '20px', textAlign: 'center', color: '#64748b', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '0.5rem' }}>
+                    Loading bill details...
+                  </div>
+                ) : (
+                  <div className="rounded-lg bg-slate-50 p-4 border border-slate-100 text-sm portal-field-full" style={{ background: '#f8fafc', border: '1px solid #e2e8f0', padding: '1rem', borderRadius: '0.5rem', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #edf2f7', paddingBottom: '4px', marginBottom: '4px', fontSize: '0.8rem', fontWeight: 700, color: '#334155' }}>
+                      <span>Bill Details Summary</span>
+                      <span>{selectedBill.bill_number || `BILL-${selectedBill.id}`}</span>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.75rem', color: '#475467' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>Base Maintenance Charge:</span>
+                        <strong>{money(selectedBill.amount)}</strong>
+                      </div>
+                      {selectedBill.items && selectedBill.items.map((item, idx) => (
+                        <div key={idx} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span>{item.name}:</span>
+                          <strong>{money(item.amount)}</strong>
+                        </div>
+                      ))}
+                      {Number(selectedBill.penalty_amount || 0) > 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#b42318' }}>
+                          <span>Late Fee Penalty:</span>
+                          <strong>{money(selectedBill.penalty_amount)}</strong>
+                        </div>
+                      )}
+                      {Number(selectedBill.previous_outstanding || 0) > 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#b42318' }}>
+                          <span>Previous Outstanding Balance:</span>
+                          <strong>{money(selectedBill.previous_outstanding)}</strong>
+                        </div>
+                      )}
+                      <hr style={{ margin: '6px 0', border: 0, borderTop: '1px solid #e2e8f0' }} />
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, color: '#0f172a' }}>
+                        <span>Total Payable Amount:</span>
+                        <strong>{money(Number(selectedBill.total_amount || 0) + Number(selectedBill.previous_outstanding || 0))}</strong>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>Amount Already Paid:</span>
+                        <strong>{money(selectedBill.paid_amount)}</strong>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, color: '#059669' }}>
+                        <span>Remaining Balance Due:</span>
+                        <strong>{money(Number(selectedBill.remaining_amount || 0) + Number(selectedBill.previous_outstanding || 0))}</strong>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {paidConfirmed && (
                   <>
                     <label><span>Payment Method</span><select value={payment.paymentMethod} onChange={(event) => setPayment({ ...payment, paymentMethod: event.target.value })}><option>UPI</option><option>Bank Transfer</option><option>Cash</option><option>Cheque</option></select></label>
-                    <label><span>Amount</span><input type="number" min="1" required value={payment.amount} onChange={(event) => setPayment({ ...payment, amount: event.target.value })} /></label>
+                    <label><span>Amount</span><input type="number" min="1" required readOnly={!SUPPORT_PARTIAL_PAYMENTS} style={{ background: !SUPPORT_PARTIAL_PAYMENTS ? '#f1f5f9' : 'white', cursor: !SUPPORT_PARTIAL_PAYMENTS ? 'not-allowed' : 'text' }} value={payment.amount} onChange={(event) => setPayment({ ...payment, amount: event.target.value })} /></label>
                     <label><span>Payment Date</span><input type="date" required value={payment.paymentDate} onChange={(event) => setPayment({ ...payment, paymentDate: event.target.value })} /></label>
                     <label className="portal-field-full"><span>Transaction / UTR Number</span><input required value={payment.transactionId} onChange={(event) => setPayment({ ...payment, transactionId: event.target.value })} placeholder="UPI UTR / reference number" /></label>
                     <label className="portal-field-full"><span>Payment Screenshot Upload</span><input type="file" accept="image/*" onChange={handleScreenshot} /><small>Optional but recommended.</small></label>

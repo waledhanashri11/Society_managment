@@ -2,20 +2,20 @@ const { promisePool } = require('../config/database');
 
 const DEFAULT_SETTINGS = {
   adminName: 'Admin',
-  societyName: 'Society Management System',
-  address: 'Tower A, Green Avenue Society',
+  societyName: '',
+  address: '',
   email: 'admin@societyhub.com',
-  phone: '+91 98765 43210',
-  maintenanceAmount: '2500',
-  dueDay: '31',
-  lateFee: '150',
+  phone: '',
+  maintenanceAmount: '',
+  dueDay: '',
+  lateFee: '',
   autoReminder: true,
   paymentAlerts: true,
   complaintAlerts: true,
   visitorAlerts: false,
   paymentQrImage: '',
   paymentUpiId: '',
-  paymentNote: 'Scan this QR to pay maintenance, then submit your transaction ID for admin approval.'
+  paymentNote: ''
 };
 
 const parseSettingValue = (value) => {
@@ -32,7 +32,7 @@ const getSettings = async (req, res) => {
   try {
     const [settingsRows] = await promisePool.query(
       'SELECT setting_value FROM app_settings WHERE setting_key = ?',
-      ['admin_settings']
+      [`admin_settings_${req.user.id}`]
     );
 
     const [users] = await promisePool.query(
@@ -46,8 +46,8 @@ const getSettings = async (req, res) => {
     res.json({
       ...DEFAULT_SETTINGS,
       ...savedSettings,
-      adminName: currentUser.name || savedSettings.adminName || DEFAULT_SETTINGS.adminName,
-      email: currentUser.email || savedSettings.email || DEFAULT_SETTINGS.email
+      adminName: currentUser.name || DEFAULT_SETTINGS.adminName,
+      email: currentUser.email || DEFAULT_SETTINGS.email
     });
   } catch (error) {
     console.error('Get settings error:', error);
@@ -67,6 +67,10 @@ const updateSettings = async (req, res) => {
       visitorAlerts: Boolean(req.body.visitorAlerts)
     };
 
+    const { adminName, email } = incomingSettings;
+    delete incomingSettings.adminName;
+    delete incomingSettings.email;
+
     await connection.beginTransaction();
 
     await connection.query(
@@ -74,18 +78,22 @@ const updateSettings = async (req, res) => {
        VALUES (?, ?, ?)
        ON CONFLICT (setting_key)
        DO UPDATE SET setting_value = EXCLUDED.setting_value, updated_by = EXCLUDED.updated_by, updated_at = NOW()`,
-      ['admin_settings', JSON.stringify(incomingSettings), req.user.id]
+      [`admin_settings_${req.user.id}`, JSON.stringify(incomingSettings), req.user.id]
     );
 
-    if (incomingSettings.adminName && incomingSettings.email) {
+    if (adminName && email) {
       await connection.query(
         'UPDATE users SET name = ?, email = ? WHERE id = ? AND role = ?',
-        [incomingSettings.adminName, incomingSettings.email, req.user.id, 'admin']
+        [adminName, email, req.user.id, 'admin']
       );
     }
 
     await connection.commit();
-    res.json(incomingSettings);
+    res.json({
+      ...incomingSettings,
+      adminName,
+      email
+    });
   } catch (error) {
     await connection.rollback();
     console.error('Update settings error:', error);
@@ -97,12 +105,24 @@ const updateSettings = async (req, res) => {
 
 const getPaymentSettings = async (req, res) => {
   try {
+    // Query the most recently updated admin settings to dynamically fetch details
     const [settingsRows] = await promisePool.query(
-      'SELECT setting_value FROM app_settings WHERE setting_key = ?',
-      ['admin_settings']
+      `SELECT setting_value FROM app_settings 
+       WHERE setting_key LIKE 'admin_settings_%' 
+       ORDER BY updated_at DESC LIMIT 1`
     );
 
-    const savedSettings = parseSettingValue(settingsRows[0]?.setting_value);
+    let savedSettings = {};
+    if (settingsRows.length > 0) {
+      savedSettings = parseSettingValue(settingsRows[0]?.setting_value);
+    } else {
+      // Fallback to legacy global settings if no per-admin settings exist
+      const [fallbackRows] = await promisePool.query(
+        'SELECT setting_value FROM app_settings WHERE setting_key = ?',
+        ['admin_settings']
+      );
+      savedSettings = parseSettingValue(fallbackRows[0]?.setting_value);
+    }
 
     res.json({
       societyName: savedSettings.societyName || DEFAULT_SETTINGS.societyName,

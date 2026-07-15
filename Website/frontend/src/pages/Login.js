@@ -26,6 +26,7 @@ const Login = () => {
 
     try {
       const response = await authAPI.login(formData);
+      localStorage.removeItem('adminSettings');
       setToken(response.data.token);
       setUser(response.data.user);
       

@@ -73,8 +73,8 @@ const AdminLayout = () => {
     };
   }, []);
 
-  const loadNotifications = useCallback(() => {
-    if (notificationsLoaded) return;
+  const loadNotifications = useCallback((force = false) => {
+    if (notificationsLoaded && !force) return;
 
     notificationAPI.getAdmin()
       .then(({ data }) => {
@@ -83,14 +83,36 @@ const AdminLayout = () => {
         setNotificationsLoaded(true);
       })
       .catch(() => {
-        setNotifications([
-          { id: 'pending-payments', title: 'Payments overview', message: 'Open maintenance dues', path: '/admin/maintenance' },
-          { id: 'open-complaints', title: 'Complaint dashboard', message: 'Review resident complaints', path: '/admin/complaints' },
-          { id: 'notices', title: 'Notice center', message: 'Create society updates', path: '/admin/notices' }
-        ]);
+        setNotifications([]);
         setNotificationsLoaded(true);
       });
   }, [notificationsLoaded]);
+
+  useEffect(() => {
+    loadNotifications(true);
+  }, [loadNotifications]);
+
+  const handleNotificationClick = (item) => {
+    if (!item.is_read) {
+      notificationAPI.markRead(item.id)
+        .then(() => {
+          setNotifications((prev) => prev.filter((n) => n.id !== item.id));
+          setUnreadCount((prev) => Math.max(0, prev - 1));
+        })
+        .catch((err) => console.error('Failed to mark notification read:', err));
+    }
+    closeMenus();
+    navigate(item.path);
+  };
+
+  const markAllRead = () => {
+    notificationAPI.markAdminRead()
+      .then(() => {
+        setNotifications([]);
+        setUnreadCount(0);
+      })
+      .catch((err) => console.error('Failed to mark all notifications read:', err));
+  };
 
   const handleLogout = () => {
     logout();
@@ -100,9 +122,7 @@ const AdminLayout = () => {
   const toggleMenu = (menuName) => {
     setActiveMenu((current) => (current === menuName ? '' : menuName));
     if (menuName === 'notifications') {
-      loadNotifications();
-      setUnreadCount(0);
-      notificationAPI.markAdminRead().catch(() => {});
+      loadNotifications(true);
     }
   };
 
@@ -146,20 +166,39 @@ const AdminLayout = () => {
                 onClick={() => toggleMenu('notifications')}
               >
                 <Bell size={18} />
-                {unreadCount > 0 && <i />}
+                {unreadCount > 0 && <span className="portal-notification-badge">{unreadCount}</span>}
               </button>
               {activeMenu === 'notifications' && (
                 <div className="portal-dropdown portal-notification-panel">
                   <div className="portal-dropdown-head">
                     <strong>Notifications</strong>
-                    <span>{unreadCount > 0 ? `${unreadCount} new` : 'Read'}</span>
+                    {unreadCount > 0 ? (
+                      <button
+                        onClick={markAllRead}
+                        style={{
+                          border: 0,
+                          padding: 0,
+                          color: 'var(--portal-blue)',
+                          background: 'transparent',
+                          fontSize: '9px',
+                          fontWeight: '700',
+                          cursor: 'pointer',
+                          width: 'auto',
+                          display: 'inline'
+                        }}
+                      >
+                        Mark all as read
+                      </button>
+                    ) : (
+                      <span>Read</span>
+                    )}
                   </div>
                   {notifications.length === 0 ? (
                     <div className="portal-dropdown-empty">No notifications right now.</div>
                   ) : notifications.map((item) => {
                     const Icon = item.type === 'complaints' ? MessageSquareWarning : item.type === 'notices' ? Megaphone : CreditCard;
                     return (
-                      <button key={item.id} onClick={() => { navigate(item.path); closeMenus(); }}>
+                      <button key={item.id} onClick={() => handleNotificationClick(item)}>
                         <Icon size={16} />
                         <span><strong>{item.title}</strong><small>{item.message}</small></span>
                       </button>

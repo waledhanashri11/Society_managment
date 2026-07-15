@@ -1,7 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { authAPI, flatAPI } from '../services/api';
-
+import { authAPI } from '../services/api';
 import { setToken, setUser } from '../utils/auth';
 
 const Register = () => {
@@ -10,33 +9,12 @@ const Register = () => {
     email: '',
     phone: '',
     password: '',
-    role: 'resident',
-    flat_id: ''
+    role: 'resident'
   });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
-  const [availableFlats, setAvailableFlats] = useState([]);
-  const [flatsLoading, setFlatsLoading] = useState(false);
   const navigate = useNavigate();
-  const needsFlat = useMemo(() => formData.role === 'resident', [formData.role]);
-
-  useEffect(() => {
-    const loadAvailableFlats = async () => {
-      if (!needsFlat) return;
-      setFlatsLoading(true);
-      try {
-        const response = await flatAPI.getAvailable();
-        setAvailableFlats(response.data?.data || response.data || []);
-      } catch (err) {
-        setAvailableFlats([]);
-      } finally {
-        setFlatsLoading(false);
-      }
-    };
-
-    loadAvailableFlats();
-  }, [needsFlat]);
 
   const handleChange = (e) => {
     setFormData({
@@ -55,10 +33,11 @@ const Register = () => {
       const response = await authAPI.register(formData);
       if (!response.data.token || response.data.user?.status === 'pending') {
         setSuccess(response.data.message || 'Registration submitted. Please wait for admin approval.');
-        setFormData({ name: '', email: '', phone: '', password: '', role: 'resident', flat_id: '' });
+        setFormData({ name: '', email: '', phone: '', password: '', role: 'resident' });
         return;
       }
 
+      localStorage.removeItem('adminSettings');
       setToken(response.data.token);
       setUser(response.data.user);
       setSuccess('Registration successful. Opening your dashboard...');
@@ -145,29 +124,6 @@ const Register = () => {
             </select>
           </div>
 
-          {needsFlat && (
-            <div className="mb-3">
-              <label className="form-label">Assigned Flat</label>
-              <select
-                className="form-control"
-                name="flat_id"
-                value={formData.flat_id}
-                onChange={handleChange}
-                required
-                disabled={flatsLoading || loading}
-              >
-                <option value="">{flatsLoading ? 'Preparing available flats' : 'Select available flat'}</option>
-                {availableFlats.map((flat) => (
-                  <option key={flat.id} value={flat.id}>
-                    Wing {flat.wing || 'A'} - Flat {flat.flat_no} - Floor {flat.floor_no}
-                  </option>
-                ))}
-              </select>
-              {!flatsLoading && !availableFlats.length && (
-                <small className="text-danger">No flats are available for registration right now.</small>
-              )}
-            </div>
-          )}
           <button
             type="submit"
             className="btn btn-primary w-100 font-bold"
@@ -175,7 +131,6 @@ const Register = () => {
           >
             Register
           </button>
-
 
           <p className="text-center mt-3">
             Already have an account? <Link to="/login">Login</Link>

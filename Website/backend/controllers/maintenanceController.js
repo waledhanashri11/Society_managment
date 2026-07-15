@@ -34,6 +34,13 @@ const applyPenaltyLogic = async () => {
     today.setHours(0, 0, 0, 0);
 
     for (const bill of bills) {
+      // Fetch sum of items
+      const [itemRows] = await promisePool.query(
+        'SELECT COALESCE(SUM(amount), 0) AS items_sum FROM maintenance_bill_items WHERE bill_id = ?',
+        [bill.id]
+      );
+      const itemsSum = Number(itemRows[0]?.items_sum || 0);
+
       const dueDate = new Date(bill.due_date);
       const cutoffDate = new Date(dueDate);
       cutoffDate.setDate(cutoffDate.getDate() + graceDays);
@@ -47,7 +54,7 @@ const applyPenaltyLogic = async () => {
         }
 
         const newPenaltyAmount = penalty;
-        const newTotalAmount = Number(bill.amount) + newPenaltyAmount;
+        const newTotalAmount = Number(bill.amount) + newPenaltyAmount + itemsSum;
         const newRemainingAmount = Math.max(0, newTotalAmount - Number(bill.paid_amount || 0));
         let status = 'Overdue';
         if (newRemainingAmount <= 0) {
@@ -65,7 +72,7 @@ const applyPenaltyLogic = async () => {
       } else {
         // Not past grace period, but check if past due date to mark as Overdue (without penalty yet)
         if (dueDate < today) {
-          const totalAmt = Number(bill.amount) + Number(bill.penalty_amount);
+          const totalAmt = Number(bill.amount) + Number(bill.penalty_amount) + itemsSum;
           const remaining = Math.max(0, totalAmt - Number(bill.paid_amount || 0));
           let status = 'Overdue';
           if (remaining <= 0) {
@@ -74,17 +81,17 @@ const applyPenaltyLogic = async () => {
             status = 'Partial';
           }
           await promisePool.query(
-            `UPDATE maintenance SET status = ?, remaining_amount = ? WHERE id = ?`,
-            [status, remaining, bill.id]
+            `UPDATE maintenance SET status = ?, total_amount = ?, remaining_amount = ? WHERE id = ?`,
+            [status, totalAmt, remaining, bill.id]
           );
         } else {
           // If not past due date, double check if it is Partial or Pending
-          const totalAmt = Number(bill.amount) + Number(bill.penalty_amount);
+          const totalAmt = Number(bill.amount) + Number(bill.penalty_amount) + itemsSum;
           const remaining = Math.max(0, totalAmt - Number(bill.paid_amount || 0));
           let status = remaining <= 0 ? 'Paid' : (Number(bill.paid_amount) > 0 ? 'Partial' : 'Pending');
           await promisePool.query(
-            `UPDATE maintenance SET status = ?, remaining_amount = ? WHERE id = ?`,
-            [status, remaining, bill.id]
+            `UPDATE maintenance SET status = ?, total_amount = ?, remaining_amount = ? WHERE id = ?`,
+            [status, totalAmt, remaining, bill.id]
           );
         }
       }
@@ -213,6 +220,9 @@ const generateMaintenanceBills = async (req, res) => {
       return sendResponse(res, 400, 'Month and year are required');
     }
 
+    const reqMonth = Number(month);
+    const reqYear = Number(year);
+
     // 1. Get settings rules
     const [settingsRows] = await promisePool.query('SELECT * FROM maintenance_settings ORDER BY id DESC LIMIT 1');
     if (settingsRows.length === 0) {
@@ -220,43 +230,108 @@ const generateMaintenanceBills = async (req, res) => {
     }
     const settings = settingsRows[0];
 
-    // 2. Check if bills already exist for the selected month and year
-    const [existing] = await promisePool.query(
-      'SELECT id FROM maintenance WHERE month = ? AND year = ? LIMIT 1',
-      [Number(month), Number(year)]
+    // 2. Enforce strict chronological generation.
+    const [cycleRows] = await promisePool.query(
+      `SELECT year, month, MAX(year * 12 + month) AS cycle
+       FROM maintenance
+       WHERE resident_id IS NOT NULL AND flat_id IS NOT NULL
+       GROUP BY year, month
+       ORDER BY cycle DESC`
     );
-    if (existing.length > 0) {
-      return sendResponse(res, 409, 'Maintenance bills already generated for this month and year');
+    
+    const reqCycle = reqYear * 12 + reqMonth;
+    const now = new Date();
+    const nowYear = now.getFullYear();
+    const nowMonth = now.getMonth() + 1;
+    const nowCycle = nowYear * 12 + nowMonth;
+
+    const months = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+    const reqMonthName = months[reqMonth - 1];
+
+    // Do not allow generating future months
+    if (reqCycle > nowCycle) {
+      return sendResponse(res, 400, 'Future maintenance bills cannot be generated.');
     }
 
-    // 3. Fetch occupied flats
+    if (cycleRows.length > 0) {
+      const latestCycle = Number(cycleRows[0].cycle);
+      const nextPendingCycle = latestCycle + 1;
+
+      if (reqCycle < nextPendingCycle) {
+        const allCycles = cycleRows.map(row => Number(row.cycle));
+        if (allCycles.includes(reqCycle)) {
+          return sendResponse(res, 400, `Maintenance bills for ${reqMonthName} ${reqYear} have already been generated.`);
+        }
+        return sendResponse(res, 400, 'Previous months cannot be generated.');
+      }
+
+      if (reqCycle > nextPendingCycle) {
+        const nextPendingYear = Math.floor((nextPendingCycle - 1) / 12);
+        const nextPendingMonth = nextPendingCycle - (nextPendingYear * 12);
+        const nextPendingMonthName = months[nextPendingMonth - 1];
+        return sendResponse(res, 400, `${nextPendingMonthName} ${nextPendingYear} maintenance has not been generated yet. Please generate ${nextPendingMonthName} first.`);
+      }
+    }
+
+    // 3. Fetch occupied flats using active flat assignments or directly from occupied flats table
     const [flats] = await promisePool.query(
-      'SELECT id, owner_id FROM flats WHERE owner_id IS NOT NULL'
+      "SELECT id, current_resident_id FROM flats WHERE current_resident_id IS NOT NULL AND status = 'Occupied'"
     );
     if (flats.length === 0) {
       return sendResponse(res, 404, 'No occupied flats found to bill');
     }
 
-    // Calculate due date (YYYY-MM-DD)
-    const dueDateString = `${year}-${String(month).padStart(2, '0')}-${String(settings.due_day).padStart(2, '0')}`;
+    const baseAmt = Number(settings.fixed_amount || 0);
 
-    const flatValues = [];
-    const placeholders = flats.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())').join(', ');
-    
-    for (const flat of flats) {
-      const amt = Number(settings.fixed_amount || 0);
-      flatValues.push(
-        flat.owner_id, flat.id, settings.title, Number(month), Number(year), amt, 0.00, amt, 0.00, amt, 'Pending', dueDateString
-      );
+    // Use transaction to insert bills and their items
+    const connection = await promisePool.getConnection();
+    try {
+      await connection.beginTransaction();
+
+      for (const flat of flats) {
+        const dueDateString = `${reqYear}-${String(reqMonth).padStart(2, '0')}-${String(settings.due_day).padStart(2, '0')}`;
+        
+        // Fetch active categories assigned specifically to this flat
+        const [flatCategories] = await connection.query(
+          `SELECT mc.*
+           FROM flat_category_assignments fca
+           JOIN maintenance_categories mc ON fca.category_id = mc.id
+           WHERE fca.flat_id = ? AND mc.active = TRUE`,
+          [flat.id]
+        );
+
+        const flatCategoriesSum = flatCategories.reduce((sum, cat) => sum + Number(cat.amount || 0), 0);
+        const flatTotalAmt = baseAmt + flatCategoriesSum;
+
+        const [insertResult] = await connection.query(
+          `INSERT INTO maintenance 
+           (resident_id, flat_id, title, month, year, amount, penalty_amount, total_amount, paid_amount, remaining_amount, status, due_date, created_at, updated_at) 
+           VALUES (?, ?, ?, ?, ?, ?, 0.00, ?, 0.00, ?, 'Pending', ?, NOW(), NOW())`,
+          [flat.current_resident_id, flat.id, settings.title, reqMonth, reqYear, baseAmt, flatTotalAmt, flatTotalAmt, dueDateString]
+        );
+
+        const billId = insertResult.insertId;
+
+        // Insert items into maintenance_bill_items
+        for (const cat of flatCategories) {
+          await connection.query(
+            `INSERT INTO maintenance_bill_items (bill_id, category_id, name, amount)
+             VALUES (?, ?, ?, ?)`,
+            [billId, cat.id, cat.name, cat.amount]
+          );
+        }
+      }
+
+      await connection.commit();
+    } catch (err) {
+      await connection.rollback();
+      throw err;
+    } finally {
+      connection.release();
     }
-
-    const query = `
-      INSERT INTO maintenance 
-      (resident_id, flat_id, title, month, year, amount, penalty_amount, total_amount, paid_amount, remaining_amount, status, due_date, created_at, updated_at) 
-      VALUES ${placeholders}
-    `;
-
-    await promisePool.query(query, flatValues);
 
     return sendResponse(res, 201, 'Maintenance bills generated successfully', { billsGenerated: flats.length });
   } catch (error) {
@@ -417,8 +492,30 @@ const getBillById = async (req, res) => {
       return sendResponse(res, 403, 'You can only access your own bills');
     }
 
+    // Fetch bill items
+    const [items] = await promisePool.query(
+      'SELECT * FROM maintenance_bill_items WHERE bill_id = ?',
+      [id]
+    );
+
+    // Calculate previous outstanding balance (sum of remaining_amount of previous bills)
+    const [outstandingRows] = await promisePool.query(
+      `SELECT COALESCE(SUM(remaining_amount), 0) AS previous_outstanding
+       FROM maintenance
+       WHERE resident_id = ? AND (year * 12 + month) < (? * 12 + ?) AND id != ?`,
+      [bills[0].resident_id, bills[0].year, bills[0].month, bills[0].id]
+    );
+    const previousOutstanding = Number(outstandingRows[0]?.previous_outstanding || 0);
+
     const [payments] = await promisePool.query('SELECT * FROM payments WHERE bill_id = ? ORDER BY created_at DESC', [id]);
-    return sendResponse(res, 200, 'Bill fetched successfully', { bill: bills[0], payments });
+    return sendResponse(res, 200, 'Bill fetched successfully', {
+      bill: {
+        ...bills[0],
+        items,
+        previous_outstanding: previousOutstanding
+      },
+      payments
+    });
   } catch (error) {
     console.error('Get bill error:', error);
     return sendResponse(res, 500, 'Server error', null, ['Unable to fetch bill']);
@@ -473,6 +570,18 @@ const createPayment = async (req, res) => {
       "UPDATE maintenance SET status = 'Pending Verification', payment_date = ? WHERE id = ?",
       [paymentDate || new Date(), billId]
     );
+
+    try {
+      await promisePool.query(
+        `INSERT INTO notifications (resident_id, title, message, type, is_read)
+         SELECT id, 'Pending payment verification', ?, 'maintenance', false
+         FROM users
+         WHERE role = 'admin' AND status = 'approved'`,
+        [`Verify payment of UTR: ${utr}`]
+      );
+    } catch (notifError) {
+      console.error('Failed to create admin notification for payment:', notifError);
+    }
 
     return sendResponse(res, 201, 'Payment submitted successfully. It is pending admin verification.');
   } catch (error) {

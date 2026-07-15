@@ -7,59 +7,30 @@ const toIso = (value) => {
 
 const getAdminNotifications = async (req, res) => {
   try {
-    const [[readRow]] = await promisePool.query(
-      'SELECT last_read_at FROM admin_notification_reads WHERE user_id = ?',
-      [req.user.id]
+    const adminId = req.user.id;
+    const [rows] = await promisePool.query(
+      'SELECT id, resident_id, title, message, type, reference_id, is_read, created_at FROM notifications WHERE resident_id = ? AND is_read = false ORDER BY created_at DESC',
+      [adminId]
     );
 
-    const lastReadAt = readRow?.last_read_at ? new Date(readRow.last_read_at) : new Date(0);
+    const notifications = rows.map((item) => {
+      let path = '/admin/dashboard';
+      if (item.type === 'complaints') path = '/admin/complaints';
+      else if (item.type === 'maintenance') path = '/admin/maintenance';
+      else if (item.type === 'notice' || item.type === 'notices') path = '/admin/notices';
 
-    const [[pendingBills]] = await promisePool.query(
-      `SELECT COUNT(*) AS total, MAX(created_at) AS latest_at
-       FROM maintenance_bills
-       WHERE payment_status IN ('Pending', 'Under Review')`
-    );
+      return {
+        id: item.id,
+        title: item.title,
+        message: item.message,
+        type: item.type,
+        path,
+        is_read: item.is_read,
+        created_at: item.created_at
+      };
+    });
 
-    const [[openComplaints]] = await promisePool.query(
-      `SELECT COUNT(*) AS total, MAX(created_at) AS latest_at
-       FROM complaints
-       WHERE status IN ('pending', 'in_progress')`
-    );
-
-    const [[latestNotices]] = await promisePool.query(
-      'SELECT COUNT(*) AS total, MAX(created_at) AS latest_at FROM notices'
-    );
-
-    const notifications = [
-      {
-        id: 'pending-payments',
-        title: `${pendingBills.total || 0} pending payments`,
-        message: 'Review maintenance dues',
-        type: 'maintenance',
-        path: '/admin/maintenance',
-        created_at: toIso(pendingBills.latest_at)
-      },
-      {
-        id: 'open-complaints',
-        title: `${openComplaints.total || 0} complaints need attention`,
-        message: 'Open complaint dashboard',
-        type: 'complaints',
-        path: '/admin/complaints',
-        created_at: toIso(openComplaints.latest_at)
-      },
-      {
-        id: 'notices',
-        title: `${latestNotices.total || 0} notices published`,
-        message: 'Create or review society updates',
-        type: 'notices',
-        path: '/admin/notices',
-        created_at: toIso(latestNotices.latest_at)
-      }
-    ].filter((item) => !item.title.startsWith('0 ') || item.id === 'notices');
-
-    const unreadCount = notifications.filter((item) => new Date(item.created_at) > lastReadAt).length;
-
-    res.json({ notifications, unreadCount });
+    res.json({ notifications, unreadCount: notifications.length });
   } catch (error) {
     console.error('Get notifications error:', error);
     res.status(500).json({ message: 'Server error' });
@@ -69,9 +40,7 @@ const getAdminNotifications = async (req, res) => {
 const markAdminNotificationsRead = async (req, res) => {
   try {
     await promisePool.query(
-      `INSERT INTO admin_notification_reads (user_id, last_read_at)
-       VALUES (?, NOW())
-       ON CONFLICT (user_id) DO UPDATE SET last_read_at = NOW()`,
+      'UPDATE notifications SET is_read = true WHERE resident_id = ? AND is_read = false',
       [req.user.id]
     );
 
@@ -82,4 +51,44 @@ const markAdminNotificationsRead = async (req, res) => {
   }
 };
 
-module.exports = { getAdminNotifications, markAdminNotificationsRead };
+const getResidentNotifications = async (req, res) => {
+  try {
+    const residentId = req.user.id;
+    const [notifications] = await promisePool.query(
+      'SELECT id, resident_id, title, message, type, reference_id, is_read, created_at FROM notifications WHERE resident_id = ? AND is_read = false ORDER BY created_at DESC',
+      [residentId]
+    );
+    res.json(notifications);
+  } catch (error) {
+    console.error('Get resident notifications error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+const markResidentNotificationRead = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const residentId = req.user.id;
+
+    const [result] = await promisePool.query(
+      'UPDATE notifications SET is_read = true WHERE id = ? AND resident_id = ?',
+      [id, residentId]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: 'Notification not found' });
+    }
+
+    res.json({ message: 'Notification marked as read' });
+  } catch (error) {
+    console.error('Mark notification read error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+module.exports = {
+  getAdminNotifications,
+  markAdminNotificationsRead,
+  getResidentNotifications,
+  markResidentNotificationRead
+};

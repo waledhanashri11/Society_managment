@@ -16,5 +16,6 @@ const clearSessionApiCache = () => {
 export const logout = () => {
   localStorage.removeItem('token');
   localStorage.removeItem('user');
+  localStorage.removeItem('adminSettings');
   clearSessionApiCache();
 };

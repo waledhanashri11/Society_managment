@@ -52,6 +52,18 @@ const createNotice = async (req, res) => {
       [title, description]
     );
 
+    try {
+      await promisePool.query(
+        `INSERT INTO notifications (resident_id, title, message, type, reference_id, is_read)
+         SELECT id, ?, ?, 'notice', ?, false
+         FROM users
+         WHERE role = 'resident' AND status = 'approved'`,
+        [title, description || 'New society notice', result.insertId]
+      );
+    } catch (notifError) {
+      console.error('Notification creation failed for notice:', result.insertId, notifError);
+    }
+
     res.status(201).json({
       id: result.insertId,
       title,

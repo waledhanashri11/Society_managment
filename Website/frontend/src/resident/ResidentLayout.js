@@ -5,7 +5,7 @@ import {
   Menu, MessageSquareWarning, ReceiptIndianRupee, User, Users, X
 } from 'lucide-react';
 import { getUser, logout } from '../utils/auth';
-import { maintenanceAPI, noticeAPI } from '../services/api';
+import { notificationAPI } from '../services/api';
 import '../portal.css';
 
 const residentLinks = [
@@ -49,43 +49,42 @@ const ResidentLayout = () => {
     };
   }, [profilePhotoKey]);
 
-  const loadNotifications = useCallback(() => {
-    if (notificationsLoaded) return;
-    Promise.allSettled([
-      noticeAPI.getAll(),
-      maintenanceAPI.getUserMaintenance()
-    ]).then((results) => {
-      const notices = results[0].status === 'fulfilled' ? results[0].value.data || [] : [];
-      const bills = results[1].status === 'fulfilled' ? results[1].value.data || [] : [];
-      const pendingBills = bills.filter((bill) => bill.payment_status !== 'Paid');
-      const items = [
-        ...pendingBills.slice(0, 2).map((bill) => ({
-          id: `bill-${bill.id}`,
-          title: 'Maintenance payment due',
-          message: `${bill.bill_number || `Bill #${bill.id}`} is waiting for payment`,
-          type: 'payment',
-          path: '/resident/maintenance'
-        })),
-        ...notices.slice(0, 3).map((notice) => ({
-          id: `notice-${notice.id}`,
-          title: notice.title,
-          message: notice.description || 'New society notice',
-          type: 'notice',
-          path: '/resident/notices'
-        }))
-      ];
-      setNotifications(items);
-      setUnreadCount(items.length);
-      setNotificationsLoaded(true);
-    }).catch(() => {});
+  const loadNotifications = useCallback((force = false) => {
+    if (notificationsLoaded && !force) return;
+    notificationAPI.getResident()
+      .then(({ data }) => {
+        setNotifications(data || []);
+        const unread = (data || []).filter((item) => !item.is_read).length;
+        setUnreadCount(unread);
+        setNotificationsLoaded(true);
+      })
+      .catch((err) => {
+        console.error('Failed to load notifications:', err);
+      });
   }, [notificationsLoaded]);
+
+  useEffect(() => {
+    loadNotifications(true);
+  }, [loadNotifications]);
 
   const toggleMenu = (menuName) => {
     setActiveMenu((current) => (current === menuName ? '' : menuName));
     if (menuName === 'notifications') {
-      loadNotifications();
-      setUnreadCount(0);
+      loadNotifications(true);
     }
+  };
+
+  const handleNotificationClick = (item) => {
+    if (!item.is_read) {
+      notificationAPI.markRead(item.id)
+        .then(() => {
+          setNotifications((prev) => prev.filter((n) => n.id !== item.id));
+          setUnreadCount((prev) => Math.max(0, prev - 1));
+        })
+        .catch((err) => console.error('Failed to mark notification read:', err));
+    }
+    const path = item.path || (item.type === 'notice' ? '/resident/notices' : '/resident/dashboard');
+    goToPath(path);
   };
 
   const goToPath = (path) => {
@@ -129,7 +128,7 @@ const ResidentLayout = () => {
                 onClick={() => toggleMenu('notifications')}
               >
                 <Bell size={18} />
-                {unreadCount > 0 && <i />}
+                {unreadCount > 0 && <span className="portal-notification-badge">{unreadCount}</span>}
               </button>
               {activeMenu === 'notifications' && (
                 <div className="portal-dropdown portal-notification-panel">
@@ -138,11 +137,15 @@ const ResidentLayout = () => {
                     <span>{unreadCount > 0 ? `${unreadCount} new` : 'Read'}</span>
                   </div>
                   {notifications.length === 0 ? (
-                    <div className="portal-dropdown-empty">No notifications right now.</div>
+                    <div className="portal-dropdown-empty">No notifications available</div>
                   ) : notifications.map((item) => {
                     const Icon = item.type === 'payment' ? ReceiptIndianRupee : Bell;
                     return (
-                      <button key={item.id} onClick={() => goToPath(item.path || '/resident/dashboard')}>
+                      <button
+                        key={item.id}
+                        className={item.is_read ? 'read' : 'unread'}
+                        onClick={() => handleNotificationClick(item)}
+                      >
                         <Icon size={16} />
                         <span><strong>{item.title}</strong><small>{item.message}</small></span>
                       </button>

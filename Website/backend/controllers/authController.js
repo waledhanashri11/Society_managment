@@ -89,7 +89,7 @@ const register = async (req, res) => {
 
     if (userRole === 'resident' && assignedFlatId) {
       const [flats] = await connection.query(
-        'SELECT id, owner_id FROM flats WHERE id = ? FOR UPDATE',
+        'SELECT id, current_resident_id FROM flats WHERE id = ? FOR UPDATE',
         [assignedFlatId]
       );
 
@@ -98,7 +98,7 @@ const register = async (req, res) => {
         return res.status(404).json({ message: 'Selected flat was not found' });
       }
 
-      if (flats[0].owner_id) {
+      if (flats[0].current_resident_id) {
         await connection.rollback();
         return res.status(409).json({ message: 'Selected flat is already assigned to another resident' });
       }
@@ -124,7 +124,7 @@ const register = async (req, res) => {
 
     if (userRole === 'resident' && assignedFlatId) {
       await connection.query(
-        'UPDATE flats SET owner_id = ?, status = ? WHERE id = ?',
+        'UPDATE flats SET current_resident_id = ?, status = ? WHERE id = ?',
         [result.insertId, 'Occupied', assignedFlatId]
       );
     }

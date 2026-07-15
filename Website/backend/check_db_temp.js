@@ -1,1 +1,0 @@
-// Checked users status

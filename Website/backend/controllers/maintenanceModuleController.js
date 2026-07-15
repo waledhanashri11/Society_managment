@@ -253,8 +253,119 @@ const listDisputes = async (req, res) => {
   }
 };
 
+const getResidentCategories = async (req, res) => {
+  try {
+    const [rows] = await promisePool.query(`
+      SELECT f.id AS flat_id, f.flat_no, u.id AS resident_id, u.name AS resident_name,
+             COALESCE(
+               (SELECT json_agg(fca.category_id)
+                FROM flat_category_assignments fca
+                WHERE fca.flat_id = f.id),
+               '[]'::json
+             ) AS assigned_category_ids
+      FROM flats f
+      LEFT JOIN users u ON f.current_resident_id = u.id
+      WHERE f.status = 'Occupied'
+      ORDER BY f.flat_no ASC
+    `);
+    return respond(res, 200, 'Resident categories fetched', rows);
+  } catch (error) {
+    console.error('getResidentCategories error:', error);
+    return respond(res, 500, 'Unable to fetch resident categories');
+  }
+};
+
+const getFlatCategories = async (req, res) => {
+  try {
+    const { flatId } = req.params;
+    const [rows] = await promisePool.query(
+      'SELECT category_id FROM flat_category_assignments WHERE flat_id = ?',
+      [flatId]
+    );
+    const categoryIds = rows.map((row) => row.category_id);
+    return respond(res, 200, 'Flat categories fetched', categoryIds);
+  } catch (error) {
+    console.error('getFlatCategories error:', error);
+    return respond(res, 500, 'Unable to fetch flat categories');
+  }
+};
+
+const saveFlatCategories = async (req, res) => {
+  const connection = await promisePool.getConnection();
+  try {
+    const { flatId } = req.params;
+    const { categoryIds = [] } = req.body;
+    if (!flatId) {
+      return respond(res, 400, 'Flat ID is required');
+    }
+
+    await connection.beginTransaction();
+
+    await connection.query(
+      'DELETE FROM flat_category_assignments WHERE flat_id = ?',
+      [flatId]
+    );
+
+    for (const catId of categoryIds) {
+      await connection.query(
+        'INSERT INTO flat_category_assignments (flat_id, category_id) VALUES (?, ?) ON CONFLICT DO NOTHING',
+        [flatId, catId]
+      );
+    }
+
+    await connection.commit();
+    await audit(req.user.id, 'ASSIGN_CATEGORIES_TO_FLAT', 'FLAT', flatId, { categoryIds });
+    return respond(res, 200, 'Flat categories saved');
+  } catch (error) {
+    await connection.rollback();
+    console.error('saveFlatCategories error:', error);
+    return respond(res, 500, 'Unable to save flat categories');
+  } finally {
+    connection.release();
+  }
+};
+
+const bulkAssignResidentCategories = async (req, res) => {
+  const connection = await promisePool.getConnection();
+  try {
+    const { targets = [], categoryIds = [] } = req.body;
+    const flatIds = targets.map((t) => t.flatId || t).filter(Boolean);
+
+    if (!flatIds.length) {
+      return respond(res, 400, 'Flat IDs are required');
+    }
+
+    await connection.beginTransaction();
+
+    for (const flatId of flatIds) {
+      await connection.query(
+        'DELETE FROM flat_category_assignments WHERE flat_id = ?',
+        [flatId]
+      );
+
+      for (const catId of categoryIds) {
+        await connection.query(
+          'INSERT INTO flat_category_assignments (flat_id, category_id) VALUES (?, ?) ON CONFLICT DO NOTHING',
+          [flatId, catId]
+        );
+      }
+    }
+
+    await connection.commit();
+    await audit(req.user.id, 'BULK_ASSIGN_CATEGORIES_TO_FLATS', 'FLAT_BULK', null, { flatIds, categoryIds });
+    return respond(res, 200, 'Bulk categories assigned successfully');
+  } catch (error) {
+    await connection.rollback();
+    console.error('bulkAssignResidentCategories error:', error);
+    return respond(res, 500, 'Unable to bulk assign categories');
+  } finally {
+    connection.release();
+  }
+};
+
 module.exports = {
   dashboard, listCategories, createCategory, updateCategory, deleteCategory,
   listExpenses, createExpense, deleteExpense, getLateFeeRule, saveLateFeeRule,
-  waiveLateFee, createDispute, listDisputes
+  waiveLateFee, createDispute, listDisputes,
+  getResidentCategories, getFlatCategories, saveFlatCategories, bulkAssignResidentCategories
 };

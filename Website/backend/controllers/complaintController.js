@@ -44,6 +44,18 @@ const createComplaint = async (req, res) => {
       [userId, title, description]
     );
 
+    try {
+      await promisePool.query(
+        `INSERT INTO notifications (resident_id, title, message, type, is_read)
+         SELECT id, 'New complaint needs attention', ?, 'complaints', false
+         FROM users
+         WHERE role = 'admin' AND status = 'approved'`,
+        [`Complaint: ${title}`]
+      );
+    } catch (notifError) {
+      console.error('Failed to create admin notification for complaint:', notifError);
+    }
+
     res.status(201).json({
       id: result.insertId,
       user_id: userId,
