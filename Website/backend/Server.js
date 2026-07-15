@@ -49,6 +49,7 @@ const residentMgmtRoutes = require('./routes/residents');
 const staffRoutes = require('./routes/staff');
 const settingsRoutes = require('./routes/settings');
 const notificationRoutes = require('./routes/notifications');
+const nocRoutes = require('./routes/noc');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
@@ -61,6 +62,7 @@ app.use('/api/residents', residentMgmtRoutes);
 app.use('/api/staff', staffRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/noc', nocRoutes);
 
 app.get('/', (req, res) => {
   res.json({ message: 'Society Management System API' });

@@ -18,6 +18,7 @@ const getAdminNotifications = async (req, res) => {
       if (item.type === 'complaints') path = '/admin/complaints';
       else if (item.type === 'maintenance') path = '/admin/maintenance';
       else if (item.type === 'notice' || item.type === 'notices') path = '/admin/notices';
+      else if (item.type === 'noc') path = '/admin/noc-management';
 
       return {
         id: item.id,
@@ -55,10 +56,19 @@ const getResidentNotifications = async (req, res) => {
   try {
     const residentId = req.user.id;
     const [notifications] = await promisePool.query(
-      'SELECT id, resident_id, title, message, type, reference_id, is_read, created_at FROM notifications WHERE resident_id = ? AND is_read = false ORDER BY created_at DESC',
+      `SELECT id, resident_id, title, message, type, reference_id, is_read, created_at
+       FROM notifications
+       WHERE resident_id = ?
+       ORDER BY created_at DESC
+       LIMIT 20`,
       [residentId]
     );
-    res.json(notifications);
+    const mapped = notifications.map((item) => ({
+      ...item,
+      path: item.type === 'noc' ? '/resident/noc-requests' : item.type === 'notice' ? '/resident/notices' : '/resident/dashboard'
+    }));
+    const unreadCount = mapped.filter((item) => !item.is_read).length;
+    res.json({ notifications: mapped, unreadCount });
   } catch (error) {
     console.error('Get resident notifications error:', error);
     res.status(500).json({ message: 'Server error' });

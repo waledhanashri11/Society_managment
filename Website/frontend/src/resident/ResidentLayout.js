@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
-  Bell, Building2, ChevronDown, ClipboardList, CreditCard, FileBarChart, Home, LogOut,
+  Bell, Building2, ChevronDown, ClipboardList, CreditCard, FileBarChart, FileCheck2, Home, LogOut,
   Menu, MessageSquareWarning, ReceiptIndianRupee, User, Users, X
 } from 'lucide-react';
 import { getUser, logout } from '../utils/auth';
@@ -15,7 +15,7 @@ const residentLinks = [
   { to: '/resident/notices', label: 'Notices', icon: Bell },
   { to: '/resident/members', label: 'Members', icon: Users },
   { to: '/resident/reports', label: 'Reports', icon: FileBarChart },
-  
+  { to: '/resident/noc-requests', label: 'NOC Requests', icon: FileCheck2 },
   { to: '/resident/profile', label: 'My Profile', icon: User },
   { to: '/resident/payments', label: 'Payments', icon: ClipboardList }
 ];
@@ -53,9 +53,9 @@ const ResidentLayout = () => {
     if (notificationsLoaded && !force) return;
     notificationAPI.getResident()
       .then(({ data }) => {
-        setNotifications(data || []);
-        const unread = (data || []).filter((item) => !item.is_read).length;
-        setUnreadCount(unread);
+        const items = data.notifications || data || [];
+        setNotifications(items);
+        setUnreadCount(data.unreadCount ?? items.filter((item) => !item.is_read).length);
         setNotificationsLoaded(true);
       })
       .catch((err) => {

@@ -1,0 +1,158 @@
+package com.example.application.viewmodel
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.example.application.data.remote.dto.CategorySaveRequest
+import com.example.application.data.remote.dto.CreateDisputeRequest
+import com.example.application.data.remote.dto.ExpenseCreateRequest
+import com.example.application.data.remote.dto.LateFeeRuleRequest
+import com.example.application.data.remote.dto.MaintenanceCreateRequest
+import com.example.application.data.remote.dto.MaintenanceSettingsRequest
+import com.example.application.data.remote.dto.ManualPayRequest
+import com.example.application.data.remote.dto.MarkPaidRequest
+import com.example.application.data.remote.dto.SubmitPaymentRequest
+import com.example.application.data.remote.dto.UpdatePaymentRequest
+import com.example.application.data.repository.AdminMaintenanceData
+import com.example.application.data.repository.MaintenanceRepository
+import com.example.application.data.repository.ResidentMaintenanceData
+import com.example.application.util.NetworkResult
+import dagger.hilt.android.lifecycle.HiltViewModel
+import java.time.LocalDate
+import javax.inject.Inject
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+
+data class AdminMaintenanceUiState(
+    val isLoading: Boolean = false,
+    val isRefreshing: Boolean = false,
+    val data: AdminMaintenanceData? = null,
+    val query: String = "",
+    val filter: String = "All",
+    val error: String? = null,
+    val message: String? = null,
+    val activeTab: String = "Bills",
+    val submitting: Boolean = false
+)
+
+data class ResidentMaintenanceUiState(
+    val isLoading: Boolean = false,
+    val isRefreshing: Boolean = false,
+    val data: ResidentMaintenanceData? = null,
+    val query: String = "",
+    val filter: String = "All",
+    val error: String? = null,
+    val message: String? = null,
+    val submitting: Boolean = false
+)
+
+@HiltViewModel
+class AdminMaintenanceViewModel @Inject constructor(
+    private val repository: MaintenanceRepository
+) : ViewModel() {
+    private val _state = MutableStateFlow(AdminMaintenanceUiState())
+    val state: StateFlow<AdminMaintenanceUiState> = _state.asStateFlow()
+
+    init { load() }
+
+    fun load(refresh: Boolean = false) {
+        viewModelScope.launch {
+            _state.update { it.copy(isLoading = it.data == null, isRefreshing = refresh, error = null, message = null) }
+            when (val result = repository.getAdminData(refresh)) {
+                is NetworkResult.Success -> _state.update { it.copy(isLoading = false, isRefreshing = false, data = result.data) }
+                is NetworkResult.Error -> _state.update { it.copy(isLoading = false, isRefreshing = false, error = repository.userMessageFor(result.error)) }
+                NetworkResult.Loading -> Unit
+            }
+        }
+    }
+
+    fun setTab(tab: String) = _state.update { it.copy(activeTab = tab) }
+    fun setQuery(query: String) = _state.update { it.copy(query = query) }
+    fun setFilter(filter: String) = _state.update { it.copy(filter = filter) }
+
+    fun generateBills(month: Int, year: Int) = action { repository.generateBills(month, year) }
+    fun createManualBill(title: String, month: Int, year: Int, dueDate: String, amount: String, residentId: String?, flatId: String?) =
+        action { repository.createMaintenance(MaintenanceCreateRequest(title, month, year, dueDate, amount, residentId, flatId)) }
+    fun deleteBill(id: String) = action { repository.deleteMaintenance(id) }
+    fun markPaid(id: String, amount: String, method: String, transactionId: String, remarks: String) =
+        action { repository.markPaid(id, MarkPaidRequest(method, transactionId, remarks, amount)) }
+    fun sendReminder(id: String) = action { repository.sendReminder(id) }
+    fun applyPenalty() = action { repository.applyPenalty() }
+    fun waiveLateFee(id: String) = action { repository.waiveLateFee(id) }
+    fun updatePayment(id: String, status: String) = action { repository.updatePayment(id, UpdatePaymentRequest(status, if (status == "Paid") "Approved by admin" else "Rejected by admin")) }
+    fun saveSettings(title: String, amount: String, dueDay: String, feeType: String, feeValue: String, graceDays: String) =
+        action { repository.saveSettings(MaintenanceSettingsRequest(title, amount, dueDay, feeType, feeValue, graceDays)) }
+    fun saveLateFeeRule(grace: String, type: String, amount: String, max: String) =
+        action { repository.saveLateFeeRule(LateFeeRuleRequest(grace, type, amount, max)) }
+    fun saveCategory(id: String?, name: String, amount: String, calculationType: String, active: Boolean) =
+        action {
+            val request = CategorySaveRequest(name, amount, calculationType, active)
+            if (id == null) repository.createCategory(request) else repository.updateCategory(id, request)
+        }
+    fun deleteCategory(id: String) = action { repository.deleteCategory(id) }
+    fun createExpense(category: String, vendor: String, amount: String, date: String, method: String, description: String?) =
+        action { repository.createExpense(ExpenseCreateRequest(category, vendor, amount, date, description, method)) }
+    fun deleteExpense(id: String) = action { repository.deleteExpense(id) }
+
+    private fun action(block: suspend () -> NetworkResult<String>) {
+        viewModelScope.launch {
+            _state.update { it.copy(submitting = true, error = null, message = null) }
+            when (val result = block()) {
+                is NetworkResult.Success -> {
+                    _state.update { it.copy(submitting = false, message = result.data) }
+                    load(refresh = true)
+                }
+                is NetworkResult.Error -> _state.update { it.copy(submitting = false, error = repository.userMessageFor(result.error)) }
+                NetworkResult.Loading -> Unit
+            }
+        }
+    }
+}
+
+@HiltViewModel
+class ResidentMaintenanceViewModel @Inject constructor(
+    private val repository: MaintenanceRepository
+) : ViewModel() {
+    private val _state = MutableStateFlow(ResidentMaintenanceUiState())
+    val state: StateFlow<ResidentMaintenanceUiState> = _state.asStateFlow()
+
+    init { load() }
+
+    fun load(refresh: Boolean = false) {
+        viewModelScope.launch {
+            _state.update { it.copy(isLoading = it.data == null, isRefreshing = refresh, error = null, message = null) }
+            when (val result = repository.getResidentData(refresh)) {
+                is NetworkResult.Success -> _state.update { it.copy(isLoading = false, isRefreshing = false, data = result.data) }
+                is NetworkResult.Error -> _state.update { it.copy(isLoading = false, isRefreshing = false, error = repository.userMessageFor(result.error)) }
+                NetworkResult.Loading -> Unit
+            }
+        }
+    }
+
+    fun setQuery(query: String) = _state.update { it.copy(query = query) }
+    fun setFilter(filter: String) = _state.update { it.copy(filter = filter) }
+
+    fun submitPayment(billId: String, method: String, transactionId: String, amount: String, screenshotUrl: String?) =
+        action { repository.submitPayment(SubmitPaymentRequest(billId, method, transactionId, amount, screenshotUrl?.ifBlank { null })) }
+
+    fun createDispute(billId: String, subject: String, description: String) =
+        action { repository.createDispute(CreateDisputeRequest(billId, subject, description)) }
+
+    private fun action(block: suspend () -> NetworkResult<String>) {
+        viewModelScope.launch {
+            _state.update { it.copy(submitting = true, error = null, message = null) }
+            when (val result = block()) {
+                is NetworkResult.Success -> {
+                    _state.update { it.copy(submitting = false, message = result.data) }
+                    load(refresh = true)
+                }
+                is NetworkResult.Error -> _state.update { it.copy(submitting = false, error = repository.userMessageFor(result.error)) }
+                NetworkResult.Loading -> Unit
+            }
+        }
+    }
+}
+
+fun defaultDueDate(): String = LocalDate.now().plusDays(10).toString()

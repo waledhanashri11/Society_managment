@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
-  Bell, Building2, ChevronDown, ClipboardList, CreditCard, FileBarChart, Home, LogOut, Menu,
+  Bell, Building2, ChevronDown, ClipboardList, CreditCard, FileBarChart, FileCheck2, Home, LogOut, Menu,
   Megaphone, MessageSquareWarning, Settings, ShieldCheck, UserCircle, Users, X
 } from 'lucide-react';
 import { getUser, logout } from '../utils/auth';
@@ -17,6 +17,7 @@ const adminLinks = [
   { to: '/admin/notices', label: 'Notices', icon: Megaphone },
   { to: '/admin/staff', label: 'Staff', icon: ShieldCheck },
   { to: '/admin/reports', label: 'Reports', icon: FileBarChart },
+  { to: '/admin/noc-management', label: 'NOC Management', icon: FileCheck2 },
   { to: '/admin/settings', label: 'Settings', icon: Settings }
 ];
 

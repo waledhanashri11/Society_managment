@@ -231,8 +231,22 @@ export const settingsAPI = {
 export const notificationAPI = {
   getAdmin: (config = {}) => cachedGet('/notifications/admin', config, { ttl: 60 * 1000 }),
   markAdminRead: () => mutate(api.put('/notifications/admin/read'), '/notifications'),
-  getResident: (config = {}) => api.get('/notifications', config),
+  getResident: (config = {}) => cachedGet('/notifications', config, { ttl: 60 * 1000 }),
   markRead: (id) => mutate(api.put(`/notifications/${id}/read`), '/notifications'),
+};
+
+export const nocAPI = {
+  createRequest: (data) => mutate(api.post('/noc/request', data), ['/noc', '/notifications']),
+  getAll: (config = {}) => cachedGet('/noc', config),
+  getById: (id, config = {}) => cachedGet(`/noc/${id}`, config),
+  getSummary: (config = {}) => cachedGet('/noc/summary', config),
+  markReview: (id, data = {}) => mutate(api.put(`/noc/${id}/review`, data), ['/noc', '/notifications']),
+  approve: (id, data = {}) => mutate(api.put(`/noc/${id}/approve`, data), ['/noc', '/notifications']),
+  reject: (id, data = {}) => mutate(api.put(`/noc/${id}/reject`, data), ['/noc', '/notifications']),
+  getTypes: (config = {}) => cachedGet('/noc/types', config),
+  createType: (data) => mutate(api.post('/noc/types', data), '/noc/types'),
+  getPdf: (id) => api.get(`/noc/${id}/pdf`, { responseType: 'blob' }),
+  generateShareLink: (id) => api.post(`/noc/${id}/share`),
 };
 
 export const residentAPI = {

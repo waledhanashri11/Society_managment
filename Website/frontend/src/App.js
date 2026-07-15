@@ -21,6 +21,7 @@ const Complaints = lazy(() => import('./admin/Complaints'));
 const Notices = lazy(() => import('./admin/Notices'));
 const Staff = lazy(() => import('./admin/Staff'));
 const Reports = lazy(() => import('./admin/Reports'));
+const NOCManagement = lazy(() => import('./admin/NOCManagement'));
 const AdminSettings = lazy(() => import('./admin/AdminSettings'));
 
 const ResidentLayout = lazy(() => import('./resident/ResidentLayout'));
@@ -32,6 +33,7 @@ const ResidentProfile = lazy(() => import('./resident/ResidentProfile'));
 const ResidentPaymentHistory = lazy(() => import('./resident/ResidentPaymentHistory'));
 const ResidentMembers = lazy(() => import('./resident/ResidentMembers'));
 const ResidentReports = lazy(() => import('./resident/ResidentReports'));
+const ResidentNOCRequests = lazy(() => import('./resident/ResidentNOCRequests'));
 
 const RouteLoader = () => <DashboardSkeleton />;
 
@@ -80,6 +82,7 @@ function App() {
             <Route path="notices" element={<Notices />} />
             <Route path="staff" element={<Staff />} />
             <Route path="reports" element={<Reports />} />
+            <Route path="noc-management" element={<NOCManagement />} />
             <Route path="settings" element={<AdminSettings />} />
           </Route>
 
@@ -99,6 +102,7 @@ function App() {
             <Route path="profile" element={<ResidentProfile />} />
             <Route path="members" element={<ResidentMembers />} />
             <Route path="reports" element={<ResidentReports />} />
+            <Route path="noc-requests" element={<ResidentNOCRequests />} />
             <Route path="payments" element={<ResidentPaymentHistory />} />
             <Route path="payment-history" element={<ResidentPaymentHistory />} />
           </Route>

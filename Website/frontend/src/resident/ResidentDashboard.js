@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Bell, Building2, Camera, Car, CreditCard, Download, FileText, MessageSquarePlus,
+  Bell, Building2, Camera, Car, CreditCard, Download, FileCheck2, FileText, MessageSquarePlus,
   MessageSquareWarning, QrCode, ReceiptIndianRupee, Send, History, Calendar
 } from 'lucide-react';
-import { complaintAPI, maintenanceAPI, noticeAPI, residentAPI, settingsAPI, flatAPI } from '../services/api';
+import { complaintAPI, maintenanceAPI, noticeAPI, residentAPI, settingsAPI, flatAPI, nocAPI } from '../services/api';
 import { getUser } from '../utils/auth';
 import { CardSkeleton, TableSkeleton } from '../components/Skeletons';
 
@@ -28,6 +28,7 @@ const ResidentDashboard = () => {
   const [transfers, setTransfers] = useState([]);
   const [flatMaintenanceHistory, setFlatMaintenanceHistory] = useState([]);
   const [paymentSettings, setPaymentSettings] = useState({});
+  const [nocSummary, setNocSummary] = useState({});
   const [loading, setLoading] = useState(true);
   const [loadingBill, setLoadingBill] = useState(false);
   const [toast, setToast] = useState('');
@@ -50,12 +51,14 @@ const ResidentDashboard = () => {
       complaintAPI.getUserComplaints(),
       noticeAPI.getAll(),
       settingsAPI.getPayment(),
-      residentAPI.getDashboard()
+      residentAPI.getDashboard(),
+      nocAPI.getSummary()
     ]);
     if (results[0].status === 'fulfilled') setBills(unwrap(results[0].value));
     if (results[1].status === 'fulfilled') setComplaints(unwrap(results[1].value));
     if (results[2].status === 'fulfilled') setNotices(unwrap(results[2].value));
     if (results[3].status === 'fulfilled') setPaymentSettings(results[3].value.data || {});
+    if (results[5].status === 'fulfilled') setNocSummary(results[5].value.data || {});
     if (results[4].status === 'fulfilled') {
       const dashboardData = results[4].value.data;
       const residentUser = dashboardData?.user || null;
@@ -257,6 +260,7 @@ const ResidentDashboard = () => {
     { label: 'Pay Maintenance', icon: CreditCard, action: () => openPayment() },
     { label: 'Complaints', icon: MessageSquarePlus, action: () => navigate('/resident/complaints') },
     { label: 'Notices', icon: Bell, action: () => navigate('/resident/notices') },
+    { label: 'NOC Requests', icon: FileCheck2, action: () => navigate('/resident/noc-requests') },
     { label: 'My Vehicles', icon: Car, action: () => navigate('/resident/profile') }
   ];
 
@@ -315,6 +319,9 @@ const ResidentDashboard = () => {
             <div><span>Complaints</span><strong>{complaints.length}</strong></div>
             <div><span>Notices</span><strong>{notices.length}</strong></div>
             <div><span>Pending Bills</span><strong>{pendingBills.length}</strong></div>
+            <div><span>Pending Requests</span><strong>{Number(nocSummary.pending || 0) + Number(nocSummary.under_review || 0)}</strong></div>
+            <div><span>Approved NOCs</span><strong>{Number(nocSummary.approved || 0)}</strong></div>
+            <div><span>Rejected Requests</span><strong>{Number(nocSummary.rejected || 0)}</strong></div>
           </div>
       </section>
 

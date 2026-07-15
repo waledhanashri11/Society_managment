@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  AlertTriangle, Building2, CalendarDays, IndianRupee, Megaphone,
+  AlertTriangle, Building2, CalendarDays, FileCheck2, IndianRupee, Megaphone,
   MessageSquareWarning, Users
 } from 'lucide-react';
-import { complaintAPI, flatAPI, maintenanceAPI, noticeAPI, userAPI } from '../services/api';
+import { complaintAPI, flatAPI, maintenanceAPI, nocAPI, noticeAPI, userAPI } from '../services/api';
 import { CardSkeleton, TableSkeleton } from '../components/Skeletons';
 
 const unwrap = (response) => response?.data?.data ?? response?.data ?? [];
@@ -12,14 +12,14 @@ const money = (value) => `₹ ${Number(value || 0).toLocaleString('en-IN')}`;
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
-  const [data, setData] = useState({ users: [], flats: [], bills: [], complaints: [], notices: [], expenses: [] });
+  const [data, setData] = useState({ users: [], flats: [], bills: [], complaints: [], notices: [], expenses: [], nocSummary: {} });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const load = async () => {
       const results = await Promise.allSettled([
         userAPI.getAll(), flatAPI.getAll(), maintenanceAPI.getBills(),
-        complaintAPI.getAll(), noticeAPI.getAll(), maintenanceAPI.getExpenses()
+        complaintAPI.getAll(), noticeAPI.getAll(), maintenanceAPI.getExpenses(), nocAPI.getSummary()
       ]);
       const value = (index) => results[index].status === 'fulfilled' ? unwrap(results[index].value) : [];
       setData({
@@ -28,7 +28,8 @@ const AdminDashboard = () => {
         bills: value(2),
         complaints: value(3),
         notices: value(4),
-        expenses: value(5)
+        expenses: value(5),
+        nocSummary: results[6].status === 'fulfilled' ? (results[6].value.data || {}) : {}
       });
       setLoading(false);
     };
@@ -46,7 +47,9 @@ const AdminDashboard = () => {
     { label: 'Total Residents', value: stats.residents, note: 'Approved resident accounts', icon: Users, tone: '' },
     { label: 'Total Flats', value: data.flats.length, note: `${data.flats.filter((flat) => flat.owner_id).length} occupied`, icon: Building2, tone: 'green' },
     { label: 'Maintenance Collected', value: money(stats.collected), note: `From all maintenance bills`, icon: IndianRupee, tone: 'green' },
-    { label: 'Pending Payments', value: money(stats.pending), note: `${data.bills.filter((bill) => (bill.payment_status || bill.status) !== 'Paid').length} bills pending`, icon: AlertTriangle, tone: 'red' }
+    { label: 'Pending Payments', value: money(stats.pending), note: `${data.bills.filter((bill) => (bill.payment_status || bill.status) !== 'Paid').length} bills pending`, icon: AlertTriangle, tone: 'red' },
+    { label: 'Pending NOCs', value: Number(data.nocSummary.pending || 0), note: `${Number(data.nocSummary.total || 0)} total requests`, icon: FileCheck2, tone: '' },
+    { label: 'Approved NOCs', value: Number(data.nocSummary.approved || 0), note: `${Number(data.nocSummary.rejected || 0)} rejected requests`, icon: FileCheck2, tone: 'green' }
   ];
 
   const trendData = useMemo(() => {
