@@ -11,6 +11,7 @@ const Login = lazy(() => import('./pages/Login'));
 const Register = lazy(() => import('./pages/Register'));
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
 const ResetPassword = lazy(() => import('./pages/ResetPassword'));
+const PublicNOCCertificate = lazy(() => import('./pages/PublicNOCCertificate'));
 
 const AdminLayout = lazy(() => import('./admin/AdminLayout'));
 const AdminDashboard = lazy(() => import('./admin/AdminDashboard'));
@@ -64,6 +65,7 @@ function App() {
           <Route path="/register" element={<Register />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/share/noc/:token" element={<PublicNOCCertificate />} />
 
           <Route
             path="/admin"
@@ -102,6 +104,7 @@ function App() {
             <Route path="profile" element={<ResidentProfile />} />
             <Route path="members" element={<ResidentMembers />} />
             <Route path="reports" element={<ResidentReports />} />
+            <Route path="my-nocs" element={<ResidentNOCRequests />} />
             <Route path="noc-requests" element={<ResidentNOCRequests />} />
             <Route path="payments" element={<ResidentPaymentHistory />} />
             <Route path="payment-history" element={<ResidentPaymentHistory />} />

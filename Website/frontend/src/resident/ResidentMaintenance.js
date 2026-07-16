@@ -94,6 +94,17 @@ const ResidentMaintenance = () => {
     setSelectedBill(null);
   };
 
+  const downloadQrCode = () => {
+    if (!paymentSettings.paymentQrImage) return notify('No QR code image available');
+    
+    const link = document.createElement('a');
+    link.href = paymentSettings.paymentQrImage;
+    link.download = `${paymentSettings.societyName || 'society'}-payment-qr.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const handleScreenshot = (event) => {
     const file = event.target.files?.[0];
     if (!file) return setPayment((current) => ({ ...current, screenshotUrl: '' }));
@@ -266,20 +277,62 @@ const ResidentMaintenance = () => {
                 </div>
               </div>
               <div className="portal-form" style={{ overflowY: 'auto', flex: '1 1 auto', display: 'grid', gap: '13px', padding: '18px 20px 20px' }}>
-                <div className="resident-qr-card" style={{ gridColumn: '1 / -1' }}>
-                  {paymentSettings.paymentQrImage ? (
-                    <img src={paymentSettings.paymentQrImage} alt="Maintenance payment scanner" />
-                  ) : (
-                    <div className="resident-qr-empty">
-                      <QrCode size={38} />
-                      <strong>Payment scanner not uploaded yet</strong>
-                      <span>Please contact society admin.</span>
+                <div className="portal-field-full grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-slate-50 rounded-xl border border-slate-200" style={{ gridColumn: '1 / -1' }}>
+                  {/* Left Column: QR Preview and Download */}
+                  <div className="flex flex-col items-center justify-center p-3 bg-white rounded-lg border border-slate-100 shadow-sm">
+                    {paymentSettings.paymentQrImage ? (
+                      <img 
+                        src={paymentSettings.paymentQrImage} 
+                        alt="Society Payment QR Code" 
+                        className="w-40 h-40 object-contain bg-white border border-slate-100 rounded-lg p-2"
+                      />
+                    ) : (
+                      <div className="w-40 h-40 flex flex-col items-center justify-center gap-2 border border-dashed border-slate-300 rounded-lg bg-white text-slate-400">
+                        <QrCode size={34} />
+                        <span className="text-[10px] font-bold text-center px-2">Payment QR not uploaded yet</span>
+                      </div>
+                    )}
+                    
+                    <strong className="mt-2 text-xs text-slate-800 text-center font-bold">
+                      {paymentSettings.societyName || 'Society Payment'}
+                    </strong>
+                    {paymentSettings.paymentUpiId && (
+                      <span className="mt-1 text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200 select-all" title="Click to select UPI ID">
+                        UPI ID: {paymentSettings.paymentUpiId}
+                      </span>
+                    )}
+
+                    <button 
+                      type="button" 
+                      onClick={downloadQrCode} 
+                      disabled={!paymentSettings.paymentQrImage}
+                      className="portal-primary-btn w-full mt-3 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                      style={{ padding: '6px 10px', fontSize: '10px' }}
+                    >
+                      <Download size={12} /> Download QR Code
+                    </button>
+                  </div>
+
+                  {/* Right Column: Instructions and Warning */}
+                  <div className="flex flex-col gap-3 justify-between text-xs text-slate-700">
+                    <div>
+                      <h3 className="font-bold text-slate-900 mb-1" style={{ fontSize: '11px', textTransform: 'uppercase' }}>How to Pay</h3>
+                      <ol className="list-decimal pl-4 space-y-1 font-semibold text-[11px] leading-snug">
+                        <li>Download the QR Code or scan it using any UPI app such as Google Pay, PhonePe, Paytm, or another supported UPI app.</li>
+                        <li>Enter the exact maintenance amount shown on the maintenance bill.</li>
+                        <li>Complete the payment.</li>
+                        <li>Copy the UTR / Transaction ID from the successful payment.</li>
+                        <li>Upload the payment screenshot as payment proof.</li>
+                        <li>Enter the UTR / Transaction ID.</li>
+                        <li>Click "Submit Payment".</li>
+                      </ol>
                     </div>
-                  )}
-                  <div>
-                    <strong>{paymentSettings.societyName || 'Society Payment'}</strong>
-                    {paymentSettings.paymentUpiId && <span>UPI ID: {paymentSettings.paymentUpiId}</span>}
-                    <p>{paymentSettings.paymentNote || 'Scan this QR using Google Pay, PhonePe, Paytm, BHIM or any UPI app. After payment, click I have paid and submit your UTR details.'}</p>
+
+                    {/* Warning Callout */}
+                    <div className="p-2 bg-amber-50 border border-amber-200 rounded-lg text-[10px] text-amber-800 flex gap-2 items-start font-medium leading-snug">
+                      <span className="shrink-0 font-bold">⚠️ Warning:</span>
+                      <span>Please pay the exact amount mentioned in your maintenance bill and upload a clear payment screenshot after completing the transaction.</span>
+                    </div>
                   </div>
                 </div>
 

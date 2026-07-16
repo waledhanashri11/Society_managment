@@ -176,7 +176,7 @@ export const maintenanceAPI = {
   getPendingVerificationPayments: (config = {}) => cachedGet('/maintenance/payments/pending-verification', config),
   getPaymentHistory: (config = {}) => cachedGet('/maintenance/payments/history', config),
   getPaymentReceipt: (id, config = {}) => cachedGet(`/maintenance/payments/${id}/receipt`, config),
-  getPayments: (config = {}) => cachedGet('/maintenance/payments', config),
+  getPayments: (config = {}) => api.get('/maintenance/payments', config),
   getReports: (type, config = {}) => cachedGet('/maintenance/reports', { ...config, params: { ...(config.params || {}), type } }),
   getUserMaintenance: (config = {}) => cachedGet('/maintenance/user/my-maintenance', config),
   getCategories: (config = {}) => cachedGet('/maintenance/categories', config),
@@ -247,6 +247,7 @@ export const nocAPI = {
   createType: (data) => mutate(api.post('/noc/types', data), '/noc/types'),
   getPdf: (id) => api.get(`/noc/${id}/pdf`, { responseType: 'blob' }),
   generateShareLink: (id) => api.post(`/noc/${id}/share`),
+  getPublicCertificate: (token) => api.get(`/noc/public/${token}`),
 };
 
 export const residentAPI = {

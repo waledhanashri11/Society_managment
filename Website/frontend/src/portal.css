@@ -126,7 +126,7 @@
 .portal-status.pending, .portal-status.open, .portal-status.pending_verification, .portal-status.under_review { color: #bd5b00; background: #fff2e5; }
 .portal-status.rejected { color: #b42318; background: #fef3f2; }
 .portal-status.in_progress { color: #395fd3; background: #eef2ff; }
-.portal-status.resolved, .portal-status.paid { color: #05783b; background: #e8f8ef; }
+.portal-status.resolved, .portal-status.paid, .portal-status.approved { color: #05783b; background: #e8f8ef; }
 
 .resident-welcome { display: grid; grid-template-columns: 1.3fr .7fr .7fr; gap: 12px; margin-bottom: 14px; }
 .resident-identity { display: flex; align-items: center; gap: 13px; padding: 18px; border-radius: 10px; color: white; background: linear-gradient(125deg, #087e41, #08a153); box-shadow: 0 8px 22px rgba(8,126,65,.18); }

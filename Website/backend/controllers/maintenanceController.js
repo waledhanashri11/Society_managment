@@ -11,6 +11,37 @@ const sendResponse = (res, statusCode, message, data = null, errors = null) => {
   return res.status(statusCode).json(payload);
 };
 
+const getPublicBackendOrigin = (req) => {
+  const configured = process.env.PUBLIC_BACKEND_URL || process.env.BACKEND_PUBLIC_URL;
+  if (configured) return configured.replace(/\/api\/?$/, '').replace(/\/$/, '');
+  return `${req.protocol}://${req.get('host')}`;
+};
+
+const resolvePaymentScreenshotUrl = (req, value) => {
+  if (!value) return null;
+  const cleanValue = String(value).trim().replace(/\\/g, '/');
+  if (/^(https?:|data:)/i.test(cleanValue)) return cleanValue;
+  if (cleanValue.startsWith('/uploads/')) {
+    const localPath = path.join(__dirname, '..', cleanValue.replace(/^\/uploads\//, 'uploads/'));
+    if (!fs.existsSync(localPath)) {
+      console.warn('Payment screenshot file missing:', { dbPath: cleanValue, localPath });
+      return null;
+    }
+  }
+  return `${getPublicBackendOrigin(req)}${cleanValue.startsWith('/') ? cleanValue : `/${cleanValue}`}`;
+};
+
+const withPaymentScreenshotUrls = (req, payments = []) => payments.map((payment) => {
+  const rawScreenshot = payment.screenshot_url || payment.screenshot || null;
+  const publicUrl = resolvePaymentScreenshotUrl(req, rawScreenshot);
+  return {
+    ...payment,
+    screenshot_url: publicUrl,
+    screenshot: publicUrl,
+    screenshot_path: rawScreenshot
+  };
+});
+
 const calculateLateFee = (dueDate) => {
   if (!dueDate) return 0;
   const due = new Date(dueDate);
@@ -697,7 +728,7 @@ const getPendingVerificationPayments = async (req, res) => {
   try {
     const [payments] = await promisePool.query(`
       SELECT p.*, p.transaction_id AS utr_number, p.screenshot_url AS screenshot,
-             m.bill_number, m.title, m.month, m.year, m.due_date, m.total_amount,
+             CONCAT('BILL-', m.id) AS bill_number, m.title, m.month, m.year, m.due_date, m.total_amount,
              u.name AS resident_name, f.flat_no
       FROM payments p
       JOIN maintenance m ON p.bill_id = m.id
@@ -706,7 +737,7 @@ const getPendingVerificationPayments = async (req, res) => {
       WHERE p.payment_status = 'Pending Verification'
       ORDER BY p.created_at DESC
     `);
-    return sendResponse(res, 200, 'Pending verification payments fetched successfully', payments);
+    return sendResponse(res, 200, 'Pending verification payments fetched successfully', withPaymentScreenshotUrls(req, payments));
   } catch (error) {
     console.error('Get pending payments error:', error);
     return sendResponse(res, 500, 'Server error', null, ['Unable to fetch pending payments']);
@@ -719,7 +750,7 @@ const getPaymentHistory = async (req, res) => {
     const params = req.user.role === 'admin' ? [] : [req.user.id];
     const [payments] = await promisePool.query(
       `SELECT p.*, p.transaction_id AS utr_number, p.screenshot_url AS screenshot,
-              m.bill_number, m.title, m.month, m.year, m.due_date, m.total_amount,
+              CONCAT('BILL-', m.id) AS bill_number, m.title, m.month, m.year, m.due_date, m.total_amount,
               u.name AS resident_name, f.flat_no
        FROM payments p
        JOIN maintenance m ON p.bill_id = m.id
@@ -729,7 +760,7 @@ const getPaymentHistory = async (req, res) => {
        ORDER BY p.created_at DESC`,
       params
     );
-    return sendResponse(res, 200, 'Payment history fetched successfully', payments);
+    return sendResponse(res, 200, 'Payment history fetched successfully', withPaymentScreenshotUrls(req, payments));
   } catch (error) {
     console.error('Get payment history error:', error);
     return sendResponse(res, 500, 'Server error', null, ['Unable to fetch payment history']);
@@ -741,7 +772,7 @@ const getPaymentReceipt = async (req, res) => {
     const { id } = req.params;
     const [payments] = await promisePool.query(
       `SELECT p.*, p.transaction_id AS utr_number, p.screenshot_url AS screenshot,
-              m.resident_id, m.bill_number, m.title, m.month, m.year, m.due_date, m.total_amount, m.payment_date,
+              m.resident_id, CONCAT('BILL-', m.id) AS bill_number, m.title, m.month, m.year, m.due_date, m.total_amount, m.payment_date,
               u.name AS resident_name, f.flat_no, verifier.name AS verified_by_name
        FROM payments p
        JOIN maintenance m ON p.bill_id = m.id
@@ -754,7 +785,7 @@ const getPaymentReceipt = async (req, res) => {
     if (payments.length === 0) {
       return sendResponse(res, 404, 'Payment receipt not found');
     }
-    const receipt = payments[0];
+    const receipt = withPaymentScreenshotUrls(req, payments)[0];
     if (req.user.role !== 'admin' && receipt.resident_id !== req.user.id) {
       return sendResponse(res, 403, 'You can only access your own receipt');
     }
@@ -818,7 +849,7 @@ const getPayments = async (req, res) => {
   try {
     const [payments] = await promisePool.query(`
       SELECT p.*, p.transaction_id AS utr_number, p.screenshot_url AS screenshot,
-             m.bill_number, m.title, m.month, m.year, m.due_date, m.total_amount AS total_amount,
+             CONCAT('BILL-', m.id) AS bill_number, m.title, m.month, m.year, m.due_date, m.total_amount AS total_amount,
              u.name AS resident_name, f.flat_no
       FROM payments p
       JOIN maintenance m ON p.bill_id = m.id
@@ -826,10 +857,15 @@ const getPayments = async (req, res) => {
       JOIN flats f ON m.flat_id = f.id
       ORDER BY p.created_at DESC
     `);
-    return sendResponse(res, 200, 'Payments fetched successfully', payments);
+    return sendResponse(res, 200, 'Payments fetched successfully', withPaymentScreenshotUrls(req, payments));
   } catch (error) {
-    console.error('Get payments error:', error);
-    return sendResponse(res, 500, 'Server error', null, ['Unable to fetch payments']);
+    console.error('Get payments error:', {
+      message: error.message,
+      code: error.code,
+      detail: error.detail,
+      stack: error.stack
+    });
+    return sendResponse(res, 500, 'Unable to fetch payments', null, [error.message || 'Database query failed']);
   }
 };
 

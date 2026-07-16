@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   Activity, AlertCircle, ArrowDownRight, ArrowUpRight, Bell, CalendarDays,
   CheckCircle2, ChevronDown, CircleDollarSign, Download, FileBarChart, FileText,
-  Filter, IndianRupee, LayoutDashboard, Plus, ReceiptIndianRupee,
+  Eye, Filter, Image, IndianRupee, LayoutDashboard, Plus, ReceiptIndianRupee,
   RefreshCcw, Search, SlidersHorizontal, TrendingUp, Wallet,
   X
 } from 'lucide-react';
@@ -29,9 +29,15 @@ const cycleNumber = (year, month) => Number(year) * 12 + Number(month);
 const backendOrigin = (process.env.REACT_APP_API_URL || 'http://localhost:5000/api').replace(/\/api\/?$/, '').replace(/\/$/, '');
 const fileUrl = (value) => {
   if (!value) return '';
-  if (/^(https?:|data:)/i.test(value)) return value;
-  return `${backendOrigin}${value}`;
+  const cleanValue = String(value).trim().replace(/\\/g, '/');
+  if (/^(https?:|data:|blob:)/i.test(cleanValue)) return cleanValue;
+  return `${backendOrigin}${cleanValue.startsWith('/') ? cleanValue : `/${cleanValue}`}`;
 };
+const paymentProofPath = (payment) => {
+  if (payment?.screenshot_path && String(payment.screenshot_path).startsWith('/uploads/')) return payment.screenshot_path;
+  return payment?.screenshot_url || payment?.screenshot || payment?.screenshot_path || payment?.payment_screenshot || '';
+};
+const paymentProofUrl = (payment) => fileUrl(paymentProofPath(payment));
 
 function Modal({ title, subtitle, onClose, children, wide = false }) {
   return (
@@ -92,7 +98,8 @@ const Maintenance = () => {
   const [modal, setModal] = useState(null);
   const [selected, setSelected] = useState(null);
   const [saving, setSaving] = useState(false);
-  const [viewingScreenshot, setViewingScreenshot] = useState('');
+  const [viewingScreenshot, setViewingScreenshot] = useState(null);
+  const [brokenProofs, setBrokenProofs] = useState({});
   const current = new Date();
   
   const [cycleForm, setCycleForm] = useState({ month: current.getMonth() + 1, year: current.getFullYear() });
@@ -133,6 +140,21 @@ const Maintenance = () => {
   };
 
   useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (tab !== 'payments') return;
+    let active = true;
+    maintenanceAPI.getPayments()
+      .then((response) => {
+        if (active) setPayments(unwrap(response));
+      })
+      .catch(() => {
+        if (active) notify('Could not refresh payment submissions');
+      });
+    return () => {
+      active = false;
+    };
+  }, [tab]);
 
   useEffect(() => {
     if (selected && modal === 'pay') {
@@ -844,31 +866,56 @@ const Maintenance = () => {
           <div className="mm-table-wrap">
             <table className="mm-table">
               <thead><tr><th>Resident</th><th>Flat</th><th>Bill</th><th>Month</th><th>Amount</th><th>Payment Date</th><th>UTR</th><th>Screenshot</th><th>Status</th><th>Actions</th></tr></thead>
-              <tbody>{payments.map((payment) => (
-                <tr key={payment.id}>
-                  <td><strong>{payment.resident_name}</strong><small>{date(payment.created_at)}</small></td>
-                  <td>{payment.flat_no}</td>
-                  <td>{payment.bill_number || `BILL-${payment.bill_id}`}</td>
-                  <td>{months[(Number(payment.month) || 1) - 1]} {payment.year || ''}</td>
-                  <td><strong>{money(payment.amount)}</strong></td>
-                  <td>{date(payment.paid_at)}</td>
-                  <td>{payment.utr_number || payment.transaction_id}</td>
-                  <td>
-                    {payment.screenshot_url || payment.screenshot ? (
-                      <button className="mm-mini-action" onClick={() => setViewingScreenshot(payment.screenshot_url || payment.screenshot)}>View</button>
-                    ) : (
-                      <span className="text-xs text-slate-400">No file</span>
-                    )}
-                  </td>
-                  <td><span className={statusClass(payment.payment_status)}>{payment.payment_status}</span></td>
-                  <td>
-                    <div className="mm-action-group">
-                      {payment.payment_status !== 'Paid' && <button className="mm-mini-action green" onClick={() => updatePaymentStatus(payment, 'Paid')}>Approve</button>}
-                      {payment.payment_status !== 'Rejected' && payment.payment_status !== 'Paid' && <button className="mm-mini-action red" onClick={() => updatePaymentStatus(payment, 'Rejected')}>Reject</button>}
-                    </div>
-                  </td>
-                </tr>
-              ))}</tbody>
+              <tbody>{payments.map((payment) => {
+                const proofPath = paymentProofPath(payment);
+                const proofUrl = paymentProofUrl(payment);
+                const proofBroken = brokenProofs[payment.id];
+                return (
+                  <tr key={payment.id}>
+                    <td><strong>{payment.resident_name}</strong><small>{date(payment.created_at)}</small></td>
+                    <td>{payment.flat_no}</td>
+                    <td>{payment.bill_number || `BILL-${payment.bill_id}`}</td>
+                    <td>{months[(Number(payment.month) || 1) - 1]} {payment.year || ''}</td>
+                    <td><strong>{money(payment.amount)}</strong></td>
+                    <td>{date(payment.paid_at)}</td>
+                    <td>{payment.utr_number || payment.transaction_id}</td>
+                    <td>
+                      {proofPath && !proofBroken ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 150 }}>
+                          <button
+                            type="button"
+                            onClick={() => setViewingScreenshot({ ...payment, proofUrl })}
+                            style={{ border: 0, padding: 0, background: 'transparent', cursor: 'pointer' }}
+                            title="View Screenshot"
+                          >
+                            <img
+                              src={proofUrl}
+                              alt="Payment proof thumbnail"
+                              loading="lazy"
+                              style={{ width: 54, height: 42, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--portal-line)', background: '#f8fafc' }}
+                              onError={() => setBrokenProofs((current) => ({ ...current, [payment.id]: true }))}
+                            />
+                          </button>
+                          <button className="mm-mini-action" onClick={() => setViewingScreenshot({ ...payment, proofUrl })}>
+                            <Eye size={13} /> View Screenshot
+                          </button>
+                        </div>
+                      ) : proofPath && proofBroken ? (
+                        <span className="text-xs text-red-500">Screenshot link is broken</span>
+                      ) : (
+                        <span className="text-xs text-slate-400">No payment proof uploaded.</span>
+                      )}
+                    </td>
+                    <td><span className={statusClass(payment.payment_status)}>{payment.payment_status}</span></td>
+                    <td>
+                      <div className="mm-action-group">
+                        {payment.payment_status !== 'Paid' && <button className="mm-mini-action green" onClick={() => updatePaymentStatus(payment, 'Paid')}>Approve</button>}
+                        {payment.payment_status !== 'Rejected' && payment.payment_status !== 'Paid' && <button className="mm-mini-action red" onClick={() => updatePaymentStatus(payment, 'Rejected')}>Reject</button>}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}</tbody>
             </table>
             {!payments.length && <Empty title="No payment submissions" copy="Resident payment proofs will appear here for admin approval." />}
           </div>
@@ -1043,12 +1090,41 @@ const Maintenance = () => {
       </Modal>}
 
       {viewingScreenshot && (
-        <Modal title="Payment Receipt" onClose={() => setViewingScreenshot('')}>
-          <div style={{ textAlign: 'center', padding: '15px' }}>
-            <img src={fileUrl(viewingScreenshot)} alt="Payment proof receipt" style={{ maxWidth: '100%', maxHeight: '65vh', objectFit: 'contain', borderRadius: '8px', border: '1px solid var(--portal-line)' }} />
+        <Modal
+          wide
+          title="Payment Screenshot"
+          subtitle={`${viewingScreenshot.resident_name || 'Resident'} · ${viewingScreenshot.bill_number || `BILL-${viewingScreenshot.bill_id}`}`}
+          onClose={() => setViewingScreenshot(null)}
+        >
+          <div style={{ padding: '18px 20px', background: '#f8fafc' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, marginBottom: 14 }}>
+              <div><span className="text-xs text-slate-500">Flat</span><strong style={{ display: 'block' }}>{viewingScreenshot.flat_no || '-'}</strong></div>
+              <div><span className="text-xs text-slate-500">UTR</span><strong style={{ display: 'block' }}>{viewingScreenshot.utr_number || viewingScreenshot.transaction_id || '-'}</strong></div>
+              <div><span className="text-xs text-slate-500">Amount</span><strong style={{ display: 'block' }}>{money(viewingScreenshot.amount)}</strong></div>
+              <div><span className="text-xs text-slate-500">Payment Date</span><strong style={{ display: 'block' }}>{date(viewingScreenshot.paid_at)}</strong></div>
+            </div>
+            <div style={{ minHeight: 260, display: 'grid', placeItems: 'center', borderRadius: 12, border: '1px solid var(--portal-line)', background: 'white', overflow: 'hidden' }}>
+              {brokenProofs[viewingScreenshot.id] ? (
+                <div style={{ padding: 24, textAlign: 'center', color: '#dc2626' }}>
+                  <Image size={32} style={{ margin: '0 auto 10px' }} />
+                  <strong>Screenshot could not be loaded.</strong>
+                  <p style={{ margin: '6px 0 0', color: '#64748b', fontSize: 12 }}>The saved image path may be missing or inaccessible.</p>
+                </div>
+              ) : (
+                <img
+                  src={viewingScreenshot.proofUrl}
+                  alt="Full size payment proof"
+                  style={{ maxWidth: '100%', maxHeight: '72vh', objectFit: 'contain' }}
+                  onError={() => setBrokenProofs((current) => ({ ...current, [viewingScreenshot.id]: true }))}
+                />
+              )}
+            </div>
           </div>
-          <div className="mm-form-actions" style={{ padding: '0 20px 20px', display: 'flex', justifyContent: 'flex-end' }}>
-            <button className="mm-button mm-button-light" onClick={() => setViewingScreenshot('')}>Close</button>
+          <div className="mm-form-actions" style={{ padding: '0 20px 20px', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            {viewingScreenshot.proofUrl && !brokenProofs[viewingScreenshot.id] && (
+              <a className="mm-button mm-button-light" href={viewingScreenshot.proofUrl} target="_blank" rel="noreferrer">Open Full Image</a>
+            )}
+            <button className="mm-button mm-button-light" onClick={() => setViewingScreenshot(null)}>Close</button>
           </div>
         </Modal>
       )}

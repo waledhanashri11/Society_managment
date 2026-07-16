@@ -15,7 +15,7 @@ const residentLinks = [
   { to: '/resident/notices', label: 'Notices', icon: Bell },
   { to: '/resident/members', label: 'Members', icon: Users },
   { to: '/resident/reports', label: 'Reports', icon: FileBarChart },
-  { to: '/resident/noc-requests', label: 'NOC Requests', icon: FileCheck2 },
+  { to: '/resident/my-nocs', label: 'My NOCs', icon: FileCheck2 },
   { to: '/resident/profile', label: 'My Profile', icon: User },
   { to: '/resident/payments', label: 'Payments', icon: ClipboardList }
 ];

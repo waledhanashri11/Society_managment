@@ -1,5 +1,5 @@
 const { promisePool } = require('../config/database');
-const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 
 const unwrap = (rows) => rows || [];
 
@@ -55,6 +55,38 @@ const generateRequestNumber = async () => {
     ? Number(String(rows[0].request_number).replace(prefix, '')) + 1
     : 1;
   return `${prefix}${String(next).padStart(4, '0')}`;
+};
+
+const normalizeOrigin = (value) => {
+  if (!value) return '';
+  return String(value).trim().replace(/[\r\n\s]+/g, '').replace(/\/api\/?$/, '').replace(/\/$/, '');
+};
+
+const getPublicFrontendOrigin = (req) => {
+  const configured = normalizeOrigin(process.env.FRONTEND_URL || process.env.PUBLIC_FRONTEND_URL);
+  if (!configured) {
+    const host = req?.get?.('host') || 'unknown-host';
+    console.error(`NOC share link generation blocked. FRONTEND_URL is missing. Request host was: ${host}`);
+    throw new Error('FRONTEND_URL is required to generate NOC share links');
+  }
+  const unsafeHostPattern = new RegExp(['local' + 'host', '127\\.0\\.0\\.1', 'loca' + '\\.lt', 'ng' + 'rok'].join('|'), 'i');
+  if (unsafeHostPattern.test(configured)) {
+    console.error(`NOC share link generation blocked. FRONTEND_URL is not a production URL: ${configured}`);
+    throw new Error('FRONTEND_URL must be your deployed frontend domain');
+  }
+  return configured;
+};
+
+const createShortShareToken = async () => {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const token = crypto.randomBytes(18).toString('base64url');
+    const [existing] = await promisePool.query(
+      'SELECT id FROM noc_requests WHERE share_token = ? LIMIT 1',
+      [token]
+    );
+    if (existing.length === 0) return token;
+  }
+  return crypto.randomBytes(24).toString('base64url');
 };
 
 const getResidentFlat = async (residentId) => {
@@ -302,13 +334,16 @@ const approveRequest = async (req, res) => {
       return sendResponse(res, 400, 'Cannot approve NOC. Legal dispute found.');
     }
 
-    const pdfUrl = `/api/noc/${request.id}/pdf`;
+    const shareToken = request.share_token || await createShortShareToken();
+    const pdfUrl = `/share/noc/${shareToken}`;
     await promisePool.query(
       `UPDATE noc_requests
        SET status = 'Approved', approved_at = NOW(), approved_by = ?, admin_remarks = ?,
-           pdf_url = ?, updated_at = NOW()
+           pdf_url = ?, share_token = ?, share_token_created_at = COALESCE(share_token_created_at, NOW()),
+           share_token_expires_at = COALESCE(share_token_expires_at, NOW() + INTERVAL '30 days'),
+           updated_at = NOW()
        WHERE id = ?`,
-      [req.user.id, req.body.remarks || null, pdfUrl, request.id]
+      [req.user.id, req.body.remarks || null, pdfUrl, shareToken, request.id]
     );
     await logAction(request.id, 'Approved', req.user.id, req.body.remarks || '');
     await createNotification(request.resident_id, 'NOC approved', `${request.request_number} has been approved and is ready to download.`, 'noc', request.id);
@@ -439,7 +474,7 @@ const getPdf = async (req, res) => {
     const html = generateNocHtml(request, societyName);
 
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.setHeader('Content-Disposition', `inline; filename="${request.request_number}.html"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${request.request_number}.html"`);
     return res.send(html);
   } catch (error) {
     console.error('Get NOC PDF error:', error);
@@ -455,16 +490,18 @@ const generateShareToken = async (req, res) => {
       return sendResponse(res, 400, 'NOC is not approved yet');
     }
 
-    const token = jwt.sign(
-      { requestId: request.id, action: 'share_noc' },
-      process.env.JWT_SECRET,
-      { expiresIn: '24h' }
+    const token = request.share_token || await createShortShareToken();
+    await promisePool.query(
+      `UPDATE noc_requests
+       SET share_token = ?, share_token_created_at = COALESCE(share_token_created_at, NOW()),
+           share_token_expires_at = COALESCE(share_token_expires_at, NOW() + INTERVAL '30 days'),
+           pdf_url = ?, updated_at = NOW()
+       WHERE id = ?`,
+      [token, `/share/noc/${token}`, request.id]
     );
 
-    const backendOrigin = (process.env.REACT_APP_API_URL || 'http://localhost:5000/api')
-      .replace(/\/api\/?$/, '')
-      .replace(/\/$/, '');
-    const shareUrl = `${backendOrigin}/api/noc/share/${token}`;
+    const frontendOrigin = getPublicFrontendOrigin(req);
+    const shareUrl = `${frontendOrigin}/share/noc/${token}`.trim().replace(/[\r\n\s]+/g, '');
 
     return sendResponse(res, 200, 'Share link generated', { shareUrl });
   } catch (error) {
@@ -476,12 +513,17 @@ const generateShareToken = async (req, res) => {
 const getSharedPdf = async (req, res) => {
   try {
     const { token } = req.params;
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    if (decoded.action !== 'share_noc') {
-      return res.status(400).json({ message: 'Invalid token action' });
-    }
+    const [rows] = await promisePool.query(
+      `SELECT id
+       FROM noc_requests
+       WHERE share_token = ?
+         AND status = 'Approved'
+         AND (share_token_expires_at IS NULL OR share_token_expires_at > NOW())
+       LIMIT 1`,
+      [token]
+    );
 
-    const request = await getRequestRow(decoded.requestId);
+    const request = rows.length ? await getRequestRow(rows[0].id) : null;
     if (!request || request.status !== 'Approved') {
       return res.status(404).json({ message: 'NOC request not found or not approved' });
     }
@@ -490,11 +532,59 @@ const getSharedPdf = async (req, res) => {
     const html = generateNocHtml(request, societyName);
 
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.setHeader('Content-Disposition', `inline; filename="${request.request_number}.html"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${request.request_number}.html"`);
     return res.send(html);
   } catch (error) {
     console.error('Get shared PDF error:', error);
     return res.status(403).send('<h1>Access Denied</h1><p>This share link has expired or is invalid.</p>');
+  }
+};
+
+const getPublicCertificate = async (req, res) => {
+  try {
+    const { token } = req.params;
+    if (!token || token.length < 16) {
+      return res.status(404).json({ message: 'Certificate Not Found or Expired' });
+    }
+
+    const [rows] = await promisePool.query(
+      `SELECT id
+       FROM noc_requests
+       WHERE share_token = ?
+         AND status = 'Approved'
+         AND (share_token_expires_at IS NULL OR share_token_expires_at > NOW())
+       LIMIT 1`,
+      [token]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ message: 'Certificate Not Found or Expired' });
+    }
+
+    const request = await getRequestRow(rows[0].id);
+    if (!request || request.status !== 'Approved') {
+      return res.status(404).json({ message: 'Certificate Not Found or Expired' });
+    }
+
+    return res.json({
+      society: {
+        name: process.env.SOCIETY_NAME || 'Society Management System'
+      },
+      certificate: {
+        request_number: request.request_number,
+        noc_type: request.noc_type,
+        purpose: request.purpose,
+        issue_date: request.approved_at,
+        verification_number: request.verification_number || `VERIFY-${request.request_number}`,
+        resident_name: request.resident_name,
+        flat_no: request.flat_no,
+        wing: request.wing,
+        floor_no: request.floor_no
+      }
+    });
+  } catch (error) {
+    console.error('Get public NOC certificate error:', error);
+    return res.status(500).json({ message: 'Unable to load certificate right now' });
   }
 };
 
@@ -510,5 +600,6 @@ module.exports = {
   createType,
   getPdf,
   generateShareToken,
-  getSharedPdf
+  getSharedPdf,
+  getPublicCertificate
 };

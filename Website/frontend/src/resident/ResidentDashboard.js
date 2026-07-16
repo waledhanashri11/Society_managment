@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Bell, Building2, Camera, Car, CreditCard, Download, FileCheck2, FileText, MessageSquarePlus,
-  MessageSquareWarning, QrCode, ReceiptIndianRupee, Send, History, Calendar
+  Bell, Building2, Car, Download, Eye, FileCheck2, FileText, MessageSquarePlus,
+  MessageSquareWarning, ReceiptIndianRupee, History, Calendar
 } from 'lucide-react';
 import { complaintAPI, maintenanceAPI, noticeAPI, residentAPI, settingsAPI, flatAPI, nocAPI } from '../services/api';
 import { getUser } from '../utils/auth';
@@ -15,7 +15,6 @@ const fullDate = (value) => value ? new Date(value).toLocaleDateString('en-IN', 
 
 const getProfilePhotoKey = (user) => `residentProfilePhoto:${user?.id || user?.email || 'current'}`;
 
-const SUPPORT_PARTIAL_PAYMENTS = true; // Set to false to disable partial payments
 
 const ResidentDashboard = () => {
   const navigate = useNavigate();
@@ -27,17 +26,12 @@ const ResidentDashboard = () => {
   const [flatDetails, setFlatDetails] = useState(null);
   const [transfers, setTransfers] = useState([]);
   const [flatMaintenanceHistory, setFlatMaintenanceHistory] = useState([]);
-  const [paymentSettings, setPaymentSettings] = useState({});
   const [nocSummary, setNocSummary] = useState({});
   const [loading, setLoading] = useState(true);
-  const [loadingBill, setLoadingBill] = useState(false);
   const [toast, setToast] = useState('');
   const [showComplaint, setShowComplaint] = useState(false);
-  const [showPayment, setShowPayment] = useState(false);
-  const [selectedBill, setSelectedBill] = useState(null);
   const [profilePhoto, setProfilePhoto] = useState(() => localStorage.getItem(profilePhotoKey) || '');
   const [complaint, setComplaint] = useState({ title: '', description: '' });
-  const [payment, setPayment] = useState({ paymentMethod: 'UPI', transactionId: '', amount: '', screenshotUrl: '' });
 
   const notify = (message) => {
     setToast(message);
@@ -57,7 +51,6 @@ const ResidentDashboard = () => {
     if (results[0].status === 'fulfilled') setBills(unwrap(results[0].value));
     if (results[1].status === 'fulfilled') setComplaints(unwrap(results[1].value));
     if (results[2].status === 'fulfilled') setNotices(unwrap(results[2].value));
-    if (results[3].status === 'fulfilled') setPaymentSettings(results[3].value.data || {});
     if (results[5].status === 'fulfilled') setNocSummary(results[5].value.data || {});
     if (results[4].status === 'fulfilled') {
       const dashboardData = results[4].value.data;
@@ -105,7 +98,6 @@ const ResidentDashboard = () => {
   }, [profilePhotoKey]);
 
   const pendingBills = useMemo(() => bills.filter((bill) => bill.payment_status !== 'Paid'), [bills]);
-  const latestDueBill = pendingBills[0];
 
   const summary = useMemo(() => {
     const paid = bills.filter((bill) => bill.payment_status === 'Paid');
@@ -117,77 +109,6 @@ const ResidentDashboard = () => {
     };
   }, [bills, pendingBills]);
 
-  const openPayment = async (bill = latestDueBill) => {
-    if (!bill) {
-      notify('No pending bill to pay');
-      return;
-    }
-    setLoadingBill(true);
-    try {
-      const response = await maintenanceAPI.getBillById(bill.id);
-      const fullBill = response.data?.data?.bill || response.data?.bill || bill;
-      setSelectedBill(fullBill);
-      
-      const totalDue = Number(fullBill.remaining_amount || fullBill.total_amount || 0) + Number(fullBill.previous_outstanding || 0);
-
-      setPayment({
-        paymentMethod: 'UPI',
-        transactionId: '',
-        amount: String(totalDue),
-        screenshotUrl: ''
-      });
-      setShowPayment(true);
-    } catch (error) {
-      notify('Failed to load complete bill details');
-    } finally {
-      setLoadingBill(false);
-    }
-  };
-
-  const handleScreenshotUpload = (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    if (!file.type.startsWith('image/')) {
-      notify('Please select an image file');
-      return;
-    }
-
-    if (file.size > 3 * 1024 * 1024) {
-      notify('Please choose an image under 3 MB');
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      setPayment(current => ({ ...current, screenshotUrl: reader.result }));
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const removeScreenshot = () => {
-    setPayment(current => ({ ...current, screenshotUrl: '' }));
-  };
-
-  const submitPayment = async (event) => {
-    event.preventDefault();
-    if (!selectedBill) return;
-    try {
-      await maintenanceAPI.submitPayment({
-        billId: selectedBill.id,
-        paymentMethod: payment.paymentMethod,
-        transactionId: payment.transactionId,
-        amount: payment.amount,
-        screenshotUrl: payment.screenshotUrl
-      });
-      notify('Payment submitted for admin review');
-      setShowPayment(false);
-      await load();
-    } catch (error) {
-      notify(error.response?.data?.message || 'Could not submit payment');
-    }
-  };
-
   const submitComplaint = async (event) => {
     event.preventDefault();
     await complaintAPI.create(complaint);
@@ -195,19 +116,6 @@ const ResidentDashboard = () => {
     setShowComplaint(false);
     notify('Complaint submitted');
     load();
-  };
-
-  const raiseBillDispute = async (bill) => {
-    const subject = window.prompt('Dispute subject', `Issue with ${bill.bill_number || 'maintenance bill'}`);
-    if (!subject) return;
-    const description = window.prompt('Describe the issue');
-    if (!description) return;
-    try {
-      await maintenanceAPI.createDispute({ billId: bill.id, subject, description });
-      notify('Bill dispute submitted');
-    } catch (error) {
-      notify(error.response?.data?.message || 'Could not submit dispute');
-    }
   };
 
   const printDocument = (type, bill) => {
@@ -257,7 +165,6 @@ const ResidentDashboard = () => {
   };
 
   const quickActions = [
-    { label: 'Pay Maintenance', icon: CreditCard, action: () => openPayment() },
     { label: 'Complaints', icon: MessageSquarePlus, action: () => navigate('/resident/complaints') },
     { label: 'Notices', icon: Bell, action: () => navigate('/resident/notices') },
     { label: 'NOC Requests', icon: FileCheck2, action: () => navigate('/resident/noc-requests') },
@@ -276,53 +183,129 @@ const ResidentDashboard = () => {
           <CardSkeleton count={3} />
         ) : (
           <>
-            <div className="resident-identity">
+            <div className="resident-identity flex items-center gap-3 min-h-[92px]">
               <span className={`resident-avatar ${profilePhoto ? 'has-photo' : ''}`}>
                 {profilePhoto ? <img src={profilePhoto} alt="Resident profile" loading="lazy" decoding="async" /> : (user?.name || 'R').charAt(0)}
               </span>
-              <div><small>Welcome back,</small><strong>{user?.name || 'Resident'}</strong><span>Resident account</span></div>
+              <div>
+                <small className="block opacity-85 text-[10px]">Welcome back,</small>
+                <strong className="block text-base font-black leading-tight mt-0.5">{user?.name || 'Resident'}</strong>
+                <span className="block opacity-75 text-[9px] mt-1">Resident account</span>
+              </div>
             </div>
-            <div className="resident-balance"><span>Outstanding Due</span><strong>{money(summary.due)}</strong><small>{summary.nextDue ? `Due on ${fullDate(summary.nextDue)}` : 'Nothing due right now'}</small><button className="resident-pay" onClick={() => openPayment()}>Pay Now</button></div>
-            <div className="resident-balance"><span>Total Paid</span><strong>{money(summary.paid)}</strong><small>{summary.underReview} payment under review</small></div>
+
+            <div 
+              className="resident-balance cursor-pointer hover:bg-slate-50/50 hover:shadow-sm transition-all duration-200 flex flex-col justify-center min-h-[92px]" 
+              onClick={() => navigate('/resident/maintenance')}
+            >
+              <span className="text-[10px] font-extrabold uppercase tracking-wide text-slate-500">Outstanding Due</span>
+              <strong className="text-xl font-black text-slate-950 mt-1">{money(summary.due)}</strong>
+              <small className="text-[10px] text-slate-500 font-semibold mt-1">
+                {summary.nextDue ? `Due on ${fullDate(summary.nextDue)}` : 'Nothing due right now'}
+              </small>
+            </div>
+
+            <div className="resident-balance flex flex-col justify-center min-h-[92px]">
+              <span className="text-[10px] font-extrabold uppercase tracking-wide text-slate-500">Total Paid</span>
+              <strong className="text-xl font-black text-slate-950 mt-1">{money(summary.paid)}</strong>
+              <small className="text-[10px] text-slate-500 font-semibold mt-1">
+                {summary.underReview} payment under review
+              </small>
+            </div>
           </>
         )}
       </section>
 
       <div className="portal-dashboard-grid">
-        <section className="portal-panel">
-          <div className="portal-panel-head"><div><h2>Quick Actions</h2><p>Everything you use most often</p></div></div>
-          <div className="resident-quick-grid">
+        <section className="portal-panel flex flex-col justify-between">
+          <div className="portal-panel-head">
+            <div>
+              <h2>Quick Actions</h2>
+              <p>Everything you use most often</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-4 gap-4 p-5 my-auto">
             {quickActions.map(({ label, icon: Icon, action }) => (
-              <button className="resident-quick" key={label} onClick={action}>
-                <span><Icon size={18} /></span>{label}
+              <button 
+                className="flex flex-col items-center gap-2 border-0 bg-transparent text-slate-700 hover:text-emerald-700 hover:scale-105 transition-all duration-200 text-center cursor-pointer group" 
+                key={label} 
+                onClick={action}
+              >
+                <span className="w-11 h-11 grid place-items-center rounded-2xl text-emerald-700 bg-emerald-50 group-hover:bg-emerald-100 transition-colors">
+                  <Icon size={20} />
+                </span>
+                <span className="text-[10px] font-bold leading-tight">{label}</span>
               </button>
             ))}
           </div>
         </section>
 
-        <section className="portal-panel">
-          <div className="portal-panel-head"><div><h2>My Flat</h2><p>Your assigned residence details.</p></div><Building2 size={17} /></div>
-          {loading ? <CardSkeleton count={2} /> : (
-            <div className="grid grid-cols-2 gap-3 p-4 text-sm">
-              <div className="rounded-lg bg-slate-50 p-3"><span className="block text-xs font-bold uppercase text-slate-500">Flat</span><strong className="mt-1 block text-slate-900">Flat {flatDetails?.flat_no || 'N/A'}</strong></div>
-              <div className="rounded-lg bg-slate-50 p-3"><span className="block text-xs font-bold uppercase text-slate-500">Wing</span><strong className="mt-1 block text-slate-900">{flatDetails?.wing || '-'}</strong></div>
-              <div className="rounded-lg bg-slate-50 p-3"><span className="block text-xs font-bold uppercase text-slate-500">Floor</span><strong className="mt-1 block text-slate-900">{flatDetails?.floor_no ?? '-'}</strong></div>
-              <div className="rounded-lg bg-green-50 p-3"><span className="block text-xs font-bold uppercase text-green-700">Status</span><strong className="mt-1 block text-green-800">{flatDetails?.flat_status || 'Assigned'}</strong></div>
+        <section className="portal-panel flex flex-col justify-between">
+          <div className="portal-panel-head">
+            <div>
+              <h2>My Flat</h2>
+              <p>Your assigned residence details.</p>
+            </div>
+            <Building2 size={17} className="text-slate-400" />
+          </div>
+          {loading ? (
+            <div className="p-5 my-auto"><CardSkeleton count={2} /></div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3 p-5 my-auto">
+              <div className="rounded-xl bg-slate-50 border border-slate-100 p-3">
+                <span className="block text-[9px] font-extrabold uppercase tracking-wide text-slate-500">Flat</span>
+                <strong className="mt-1 block text-sm font-black text-slate-950">Flat {flatDetails?.flat_no || 'N/A'}</strong>
+              </div>
+              <div className="rounded-xl bg-slate-50 border border-slate-100 p-3">
+                <span className="block text-[9px] font-extrabold uppercase tracking-wide text-slate-500">Wing</span>
+                <strong className="mt-1 block text-sm font-black text-slate-950">{flatDetails?.wing || '-'}</strong>
+              </div>
+              <div className="rounded-xl bg-slate-50 border border-slate-100 p-3">
+                <span className="block text-[9px] font-extrabold uppercase tracking-wide text-slate-500">Floor</span>
+                <strong className="mt-1 block text-sm font-black text-slate-950">{flatDetails?.floor_no ?? '-'}</strong>
+              </div>
+              <div className="rounded-xl bg-emerald-50/70 border border-emerald-100 p-3">
+                <span className="block text-[9px] font-extrabold uppercase tracking-wide text-emerald-700">Status</span>
+                <strong className="mt-1 block text-sm font-black text-emerald-900">{flatDetails?.flat_status || 'Assigned'}</strong>
+              </div>
             </div>
           )}
         </section>
       </div>
 
       <section className="portal-panel resident-summary-panel">
-          <div className="portal-panel-head"><div><h2>Resident Summary</h2><p>Quick counts with full pages in the sidebar.</p></div></div>
-          <div className="portal-status-summary">
-            <div><span>Complaints</span><strong>{complaints.length}</strong></div>
-            <div><span>Notices</span><strong>{notices.length}</strong></div>
-            <div><span>Pending Bills</span><strong>{pendingBills.length}</strong></div>
-            <div><span>Pending Requests</span><strong>{Number(nocSummary.pending || 0) + Number(nocSummary.under_review || 0)}</strong></div>
-            <div><span>Approved NOCs</span><strong>{Number(nocSummary.approved || 0)}</strong></div>
-            <div><span>Rejected Requests</span><strong>{Number(nocSummary.rejected || 0)}</strong></div>
+        <div className="portal-panel-head">
+          <div>
+            <h2>Resident Summary</h2>
+            <p>Quick counts with full pages in the sidebar.</p>
           </div>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 p-4">
+          <div className="p-3 rounded-xl bg-slate-50 border border-slate-100/80 text-center">
+            <span className="block text-[10px] font-extrabold uppercase tracking-wide text-slate-500">Complaints</span>
+            <strong className="block mt-1.5 text-xl font-black text-slate-950">{complaints.length}</strong>
+          </div>
+          <div className="p-3 rounded-xl bg-slate-50 border border-slate-100/80 text-center">
+            <span className="block text-[10px] font-extrabold uppercase tracking-wide text-slate-500">Notices</span>
+            <strong className="block mt-1.5 text-xl font-black text-slate-950">{notices.length}</strong>
+          </div>
+          <div className="p-3 rounded-xl bg-slate-50 border border-slate-100/80 text-center">
+            <span className="block text-[10px] font-extrabold uppercase tracking-wide text-slate-500">Pending Bills</span>
+            <strong className="block mt-1.5 text-xl font-black text-slate-950">{pendingBills.length}</strong>
+          </div>
+          <div className="p-3 rounded-xl bg-slate-50 border border-slate-100/80 text-center">
+            <span className="block text-[10px] font-extrabold uppercase tracking-wide text-slate-500">Pending Requests</span>
+            <strong className="block mt-1.5 text-xl font-black text-slate-950">{Number(nocSummary.pending || 0) + Number(nocSummary.under_review || 0)}</strong>
+          </div>
+          <div className="p-3 rounded-xl bg-slate-50 border border-slate-100/80 text-center">
+            <span className="block text-[10px] font-extrabold uppercase tracking-wide text-slate-500">Approved NOCs</span>
+            <strong className="block mt-1.5 text-xl font-black text-slate-950">{Number(nocSummary.approved || 0)}</strong>
+          </div>
+          <div className="p-3 rounded-xl bg-slate-50 border border-slate-100/80 text-center">
+            <span className="block text-[10px] font-extrabold uppercase tracking-wide text-slate-500">Rejected Requests</span>
+            <strong className="block mt-1.5 text-xl font-black text-slate-950">{Number(nocSummary.rejected || 0)}</strong>
+          </div>
+        </div>
       </section>
 
       <section className="portal-panel resident-maintenance-panel" id="maintenance">
@@ -342,10 +325,14 @@ const ResidentDashboard = () => {
                   <td><span className={`portal-status ${String(bill.payment_status).toLowerCase().replace(' ', '_')}`}>{bill.payment_status}</span></td>
                   <td>
                     <div className="resident-bill-actions">
-                      {bill.payment_status !== 'Paid' && <button onClick={() => openPayment(bill)}><CreditCard size={11} /> Pay</button>}
-                      <button onClick={() => handlePrint('Maintenance Invoice', bill)}><FileText size={11} /> Invoice</button>
-                      {bill.payment_status === 'Paid' && <button onClick={() => handlePrint('Payment Receipt', bill)}><Download size={11} /> Receipt</button>}
-                      {bill.payment_status !== 'Paid' && <button onClick={() => raiseBillDispute(bill)}><MessageSquareWarning size={11} /> Dispute</button>}
+                      {bill.payment_status === 'Paid' ? (
+                        <>
+                          <button onClick={() => handlePrint('Maintenance Invoice', bill)}><FileText size={11} /> Invoice</button>
+                          <button onClick={() => handlePrint('Payment Receipt', bill)}><Download size={11} /> Receipt</button>
+                        </>
+                      ) : (
+                        <button onClick={() => navigate('/resident/maintenance')}><Eye size={11} /> View</button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -474,121 +461,7 @@ const ResidentDashboard = () => {
         </section>
       </div>
 
-      {showPayment && selectedBill && (
-        <div className="portal-modal-backdrop" onMouseDown={() => setShowPayment(false)}>
-          <div className="portal-modal" onMouseDown={(event) => event.stopPropagation()}>
-            <form onSubmit={submitPayment} style={{ display: 'flex', flexDirection: 'column', maxHeight: '92vh', margin: 0 }}>
-              <div className="portal-modal-head">
-                <div>
-                  <h3>Submit payment proof</h3>
-                  <p>{selectedBill.bill_number || `Bill #${selectedBill.id}`} · {money(Number(selectedBill.total_amount || 0) + Number(selectedBill.previous_outstanding || 0))}</p>
-                </div>
-              </div>
-              <div className="portal-form" style={{ overflowY: 'auto', flex: '1 1 auto', display: 'grid', gap: '13px', padding: '18px 20px 20px' }}>
-                <div className="resident-qr-card" style={{ gridColumn: '1 / -1' }}>
-                  {paymentSettings.paymentQrImage ? (
-                    <img src={paymentSettings.paymentQrImage} alt="Maintenance payment scanner" />
-                  ) : (
-                    <div className="resident-qr-empty">
-                      <QrCode size={38} />
-                      <strong>Payment scanner not uploaded yet</strong>
-                      <span>Please contact society admin.</span>
-                    </div>
-                  )}
-                  <div>
-                    <strong>{paymentSettings.societyName || 'Society Payment'}</strong>
-                    {paymentSettings.paymentUpiId && <span>UPI ID: {paymentSettings.paymentUpiId}</span>}
-                    <p>{paymentSettings.paymentNote || 'Scan the QR, complete payment, then submit your transaction details below.'}</p>
-                  </div>
-                </div>
 
-                {loadingBill ? (
-                  <div className="portal-field-full" style={{ padding: '20px', textAlign: 'center', color: '#64748b', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '0.5rem' }}>
-                    Loading bill details...
-                  </div>
-                ) : (
-                  <div className="rounded-lg bg-slate-50 p-4 border border-slate-100 text-sm portal-field-full" style={{ background: '#f8fafc', border: '1px solid #e2e8f0', padding: '1rem', borderRadius: '0.5rem', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #edf2f7', paddingBottom: '4px', marginBottom: '4px', fontSize: '0.8rem', fontWeight: 700, color: '#334155' }}>
-                      <span>Bill Details Summary</span>
-                      <span>{selectedBill.bill_number || `BILL-${selectedBill.id}`}</span>
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.75rem', color: '#475467' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <span>Base Maintenance Charge:</span>
-                        <strong>{money(selectedBill.amount)}</strong>
-                      </div>
-                      {selectedBill.items && selectedBill.items.map((item, idx) => (
-                        <div key={idx} style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span>{item.name}:</span>
-                          <strong>{money(item.amount)}</strong>
-                        </div>
-                      ))}
-                      {Number(selectedBill.penalty_amount || 0) > 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#b42318' }}>
-                          <span>Late Fee Penalty:</span>
-                          <strong>{money(selectedBill.penalty_amount)}</strong>
-                        </div>
-                      )}
-                      {Number(selectedBill.previous_outstanding || 0) > 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#b42318' }}>
-                          <span>Previous Outstanding Balance:</span>
-                          <strong>{money(selectedBill.previous_outstanding)}</strong>
-                        </div>
-                      )}
-                      <hr style={{ margin: '6px 0', border: 0, borderTop: '1px solid #e2e8f0' }} />
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, color: '#0f172a' }}>
-                        <span>Total Payable Amount:</span>
-                        <strong>{money(Number(selectedBill.total_amount || 0) + Number(selectedBill.previous_outstanding || 0))}</strong>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <span>Amount Already Paid:</span>
-                        <strong>{money(selectedBill.paid_amount)}</strong>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, color: '#059669' }}>
-                        <span>Remaining Balance Due:</span>
-                        <strong>{money(Number(selectedBill.remaining_amount || 0) + Number(selectedBill.previous_outstanding || 0))}</strong>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                <label><span>Payment Method</span><select value={payment.paymentMethod} onChange={(e) => setPayment({ ...payment, paymentMethod: e.target.value })}><option>UPI</option><option>Bank Transfer</option><option>Cash</option><option>Cheque</option></select></label>
-                <label><span>Amount</span><input type="number" min="1" required readOnly={!SUPPORT_PARTIAL_PAYMENTS} style={{ background: !SUPPORT_PARTIAL_PAYMENTS ? '#f1f5f9' : 'white', cursor: !SUPPORT_PARTIAL_PAYMENTS ? 'not-allowed' : 'text' }} value={payment.amount} onChange={(e) => setPayment({ ...payment, amount: e.target.value })} /></label>
-                <label className="portal-field-full"><span>Transaction ID</span><input required value={payment.transactionId} onChange={(e) => setPayment({ ...payment, transactionId: e.target.value })} placeholder="UPI/ref/cheque number" /></label>
-                
-                <div className="portal-field-full">
-                  <span>Payment Screenshot</span>
-                  {payment.screenshotUrl ? (
-                    <div style={{ position: 'relative', marginTop: '6px', borderRadius: '8px', border: '1px solid var(--portal-line)', padding: '8px', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <img src={payment.screenshotUrl} alt="Screenshot preview" style={{ width: '50px', height: '50px', objectFit: 'cover', borderRadius: '6px', border: '1px solid #dbe6ef' }} />
-                        <div>
-                          <strong style={{ display: 'block', fontSize: '11px' }}>screenshot.png</strong>
-                          <span style={{ fontSize: '9px', color: '#687588' }}>Ready to upload</span>
-                        </div>
-                      </div>
-                      <button type="button" onClick={removeScreenshot} style={{ border: 0, padding: '5px 8px', borderRadius: '6px', color: '#b42318', background: '#fff1f1', fontSize: '10px', fontWeight: '800', cursor: 'pointer' }}>
-                        Remove
-                      </button>
-                    </div>
-                  ) : (
-                    <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '6px', minHeight: '80px', marginTop: '6px', border: '1px dashed #a8c0d8', borderRadius: '8px', background: '#f8fbff', cursor: 'pointer', transition: '.16s ease' }}>
-                      <Camera size={20} style={{ color: 'var(--portal-green)' }} />
-                      <span style={{ fontSize: '10px', color: '#475467', fontWeight: '600' }}>Click to select or drop screenshot image</span>
-                      <span style={{ fontSize: '8px', color: '#8a95a4' }}>PNG, JPG or JPEG up to 3MB</span>
-                      <input type="file" accept="image/*" onChange={handleScreenshotUpload} style={{ display: 'none' }} />
-                    </label>
-                  )}
-                </div>
-              </div>
-              <div className="portal-form-actions" style={{ flex: '0 0 auto', display: 'flex', justifyContent: 'flex-end', gap: '9px', padding: '15px 20px', borderTop: '1px solid var(--portal-line)', background: '#fdfdfd', borderBottomLeftRadius: '14px', borderBottomRightRadius: '14px' }}>
-                <button type="button" className="portal-light-btn" onClick={() => setShowPayment(false)}>Cancel</button>
-                <button className="portal-primary-btn"><Send size={14} /> Submit for Review</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {showComplaint && (
         <div className="portal-modal-backdrop" onMouseDown={() => setShowComplaint(false)}>
