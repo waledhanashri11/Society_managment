@@ -2,7 +2,6 @@ package com.example.application.data.remote.interceptor
 
 import com.example.application.data.local.datastore.SessionPreferences
 import javax.inject.Inject
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import okhttp3.Interceptor
 import okhttp3.Response
@@ -17,7 +16,8 @@ class AuthHeaderInterceptor @Inject constructor(
         val builder = originalRequest.newBuilder()
 
         if (!isLoginRequest) {
-            val token = runBlocking { sessionPreferences.jwtToken.first() }
+            val token = sessionPreferences.getCachedToken()
+                ?: runBlocking { sessionPreferences.readSession()?.token }
             if (!token.isNullOrBlank()) {
                 builder.header("Authorization", "Bearer $token")
             }

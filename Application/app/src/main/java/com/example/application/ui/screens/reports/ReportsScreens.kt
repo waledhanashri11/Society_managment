@@ -1,5 +1,8 @@
 package com.example.application.ui.screens.reports
 
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -25,7 +28,11 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -43,10 +50,10 @@ import com.example.application.ui.components.AppLoadingIndicator
 import com.example.application.ui.components.EmptyState
 import com.example.application.ui.components.RetryState
 import com.example.application.util.DashboardFormatters
-import com.example.application.util.toMoneyDecimal
 import com.example.application.viewmodel.AdminReportsViewModel
 import com.example.application.viewmodel.ResidentReportsViewModel
 import java.math.BigDecimal
+import java.time.LocalDate
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -95,6 +102,21 @@ fun ResidentReportsScreen(
     viewModel: ResidentReportsViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    var pendingCsv by remember { mutableStateOf<String?>(null) }
+    val csvLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val csv = pendingCsv.orEmpty()
+        runCatching {
+            context.contentResolver.openOutputStream(uri)?.use { output ->
+                output.write(csv.toByteArray(Charsets.UTF_8))
+            } ?: error("Unable to open selected file.")
+        }.onSuccess {
+            Toast.makeText(context, "Report CSV saved successfully", Toast.LENGTH_SHORT).show()
+        }.onFailure {
+            Toast.makeText(context, "CSV export failed: ${it.message}", Toast.LENGTH_LONG).show()
+        }
+    }
     ReportScaffold(
         title = "Resident Reports",
         subtitle = "Read-only society reports",
@@ -121,9 +143,23 @@ fun ResidentReportsScreen(
         }
 
         when {
-            state.isLoading -> item { LoadingReportSkeleton() }
+            state.isLoading && state.data == null -> item { LoadingReportSkeleton() }
             state.data == null -> item { EmptyState("No reports", "Report data is not available yet.", modifier = Modifier.padding(16.dp)) }
-            else -> residentReportsContent(state.data!!, viewModel::noteCsvExport)
+            else -> residentReportsContent(
+                data = state.data!!,
+                filter = state.filter,
+                onExportInfo = {
+                    val csv = buildResidentReportCsv(state.data!!, state.filter)
+                    if (csv.isBlank()) {
+                        Toast.makeText(context, "No report data available to export", Toast.LENGTH_SHORT).show()
+                    } else {
+                        pendingCsv = csv
+                        val month = state.filter.month.ifBlank { "%02d".format(LocalDate.now().monthValue) }.padStart(2, '0')
+                        val year = state.filter.year.ifBlank { LocalDate.now().year.toString() }
+                        csvLauncher.launch("society_report_${year}_${month}.csv")
+                    }
+                }
+            )
         }
     }
 }
@@ -167,9 +203,13 @@ private fun androidx.compose.foundation.lazy.LazyListScope.adminReportsContent(
 
 private fun androidx.compose.foundation.lazy.LazyListScope.residentReportsContent(
     data: ResidentReportsData,
+    filter: ReportFilterState,
     onExportInfo: () -> Unit
 ) {
     val summary = data.societySummary
+    item {
+        FinancialOverviewCard(data, filter)
+    }
     item {
         SummaryGrid(
             cards = listOf(
@@ -298,7 +338,7 @@ private fun SectionTitle(title: String) {
 private fun LoadingReportSkeleton() {
     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         AppLoadingIndicator()
-        Text("Loading report data...")
+        Text("Preparing latest report...", color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -314,8 +354,36 @@ private fun ExportCard(onClick: () -> Unit) {
     Card {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Exports", fontWeight = FontWeight.Bold)
-            Text("No backend PDF/CSV download endpoint is confirmed. The website currently creates CSV/PDF in the browser from loaded data.")
-            Button(onClick = onClick, modifier = Modifier.fillMaxWidth()) { Text("Export status") }
+            Text("Save the selected report period as a CSV file for Excel or Google Sheets.")
+            Button(onClick = onClick, modifier = Modifier.fillMaxWidth()) { Text("Export CSV") }
+        }
+    }
+}
+
+@Composable
+private fun FinancialOverviewCard(data: ResidentReportsData, filter: ReportFilterState) {
+    val billed = data.myMaintenance.sumOf { (it.totalAmount ?: it.amount).toMoneyDecimal() }
+    val paid = data.myMaintenance.sumOf { it.paidAmount.toMoneyDecimal() }
+    val remaining = data.myMaintenance.sumOf { it.remainingAmount.toMoneyDecimal() }
+    val penalty = data.myMaintenance.sumOf { it.penaltyAmount.toMoneyDecimal() }
+    val percent = if (billed > BigDecimal.ZERO) paid.multiply(100.toBigDecimal()).divide(billed, 0, java.math.RoundingMode.HALF_UP).toInt() else 0
+    val period = listOf(
+        filter.month.takeIf { it.isNotBlank() }?.let { "Month $it" },
+        filter.year.takeIf { it.isNotBlank() }
+    ).filterNotNull().joinToString(" / ").ifBlank { "All periods" }
+
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Financial Overview", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text(period, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f))
+            KeyValue("Total maintenance billed", DashboardFormatters.money(billed))
+            KeyValue("Total amount paid", DashboardFormatters.money(paid))
+            KeyValue("Remaining amount", DashboardFormatters.money(remaining))
+            KeyValue("Late fee / penalty", DashboardFormatters.money(penalty))
+            KeyValue("Payment completion", "$percent%")
         }
     }
 }
@@ -408,3 +476,56 @@ private fun KeyValue(label: String, value: String) {
 
 private fun List<MaintenanceBillDto>.totalOf(selector: (MaintenanceBillDto) -> String?): BigDecimal =
     fold(BigDecimal.ZERO) { sum, item -> sum + selector(item).toMoneyDecimal() }
+
+private fun buildResidentReportCsv(data: ResidentReportsData, filter: ReportFilterState): String {
+    if (data.myMaintenance.isEmpty()) return ""
+    val rows = mutableListOf<List<String>>()
+    rows += listOf(
+        "Resident name",
+        "Flat number",
+        "Maintenance title",
+        "Billing month",
+        "Due date",
+        "Base amount",
+        "Penalty",
+        "Total amount",
+        "Paid amount",
+        "Remaining amount",
+        "Payment status",
+        "Payment date",
+        "Transaction/reference ID"
+    )
+    data.myMaintenance.forEach { bill ->
+        rows += listOf(
+            "Logged-in resident",
+            listOfNotNull(bill.wing, bill.flatNo).joinToString("-"),
+            bill.title.orEmpty(),
+            listOfNotNull(bill.month, bill.year).joinToString(" "),
+            bill.dueDate.orEmpty(),
+            bill.amount.orEmpty(),
+            bill.penaltyAmount.orEmpty(),
+            bill.totalAmount.orEmpty(),
+            bill.paidAmount.orEmpty(),
+            bill.remainingAmount.orEmpty(),
+            bill.status.orEmpty(),
+            bill.paymentDate.orEmpty(),
+            "Not provided by current backend response"
+        )
+    }
+    rows += listOf(listOf("Selected period", "", "", listOf(filter.month, filter.year).filter { it.isNotBlank() }.joinToString("/")))
+    return rows.joinToString("\n") { row -> row.joinToString(",") { csvEscape(it) } }
+}
+
+private fun csvEscape(value: String): String {
+    val normalized = value.replace("\r\n", "\n").replace("\r", "\n")
+    val escaped = normalized.replace("\"", "\"\"")
+    return if (escaped.any { it == ',' || it == '"' || it == '\n' }) "\"$escaped\"" else escaped
+}
+
+private fun String?.toMoneyDecimal(): BigDecimal {
+    return try {
+        this?.toBigDecimalOrNull() ?: BigDecimal.ZERO
+    } catch (_: Exception) {
+        BigDecimal.ZERO
+    }
+}

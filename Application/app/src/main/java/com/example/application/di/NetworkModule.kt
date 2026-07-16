@@ -7,6 +7,7 @@ import com.example.application.data.remote.api.AuthApiService
 import com.example.application.data.remote.api.MaintenanceApiService
 import com.example.application.data.remote.api.CommunicationApiService
 import com.example.application.data.remote.api.FlatApiService
+import com.example.application.data.remote.api.NocApiService
 import com.example.application.data.remote.api.ReportsApiService
 import com.example.application.data.remote.api.ResidentApiService
 import com.example.application.data.remote.api.DashboardApiService
@@ -29,7 +30,10 @@ import retrofit2.converter.gson.GsonConverterFactory
 @Module
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
-    private const val TIMEOUT_SECONDS = 30L
+    private const val CONNECT_TIMEOUT_SECONDS = 10L
+    private const val READ_TIMEOUT_SECONDS = 20L
+    private const val WRITE_TIMEOUT_SECONDS = 20L
+    private const val CALL_TIMEOUT_SECONDS = 30L
 
     @Provides
     @Singleton
@@ -41,8 +45,10 @@ object NetworkModule {
     @Singleton
     fun provideHttpLoggingInterceptor(): HttpLoggingInterceptor {
         return HttpLoggingInterceptor().apply {
+            redactHeader("Authorization")
+            redactHeader("Cookie")
             level = if (BuildConfig.DEBUG) {
-                HttpLoggingInterceptor.Level.HEADERS
+                HttpLoggingInterceptor.Level.BASIC
             } else {
                 HttpLoggingInterceptor.Level.NONE
             }
@@ -58,9 +64,10 @@ object NetworkModule {
         loggingInterceptor: HttpLoggingInterceptor
     ): OkHttpClient {
         return OkHttpClient.Builder()
-            .connectTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
-            .readTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
-            .writeTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .connectTimeout(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .readTimeout(READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .writeTimeout(WRITE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .callTimeout(CALL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .addInterceptor(acceptHeaderInterceptor)
             .addInterceptor(authHeaderInterceptor)
             .addInterceptor(loggingInterceptor)
@@ -133,5 +140,11 @@ object NetworkModule {
     @Singleton
     fun provideReportsApiService(retrofit: Retrofit): ReportsApiService {
         return retrofit.create(ReportsApiService::class.java)
+    }
+
+    @Provides
+    @Singleton
+    fun provideNocApiService(retrofit: Retrofit): NocApiService {
+        return retrofit.create(NocApiService::class.java)
     }
 }

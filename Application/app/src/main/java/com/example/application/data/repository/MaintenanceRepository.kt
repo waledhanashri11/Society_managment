@@ -24,6 +24,8 @@ import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import retrofit2.Response
 
 @Singleton
@@ -34,17 +36,49 @@ class MaintenanceRepository @Inject constructor(
     private var adminCache: AdminMaintenanceData? = null
     private var residentCache: ResidentMaintenanceData? = null
 
-    suspend fun getAdminData(refresh: Boolean = false): NetworkResult<AdminMaintenanceData> {
-        adminCache?.takeIf { !refresh }?.let { return NetworkResult.Success(it) }
-        val dashboard = safeApiCall { api.getDashboard() }
-        val bills = safeApiCall { api.getBills() }
-        val payments = safeApiCall { api.getPayments() }
-        val categories = safeApiCall { api.getCategories() }
-        val expenses = safeApiCall { api.getExpenses() }
-        val settings = safeApiCall { api.getSettings() }
-        val lateFee = safeApiCall { api.getLateFeeRule() }
-        val disputes = safeApiCall { api.getDisputes() }
-        if (dashboard is NetworkResult.Error && bills is NetworkResult.Error) return dashboard
+    fun getAdminSnapshot(): AdminMaintenanceData {
+        return adminCache ?: AdminMaintenanceData(
+            dashboard = null,
+            bills = emptyList(),
+            payments = emptyList(),
+            categories = emptyList(),
+            expenses = emptyList(),
+            settings = null,
+            lateFeeRule = null,
+            disputes = emptyList(),
+            warnings = listOf("Refreshing latest maintenance data")
+        )
+    }
+
+    fun getResidentSnapshot(): ResidentMaintenanceData {
+        return residentCache ?: ResidentMaintenanceData(
+            bills = emptyList(),
+            paymentSettings = null
+        )
+    }
+
+    suspend fun getAdminData(refresh: Boolean = false): NetworkResult<AdminMaintenanceData> = coroutineScope {
+        adminCache?.takeIf { !refresh }?.let { return@coroutineScope NetworkResult.Success(it) }
+
+        val dashboardCall = async { safeApiCall { api.getDashboard() } }
+        val billsCall = async { safeApiCall { api.getBills() } }
+        val paymentsCall = async { safeApiCall { api.getPayments() } }
+        val categoriesCall = async { safeApiCall { api.getCategories() } }
+        val expensesCall = async { safeApiCall { api.getExpenses() } }
+        val settingsCall = async { safeApiCall { api.getSettings() } }
+        val lateFeeCall = async { safeApiCall { api.getLateFeeRule() } }
+        val disputesCall = async { safeApiCall { api.getDisputes() } }
+
+        val dashboard = dashboardCall.await()
+        val bills = billsCall.await()
+        val payments = paymentsCall.await()
+        val categories = categoriesCall.await()
+        val expenses = expensesCall.await()
+        val settings = settingsCall.await()
+        val lateFee = lateFeeCall.await()
+        val disputes = disputesCall.await()
+
+        if (dashboard is NetworkResult.Error && bills is NetworkResult.Error) return@coroutineScope dashboard
         val data = AdminMaintenanceData(
             dashboard = (dashboard as? NetworkResult.Success)?.data,
             bills = (bills as? NetworkResult.Success)?.data.orEmpty(),
@@ -63,20 +97,22 @@ class MaintenanceRepository @Inject constructor(
             )
         )
         adminCache = data
-        return NetworkResult.Success(data)
+        NetworkResult.Success(data)
     }
 
-    suspend fun getResidentData(refresh: Boolean = false): NetworkResult<ResidentMaintenanceData> {
-        residentCache?.takeIf { !refresh }?.let { return NetworkResult.Success(it) }
-        val bills = safeApiCall { api.getMyMaintenance() }
-        val paymentSettings = runCatching { api.getPaymentSettings() }.getOrNull()?.takeIf { it.isSuccessful }?.body()
-        if (bills is NetworkResult.Error) return bills
+    suspend fun getResidentData(refresh: Boolean = false): NetworkResult<ResidentMaintenanceData> = coroutineScope {
+        residentCache?.takeIf { !refresh }?.let { return@coroutineScope NetworkResult.Success(it) }
+        val billsCall = async { safeApiCall { api.getMyMaintenance() } }
+        val settingsCall = async { runCatching { api.getPaymentSettings() }.getOrNull()?.takeIf { it.isSuccessful }?.body() }
+        val bills = billsCall.await()
+        val paymentSettings = settingsCall.await()
+        if (bills is NetworkResult.Error) return@coroutineScope bills
         val data = ResidentMaintenanceData(
             bills = (bills as? NetworkResult.Success)?.data.orEmpty(),
             paymentSettings = paymentSettings
         )
         residentCache = data
-        return NetworkResult.Success(data)
+        NetworkResult.Success(data)
     }
 
     suspend fun generateBills(month: Int, year: Int) = messageCall { api.generateBills(GenerateBillsRequest(month, year)) }

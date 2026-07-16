@@ -14,6 +14,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
@@ -33,7 +34,6 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.example.application.ui.components.ErrorMessageCard
 import com.example.application.viewmodel.ChangePasswordViewModel
 import com.example.application.viewmodel.ForgotPasswordViewModel
 import com.example.application.viewmodel.RegistrationViewModel
@@ -94,11 +94,18 @@ fun RegisterScreen(
             }
         }
         if (!state.flatsLoading && state.availableFlats.isEmpty()) {
-            Text("No flats are available for registration right now.", color = MaterialTheme.colorScheme.error)
+            Text(
+                "No flats are available for registration right now. Admin must add a flat or mark one as Available.",
+                color = MaterialTheme.colorScheme.error
+            )
         }
 
         Spacer(Modifier.height(16.dp))
-        Button(onClick = viewModel::submit, enabled = !state.isSubmitting && !state.flatsLoading, modifier = Modifier.fillMaxWidth()) {
+        Button(
+            onClick = viewModel::submit,
+            enabled = !state.isSubmitting && !state.flatsLoading && state.availableFlats.isNotEmpty(),
+            modifier = Modifier.fillMaxWidth()
+        ) {
             Text(if (state.isSubmitting) "Submitting..." else "Register")
         }
         TextButton(onClick = onBackToLogin, modifier = Modifier.fillMaxWidth()) { Text("Already have an account? Login") }
@@ -211,7 +218,21 @@ private fun PasswordField(
 
 @Composable
 private fun SuccessCard(message: String) {
-    Card(colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
         Text(message, modifier = Modifier.padding(14.dp), color = MaterialTheme.colorScheme.onPrimaryContainer)
+    }
+}
+
+@Composable
+private fun ErrorMessageCard(message: String) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+    ) {
+        Text(
+            text = message,
+            modifier = Modifier.padding(14.dp),
+            color = MaterialTheme.colorScheme.onErrorContainer
+        )
     }
 }

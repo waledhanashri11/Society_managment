@@ -22,7 +22,22 @@ class AdminDashboardViewModel @Inject constructor(
     val uiState: StateFlow<AdminDashboardUiState> = _uiState.asStateFlow()
 
     init {
-        load()
+        loadInitial()
+    }
+
+    private fun loadInitial() {
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    isLoading = false,
+                    isRefreshing = false,
+                    isFromCache = true,
+                    data = dashboardRepository.getAdminDashboardSnapshot(),
+                    errorMessage = null
+                )
+            }
+            load(refresh = true)
+        }
     }
 
     fun load(refresh: Boolean = false) {
@@ -61,7 +76,22 @@ class ResidentDashboardViewModel @Inject constructor(
     val uiState: StateFlow<ResidentDashboardUiState> = _uiState.asStateFlow()
 
     init {
-        load()
+        loadInitial()
+    }
+
+    private fun loadInitial() {
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    isLoading = false,
+                    isRefreshing = false,
+                    isFromCache = true,
+                    data = dashboardRepository.getResidentDashboardSnapshot(),
+                    errorMessage = null
+                )
+            }
+            load(refresh = true)
+        }
     }
 
     fun load(refresh: Boolean = false) {

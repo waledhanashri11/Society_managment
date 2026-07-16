@@ -41,7 +41,17 @@ data class MaintenanceBillDto(
     @SerializedName("maintenance_due_date") val maintenanceDueDate: String?,
     @SerializedName("resident_name") val residentName: String?,
     @SerializedName("flat_no") val flatNo: String?,
-    @SerializedName("floor_no") val floorNo: String?
+    @SerializedName("floor_no") val floorNo: String?,
+    @SerializedName("payment_id") val paymentId: String?,
+    @SerializedName("transaction_id") val transactionId: String?,
+    @SerializedName("payment_method") val paymentMethod: String?,
+    @SerializedName("latest_payment_status") val latestPaymentStatus: String?,
+    @SerializedName("screenshot_url") val screenshotUrl: String?,
+    @SerializedName("receipt_number") val receiptNumber: String?,
+    @SerializedName("verified_at") val verifiedAt: String?,
+    @SerializedName("rejection_reason") val rejectionReason: String?,
+    @SerializedName("resident_note") val residentNote: String?,
+    @SerializedName("paid_at") val paidAt: String?
 )
 
 data class ComplaintDto(

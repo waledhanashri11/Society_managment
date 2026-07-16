@@ -55,7 +55,20 @@ class AdminMaintenanceViewModel @Inject constructor(
     private val _state = MutableStateFlow(AdminMaintenanceUiState())
     val state: StateFlow<AdminMaintenanceUiState> = _state.asStateFlow()
 
-    init { load() }
+    init { loadInitial() }
+
+    private fun loadInitial() {
+        _state.update {
+            it.copy(
+                isLoading = false,
+                isRefreshing = false,
+                data = repository.getAdminSnapshot(),
+                error = null,
+                message = null
+            )
+        }
+        load(refresh = true)
+    }
 
     fun load(refresh: Boolean = false) {
         viewModelScope.launch {
@@ -81,7 +94,16 @@ class AdminMaintenanceViewModel @Inject constructor(
     fun sendReminder(id: String) = action { repository.sendReminder(id) }
     fun applyPenalty() = action { repository.applyPenalty() }
     fun waiveLateFee(id: String) = action { repository.waiveLateFee(id) }
-    fun updatePayment(id: String, status: String) = action { repository.updatePayment(id, UpdatePaymentRequest(status, if (status == "Paid") "Approved by admin" else "Rejected by admin")) }
+    fun updatePayment(id: String, status: String, reason: String? = null) = action {
+        repository.updatePayment(
+            id,
+            UpdatePaymentRequest(
+                paymentStatus = status,
+                remarks = reason ?: if (status == "Paid" || status == "APPROVED") "Approved by admin" else "Rejected by admin",
+                rejectionReason = reason
+            )
+        )
+    }
     fun saveSettings(title: String, amount: String, dueDay: String, feeType: String, feeValue: String, graceDays: String) =
         action { repository.saveSettings(MaintenanceSettingsRequest(title, amount, dueDay, feeType, feeValue, graceDays)) }
     fun saveLateFeeRule(grace: String, type: String, amount: String, max: String) =
@@ -118,7 +140,20 @@ class ResidentMaintenanceViewModel @Inject constructor(
     private val _state = MutableStateFlow(ResidentMaintenanceUiState())
     val state: StateFlow<ResidentMaintenanceUiState> = _state.asStateFlow()
 
-    init { load() }
+    init { loadInitial() }
+
+    private fun loadInitial() {
+        _state.update {
+            it.copy(
+                isLoading = false,
+                isRefreshing = false,
+                data = repository.getResidentSnapshot(),
+                error = null,
+                message = null
+            )
+        }
+        load(refresh = true)
+    }
 
     fun load(refresh: Boolean = false) {
         viewModelScope.launch {
@@ -134,8 +169,27 @@ class ResidentMaintenanceViewModel @Inject constructor(
     fun setQuery(query: String) = _state.update { it.copy(query = query) }
     fun setFilter(filter: String) = _state.update { it.copy(filter = filter) }
 
-    fun submitPayment(billId: String, method: String, transactionId: String, amount: String, screenshotUrl: String?) =
-        action { repository.submitPayment(SubmitPaymentRequest(billId, method, transactionId, amount, screenshotUrl?.ifBlank { null })) }
+    fun submitPayment(
+        billId: String,
+        method: String,
+        transactionId: String,
+        amount: String,
+        screenshotUrl: String?,
+        paymentDate: String?,
+        note: String?
+    ) = action {
+        repository.submitPayment(
+            SubmitPaymentRequest(
+                billId = billId,
+                paymentMethod = method,
+                transactionId = transactionId,
+                amount = amount,
+                screenshotUrl = screenshotUrl?.ifBlank { null },
+                paymentDate = paymentDate?.ifBlank { null },
+                note = note?.ifBlank { null }
+            )
+        )
+    }
 
     fun createDispute(billId: String, subject: String, description: String) =
         action { repository.createDispute(CreateDisputeRequest(billId, subject, description)) }

@@ -33,7 +33,8 @@ data class ProfileDto(
     val wing: String?,
     @SerializedName("floor_no") val floorNo: String?,
     @SerializedName("flat_status") val flatStatus: String?,
-    @SerializedName("society_name") val societyName: String?
+    @SerializedName("society_name") val societyName: String?,
+    @SerializedName("profile_image") val profileImage: String? = null
 )
 
 data class ProfileUpdateRequest(

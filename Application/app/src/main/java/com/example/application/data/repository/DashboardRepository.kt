@@ -11,7 +11,6 @@ import com.example.application.data.remote.dto.NoticeDto
 import com.example.application.data.remote.dto.PaymentDto
 import com.example.application.data.remote.dto.ProfileDto
 import com.example.application.data.remote.dto.UserSummaryDto
-import com.example.application.util.toMoneyDecimal
 import java.math.BigDecimal
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -26,6 +25,67 @@ class DashboardRepository @Inject constructor(
 ) {
     private var lastAdminDashboard: AdminDashboardData? = null
     private var lastResidentDashboard: ResidentDashboardData? = null
+
+    suspend fun getAdminDashboardSnapshot(): AdminDashboardData {
+        lastAdminDashboard?.let { return it }
+        val session = sessionPreferences.getCachedSession() ?: sessionPreferences.readSession()
+        return AdminDashboardData(
+            adminName = session?.name?.ifBlank { "Admin" } ?: "Admin",
+            totalResidents = 0,
+            totalFlats = 0,
+            occupiedFlats = 0,
+            vacantFlats = 0,
+            pendingRegistrations = 0,
+            totalBilled = BigDecimal.ZERO,
+            collected = BigDecimal.ZERO,
+            pending = BigDecimal.ZERO,
+            paidBillCount = 0,
+            pendingBillCount = 0,
+            overdueBillCount = 0,
+            openComplaints = 0,
+            inProgressComplaints = 0,
+            resolvedComplaints = 0,
+            totalNotices = 0,
+            latestNotices = emptyList(),
+            recentComplaints = emptyList(),
+            recentPayments = emptyList(),
+            warnings = listOf("Refreshing latest society data")
+        )
+    }
+
+    suspend fun getResidentDashboardSnapshot(): ResidentDashboardData {
+        lastResidentDashboard?.let { return it }
+        val session = sessionPreferences.getCachedSession() ?: sessionPreferences.readSession()
+        val profile = ProfileDto(
+            id = session?.userId,
+            name = session?.name,
+            email = session?.email,
+            phone = session?.phone,
+            role = session?.role,
+            status = session?.status,
+            flatId = null,
+            flatNo = null,
+            wing = null,
+            floorNo = null,
+            flatStatus = null,
+            societyName = null
+        )
+        return ResidentDashboardData(
+            profile = profile,
+            currentBill = null,
+            totalDue = BigDecimal.ZERO,
+            totalPaid = BigDecimal.ZERO,
+            pendingBillCount = 0,
+            paidBillCount = 0,
+            totalComplaints = 0,
+            openComplaints = 0,
+            inProgressComplaints = 0,
+            resolvedComplaints = 0,
+            latestNotices = emptyList(),
+            recentComplaints = emptyList(),
+            warnings = listOf("Refreshing latest society data")
+        )
+    }
 
     suspend fun getAdminDashboard(refresh: Boolean = false): DashboardLoadResult<AdminDashboardData> = coroutineScope {
         if (!refresh && lastAdminDashboard != null) {
@@ -178,3 +238,11 @@ data class ResidentDashboardData(
     val recentComplaints: List<ComplaintDto>,
     val warnings: List<String>
 )
+
+private fun String?.toMoneyDecimal(): BigDecimal {
+    return try {
+        this?.toBigDecimalOrNull() ?: BigDecimal.ZERO
+    } catch (_: Exception) {
+        BigDecimal.ZERO
+    }
+}

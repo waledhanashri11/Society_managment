@@ -18,6 +18,9 @@ private val Context.sessionDataStore by preferencesDataStore(name = "session_pre
 class SessionPreferences @Inject constructor(
     @param:ApplicationContext private val context: Context
 ) {
+    @Volatile
+    private var cachedSession: UserSession? = null
+
     val jwtToken: Flow<String?> = readString(Keys.JWT_TOKEN)
     val userRole: Flow<String?> = readString(Keys.USER_ROLE)
     val userId: Flow<String?> = readString(Keys.USER_ID)
@@ -56,6 +59,7 @@ class SessionPreferences @Inject constructor(
     }
 
     suspend fun saveSession(session: UserSession) {
+        cachedSession = session
         context.sessionDataStore.edit { preferences ->
             preferences[Keys.JWT_TOKEN] = session.token
             preferences[Keys.USER_ID] = session.userId
@@ -74,7 +78,7 @@ class SessionPreferences @Inject constructor(
 
         if (token.isBlank() || role.isBlank()) return null
 
-        return UserSession(
+        val session = UserSession(
             token = token,
             userId = preferences[Keys.USER_ID].orEmpty(),
             name = preferences[Keys.USER_NAME].orEmpty(),
@@ -83,13 +87,20 @@ class SessionPreferences @Inject constructor(
             role = role,
             status = preferences[Keys.USER_STATUS].orEmpty()
         )
+        cachedSession = session
+        return session
     }
 
     suspend fun clearSession() {
+        cachedSession = null
         context.sessionDataStore.edit { preferences ->
             preferences.clear()
         }
     }
+
+    fun getCachedToken(): String? = cachedSession?.token
+
+    fun getCachedSession(): UserSession? = cachedSession
 
     private fun readString(key: Preferences.Key<String>): Flow<String?> {
         return context.sessionDataStore.data.map { preferences -> preferences[key] }

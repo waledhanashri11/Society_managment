@@ -112,12 +112,15 @@ data class SubmitPaymentRequest(
     val paymentMethod: String,
     val transactionId: String,
     val amount: String,
-    val screenshotUrl: String?
+    val screenshotUrl: String?,
+    val paymentDate: String? = null,
+    val note: String? = null
 )
 
 data class UpdatePaymentRequest(
     val paymentStatus: String,
-    val remarks: String?
+    val remarks: String?,
+    val rejectionReason: String? = null
 )
 
 data class MaintenancePaymentDto(
@@ -132,7 +135,20 @@ data class MaintenancePaymentDto(
     @SerializedName("created_at") val createdAt: String?,
     @SerializedName("resident_name") val residentName: String?,
     @SerializedName("flat_no") val flatNo: String?,
-    @SerializedName("total_amount") val totalAmount: String?
+    @SerializedName("total_amount") val totalAmount: String?,
+    @SerializedName("base_amount") val baseAmount: String?,
+    @SerializedName("penalty_amount") val penaltyAmount: String?,
+    @SerializedName("title") val title: String?,
+    @SerializedName("month") val month: String?,
+    @SerializedName("year") val year: String?,
+    @SerializedName("due_date") val dueDate: String?,
+    @SerializedName("resident_note") val residentNote: String?,
+    @SerializedName("remarks") val remarks: String?,
+    @SerializedName("rejection_reason") val rejectionReason: String?,
+    @SerializedName("receipt_number") val receiptNumber: String?,
+    @SerializedName("verified_at") val verifiedAt: String?,
+    @SerializedName("verified_by_name") val verifiedByName: String?,
+    @SerializedName("screenshot") val screenshot: String?
 )
 
 data class MaintenanceCategoryDto(
@@ -213,8 +229,14 @@ data class CreateDisputeRequest(
 )
 
 data class PaymentSettingsDto(
+    @SerializedName(value = "society_name", alternate = ["societyName"])
     val societyName: String?,
+    @SerializedName(value = "payment_qr_image", alternate = ["paymentQrImage"])
     val paymentQrImage: String?,
+    @SerializedName(value = "payment_upi_id", alternate = ["paymentUpiId"])
     val paymentUpiId: String?,
+    @SerializedName(value = "payment_account_holder_name", alternate = ["paymentAccountHolderName"])
+    val paymentAccountHolderName: String?,
+    @SerializedName(value = "payment_note", alternate = ["paymentNote"])
     val paymentNote: String?
 )

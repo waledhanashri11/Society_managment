@@ -70,11 +70,11 @@ class CommunicationRepository @Inject constructor(
 
     suspend fun getNotifications(refresh: Boolean = false): NetworkResult<AdminNotificationsResponse> {
         notificationsCache?.takeIf { !refresh }?.let { return NetworkResult.Success(it) }
-        return safeCall { api.getAdminNotifications() }.also { if (it is NetworkResult.Success) notificationsCache = it.data }
+        return safeCall { api.getNotifications() }.also { if (it is NetworkResult.Success) notificationsCache = it.data }
     }
 
     suspend fun markNotificationsRead(): NetworkResult<String> {
-        return messageCall { api.markAdminNotificationsRead() }.also { if (it is NetworkResult.Success) notificationsCache = null }
+        return messageCall { api.markNotificationsRead() }.also { if (it is NetworkResult.Success) notificationsCache = null }
     }
 
     private fun clearComplaintCache() {

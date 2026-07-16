@@ -36,9 +36,13 @@ import com.example.application.ui.screens.communication.NotificationsScreen
 import com.example.application.ui.screens.communication.ResidentComplaintsScreen
 import com.example.application.ui.screens.maintenance.AdminMaintenanceScreen
 import com.example.application.ui.screens.maintenance.ResidentMaintenanceScreen
+import com.example.application.ui.screens.noc.AdminNocScreen
+import com.example.application.ui.screens.noc.ResidentNocScreen
 import com.example.application.ui.screens.reports.AdminReportsScreen
 import com.example.application.ui.screens.reports.ResidentReportsScreen
 import com.example.application.ui.screens.resident.ResidentDashboardScreen
+import com.example.application.ui.screens.resident.ResidentMembersScreen
+import com.example.application.ui.screens.resident.ResidentPaymentHistoryScreen
 import com.example.application.ui.screens.resident.ResidentProfileScreen
 import com.example.application.ui.screens.splash.SplashScreen
 import com.example.application.viewmodel.SplashViewModel
@@ -95,7 +99,7 @@ fun SocietyNavGraph(
 
         composable(AppRoute.Login.route) {
             LoginScreen(
-                onLoginSuccess = { session ->
+                onLoginSuccess = { session: UserSession ->
                     navigateToDashboard(session)
                 },
                 onRegisterClick = { navController.navigate(AppRoute.Register.route) },
@@ -133,16 +137,22 @@ fun SocietyNavGraph(
         composable(AppRoute.AdminDashboard.route) {
             AdminDashboardScreen(
                 onLogoutComplete = ::navigateToLogin,
-                onQuickAction = { title ->
+                onQuickAction = { title: String ->
                     when (title) {
                         "Residents" -> navController.navigate(AppRoute.AdminResidents.route)
                         "Flats" -> navController.navigate(AppRoute.AdminFlats.route)
+                        "Add Resident" -> navController.navigate(AppRoute.ResidentForm.createRoute())
                         "Staff" -> navController.navigate(AppRoute.AdminStaff.route)
-                        "Generate Maintenance", "Maintenance" -> navController.navigate(AppRoute.AdminMaintenance.route)
+                        "Security" -> navController.navigate(AppRoute.AdminStaff.route)
+                        "Generate Maintenance", "Maintenance", "Maintenance Collection", "Dues & Payments" -> navController.navigate(AppRoute.AdminMaintenance.route)
                         "Complaints" -> navController.navigate(AppRoute.AdminComplaints.route)
                         "Add Notice", "View Notices", "Notices" -> navController.navigate(AppRoute.AdminNotices.route)
                         "Reports" -> navController.navigate(AppRoute.AdminReports.route)
+                        "NOC Requests" -> navController.navigate(AppRoute.AdminNoc.route)
                         "Notifications" -> navController.navigate(AppRoute.Notifications.route)
+                        "Events" -> navController.navigate(AppRoute.ComingSoon.createRoute("Events - backend module not available yet"))
+                        "Visitors" -> navController.navigate(AppRoute.ComingSoon.createRoute("Visitors - backend module not available yet"))
+                        "Settings" -> navController.navigate(AppRoute.ComingSoon.createRoute("Admin Settings - backend module not available yet"))
                         else -> navController.navigate(AppRoute.ComingSoon.createRoute(title))
                     }
                 }
@@ -151,6 +161,10 @@ fun SocietyNavGraph(
 
         composable(AppRoute.AdminReports.route) {
             AdminReportsScreen(onBack = { navController.popBackStack() })
+        }
+
+        composable(AppRoute.AdminNoc.route) {
+            AdminNocScreen(onBack = { navController.popBackStack() })
         }
 
         composable(AppRoute.AdminMaintenance.route) {
@@ -173,15 +187,15 @@ fun SocietyNavGraph(
             ResidentsListScreen(
                 onBack = { navController.popBackStack() },
                 onAdd = { navController.navigate(AppRoute.ResidentForm.createRoute()) },
-                onOpen = { navController.navigate(AppRoute.ResidentDetails.createRoute(it)) },
-                onEdit = { navController.navigate(AppRoute.ResidentForm.createRoute(it)) }
+                onOpen = { residentId: String -> navController.navigate(AppRoute.ResidentDetails.createRoute(residentId)) },
+                onEdit = { residentId: String -> navController.navigate(AppRoute.ResidentForm.createRoute(residentId)) }
             )
         }
 
         composable(AppRoute.ResidentDetails.route) {
             ResidentDetailsScreen(
                 onBack = { navController.popBackStack() },
-                onEdit = { navController.navigate(AppRoute.ResidentForm.createRoute(it)) },
+                onEdit = { residentId: String -> navController.navigate(AppRoute.ResidentForm.createRoute(residentId)) },
                 onDeleted = { navController.popBackStack(AppRoute.AdminResidents.route, inclusive = false) }
             )
         }
@@ -198,15 +212,15 @@ fun SocietyNavGraph(
             FlatsListScreen(
                 onBack = { navController.popBackStack() },
                 onAdd = { navController.navigate(AppRoute.FlatForm.createRoute()) },
-                onOpen = { navController.navigate(AppRoute.FlatDetails.createRoute(it)) },
-                onEdit = { navController.navigate(AppRoute.FlatForm.createRoute(it)) }
+                onOpen = { flatId: String -> navController.navigate(AppRoute.FlatDetails.createRoute(flatId)) },
+                onEdit = { flatId: String -> navController.navigate(AppRoute.FlatForm.createRoute(flatId)) }
             )
         }
 
         composable(AppRoute.FlatDetails.route) {
             FlatDetailsScreen(
                 onBack = { navController.popBackStack() },
-                onEdit = { navController.navigate(AppRoute.FlatForm.createRoute(it)) },
+                onEdit = { flatId: String -> navController.navigate(AppRoute.FlatForm.createRoute(flatId)) },
                 onDeleted = { navController.popBackStack(AppRoute.AdminFlats.route, inclusive = false) }
             )
         }
@@ -223,15 +237,15 @@ fun SocietyNavGraph(
             StaffListScreen(
                 onBack = { navController.popBackStack() },
                 onAdd = { navController.navigate(AppRoute.StaffForm.createRoute()) },
-                onOpen = { navController.navigate(AppRoute.StaffDetails.createRoute(it)) },
-                onEdit = { navController.navigate(AppRoute.StaffForm.createRoute(it)) }
+                onOpen = { staffId: String -> navController.navigate(AppRoute.StaffDetails.createRoute(staffId)) },
+                onEdit = { staffId: String -> navController.navigate(AppRoute.StaffForm.createRoute(staffId)) }
             )
         }
 
         composable(AppRoute.StaffDetails.route) {
             StaffDetailsScreen(
                 onBack = { navController.popBackStack() },
-                onEdit = { navController.navigate(AppRoute.StaffForm.createRoute(it)) },
+                onEdit = { staffId: String -> navController.navigate(AppRoute.StaffForm.createRoute(staffId)) },
                 onDeleted = { navController.popBackStack(AppRoute.AdminStaff.route, inclusive = false) }
             )
         }
@@ -248,12 +262,15 @@ fun SocietyNavGraph(
             ResidentDashboardScreen(
                 onProfileClick = { navController.navigate(AppRoute.ResidentProfile.route) },
                 onLogoutComplete = ::navigateToLogin,
-                onQuickAction = { title ->
+                onQuickAction = { title: String ->
                     when (title) {
-                        "Maintenance", "Payment History" -> navController.navigate(AppRoute.ResidentMaintenance.route)
+                        "Maintenance" -> navController.navigate(AppRoute.ResidentMaintenance.route)
+                        "Payment History" -> navController.navigate(AppRoute.ResidentPaymentHistory.route)
                         "Create Complaint", "Raise Complaint", "My Complaints" -> navController.navigate(AppRoute.ResidentComplaints.route)
                         "Notices", "View Notices" -> navController.navigate(AppRoute.ResidentNotices.route)
                         "Reports" -> navController.navigate(AppRoute.ResidentReports.route)
+                        "NOC Requests" -> navController.navigate(AppRoute.ResidentNoc.route)
+                        "Members" -> navController.navigate(AppRoute.ResidentMembers.route)
                         "Notifications" -> navController.navigate(AppRoute.Notifications.route)
                         else -> navController.navigate(AppRoute.ComingSoon.createRoute(title))
                     }
@@ -263,6 +280,18 @@ fun SocietyNavGraph(
 
         composable(AppRoute.ResidentReports.route) {
             ResidentReportsScreen(onBack = { navController.popBackStack() })
+        }
+
+        composable(AppRoute.ResidentNoc.route) {
+            ResidentNocScreen(onBack = { navController.popBackStack() })
+        }
+
+        composable(AppRoute.ResidentPaymentHistory.route) {
+            ResidentPaymentHistoryScreen(onBack = { navController.popBackStack() })
+        }
+
+        composable(AppRoute.ResidentMembers.route) {
+            ResidentMembersScreen(onBack = { navController.popBackStack() })
         }
 
         composable(AppRoute.ResidentMaintenance.route) {
@@ -280,7 +309,8 @@ fun SocietyNavGraph(
         composable(AppRoute.ResidentProfile.route) {
             ResidentProfileScreen(
                 onBack = { navController.popBackStack() },
-                onChangePassword = { navController.navigate(AppRoute.ChangePassword.route) }
+                onChangePassword = { navController.navigate(AppRoute.ChangePassword.route) },
+                onLogoutComplete = ::navigateToLogin
             )
         }
 
@@ -296,3 +326,5 @@ fun SocietyNavGraph(
         }
     }
 }
+
+

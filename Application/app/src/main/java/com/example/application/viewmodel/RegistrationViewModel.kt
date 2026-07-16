@@ -79,7 +79,13 @@ class RegistrationViewModel @Inject constructor(
             state.password != state.confirmPassword -> "Password and confirm password do not match."
             else -> null
         }
-        val flatError = if (state.flatId.isBlank()) "Please select an available flat." else null
+        val flatError = if (state.flatId.isBlank()) {
+            if (state.availableFlats.isEmpty()) {
+                "No available flats found. Ask admin to add a flat with Available status first."
+            } else {
+                "Please select an available flat."
+            }
+        } else null
 
         if (listOf(nameError, emailError, phoneError, passwordError, confirmError, flatError).any { it != null }) {
             _uiState.update {

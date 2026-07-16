@@ -16,7 +16,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class AdminReportsUiState(
-    val isLoading: Boolean = true,
+    val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
     val filter: ReportFilterState = ReportFilterState(),
     val data: AdminReportsData? = null,
@@ -25,7 +25,7 @@ data class AdminReportsUiState(
 )
 
 data class ResidentReportsUiState(
-    val isLoading: Boolean = true,
+    val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
     val filter: ReportFilterState = ReportFilterState(),
     val data: ResidentReportsData? = null,
@@ -114,4 +114,3 @@ class ResidentReportsViewModel @Inject constructor(
         _state.update { it.copy(exportMessage = "No backend PDF/CSV export route is confirmed. Reports shown here use real backend JSON data only.") }
     }
 }
-
