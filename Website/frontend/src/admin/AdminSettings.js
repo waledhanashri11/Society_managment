@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Bell, Building2, CheckCircle2, Clock, CreditCard, Database,
-  IndianRupee, LockKeyhole, Mail, Phone, QrCode, Save, ShieldCheck, Upload, UserCog, X,
+  Bell, Building2, CheckCircle2, Clock, CreditCard,
+  LockKeyhole, Mail, Phone, QrCode, Save, ShieldCheck, Upload, UserCog, X,
   SlidersHorizontal, Users
 } from 'lucide-react';
 import { getUser } from '../utils/auth';
@@ -338,9 +338,6 @@ const AdminSettings = () => {
         <button className={tab === 'general' ? 'active' : ''} onClick={() => setTab('general')}>
           <UserCog size={17} /> Society & Account
         </button>
-        <button className={tab === 'resident-categories' ? 'active' : ''} onClick={() => setTab('resident-categories')}>
-          <SlidersHorizontal size={17} /> Resident Categories
-        </button>
       </div>
 
       {loading ? (
@@ -416,30 +413,6 @@ const AdminSettings = () => {
             </div>
           </section>
 
-          <section className="portal-panel settings-card">
-            <div className="portal-panel-head">
-              <div>
-                <h2>Maintenance Rules</h2>
-                <p>Default monthly billing setup.</p>
-              </div>
-              <IndianRupee size={20} />
-            </div>
-            <div className="settings-form">
-              <label>
-                Monthly Amount
-                <input name="maintenanceAmount" type="number" value={settings.maintenanceAmount} onChange={handleChange} required />
-              </label>
-              <label>
-                Due Day
-                <input name="dueDay" type="number" min="1" max="31" value={settings.dueDay} onChange={handleChange} required />
-              </label>
-              <label>
-                Late Fee
-                <input name="lateFee" type="number" value={settings.lateFee} onChange={handleChange} required />
-              </label>
-            </div>
-          </section>
-
           <section className="portal-panel settings-card settings-wide">
             <div className="portal-panel-head">
               <div>
@@ -496,21 +469,6 @@ const AdminSettings = () => {
               <label><input type="checkbox" name="paymentAlerts" checked={settings.paymentAlerts} onChange={handleChange} /><span><CreditCard size={20} /> Payment alerts</span></label>
               <label><input type="checkbox" name="complaintAlerts" checked={settings.complaintAlerts} onChange={handleChange} /><span><UserCog size={20} /> Complaint updates</span></label>
               <label><input type="checkbox" name="visitorAlerts" checked={settings.visitorAlerts} onChange={handleChange} /><span><Bell size={20} /> Visitor alerts</span></label>
-            </div>
-          </section>
-
-          <section className="portal-panel settings-card settings-wide">
-            <div className="portal-panel-head">
-              <div>
-                <h2>System Status</h2>
-                <p>Quick health view for the admin workspace.</p>
-              </div>
-              <Database size={20} />
-            </div>
-            <div className="settings-status-grid">
-              <div><span>Database</span><strong>Connected</strong></div>
-              <div><span>Payments</span><strong>Ready</strong></div>
-              <div><span>Complaints</span><strong>Active</strong></div>
             </div>
           </section>
 

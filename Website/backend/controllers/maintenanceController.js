@@ -24,7 +24,6 @@ const resolvePaymentScreenshotUrl = (req, value) => {
   if (cleanValue.startsWith('/uploads/')) {
     const localPath = path.join(__dirname, '..', cleanValue.replace(/^\/uploads\//, 'uploads/'));
     if (!fs.existsSync(localPath)) {
-      console.warn('Payment screenshot file missing:', { dbPath: cleanValue, localPath });
       return null;
     }
   }
@@ -41,6 +40,219 @@ const withPaymentScreenshotUrls = (req, payments = []) => payments.map((payment)
     screenshot_path: rawScreenshot
   };
 });
+
+const tableColumnCache = new Map();
+
+const getTableColumns = async (tableName) => {
+  if (tableColumnCache.has(tableName)) return tableColumnCache.get(tableName);
+  const [columns] = await promisePool.query(`SHOW COLUMNS FROM ${tableName}`);
+  const columnNames = new Set(columns.map((column) => column.Field || column.field || column.column_name));
+  tableColumnCache.set(tableName, columnNames);
+  return columnNames;
+};
+
+const hasTableColumn = async (tableName, columnName) => {
+  const columns = await getTableColumns(tableName);
+  return columns.has(columnName);
+};
+
+const markMaintenanceBillPaid = async (db, billId, paidAt = new Date()) => {
+  const maintenanceHasPaymentDate = await hasTableColumn('maintenance', 'payment_date');
+  const maintenanceHasUpdatedAt = await hasTableColumn('maintenance', 'updated_at');
+  const setParts = [
+    "status = 'Paid'",
+    'paid_amount = total_amount',
+    'remaining_amount = 0'
+  ];
+  const values = [];
+
+  if (maintenanceHasPaymentDate) {
+    setParts.push('payment_date = ?');
+    values.push(paidAt || new Date());
+  }
+  if (maintenanceHasUpdatedAt) setParts.push('updated_at = NOW()');
+  values.push(billId);
+
+  const [result] = await db.query(
+    `UPDATE maintenance SET ${setParts.join(', ')} WHERE id = ?`,
+    values
+  );
+  return result;
+};
+
+const allocateResidentPayment = async (db, residentId, selectedBill, paidAmount, paidAt = new Date()) => {
+  const selectedCycle = Number(selectedBill.year || 0) * 12 + Number(selectedBill.month || 0);
+  const [openBills] = await db.query(
+    `SELECT *
+     FROM maintenance
+     WHERE resident_id = ?
+       AND status != 'Paid'
+       AND (year * 12 + month) <= ?
+     ORDER BY year ASC, month ASC, due_date ASC, id ASC`,
+    [residentId, selectedCycle]
+  );
+
+  let remainingPayment = Number(paidAmount || 0);
+  const paidBillIds = [];
+
+  for (const bill of openBills) {
+    const billDue = Number(bill.remaining_amount || bill.total_amount || bill.amount || 0);
+    if (billDue <= 0) {
+      await markMaintenanceBillPaid(db, bill.id, paidAt);
+      paidBillIds.push(bill.id);
+      continue;
+    }
+    if (remainingPayment + 0.001 < billDue) break;
+    await markMaintenanceBillPaid(db, bill.id, paidAt);
+    paidBillIds.push(bill.id);
+    remainingPayment -= billDue;
+  }
+
+  return { paidBillIds, remainingPayment };
+};
+
+const getCoveredBillsForPayment = async (db, payment) => {
+  const hasPaymentMaintenance = await hasTableColumn('payment_maintenance', 'payment_id').catch(() => false);
+  if (hasPaymentMaintenance) {
+    const [linkedBills] = await db.query(
+      `SELECT m.*, CONCAT('BILL-', m.id) AS bill_number, f.flat_no
+       FROM payment_maintenance pm
+       JOIN maintenance m ON m.id = pm.maintenance_id
+       LEFT JOIN flats f ON m.flat_id = f.id
+       WHERE pm.payment_id = ?
+       ORDER BY m.year ASC, m.month ASC, m.due_date ASC, m.id ASC`,
+      [payment.id || payment.payment_id]
+    );
+    if (linkedBills.length) {
+      return linkedBills.map((bill) => ({
+        id: bill.id,
+        bill_id: bill.id,
+        bill_number: bill.bill_number,
+        month: bill.month,
+        year: bill.year,
+        due_date: bill.due_date,
+        amount: Number(bill.total_amount || bill.amount || 0),
+        total_amount: Number(bill.total_amount || bill.amount || 0),
+        paid_amount: Number(bill.paid_amount || 0),
+        remaining_amount: Number(bill.remaining_amount || 0),
+        status: bill.status,
+        payment_status: bill.status,
+        flat_no: bill.flat_no
+      }));
+    }
+  }
+
+  const selectedCycle = Number(payment.year || 0) * 12 + Number(payment.month || 0);
+  const [candidateBills] = await db.query(
+    `SELECT m.*, CONCAT('BILL-', m.id) AS bill_number, f.flat_no
+     FROM maintenance m
+     LEFT JOIN flats f ON m.flat_id = f.id
+     WHERE m.resident_id = ?
+       AND (m.year * 12 + m.month) <= ?
+     ORDER BY m.year ASC, m.month ASC, m.due_date ASC, m.id ASC`,
+    [payment.resident_id, selectedCycle]
+  );
+
+  let remainingPayment = Number(payment.amount || 0);
+  const coveredBills = [];
+
+  for (const bill of candidateBills) {
+    const billTotal = Number(bill.total_amount || bill.amount || 0);
+    const wasPaidByThisPayment = Number(bill.id) === Number(payment.bill_id) || remainingPayment + 0.001 >= billTotal;
+    if (!wasPaidByThisPayment) continue;
+    coveredBills.push({
+      id: bill.id,
+      bill_id: bill.id,
+      bill_number: bill.bill_number,
+      month: bill.month,
+      year: bill.year,
+      due_date: bill.due_date,
+      amount: billTotal,
+      total_amount: billTotal,
+      paid_amount: Number(bill.paid_amount || 0),
+      remaining_amount: Number(bill.remaining_amount || 0),
+      status: bill.status,
+      payment_status: bill.status,
+      flat_no: bill.flat_no
+    });
+    remainingPayment -= billTotal;
+    if (remainingPayment <= 0 && Number(bill.id) === Number(payment.bill_id)) break;
+  }
+
+  return coveredBills.length ? coveredBills : [{
+    id: payment.bill_id,
+    bill_id: payment.bill_id,
+    bill_number: payment.bill_number,
+    month: payment.month,
+    year: payment.year,
+    due_date: payment.due_date,
+    amount: Number(payment.total_amount || payment.amount || 0),
+    total_amount: Number(payment.total_amount || payment.amount || 0),
+    paid_amount: Number(payment.total_amount || payment.amount || 0),
+    remaining_amount: 0,
+    status: payment.payment_status,
+    payment_status: payment.payment_status,
+    flat_no: payment.flat_no
+  }];
+};
+
+const withCoveredPaymentBills = async (db, payments = []) => {
+  const result = [];
+  for (const payment of payments) {
+    const covered_bills = await getCoveredBillsForPayment(db, payment);
+    result.push({ ...payment, covered_bills });
+  }
+  return result;
+};
+
+const reconcilePaidPayments = async () => ({ updatedBills: 0 });
+
+const reconcileLegacyPaidPayments = async (db = promisePool, residentId = null) => {
+  const params = [];
+  const residentFilter = residentId ? 'AND m.resident_id = ?' : '';
+  if (residentId) params.push(residentId);
+
+  const [payments] = await db.query(
+    `SELECT p.id AS payment_id, p.bill_id, p.amount AS payment_amount, p.payment_status, p.paid_at,
+            m.id AS selected_bill_id, m.resident_id, m.year, m.month, m.total_amount, m.amount AS bill_amount,
+            m.status AS bill_status
+     FROM payments p
+     JOIN maintenance m ON m.id = p.bill_id
+     WHERE p.payment_status IN ('Paid', 'Pending Verification', 'Under Review')
+       ${residentFilter}
+     ORDER BY p.paid_at ASC, p.created_at ASC, p.id ASC`,
+    params
+  );
+
+  if (!payments.length) return { updatedBills: 0 };
+
+  const paymentsHasUpdatedAt = await hasTableColumn('payments', 'updated_at');
+  let updatedBills = 0;
+
+  for (const payment of payments) {
+    const paidAt = payment.paid_at || new Date();
+    const selectedBillTotal = Number(payment.total_amount || payment.bill_amount || 0);
+    let allocatableAmount = Number(payment.payment_amount || 0);
+
+    if (!Number.isFinite(allocatableAmount) || allocatableAmount <= 0) continue;
+
+    if (payment.payment_status !== 'Paid') {
+      await db.query(
+        `UPDATE payments SET payment_status = 'Paid'${paymentsHasUpdatedAt ? ', updated_at = NOW()' : ''} WHERE id = ?`,
+        [payment.payment_id]
+      );
+    }
+
+    if (payment.bill_status === 'Paid') {
+      allocatableAmount = Math.max(0, allocatableAmount - selectedBillTotal);
+    }
+
+    const allocation = await allocateResidentPayment(db, payment.resident_id, payment, allocatableAmount, paidAt);
+    updatedBills += allocation.paidBillIds.length;
+  }
+
+  return { updatedBills };
+};
 
 const calculateLateFee = (dueDate) => {
   if (!dueDate) return 0;
@@ -60,7 +272,7 @@ const applyPenaltyLogic = async () => {
     const settings = settingsRows[0];
     const graceDays = Number(settings.grace_days || 0);
 
-    const [bills] = await promisePool.query("SELECT * FROM maintenance WHERE status != 'Paid'");
+    const [bills] = await promisePool.query("SELECT * FROM maintenance WHERE status NOT IN ('Paid', 'Pending Verification', 'Under Review')");
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -191,10 +403,12 @@ const getAllMaintenance = async (req, res) => {
   try {
     await applyPenaltyLogic();
     const [maintenance] = await promisePool.query(`
-      SELECT m.*, u.name AS resident_name, u.name AS owner_name, f.flat_no, f.floor_no
+      SELECT m.*, u.name AS resident_name, u.name AS owner_name, f.flat_no, f.floor_no,
+             ft.name AS flat_type_name
       FROM maintenance m
       LEFT JOIN users u ON m.resident_id = u.id
       LEFT JOIN flats f ON m.flat_id = f.id
+      LEFT JOIN flat_types ft ON m.flat_type_id = ft.id
       ORDER BY m.year DESC, m.month DESC, m.id DESC
     `);
     return sendResponse(res, 200, 'Maintenance records fetched successfully', maintenance);
@@ -208,10 +422,12 @@ const getMaintenanceById = async (req, res) => {
   try {
     const { id } = req.params;
     const [maintenance] = await promisePool.query(
-      `SELECT m.*, u.name AS resident_name, u.name AS owner_name, f.flat_no, f.floor_no
+      `SELECT m.*, u.name AS resident_name, u.name AS owner_name, f.flat_no, f.floor_no,
+              ft.name AS flat_type_name
        FROM maintenance m
        LEFT JOIN users u ON m.resident_id = u.id
        LEFT JOIN flats f ON m.flat_id = f.id
+       LEFT JOIN flat_types ft ON f.flat_type_id = ft.id
        WHERE m.id = ?`,
       [id]
     );
@@ -230,10 +446,51 @@ const getMaintenanceById = async (req, res) => {
 const createMaintenance = async (req, res) => {
   try {
     const { title, month, year, dueDate, amount = 0, residentId, flatId } = req.body;
+    let flatTypeId = null;
+    let defaultAmt = Number(amount);
+
+    if (flatId) {
+      const [flatRows] = await promisePool.query(
+        `SELECT f.flat_type_id, ft.default_maintenance_amount
+         FROM flats f
+         LEFT JOIN flat_types ft ON f.flat_type_id = ft.id
+         WHERE f.id = ?`,
+        [flatId]
+      );
+      if (flatRows.length > 0) {
+        flatTypeId = flatRows[0].flat_type_id || null;
+        if (flatRows[0].default_maintenance_amount !== null && flatRows[0].default_maintenance_amount !== undefined) {
+          defaultAmt = Number(flatRows[0].default_maintenance_amount);
+        }
+      }
+    }
+
+    const amt = Number(amount);
+    const isCustom = amt !== defaultAmt;
+
     const [result] = await promisePool.query(
-      `INSERT INTO maintenance (resident_id, flat_id, title, month, year, amount, penalty_amount, total_amount, paid_amount, remaining_amount, status, due_date)
-       VALUES (?, ?, ?, ?, ?, ?, 0.00, ?, 0.00, ?, 'Pending', ?)`,
-      [residentId || null, flatId || null, title, month, year, amount, amount, amount, dueDate]
+      `INSERT INTO maintenance 
+       (resident_id, flat_id, title, month, year, amount, penalty_amount, total_amount, paid_amount, remaining_amount, status, due_date,
+        flat_type_id, default_maintenance_amount, final_maintenance_amount, is_custom_amount, custom_reason, edited_by, edited_at)
+       VALUES (?, ?, ?, ?, ?, ?, 0.00, ?, 0.00, ?, 'Pending', ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        residentId || null,
+        flatId || null,
+        title,
+        month,
+        year,
+        amt,
+        amt,
+        amt,
+        dueDate,
+        flatTypeId,
+        defaultAmt,
+        amt,
+        isCustom,
+        isCustom ? (req.body.custom_reason || req.body.reason || 'Manual bill customization') : null,
+        isCustom ? req.user.id : null,
+        isCustom ? new Date() : null
+      ]
     );
     return sendResponse(res, 201, 'Maintenance created successfully', { id: result.insertId });
   } catch (error) {
@@ -271,21 +528,12 @@ const generateMaintenanceBills = async (req, res) => {
     );
     
     const reqCycle = reqYear * 12 + reqMonth;
-    const now = new Date();
-    const nowYear = now.getFullYear();
-    const nowMonth = now.getMonth() + 1;
-    const nowCycle = nowYear * 12 + nowMonth;
 
     const months = [
       'January', 'February', 'March', 'April', 'May', 'June',
       'July', 'August', 'September', 'October', 'November', 'December'
     ];
     const reqMonthName = months[reqMonth - 1];
-
-    // Do not allow generating future months
-    if (reqCycle > nowCycle) {
-      return sendResponse(res, 400, 'Future maintenance bills cannot be generated.');
-    }
 
     if (cycleRows.length > 0) {
       const latestCycle = Number(cycleRows[0].cycle);
@@ -307,15 +555,35 @@ const generateMaintenanceBills = async (req, res) => {
       }
     }
 
-    // 3. Fetch occupied flats using active flat assignments or directly from occupied flats table
-    const [flats] = await promisePool.query(
-      "SELECT id, current_resident_id FROM flats WHERE current_resident_id IS NOT NULL AND status = 'Occupied'"
+    // 3. Prevent bill generation if any occupied flat lacks a Flat Type
+    const [missingFlatTypes] = await promisePool.query(
+      `SELECT f.id, f.flat_no, f.wing 
+       FROM flats f
+       WHERE f.current_resident_id IS NOT NULL 
+         AND f.status = 'Occupied' 
+         AND f.flat_type_id IS NULL`
     );
+
+    if (missingFlatTypes.length > 0) {
+      const flatNames = missingFlatTypes.map(f => `${f.wing || 'A'}-${f.flat_no}`).join(', ');
+      return sendResponse(
+        res,
+        400,
+        `Cannot generate bills. Some occupied flats are not assigned a Flat Type: ${flatNames}. Please assign a Flat Type to all occupied flats in Flat Master before billing.`
+      );
+    }
+
+    // 4. Fetch occupied flats using active flat assignments or directly from occupied flats table (with Flat Types)
+    const [flats] = await promisePool.query(`
+      SELECT f.id, f.current_resident_id, f.flat_no, f.wing,
+             ft.id as flat_type_id, ft.default_maintenance_amount
+      FROM flats f
+      JOIN flat_types ft ON f.flat_type_id = ft.id
+      WHERE f.current_resident_id IS NOT NULL AND f.status = 'Occupied'
+    `);
     if (flats.length === 0) {
       return sendResponse(res, 404, 'No occupied flats found to bill');
     }
-
-    const baseAmt = Number(settings.fixed_amount || 0);
 
     // Use transaction to insert bills and their items
     const connection = await promisePool.getConnection();
@@ -335,13 +603,17 @@ const generateMaintenanceBills = async (req, res) => {
         );
 
         const flatCategoriesSum = flatCategories.reduce((sum, cat) => sum + Number(cat.amount || 0), 0);
+        
+        // Use flat type's default maintenance amount as the base amount
+        const baseAmt = Number(flat.default_maintenance_amount || 0);
         const flatTotalAmt = baseAmt + flatCategoriesSum;
 
         const [insertResult] = await connection.query(
           `INSERT INTO maintenance 
-           (resident_id, flat_id, title, month, year, amount, penalty_amount, total_amount, paid_amount, remaining_amount, status, due_date, created_at, updated_at) 
-           VALUES (?, ?, ?, ?, ?, ?, 0.00, ?, 0.00, ?, 'Pending', ?, NOW(), NOW())`,
-          [flat.current_resident_id, flat.id, settings.title, reqMonth, reqYear, baseAmt, flatTotalAmt, flatTotalAmt, dueDateString]
+           (resident_id, flat_id, title, month, year, amount, penalty_amount, total_amount, paid_amount, remaining_amount, status, due_date, created_at, updated_at,
+            flat_type_id, default_maintenance_amount, final_maintenance_amount, is_custom_amount) 
+           VALUES (?, ?, ?, ?, ?, ?, 0.00, ?, 0.00, ?, 'Pending', ?, NOW(), NOW(), ?, ?, ?, false)`,
+          [flat.current_resident_id, flat.id, settings.title, reqMonth, reqYear, baseAmt, flatTotalAmt, flatTotalAmt, dueDateString, flat.flat_type_id, baseAmt, baseAmt]
         );
 
         const billId = insertResult.insertId;
@@ -376,12 +648,25 @@ const updateMaintenance = async (req, res) => {
     const { id } = req.params;
     const { title, month, year, dueDate, amount, status } = req.body;
 
-    const [existing] = await promisePool.query('SELECT amount, penalty_amount, paid_amount FROM maintenance WHERE id = ?', [id]);
+    const [existing] = await promisePool.query('SELECT amount, penalty_amount, paid_amount, default_maintenance_amount FROM maintenance WHERE id = ?', [id]);
     if (existing.length === 0) {
       return sendResponse(res, 404, 'Maintenance record not found');
     }
 
     const amt = amount !== undefined ? Number(amount) : Number(existing[0].amount);
+    
+    // Check if the updated amount is custom (differs from snapshot default_maintenance_amount)
+    const defaultAmt = existing[0].default_maintenance_amount !== null && existing[0].default_maintenance_amount !== undefined
+      ? Number(existing[0].default_maintenance_amount) 
+      : amt;
+    const isCustom = amt !== defaultAmt;
+
+    const finalMaintenanceAmount = amt;
+    const isCustomAmount = isCustom;
+    const customReason = isCustom ? (req.body.custom_reason || req.body.reason || null) : null;
+    const editedBy = isCustom ? req.user.id : null;
+    const editedAt = isCustom ? new Date() : null;
+
     const penaltyAmt = Number(existing[0].penalty_amount);
     const paidAmt = Number(existing[0].paid_amount);
     const newTotal = amt + penaltyAmt;
@@ -390,9 +675,10 @@ const updateMaintenance = async (req, res) => {
     await promisePool.query(
       `UPDATE maintenance 
        SET title = COALESCE(?, title), month = COALESCE(?, month), year = COALESCE(?, year), 
-           due_date = COALESCE(?, due_date), amount = ?, total_amount = ?, remaining_amount = ?, status = COALESCE(?, status), updated_at = NOW()
+           due_date = COALESCE(?, due_date), amount = ?, total_amount = ?, remaining_amount = ?, status = COALESCE(?, status), updated_at = NOW(),
+           final_maintenance_amount = ?, is_custom_amount = ?, custom_reason = ?, edited_by = ?, edited_at = ?
        WHERE id = ?`,
-      [title, month, year, dueDate, amt, newTotal, remaining, status, id]
+      [title, month, year, dueDate, amt, newTotal, remaining, status, finalMaintenanceAmount, isCustomAmount, customReason, editedBy, editedAt, id]
     );
 
     return sendResponse(res, 200, 'Maintenance updated successfully');
@@ -471,11 +757,38 @@ const payMaintenanceBill = async (req, res) => {
 const getUserMaintenance = async (req, res) => {
   try {
     const userId = req.user.id;
+    await reconcilePaidPayments(promisePool, userId);
     await applyPenaltyLogic();
     const [bills] = await promisePool.query(`
-      SELECT m.*, m.status AS payment_status, m.total_amount AS total_amount, m.due_date AS maintenance_due_date, f.flat_no, f.floor_no
+      SELECT m.*, m.status AS payment_status, m.total_amount AS total_amount, m.due_date AS maintenance_due_date,
+             f.flat_no, f.floor_no, ft.name AS flat_type_name,
+             rejected_payment.rejection_reason,
+             rejected_payment.rejected_at,
+             rejected_payment.payment_status AS latest_payment_status,
+             approved_payment.id AS payment_id
       FROM maintenance m
       JOIN flats f ON m.flat_id = f.id
+      LEFT JOIN flat_types ft ON m.flat_type_id = ft.id
+      LEFT JOIN LATERAL (
+        SELECT p.rejection_reason,
+               COALESCE(p.rejected_at, p.verified_at, p.updated_at, p.created_at) AS rejected_at,
+               p.payment_status
+        FROM payments p
+        LEFT JOIN payment_maintenance pm ON pm.payment_id = p.id
+        WHERE (pm.maintenance_id = m.id OR p.bill_id = m.id)
+          AND p.payment_status = 'Rejected'
+        ORDER BY COALESCE(p.rejected_at, p.verified_at, p.updated_at, p.created_at) DESC
+        LIMIT 1
+      ) rejected_payment ON true
+      LEFT JOIN LATERAL (
+        SELECT p.id
+        FROM payments p
+        LEFT JOIN payment_maintenance pm ON pm.payment_id = p.id
+        WHERE (pm.maintenance_id = m.id OR p.bill_id = m.id)
+          AND p.payment_status IN ('Approved', 'Paid')
+        ORDER BY COALESCE(p.verified_at, p.paid_at, p.updated_at, p.created_at) DESC
+        LIMIT 1
+      ) approved_payment ON true
       WHERE m.resident_id = ?
       ORDER BY m.created_at DESC
     `, [userId]);
@@ -489,12 +802,15 @@ const getUserMaintenance = async (req, res) => {
 
 const getAllBills = async (req, res) => {
   try {
+    await reconcilePaidPayments();
     await applyPenaltyLogic();
     const [bills] = await promisePool.query(`
-      SELECT m.*, m.status AS payment_status, m.total_amount AS total_amount, u.name AS resident_name, f.flat_no, f.floor_no
+      SELECT m.*, m.status AS payment_status, m.total_amount AS total_amount, u.name AS resident_name, f.flat_no, f.floor_no,
+             ft.name AS flat_type_name
       FROM maintenance m
       JOIN users u ON m.resident_id = u.id
       JOIN flats f ON m.flat_id = f.id
+      LEFT JOIN flat_types ft ON m.flat_type_id = ft.id
       ORDER BY m.created_at DESC
     `);
     return sendResponse(res, 200, 'Bills fetched successfully', bills);
@@ -508,10 +824,13 @@ const getBillById = async (req, res) => {
   try {
     const { id } = req.params;
     const [bills] = await promisePool.query(`
-      SELECT m.*, m.status AS payment_status, m.total_amount AS total_amount, u.name AS resident_name, f.flat_no, f.floor_no
+      SELECT m.*, m.status AS payment_status, m.total_amount AS total_amount, u.name AS resident_name, f.flat_no, f.floor_no,
+             ft.name AS flat_type_name, editor.name AS edited_by_name
       FROM maintenance m
       JOIN users u ON m.resident_id = u.id
       JOIN flats f ON m.flat_id = f.id
+      LEFT JOIN flat_types ft ON m.flat_type_id = ft.id
+      LEFT JOIN users editor ON editor.id = m.edited_by
       WHERE m.id = ?
     `, [id]);
 
@@ -554,6 +873,7 @@ const getBillById = async (req, res) => {
 };
 
 const createPayment = async (req, res) => {
+  const connection = await promisePool.getConnection();
   try {
     const {
       billId,
@@ -561,63 +881,132 @@ const createPayment = async (req, res) => {
       transactionId,
       utrNumber,
       amount,
+      billIds,
       screenshotUrl,
       screenshot,
       paymentDate
     } = req.body;
     const utr = String(utrNumber || transactionId || '').trim();
-    if (!billId || !utr || !amount) {
+    const requestedBillIds = Array.isArray(billIds) && billIds.length ? billIds.map(Number).filter(Boolean) : [];
+    if ((!billId && !requestedBillIds.length) || !utr || !amount) {
       return sendResponse(res, 400, 'Bill ID, UTR number and amount are required');
     }
 
-    const [billRows] = await promisePool.query('SELECT * FROM maintenance WHERE id = ?', [billId]);
+    await connection.beginTransaction();
+
+    const [billRows] = requestedBillIds.length
+      ? await connection.query('SELECT * FROM maintenance WHERE id = ANY(?::int[]) ORDER BY year ASC, month ASC, due_date ASC, id ASC', [requestedBillIds])
+      : await connection.query('SELECT * FROM maintenance WHERE id = ?', [billId]);
     if (billRows.length === 0) {
+      await connection.rollback();
       return sendResponse(res, 404, 'Bill not found');
     }
 
-    const bill = billRows[0];
-    if (bill.resident_id !== req.user.id) {
+    if (billRows.some((row) => Number(row.resident_id) !== Number(req.user.id))) {
+      await connection.rollback();
       return sendResponse(res, 403, 'You can only access your own bills');
     }
 
-    if (bill.status === 'Paid') {
-      return sendResponse(res, 400, 'This bill is already paid');
+    if (billRows.some((row) => ['Paid', 'Pending Verification', 'Under Review'].includes(row.status))) {
+      await connection.rollback();
+      return sendResponse(res, 400, 'One or more selected bills are already paid or pending verification');
     }
 
-    const [paymentRows] = await promisePool.query('SELECT id FROM payments WHERE bill_id = ? AND transaction_id = ?', [billId, utr]);
+    const bill = billRows[billRows.length - 1];
+    let selectedBillIds = billRows.map((row) => row.id);
+    const primaryBillId = bill.id;
+    const totalAmount = billRows.reduce((sum, row) => sum + Number(row.remaining_amount || row.total_amount || row.amount || 0), 0);
+    const paidAmount = Number(amount || 0);
+    if (!Number.isFinite(paidAmount) || paidAmount <= 0) {
+      await connection.rollback();
+      return sendResponse(res, 400, 'Valid payment amount is required');
+    }
+    if (paidAmount < totalAmount) {
+      await connection.rollback();
+      return sendResponse(res, 400, `Payment amount must be at least ${totalAmount}`);
+    }
+
+    const [existingBillPayments] = await connection.query(
+      `SELECT p.id, p.payment_status
+       FROM payments p
+       JOIN payment_maintenance pm ON pm.payment_id = p.id
+       WHERE pm.maintenance_id = ANY(?::int[])
+         AND p.payment_status != 'Rejected'
+       LIMIT 1`,
+      [selectedBillIds]
+    );
+    if (existingBillPayments.length > 0) {
+      await connection.rollback();
+      return sendResponse(res, 409, 'Payment already exists for these dues', null, ['One of these maintenance bills already has a payment record']);
+    }
+
+    const [paymentRows] = await connection.query('SELECT id FROM payments WHERE transaction_id = ?', [utr]);
     if (paymentRows.length > 0) {
+      await connection.rollback();
       return sendResponse(res, 409, 'Duplicate payment transaction', null, ['This UTR number has already been used']);
     }
 
     const screenshotPath = savePaymentScreenshot(screenshot || screenshotUrl);
+    const paidAt = paymentDate || new Date();
+    const paymentsHasResidentId = await hasTableColumn('payments', 'resident_id');
+    const paymentsHasPaymentProof = await hasTableColumn('payments', 'payment_proof');
+    const insertColumns = ['bill_id', 'payment_method', 'transaction_id', 'amount', 'payment_status', 'paid_at', 'screenshot_url'];
+    const insertValues = [primaryBillId, paymentMethod, utr, paidAmount, 'Pending Verification', paidAt, screenshotPath];
+    if (paymentsHasResidentId) {
+      insertColumns.push('resident_id');
+      insertValues.push(req.user.id);
+    }
+    if (paymentsHasPaymentProof) {
+      insertColumns.push('payment_proof');
+      insertValues.push(screenshotPath);
+    }
 
-    await promisePool.query(
-      `INSERT INTO payments (bill_id, payment_method, transaction_id, amount, payment_status, paid_at, screenshot_url)
-       VALUES (?, ?, ?, ?, 'Pending Verification', ?, ?)`,
-      [billId, paymentMethod, utr, amount, paymentDate || new Date(), screenshotPath]
+    const placeholders = insertColumns.map(() => '?').join(', ');
+    const [paymentResult] = await connection.query(
+      `INSERT INTO payments (${insertColumns.join(', ')}) VALUES (${placeholders})`,
+      insertValues
     );
+    const paymentId = paymentResult.insertId || paymentResult.id;
 
-    await promisePool.query(
-      "UPDATE maintenance SET status = 'Pending Verification', payment_date = ? WHERE id = ?",
-      [paymentDate || new Date(), billId]
+    for (const maintenanceId of selectedBillIds) {
+      await connection.query(
+        'INSERT INTO payment_maintenance (payment_id, maintenance_id) VALUES (?, ?) ON CONFLICT (payment_id, maintenance_id) DO NOTHING',
+        [paymentId, maintenanceId]
+      );
+    }
+    await connection.query(
+      "UPDATE maintenance SET status = 'Pending Verification', payment_date = ?, updated_at = NOW() WHERE id = ANY(?::int[])",
+      [paidAt, selectedBillIds]
     );
+    await connection.commit();
 
     try {
       await promisePool.query(
         `INSERT INTO notifications (resident_id, title, message, type, is_read)
-         SELECT id, 'Pending payment verification', ?, 'maintenance', false
+         SELECT id, 'Maintenance payment received', ?, 'maintenance', false
          FROM users
          WHERE role = 'admin' AND status = 'approved'`,
-        [`Verify payment of UTR: ${utr}`]
+        [`Verify payment of ${paidAmount.toLocaleString('en-IN')} for UTR: ${utr}`]
       );
     } catch (notifError) {
       console.error('Failed to create admin notification for payment:', notifError);
     }
 
-    return sendResponse(res, 201, 'Payment submitted successfully. It is pending admin verification.');
+    return sendResponse(res, 201, 'Payment submitted for admin verification', {
+      paymentId,
+      selectedBillIds,
+      pendingBillsCount: selectedBillIds.length
+    });
   } catch (error) {
+    try {
+      await connection.rollback();
+    } catch (rollbackError) {
+      console.error('Create payment rollback error:', rollbackError);
+    }
     console.error('Create payment error:', error);
     return sendResponse(res, 500, 'Server error', null, ['Unable to submit payment']);
+  } finally {
+    connection.release();
   }
 };
 
@@ -638,49 +1027,140 @@ const savePaymentScreenshot = (imageData) => {
 };
 
 const approvePayment = async (req, res) => {
+  const connection = await promisePool.getConnection();
   try {
     const { id } = req.params;
-    const [paymentRows] = await promisePool.query('SELECT * FROM payments WHERE id = ?', [id]);
+    await connection.beginTransaction();
+    const [paymentRows] = await connection.query('SELECT * FROM payments WHERE id = ?', [id]);
     if (paymentRows.length === 0) {
+      await connection.rollback();
       return sendResponse(res, 404, 'Payment record not found');
     }
 
     const payment = paymentRows[0];
+    if (['Approved', 'Paid', 'Rejected'].includes(payment.payment_status)) {
+      await connection.rollback();
+      return sendResponse(res, 400, `Payment has already been ${String(payment.payment_status).toLowerCase()}`);
+    }
     const receiptNumber = payment.receipt_number || `RCP-${payment.bill_id}-${Date.now()}`;
+    const paymentsHasVerifiedBy = await hasTableColumn('payments', 'verified_by');
+    const paymentsHasVerifiedAt = await hasTableColumn('payments', 'verified_at');
+    const paymentsHasRejectionReason = await hasTableColumn('payments', 'rejection_reason');
+    const paymentsHasReceiptNumber = await hasTableColumn('payments', 'receipt_number');
+    const paymentsHasRemarks = await hasTableColumn('payments', 'remarks');
+    const paymentsHasUpdatedAt = await hasTableColumn('payments', 'updated_at');
+    const maintenanceHasRemarks = await hasTableColumn('maintenance', 'remarks');
 
-    await promisePool.query(
-      `UPDATE payments
-       SET payment_status = 'Paid',
-           verified_by = ?,
-           verified_at = NOW(),
-           rejection_reason = NULL,
-           receipt_number = ?,
-           remarks = COALESCE(remarks, 'Approved by admin'),
-           updated_at = NOW()
-       WHERE id = ?`,
-      [req.user.id, receiptNumber, id]
+    const paymentSet = ["payment_status = 'Approved'"];
+    const paymentValues = [];
+    if (paymentsHasVerifiedBy) {
+      paymentSet.push('verified_by = ?');
+      paymentValues.push(req.user.id);
+    }
+    if (paymentsHasVerifiedAt) paymentSet.push('verified_at = NOW()');
+    if (paymentsHasRejectionReason) paymentSet.push('rejection_reason = NULL');
+    if (paymentsHasReceiptNumber) {
+      paymentSet.push('receipt_number = ?');
+      paymentValues.push(receiptNumber);
+    }
+    if (paymentsHasRemarks) paymentSet.push("remarks = COALESCE(remarks, 'Approved by admin')");
+    if (paymentsHasUpdatedAt) paymentSet.push('updated_at = NOW()');
+    paymentValues.push(id);
+
+    await connection.query(
+      `UPDATE payments SET ${paymentSet.join(', ')} WHERE id = ?`,
+      paymentValues
     );
 
-    await promisePool.query(
-      `UPDATE maintenance
-       SET status = 'Paid',
-           paid_amount = total_amount,
-           remaining_amount = 0,
-           payment_date = COALESCE(?, NOW()),
-           remarks = CONCAT(COALESCE(remarks, ''), ?),
-           updated_at = NOW()
-       WHERE id = ?`,
-      [payment.paid_at || new Date(), ` Payment approved on ${new Date().toLocaleString('en-IN')}.`, payment.bill_id]
+    const [linkedBills] = await connection.query(
+      `SELECT maintenance_id FROM payment_maintenance WHERE payment_id = ?`,
+      [id]
     );
+    const billIds = linkedBills.length ? linkedBills.map((row) => row.maintenance_id) : [payment.bill_id];
+
+    if (maintenanceHasRemarks) {
+      await connection.query(
+        "UPDATE maintenance SET remarks = CONCAT(COALESCE(remarks, ''), ?) WHERE id = ANY(?::int[])",
+        [` Payment approved on ${new Date().toLocaleString('en-IN')}.`, billIds]
+      );
+    }
+    for (const billId of billIds) {
+      await markMaintenanceBillPaid(connection, billId, payment.paid_at || new Date());
+    }
+
+    // Fetch details for audit log & resident notification
+    const [[residentInfo]] = await connection.query(`
+      SELECT 
+        COALESCE(p.resident_id, m.resident_id) AS resident_user_id,
+        u.name AS resident_name,
+        (SELECT name FROM users WHERE id = ?) AS admin_name
+      FROM payments p
+      JOIN maintenance m ON p.bill_id = m.id
+      JOIN users u ON u.id = COALESCE(p.resident_id, m.resident_id)
+      WHERE p.id = ?
+      LIMIT 1
+    `, [req.user.id, id]);
+
+    const [linkedBillsForAudit] = await connection.query(`
+      SELECT CONCAT('BILL-', m.id) AS bill_number
+      FROM payment_maintenance pm
+      JOIN maintenance m ON pm.maintenance_id = m.id
+      WHERE pm.payment_id = ?
+    `, [id]);
+    
+    const auditBillNumbers = linkedBillsForAudit.length 
+      ? linkedBillsForAudit.map(b => b.bill_number).join(', ') 
+      : `BILL-${payment.bill_id}`;
+
+    if (residentInfo) {
+      const auditDetails = {
+        paymentId: id,
+        billNumber: auditBillNumbers,
+        residentName: residentInfo.resident_name,
+        amount: Number(payment.amount),
+        previousStatus: payment.payment_status,
+        newStatus: 'Approved',
+        adminName: residentInfo.admin_name || 'Admin',
+        dateTime: new Date().toISOString()
+      };
+      
+      await connection.query(
+        `INSERT INTO maintenance_audit_logs (user_id, action, entity_type, entity_id, details)
+         VALUES (?, ?, ?, ?, ?)`,
+        [req.user.id, 'APPROVE_PAYMENT', 'PAYMENT', id, JSON.stringify(auditDetails)]
+      );
+
+      // Notify the resident
+      await connection.query(
+        `INSERT INTO notifications (resident_id, title, message, type, is_read, created_at)
+         VALUES (?, ?, ?, ?, false, NOW())`,
+        [
+          residentInfo.resident_user_id,
+          'Payment Approved',
+          `Your maintenance payment of ₹${Number(payment.amount).toLocaleString('en-IN')} for ${auditBillNumbers} has been approved. Receipt: ${receiptNumber}`,
+          'payment'
+        ]
+      );
+    }
+
+    await connection.commit();
 
     return sendResponse(res, 200, 'Payment approved successfully', { receiptNumber });
   } catch (error) {
+    try {
+      await connection.rollback();
+    } catch (rollbackError) {
+      console.error('Approve payment rollback error:', rollbackError);
+    }
     console.error('Approve payment error:', error);
     return sendResponse(res, 500, 'Server error', null, ['Unable to approve payment']);
+  } finally {
+    connection.release();
   }
 };
 
 const rejectPayment = async (req, res) => {
+  const connection = await promisePool.getConnection();
   try {
     const { id } = req.params;
     const { rejectionReason, remarks } = req.body;
@@ -689,38 +1169,166 @@ const rejectPayment = async (req, res) => {
       return sendResponse(res, 400, 'Rejection reason is required');
     }
 
-    const [paymentRows] = await promisePool.query('SELECT * FROM payments WHERE id = ?', [id]);
+    await connection.beginTransaction();
+    const [paymentRows] = await connection.query('SELECT * FROM payments WHERE id = ?', [id]);
     if (paymentRows.length === 0) {
+      await connection.rollback();
       return sendResponse(res, 404, 'Payment record not found');
     }
 
     const payment = paymentRows[0];
-    await promisePool.query(
-      `UPDATE payments
-       SET payment_status = 'Rejected',
-           verified_by = ?,
-           verified_at = NOW(),
-           rejection_reason = ?,
-           remarks = ?,
-           updated_at = NOW()
-       WHERE id = ?`,
-      [req.user.id, reason, reason, id]
+    if (['Approved', 'Paid', 'Rejected'].includes(payment.payment_status)) {
+      await connection.rollback();
+      return sendResponse(res, 400, `Payment has already been ${String(payment.payment_status).toLowerCase()}`);
+    }
+    const paymentsHasVerifiedBy = await hasTableColumn('payments', 'verified_by');
+    const paymentsHasVerifiedAt = await hasTableColumn('payments', 'verified_at');
+    const paymentsHasRejectionReason = await hasTableColumn('payments', 'rejection_reason');
+    const paymentsHasRejectedBy = await hasTableColumn('payments', 'rejected_by');
+    const paymentsHasRejectedAt = await hasTableColumn('payments', 'rejected_at');
+    const paymentsHasRemarks = await hasTableColumn('payments', 'remarks');
+    const paymentsHasUpdatedAt = await hasTableColumn('payments', 'updated_at');
+    const maintenanceHasPaymentDate = await hasTableColumn('maintenance', 'payment_date');
+    const maintenanceHasRemarks = await hasTableColumn('maintenance', 'remarks');
+    const maintenanceHasUpdatedAt = await hasTableColumn('maintenance', 'updated_at');
+
+    const paymentSet = ["payment_status = 'Rejected'"];
+    const paymentValues = [];
+    if (paymentsHasVerifiedBy) {
+      paymentSet.push('verified_by = ?');
+      paymentValues.push(req.user.id);
+    }
+    if (paymentsHasVerifiedAt) paymentSet.push('verified_at = NOW()');
+    if (paymentsHasRejectedBy) {
+      paymentSet.push('rejected_by = ?');
+      paymentValues.push(req.user.id);
+    }
+    if (paymentsHasRejectedAt) paymentSet.push('rejected_at = NOW()');
+    if (paymentsHasRejectionReason) {
+      paymentSet.push('rejection_reason = ?');
+      paymentValues.push(reason);
+    }
+    if (paymentsHasRemarks) {
+      paymentSet.push('remarks = ?');
+      paymentValues.push(reason);
+    }
+    if (paymentsHasUpdatedAt) paymentSet.push('updated_at = NOW()');
+    paymentValues.push(id);
+
+    await connection.query(
+      `UPDATE payments SET ${paymentSet.join(', ')} WHERE id = ?`,
+      paymentValues
     );
 
-    await promisePool.query(
-      `UPDATE maintenance
-       SET status = 'Rejected',
-           payment_date = NULL,
-           remarks = CONCAT(COALESCE(remarks, ''), ?),
-           updated_at = NOW()
-       WHERE id = ?`,
-      [` Payment rejected: ${reason}.`, payment.bill_id]
+    const [linkedBills] = await connection.query(
+      `SELECT maintenance_id FROM payment_maintenance WHERE payment_id = ?`,
+      [id]
     );
+    const billIds = linkedBills.length ? linkedBills.map((row) => row.maintenance_id) : [payment.bill_id];
+    const validBillIds = billIds.filter(Boolean);
+
+    const maintenanceSet = ["status = 'Overdue'"];
+    const maintenanceValues = [];
+    if (maintenanceHasPaymentDate) maintenanceSet.push('payment_date = NULL');
+    if (maintenanceHasRemarks) {
+      maintenanceSet.push("remarks = CONCAT(COALESCE(remarks, ''), ?)");
+      maintenanceValues.push(` Payment rejected: ${reason}.`);
+    }
+    if (maintenanceHasUpdatedAt) maintenanceSet.push('updated_at = NOW()');
+    if (validBillIds.length) {
+      maintenanceValues.push(validBillIds);
+      await connection.query(
+        `UPDATE maintenance SET ${maintenanceSet.join(', ')} WHERE id = ANY(?::int[])`,
+        maintenanceValues
+      );
+    }
+
+    let residentId = payment.resident_id;
+    let monthText = 'your selected maintenance bills';
+    if (validBillIds.length) {
+      const [billDetails] = await connection.query(
+        `SELECT resident_id, month, year
+         FROM maintenance
+         WHERE id = ANY(?::int[])
+         ORDER BY year ASC, month ASC`,
+        [validBillIds]
+      );
+      residentId = residentId || billDetails[0]?.resident_id;
+      const monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const labels = billDetails.map((bill) => `${monthLabels[(Number(bill.month) || 1) - 1]} ${bill.year || ''}`.trim());
+      if (labels.length) monthText = labels.join(' and ');
+    }
+
+    if (residentId) {
+      await connection.query(
+        `INSERT INTO notifications (resident_id, title, message, type, is_read, created_at)
+         VALUES (?, ?, ?, ?, false, NOW())`,
+        [
+          residentId,
+          'Payment Rejected',
+          `Your maintenance payment for ${monthText} has been rejected. Reason: ${reason}`,
+          'payment'
+        ]
+      );
+    }
+
+    // Fetch details for audit log
+    const [[residentInfo]] = await connection.query(`
+      SELECT 
+        COALESCE(p.resident_id, m.resident_id) AS resident_user_id,
+        u.name AS resident_name,
+        (SELECT name FROM users WHERE id = ?) AS admin_name
+      FROM payments p
+      JOIN maintenance m ON p.bill_id = m.id
+      JOIN users u ON u.id = COALESCE(p.resident_id, m.resident_id)
+      WHERE p.id = ?
+      LIMIT 1
+    `, [req.user.id, id]);
+
+    const [linkedBillsForAudit] = await connection.query(`
+      SELECT CONCAT('BILL-', m.id) AS bill_number
+      FROM payment_maintenance pm
+      JOIN maintenance m ON pm.maintenance_id = m.id
+      WHERE pm.payment_id = ?
+    `, [id]);
+    
+    const auditBillNumbers = linkedBillsForAudit.length 
+      ? linkedBillsForAudit.map(b => b.bill_number).join(', ') 
+      : `BILL-${payment.bill_id}`;
+
+    if (residentInfo) {
+      const auditDetails = {
+        paymentId: id,
+        billNumber: auditBillNumbers,
+        residentName: residentInfo.resident_name,
+        amount: Number(payment.amount),
+        previousStatus: payment.payment_status,
+        newStatus: 'Rejected',
+        adminName: residentInfo.admin_name || 'Admin',
+        rejectionReason: reason,
+        dateTime: new Date().toISOString()
+      };
+      
+      await connection.query(
+        `INSERT INTO maintenance_audit_logs (user_id, action, entity_type, entity_id, details)
+         VALUES (?, ?, ?, ?, ?)`,
+        [req.user.id, 'REJECT_PAYMENT', 'PAYMENT', id, JSON.stringify(auditDetails)]
+      );
+    }
+
+    await connection.commit();
 
     return sendResponse(res, 200, 'Payment rejected successfully');
   } catch (error) {
+    try {
+      await connection.rollback();
+    } catch (rollbackError) {
+      console.error('Reject payment rollback error:', rollbackError);
+    }
     console.error('Reject payment error:', error);
     return sendResponse(res, 500, 'Server error', null, ['Unable to reject payment']);
+  } finally {
+    connection.release();
   }
 };
 
@@ -773,11 +1381,13 @@ const getPaymentReceipt = async (req, res) => {
     const [payments] = await promisePool.query(
       `SELECT p.*, p.transaction_id AS utr_number, p.screenshot_url AS screenshot,
               m.resident_id, CONCAT('BILL-', m.id) AS bill_number, m.title, m.month, m.year, m.due_date, m.total_amount, m.payment_date,
-              u.name AS resident_name, f.flat_no, verifier.name AS verified_by_name
+              m.amount AS base_maintenance_charge, m.penalty_amount AS late_fee,
+              u.name AS resident_name, f.flat_no, ft.name AS flat_type_name, verifier.name AS verified_by_name
        FROM payments p
        JOIN maintenance m ON p.bill_id = m.id
        JOIN users u ON m.resident_id = u.id
        JOIN flats f ON m.flat_id = f.id
+       LEFT JOIN flat_types ft ON m.flat_type_id = ft.id
        LEFT JOIN users verifier ON verifier.id = p.verified_by
        WHERE p.id = ?`,
       [id]
@@ -789,7 +1399,7 @@ const getPaymentReceipt = async (req, res) => {
     if (req.user.role !== 'admin' && receipt.resident_id !== req.user.id) {
       return sendResponse(res, 403, 'You can only access your own receipt');
     }
-    if (receipt.payment_status !== 'Paid') {
+    if (!['Approved', 'Paid'].includes(receipt.payment_status)) {
       return sendResponse(res, 400, 'Receipt is available only after payment approval');
     }
     return sendResponse(res, 200, 'Payment receipt fetched successfully', receipt);
@@ -847,9 +1457,11 @@ const updatePayment = async (req, res) => {
 
 const getPayments = async (req, res) => {
   try {
+    await reconcilePaidPayments();
     const [payments] = await promisePool.query(`
       SELECT p.*, p.transaction_id AS utr_number, p.screenshot_url AS screenshot,
              CONCAT('BILL-', m.id) AS bill_number, m.title, m.month, m.year, m.due_date, m.total_amount AS total_amount,
+             m.resident_id,
              u.name AS resident_name, f.flat_no
       FROM payments p
       JOIN maintenance m ON p.bill_id = m.id
@@ -857,7 +1469,8 @@ const getPayments = async (req, res) => {
       JOIN flats f ON m.flat_id = f.id
       ORDER BY p.created_at DESC
     `);
-    return sendResponse(res, 200, 'Payments fetched successfully', withPaymentScreenshotUrls(req, payments));
+    const paymentsWithCoveredBills = await withCoveredPaymentBills(promisePool, payments);
+    return sendResponse(res, 200, 'Payments fetched successfully', withPaymentScreenshotUrls(req, paymentsWithCoveredBills));
   } catch (error) {
     console.error('Get payments error:', {
       message: error.message,
@@ -947,13 +1560,13 @@ const getReports = async (req, res) => {
         query = `SELECT EXTRACT(YEAR FROM payment_date) AS year, SUM(amount) AS amount FROM maintenance WHERE status = 'Paid' AND payment_date IS NOT NULL GROUP BY EXTRACT(YEAR FROM payment_date) ORDER BY year DESC`;
         break;
       case 'pending-bills':
-        query = `SELECT m.*, m.status AS payment_status, m.total_amount AS total_amount, u.name AS resident_name, f.flat_no FROM maintenance m JOIN users u ON m.resident_id = u.id JOIN flats f ON m.flat_id = f.id WHERE m.status != 'Paid' ORDER BY m.due_date ASC`;
+        query = `SELECT m.*, m.status AS payment_status, m.total_amount AS total_amount, u.name AS resident_name, f.flat_no, ft.name AS flat_type_name FROM maintenance m JOIN users u ON m.resident_id = u.id JOIN flats f ON m.flat_id = f.id LEFT JOIN flat_types ft ON m.flat_type_id = ft.id WHERE m.status != 'Paid' ORDER BY m.due_date ASC`;
         break;
       case 'paid-bills':
-        query = `SELECT m.*, m.status AS payment_status, m.total_amount AS total_amount, u.name AS resident_name, f.flat_no FROM maintenance m JOIN users u ON m.resident_id = u.id JOIN flats f ON m.flat_id = f.id WHERE m.status = 'Paid' ORDER BY m.payment_date DESC`;
+        query = `SELECT m.*, m.status AS payment_status, m.total_amount AS total_amount, u.name AS resident_name, f.flat_no, ft.name AS flat_type_name FROM maintenance m JOIN users u ON m.resident_id = u.id JOIN flats f ON m.flat_id = f.id LEFT JOIN flat_types ft ON m.flat_type_id = ft.id WHERE m.status = 'Paid' ORDER BY m.payment_date DESC`;
         break;
       case 'defaulters':
-        query = `SELECT m.*, m.status AS payment_status, m.total_amount AS total_amount, u.name AS resident_name, f.flat_no FROM maintenance m JOIN users u ON m.resident_id = u.id JOIN flats f ON m.flat_id = f.id WHERE m.status != 'Paid' AND m.due_date < CURRENT_DATE ORDER BY m.due_date ASC`;
+        query = `SELECT m.*, m.status AS payment_status, m.total_amount AS total_amount, u.name AS resident_name, f.flat_no, ft.name AS flat_type_name FROM maintenance m JOIN users u ON m.resident_id = u.id JOIN flats f ON m.flat_id = f.id LEFT JOIN flat_types ft ON m.flat_type_id = ft.id WHERE m.status != 'Paid' AND m.due_date < CURRENT_DATE ORDER BY m.due_date ASC`;
         break;
       case 'income-summary':
         query = `SELECT SUM(total_amount) AS total_collection, SUM(CASE WHEN status = 'Paid' THEN paid_amount ELSE 0 END) AS paid_collection, SUM(CASE WHEN status != 'Paid' THEN remaining_amount ELSE 0 END) AS pending_collection FROM maintenance`;

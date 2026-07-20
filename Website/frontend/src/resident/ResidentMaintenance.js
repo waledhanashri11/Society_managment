@@ -173,6 +173,7 @@ const ResidentMaintenance = () => {
       <tr><th>Bill No.</th><td>${bill.bill_number || `BILL-${bill.id}`}</td></tr>
       <tr><th>Resident</th><td>${user?.name || 'Resident'}</td></tr>
       <tr><th>Flat</th><td>${bill.flat_no || ''}</td></tr>
+      <tr><th>Flat Type</th><td>${bill.flat_type_name || 'Not Assigned'}</td></tr>
       <tr><th>Period</th><td>${monthName(bill.month)} ${bill.year || ''}</td></tr>
       <tr><th>Due Date</th><td>${fullDate(bill.due_date)}</td></tr>
       <tr><th>Status</th><td>${bill.payment_status}</td></tr>

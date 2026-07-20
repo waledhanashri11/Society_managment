@@ -148,6 +148,30 @@ export const flatAPI = {
   transfer: (data) => mutate(api.post('/flats/transfer', data), ['/flats', '/users']),
 };
 
+export const flatTypeAPI = {
+  getAll: (config = {}) => cachedGet('/flat-types', config),
+  create: (data) => mutate(api.post('/flat-types', data), ['/flat-types', '/flats']),
+  update: (id, data) => mutate(api.put(`/flat-types/${id}`, data), ['/flat-types', '/flats']),
+  delete: (id) => mutate(api.delete(`/flat-types/${id}`), ['/flat-types', '/flats']),
+};
+
+export const meetingAPI = {
+  getAll: (params = {}, config = {}) => cachedGet('/meetings', { params, ...config }),
+  getById: (id, config = {}) => cachedGet(`/meetings/${id}`, config),
+  create: (data) => mutate(api.post('/meetings', data), '/meetings'),
+  update: (id, data) => mutate(api.put(`/meetings/${id}`, data), ['/meetings', `/meetings/${id}`]),
+  delete: (id) => mutate(api.delete(`/meetings/${id}`), '/meetings'),
+  updateAgenda: (id, data) => mutate(api.put(`/meetings/${id}/agenda`, data), [`/meetings/${id}`, '/meetings']),
+  getAttendance: (id, config = {}) => cachedGet(`/meetings/${id}/attendance`, config),
+  saveAttendance: (id, data) => mutate(api.post(`/meetings/${id}/attendance`, data), [`/meetings/${id}`, '/meetings']),
+  saveReport: (id, data) => mutate(api.post(`/meetings/${id}/report`, data), [`/meetings/${id}`, '/meetings']),
+  createAction: (data) => mutate(api.post('/meetings/actions', data), '/meetings'),
+  updateAction: (id, data) => mutate(api.put(`/meetings/actions/${id}`, data), '/meetings'),
+  deleteAction: (id) => mutate(api.delete(`/meetings/actions/${id}`), '/meetings'),
+  createVote: (data) => mutate(api.post('/meetings/votes', data), '/meetings'),
+  castVote: (id, choice) => mutate(api.post(`/meetings/${id}/votes/cast`, { choice }), ['/meetings', `/meetings/${id}`])
+};
+
 export const residentsAPI = {
   getAll: (config = {}) => cachedGet('/residents', config),
   create: (data) => mutate(api.post('/residents', data), ['/residents', '/users', '/flats']),
@@ -166,13 +190,13 @@ export const maintenanceAPI = {
   generateBills: (data) => mutate(api.post('/maintenance/generate', data), '/maintenance'),
   getBills: (config = {}) => cachedGet('/maintenance/bills', config),
   getBillById: (id, config = {}) => cachedGet(`/maintenance/bills/${id}`, config),
-  pay: (id, data) => mutate(api.put(`/maintenance/${id}/pay`, data), '/maintenance'),
-  markBillPaid: (id, data) => mutate(api.put(`/maintenance/bills/${id}/mark-paid`, data), '/maintenance'),
+  pay: (id, data) => mutate(api.put(`/maintenance/${id}/pay`, data), ['/maintenance', '/resident']),
+  markBillPaid: (id, data) => mutate(api.put(`/maintenance/bills/${id}/mark-paid`, data), ['/maintenance', '/resident']),
   sendReminder: (id) => api.post(`/maintenance/bills/${id}/reminder`),
-  submitPayment: (data) => mutate(api.post('/maintenance/payments', data), '/maintenance'),
-  updatePayment: (id, data) => mutate(api.put(`/maintenance/payments/${id}`, data), '/maintenance'),
-  approvePayment: (id) => mutate(api.put(`/maintenance/payments/${id}/approve`), '/maintenance'),
-  rejectPayment: (id, data) => mutate(api.put(`/maintenance/payments/${id}/reject`, data), '/maintenance'),
+  submitPayment: (data) => mutate(api.post('/maintenance/payments', data), ['/maintenance', '/resident']),
+  updatePayment: (id, data) => mutate(api.put(`/maintenance/payments/${id}`, data), ['/maintenance', '/resident']),
+  approvePayment: (id) => mutate(api.put(`/maintenance/payments/${id}/approve`), ['/maintenance', '/resident']),
+  rejectPayment: (id, data) => mutate(api.put(`/maintenance/payments/${id}/reject`, data), ['/maintenance', '/resident']),
   getPendingVerificationPayments: (config = {}) => cachedGet('/maintenance/payments/pending-verification', config),
   getPaymentHistory: (config = {}) => cachedGet('/maintenance/payments/history', config),
   getPaymentReceipt: (id, config = {}) => cachedGet(`/maintenance/payments/${id}/receipt`, config),
@@ -204,6 +228,8 @@ export const complaintAPI = {
   update: (id, data) => mutate(api.put(`/complaints/${id}`, data), '/complaints'),
   delete: (id) => mutate(api.delete(`/complaints/${id}`), '/complaints'),
   getUserComplaints: (config = {}) => cachedGet('/complaints/user/my-complaints', config),
+  confirmResolved: (id) => mutate(api.put(`/complaints/${id}/confirm-resolved`), '/complaints'),
+  reopen: (id, data) => mutate(api.put(`/complaints/${id}/reopen`, data), '/complaints'),
 };
 
 export const noticeAPI = {

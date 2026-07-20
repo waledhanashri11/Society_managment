@@ -61,11 +61,11 @@ const getDashboard = async (req, res) => {
     const [billSummaryRows] = await promisePool.query(
       `SELECT
          COUNT(*) AS total_bills,
-         SUM(CASE WHEN payment_status != 'Paid' THEN 1 ELSE 0 END) AS pending_bills,
-         SUM(CASE WHEN payment_status = 'Paid' THEN 1 ELSE 0 END) AS paid_bills,
-         SUM(CASE WHEN payment_status != 'Paid' THEN total_amount ELSE 0 END) AS pending_amount,
-         SUM(CASE WHEN payment_status = 'Paid' THEN total_amount ELSE 0 END) AS paid_amount
-       FROM maintenance_bills
+         SUM(CASE WHEN status != 'Paid' THEN 1 ELSE 0 END) AS pending_bills,
+         SUM(CASE WHEN status = 'Paid' THEN 1 ELSE 0 END) AS paid_bills,
+         SUM(CASE WHEN status != 'Paid' THEN remaining_amount ELSE 0 END) AS pending_amount,
+         SUM(CASE WHEN status = 'Paid' THEN paid_amount ELSE 0 END) AS paid_amount
+       FROM maintenance
        WHERE resident_id = ?`,
       [userId]
     );
@@ -73,12 +73,11 @@ const getDashboard = async (req, res) => {
     const billSummary = billSummaryRows[0] || {};
 
     const [currentBillRows] = await promisePool.query(
-      `SELECT mb.*, m.title, m.month, m.year, m.due_date, f.flat_no
-       FROM maintenance_bills mb
-       JOIN maintenance m ON mb.maintenance_id = m.id
-       LEFT JOIN flats f ON mb.flat_id = f.id
-       WHERE mb.resident_id = ? AND mb.payment_status != 'Paid'
-       ORDER BY mb.due_date ASC, mb.created_at DESC
+      `SELECT m.*, m.status AS payment_status, f.flat_no
+       FROM maintenance m
+       LEFT JOIN flats f ON m.flat_id = f.id
+       WHERE m.resident_id = ? AND m.status != 'Paid'
+       ORDER BY m.due_date ASC, m.created_at DESC
        LIMIT 1`,
       [userId]
     );
@@ -149,14 +148,11 @@ const getMaintenance = async (req, res) => {
   try {
     const userId = req.user.id;
     const [maintenance] = await promisePool.query(
-      `SELECT mb.id, mb.amount, mb.late_fee, mb.total_amount, mb.payment_status, mb.payment_date, mb.due_date,
-              m.title, m.month, m.year,
-              f.flat_no
-       FROM maintenance_bills mb
-       JOIN maintenance m ON mb.maintenance_id = m.id
-       LEFT JOIN flats f ON mb.flat_id = f.id
-       WHERE mb.resident_id = ?
-       ORDER BY mb.created_at DESC`,
+      `SELECT m.*, m.status AS payment_status, f.flat_no
+       FROM maintenance m
+       LEFT JOIN flats f ON m.flat_id = f.id
+       WHERE m.resident_id = ?
+       ORDER BY m.created_at DESC`,
       [userId]
     );
     res.json(maintenance);

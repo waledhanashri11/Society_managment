@@ -6,12 +6,27 @@ const parseOwnerId = (ownerId) => {
   return Number.isInteger(numericOwnerId) && numericOwnerId > 0 ? numericOwnerId : null;
 };
 
+const canViewFlat = async (user, flatId) => {
+  if (user.role === 'admin') return true;
+
+  if (Number(user.flat_id) === Number(flatId)) return true;
+
+  const [rows] = await promisePool.query(
+    'SELECT flat_id FROM users WHERE id = ? AND role = ? LIMIT 1',
+    [user.id, 'resident']
+  );
+
+  return Number(rows[0]?.flat_id) === Number(flatId);
+};
+
 const getAllFlats = async (req, res) => {
   try {
     const [flats] = await promisePool.query(`
-      SELECT f.*, u.name as owner_name, u.name as assigned_resident_name, u.email as owner_email 
+      SELECT f.*, u.name as owner_name, u.name as assigned_resident_name, u.email as owner_email,
+             ft.name as flat_type_name
       FROM flats f 
       LEFT JOIN users u ON f.current_resident_id = u.id
+      LEFT JOIN flat_types ft ON f.flat_type_id = ft.id
       ORDER BY f.wing, f.floor_no, f.flat_no
     `);
     res.json(flats);
@@ -24,10 +39,12 @@ const getAllFlats = async (req, res) => {
 const getAvailableFlats = async (req, res) => {
   try {
     const [flats] = await promisePool.query(`
-      SELECT id, flat_no, wing, floor_no, maintenance_charge, status
-      FROM flats
-      WHERE current_resident_id IS NULL AND status = ?
-      ORDER BY wing, floor_no, flat_no
+      SELECT f.id, f.flat_no, f.wing, f.floor_no, f.maintenance_charge, f.status,
+             ft.name as flat_type_name
+      FROM flats f
+      LEFT JOIN flat_types ft ON f.flat_type_id = ft.id
+      WHERE f.current_resident_id IS NULL AND f.status = ?
+      ORDER BY f.wing, f.floor_no, f.flat_no
     `, ['Available']);
     res.json(flats);
   } catch (error) {
@@ -39,10 +56,12 @@ const getAvailableFlats = async (req, res) => {
 const getFlatById = async (req, res) => {
   try {
     const { id } = req.params;
-    const [flats] = await promisePool.query(
-      'SELECT * FROM flats WHERE id = ?',
-      [id]
-    );
+    const [flats] = await promisePool.query(`
+      SELECT f.*, ft.name as flat_type_name
+      FROM flats f
+      LEFT JOIN flat_types ft ON f.flat_type_id = ft.id
+      WHERE f.id = ?
+    `, [id]);
 
     if (flats.length === 0) {
       return res.status(404).json({ message: 'Flat not found' });
@@ -58,8 +77,9 @@ const getFlatById = async (req, res) => {
 const createFlat = async (req, res) => {
   const connection = await promisePool.getConnection();
   try {
-    const { flat_no, wing, floor_no, owner_id, maintenance_charge } = req.body;
+    const { flat_no, wing, floor_no, owner_id, maintenance_charge, flat_type_id } = req.body;
     const residentId = parseOwnerId(owner_id);
+    const flatTypeId = flat_type_id ? Number(flat_type_id) : null;
 
     if (!flat_no || !floor_no) {
       return res.status(400).json({ message: 'Flat number and floor number are required' });
@@ -85,8 +105,8 @@ const createFlat = async (req, res) => {
     }
 
     const [result] = await connection.query(
-      'INSERT INTO flats (flat_no, wing, floor_no, current_resident_id, status, maintenance_charge) VALUES (?, ?, ?, ?, ?, ?)',
-      [flat_no, wing || 'A', floor_no, residentId, residentId ? 'Occupied' : 'Available', maintenance_charge || 0]
+      'INSERT INTO flats (flat_no, wing, floor_no, current_resident_id, status, maintenance_charge, flat_type_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [flat_no, wing || 'A', floor_no, residentId, residentId ? 'Occupied' : 'Available', maintenance_charge || 0, flatTypeId]
     );
 
     if (residentId) {
@@ -102,11 +122,15 @@ const createFlat = async (req, res) => {
       floor_no,
       owner_id: residentId,
       status: residentId ? 'Occupied' : 'Available',
-      maintenance_charge: maintenance_charge || 0
+      maintenance_charge: maintenance_charge || 0,
+      flat_type_id: flatTypeId
     });
   } catch (error) {
     await connection.rollback();
     console.error('Create flat error:', error);
+    if (error.code === '23505') {
+      return res.status(409).json({ message: 'Flat number already exists in this wing' });
+    }
     res.status(500).json({ message: 'Server error' });
   } finally {
     connection.release();
@@ -117,8 +141,9 @@ const updateFlat = async (req, res) => {
   const connection = await promisePool.getConnection();
   try {
     const { id } = req.params;
-    const { flat_no, wing, floor_no, owner_id, maintenance_charge } = req.body;
+    const { flat_no, wing, floor_no, owner_id, maintenance_charge, flat_type_id } = req.body;
     const residentId = parseOwnerId(owner_id);
+    const flatTypeId = flat_type_id ? Number(flat_type_id) : null;
 
     if (!flat_no || !floor_no) {
       return res.status(400).json({ message: 'Flat number and floor number are required' });
@@ -160,8 +185,8 @@ const updateFlat = async (req, res) => {
     }
 
     await connection.query(
-      'UPDATE flats SET flat_no = ?, wing = ?, floor_no = ?, current_resident_id = ?, status = ?, maintenance_charge = ? WHERE id = ?',
-      [flat_no, wing || 'A', floor_no, residentId, residentId ? 'Occupied' : 'Available', maintenance_charge || 0, id]
+      'UPDATE flats SET flat_no = ?, wing = ?, floor_no = ?, current_resident_id = ?, status = ?, maintenance_charge = ?, flat_type_id = ? WHERE id = ?',
+      [flat_no, wing || 'A', floor_no, residentId, residentId ? 'Occupied' : 'Available', maintenance_charge || 0, flatTypeId, id]
     );
 
     await connection.commit();
@@ -170,6 +195,9 @@ const updateFlat = async (req, res) => {
   } catch (error) {
     await connection.rollback();
     console.error('Update flat error:', error);
+    if (error.code === '23505') {
+      return res.status(409).json({ message: 'Flat number already exists in this wing' });
+    }
     res.status(500).json({ message: 'Server error' });
   } finally {
     connection.release();
@@ -225,7 +253,7 @@ const getFlatHistory = async (req, res) => {
     const userId = req.user.id;
     const userRole = req.user.role;
 
-    if (userRole !== 'admin' && Number(req.user.flat_id) !== Number(id)) {
+    if (!(await canViewFlat(req.user, id))) {
       return res.status(403).json({ message: 'Access denied. You can only view history of your own flat.' });
     }
 
@@ -273,7 +301,7 @@ const getFlatTransfers = async (req, res) => {
     const userId = req.user.id;
     const userRole = req.user.role;
 
-    if (userRole !== 'admin' && Number(req.user.flat_id) !== Number(id)) {
+    if (!(await canViewFlat(req.user, id))) {
       return res.status(403).json({ message: 'Access denied. You can only view transfers of your own flat.' });
     }
 
@@ -314,7 +342,7 @@ const getFlatMaintenanceHistory = async (req, res) => {
     const userId = req.user.id;
     const userRole = req.user.role;
 
-    if (userRole !== 'admin' && Number(req.user.flat_id) !== Number(id)) {
+    if (!(await canViewFlat(req.user, id))) {
       return res.status(403).json({ message: 'Access denied. You can only view maintenance of your own flat.' });
     }
 

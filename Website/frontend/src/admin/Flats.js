@@ -1,19 +1,26 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Building2, CheckCircle2, Edit3, IndianRupee, Plus, Trash2, XCircle, RefreshCw, History, Calendar } from 'lucide-react';
-import { flatAPI, userAPI, residentsAPI } from '../services/api';
+import { Building2, CheckCircle2, Edit3, IndianRupee, Plus, Trash2, XCircle, RefreshCw, History, Calendar, Eye, Settings } from 'lucide-react';
+import { flatAPI, userAPI, residentsAPI, flatTypeAPI } from '../services/api';
 import { CardSkeleton, TableSkeleton } from '../components/Skeletons';
 
 const money = (value) => `Rs. ${Number(value || 0).toLocaleString('en-IN')}`;
 
 const Flats = () => {
+  const [tab, setTab] = useState('flats'); // 'flats' or 'flat_types'
   const [flats, setFlats] = useState([]);
   const [users, setUsers] = useState([]);
+  const [flatTypes, setFlatTypes] = useState([]);
   const [showModal, setShowModal] = useState(false);
   const [editingFlat, setEditingFlat] = useState(null);
-  const [formData, setFormData] = useState({ flat_no: '', wing: 'A', floor_no: '', owner_id: '', maintenance_charge: '' });
+  const [formData, setFormData] = useState({ flat_no: '', wing: 'A', floor_no: '', owner_id: '', maintenance_charge: '', flat_type_id: '' });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
+
+  // Flat Type CRUD states
+  const [showFlatTypeModal, setShowFlatTypeModal] = useState(false);
+  const [editingFlatType, setEditingFlatType] = useState(null);
+  const [flatTypeForm, setFlatTypeForm] = useState({ name: '', default_maintenance_amount: '', description: '', status: 'Active' });
 
   // Flat Transfer states
   const [showTransferModal, setShowTransferModal] = useState(false);
@@ -40,18 +47,24 @@ const Flats = () => {
 
   const fetchData = async () => {
     try {
-      const [flatsRes, usersRes] = await Promise.all([flatAPI.getAll(), userAPI.getAll()]);
+      const [flatsRes, usersRes, flatTypesRes] = await Promise.all([
+        flatAPI.getAll({ force: true }),
+        userAPI.getAll({ force: true }),
+        flatTypeAPI.getAll({ force: true })
+      ]);
       setFlats(flatsRes.data);
       setUsers(usersRes.data.filter((user) => user.role === 'resident'));
+      setFlatTypes(flatTypesRes.data);
     } catch (error) {
       console.error('Error fetching data:', error);
-      setMessage({ type: 'error', text: 'Could not load flats and residents.' });
+      setMessage({ type: 'error', text: 'Could not load flats, residents, and flat types.' });
     } finally {
       setLoading(false);
     }
   };
 
   const totalMaintenance = useMemo(() => flats.reduce((sum, flat) => sum + Number(flat.maintenance_charge || 0), 0), [flats]);
+  
   const assignableUsers = useMemo(() => {
     return users.filter((user) => !user.flat_id || Number(user.flat_id) === Number(editingFlat?.id));
   }, [users, editingFlat]);
@@ -59,7 +72,7 @@ const Flats = () => {
   const handleAdd = () => {
     setMessage({ type: '', text: '' });
     setEditingFlat(null);
-    setFormData({ flat_no: '', wing: 'A', floor_no: '', owner_id: '', maintenance_charge: '' });
+    setFormData({ flat_no: '', wing: 'A', floor_no: '', owner_id: '', maintenance_charge: '', flat_type_id: '' });
     setShowModal(true);
   };
 
@@ -71,7 +84,8 @@ const Flats = () => {
       wing: flat.wing || 'A',
       floor_no: flat.floor_no,
       owner_id: flat.owner_id || '',
-      maintenance_charge: flat.maintenance_charge || ''
+      maintenance_charge: flat.maintenance_charge || '',
+      flat_type_id: flat.flat_type_id || ''
     });
     setShowModal(true);
   };
@@ -94,8 +108,12 @@ const Flats = () => {
     setSaving(true);
     setMessage({ type: '', text: '' });
     try {
-      if (editingFlat) await flatAPI.update(editingFlat.id, formData);
-      else await flatAPI.create(formData);
+      const payload = {
+        ...formData,
+        flat_type_id: formData.flat_type_id || null
+      };
+      if (editingFlat) await flatAPI.update(editingFlat.id, payload);
+      else await flatAPI.create(payload);
       setShowModal(false);
       setMessage({ type: 'success', text: editingFlat ? 'Flat updated successfully.' : 'Flat added successfully.' });
       await fetchData();
@@ -107,7 +125,95 @@ const Flats = () => {
     }
   };
 
-  const handleChange = (event) => setFormData((current) => ({ ...current, [event.target.name]: event.target.value }));
+  const handleChange = (event) => {
+    const { name, value } = event.target;
+    if (name === 'flat_type_id') {
+      const selectedType = flatTypes.find(ft => Number(ft.id) === Number(value));
+      setFormData((current) => ({
+        ...current,
+        flat_type_id: value,
+        maintenance_charge: selectedType ? selectedType.default_maintenance_amount : current.maintenance_charge
+      }));
+    } else {
+      setFormData((current) => ({ ...current, [name]: value }));
+    }
+  };
+
+  // Flat Type CRUD Logic
+  const handleFlatTypeAdd = () => {
+    setMessage({ type: '', text: '' });
+    setEditingFlatType(null);
+    setFlatTypeForm({ name: '', default_maintenance_amount: '', description: '', status: 'Active' });
+    setShowFlatTypeModal(true);
+  };
+
+  const handleFlatTypeEdit = (flatType) => {
+    setMessage({ type: '', text: '' });
+    setEditingFlatType(flatType);
+    setFlatTypeForm({
+      name: flatType.name,
+      default_maintenance_amount: flatType.default_maintenance_amount,
+      description: flatType.description || '',
+      status: flatType.status || 'Active'
+    });
+    setShowFlatTypeModal(true);
+  };
+
+  const handleFlatTypeDelete = async (id) => {
+    if (window.confirm('Are you sure you want to delete this Flat Type? It can only be deleted if not assigned to any flat.')) {
+      try {
+        await flatTypeAPI.delete(id);
+        setMessage({ type: 'success', text: 'Flat Type deleted successfully.' });
+        await fetchData();
+      } catch (error) {
+        console.error('Error deleting flat type:', error);
+        setMessage({ type: 'error', text: error.response?.data?.message || 'Error deleting flat type.' });
+      }
+    }
+  };
+
+  const handleFlatTypeSubmit = async (event) => {
+    event.preventDefault();
+    setSaving(true);
+    setMessage({ type: '', text: '' });
+    try {
+      const payload = {
+        ...flatTypeForm,
+        default_maintenance_amount: Number(flatTypeForm.default_maintenance_amount || 0)
+      };
+      if (editingFlatType) {
+        await flatTypeAPI.update(editingFlatType.id, payload);
+        setMessage({ type: 'success', text: 'Flat Type updated successfully.' });
+      } else {
+        await flatTypeAPI.create(payload);
+        setMessage({ type: 'success', text: 'Flat Type added successfully.' });
+      }
+      setShowFlatTypeModal(false);
+      await fetchData();
+    } catch (error) {
+      console.error('Error saving flat type:', error);
+      setMessage({ type: 'error', text: error.response?.data?.message || 'Error saving flat type.' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleFlatTypeStatusToggle = async (flatType) => {
+    const newStatus = flatType.status === 'Active' ? 'Inactive' : 'Active';
+    try {
+      await flatTypeAPI.update(flatType.id, {
+        name: flatType.name,
+        default_maintenance_amount: flatType.default_maintenance_amount,
+        description: flatType.description || '',
+        status: newStatus
+      });
+      setMessage({ type: 'success', text: `Flat Type status updated to ${newStatus}.` });
+      await fetchData();
+    } catch (error) {
+      console.error('Error toggling status:', error);
+      setMessage({ type: 'error', text: error.response?.data?.message || 'Error toggling status.' });
+    }
+  };
 
   // Flat Transfer logic
   const handleTransferClick = async (flat) => {
@@ -201,10 +307,7 @@ const Flats = () => {
           : `Flat ${selectedFlatForTransfer.flat_no} has been successfully transferred from ${transferCurrentResident?.name || 'Unassigned'} to ${newResName}. The resident directory has been updated.`
       });
       
-      // Refresh parent flat list
       await fetchData();
-
-      // Refresh current resident & history modal view
       await fetchTransferHistory(selectedFlatForTransfer.id);
     } catch (error) {
       console.error('Flat transfer error:', error);
@@ -221,8 +324,55 @@ const Flats = () => {
   return (
     <div className="portal-module">
       <div className="portal-page-title">
-        <div><h1>Flats</h1><p>Manage society flats, assigned residents and monthly charges.</p></div>
-        <button className="portal-primary-btn" onClick={handleAdd}><Plus size={17} /> Add Flat</button>
+        <div>
+          <h1>Flats Management</h1>
+          <p>Configure wings, floor levels, residents assignment, and flat type profiles.</p>
+        </div>
+        {tab === 'flats' ? (
+          <button className="portal-primary-btn" onClick={handleAdd}><Plus size={17} /> Add Flat</button>
+        ) : (
+          <button className="portal-primary-btn" onClick={handleFlatTypeAdd}><Plus size={17} /> Add Flat Type</button>
+        )}
+      </div>
+
+      {/* Tabs Menu */}
+      <div className="flex gap-4 border-b border-slate-200 mb-6" style={{ display: 'flex', gap: '16px', borderBottom: '1px solid #e2e8f0', marginBottom: '24px' }}>
+        <button
+          className={`pb-2 px-1 font-semibold text-sm transition-all border-b-2`}
+          style={{
+            paddingBottom: '8px',
+            paddingLeft: '4px',
+            paddingRight: '4px',
+            fontWeight: '600',
+            fontSize: '14px',
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            borderBottom: tab === 'flats' ? '2px solid #4f46e5' : '2px solid transparent',
+            color: tab === 'flats' ? '#4f46e5' : '#64748b'
+          }}
+          onClick={() => setTab('flats')}
+        >
+          Flat Master
+        </button>
+        <button
+          className={`pb-2 px-1 font-semibold text-sm transition-all border-b-2`}
+          style={{
+            paddingBottom: '8px',
+            paddingLeft: '4px',
+            paddingRight: '4px',
+            fontWeight: '600',
+            fontSize: '14px',
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            borderBottom: tab === 'flat_types' ? '2px solid #4f46e5' : '2px solid transparent',
+            color: tab === 'flat_types' ? '#4f46e5' : '#64748b'
+          }}
+          onClick={() => setTab('flat_types')}
+        >
+          Flat Types Config
+        </button>
       </div>
 
       {message.text && (
@@ -232,50 +382,130 @@ const Flats = () => {
         </div>
       )}
 
-      {loading ? <CardSkeleton count={2} /> : <div className="portal-kpis">
-        <div className="portal-kpi"><span>Total Flats</span><strong>{flats.length}</strong><small>{flats.filter((flat) => flat.owner_id).length} assigned</small><div className="portal-kpi-icon"><Building2 size={18} /></div></div>
-        <div className="portal-kpi green"><span>Monthly Charges</span><strong>{money(totalMaintenance)}</strong><small>Expected per cycle</small><div className="portal-kpi-icon"><IndianRupee size={18} /></div></div>
-      </div>}
+      {loading ? (
+        <CardSkeleton count={2} />
+      ) : tab === 'flats' ? (
+        <>
+          <div className="portal-kpis">
+            <div className="portal-kpi"><span>Total Flats</span><strong>{flats.length}</strong><small>{flats.filter((flat) => flat.owner_id).length} occupied</small><div className="portal-kpi-icon"><Building2 size={18} /></div></div>
+            <div className="portal-kpi green"><span>Total Monthly Expected Charge</span><strong>{money(totalMaintenance)}</strong><small>Expected base cycle</small><div className="portal-kpi-icon"><IndianRupee size={18} /></div></div>
+          </div>
 
-      <section className="portal-panel portal-table-card">
-        <div className="portal-panel-head"><div><h2>Flat Inventory</h2><p>Assigned resident and maintenance charge details.</p></div></div>
-        <div className="portal-table-wrap">
-          {loading ? <TableSkeleton rows={5} columns={6} /> : <table className="portal-data-table">
-            <thead><tr><th>Flat No</th><th>Wing</th><th>Floor</th><th>Status</th><th>Assigned Resident</th><th>Maintenance Charge</th><th>Actions</th></tr></thead>
-            <tbody>
-              {flats.map((flat) => (
-                <tr key={flat.id}>
-                  <td><strong>Flat {flat.flat_no}</strong></td>
-                  <td>{flat.wing || 'A'}</td>
-                  <td>{flat.floor_no}</td>
-                  <td><span className={`portal-status ${flat.owner_id ? 'paid' : 'pending'}`}>{flat.owner_id ? 'Occupied' : 'Available'}</span></td>
-                  <td>{flat.assigned_resident_name || flat.owner_name || <span className="portal-muted-text">Unassigned</span>}</td>
-                  <td>{money(flat.maintenance_charge)}</td>
-                  <td>
-                    <div className="portal-row-actions">
-                      <button onClick={() => handleEdit(flat)}><Edit3 size={14} /> Edit</button>
-                      <button className="info" style={{ color: '#2563eb' }} onClick={() => handleTransferClick(flat)}><RefreshCw size={14} /> Transfer</button>
-                      <button className="danger" onClick={() => handleDelete(flat.id)}><Trash2 size={14} /> Delete</button>
-                    </div>
-                  </td>
+          <section className="portal-panel portal-table-card">
+            <div className="portal-panel-head"><div><h2>Flat Inventory List</h2><p>Overview of all units, flat classifications, and assigned owners.</p></div></div>
+            <div className="portal-table-wrap">
+              <table className="portal-data-table">
+                <thead>
+                  <tr>
+                    <th>Flat No</th>
+                    <th>Wing</th>
+                    <th>Floor</th>
+                    <th>Flat Type</th>
+                    <th>Status</th>
+                    <th>Assigned Resident</th>
+                    <th>Base Maintenance Charge</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {flats.map((flat) => (
+                    <tr key={flat.id}>
+                      <td><strong>Flat {flat.flat_no}</strong></td>
+                      <td>{flat.wing || 'A'}</td>
+                      <td>{flat.floor_no}</td>
+                      <td>
+                        <span style={{ fontWeight: '500', color: flat.flat_type_name ? '#1e293b' : '#94a3b8' }}>
+                          {flat.flat_type_name || 'Not Assigned'}
+                        </span>
+                      </td>
+                      <td><span className={`portal-status ${flat.owner_id ? 'paid' : 'pending'}`}>{flat.owner_id ? 'Occupied' : 'Available'}</span></td>
+                      <td>{flat.assigned_resident_name || flat.owner_name || <span className="portal-muted-text">Unassigned</span>}</td>
+                      <td>{money(flat.maintenance_charge)}</td>
+                      <td>
+                        <div className="portal-row-actions">
+                          <button onClick={() => handleEdit(flat)}><Edit3 size={14} /> Edit</button>
+                          <button className="info" style={{ color: '#2563eb' }} onClick={() => handleTransferClick(flat)}><RefreshCw size={14} /> Transfer</button>
+                          <button className="danger" onClick={() => handleDelete(flat.id)}><Trash2 size={14} /> Delete</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {!flats.length && <div className="portal-empty">No flats registered.</div>}
+            </div>
+          </section>
+        </>
+      ) : (
+        // Flat Types List
+        <section className="portal-panel portal-table-card">
+          <div className="portal-panel-head"><div><h2>Flat Classification Types</h2><p>List of configurations defining base maintenance charges based on property size/structure.</p></div></div>
+          <div className="portal-table-wrap">
+            <table className="portal-data-table">
+              <thead>
+                <tr>
+                  <th>Type Name</th>
+                  <th>Default Maintenance Charge</th>
+                  <th>Description</th>
+                  <th>Status</th>
+                  <th>Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>}
-          {!loading && !flats.length && <div className="portal-empty">No flats found.</div>}
-        </div>
-      </section>
+              </thead>
+              <tbody>
+                {flatTypes.map((ft) => (
+                  <tr key={ft.id}>
+                    <td><strong>{ft.name}</strong></td>
+                    <td><strong>{money(ft.default_maintenance_amount)}</strong></td>
+                    <td>{ft.description || <span className="portal-muted-text">No description</span>}</td>
+                    <td>
+                      <button 
+                        onClick={() => handleFlatTypeStatusToggle(ft)}
+                        style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}
+                      >
+                        <span className={`portal-status ${ft.status === 'Active' ? 'paid' : 'pending'}`}>
+                          {ft.status || 'Active'}
+                        </span>
+                      </button>
+                    </td>
+                    <td>
+                      <div className="portal-row-actions">
+                        <button onClick={() => handleFlatTypeEdit(ft)}><Edit3 size={14} /> Edit</button>
+                        <button className="danger" onClick={() => handleFlatTypeDelete(ft.id)}><Trash2 size={14} /> Delete</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {!flatTypes.length && <div className="portal-empty">No Flat Types configured yet. Click "Add Flat Type" to configure.</div>}
+          </div>
+        </section>
+      )}
 
+      {/* Flat Master Add/Edit Modal */}
       {showModal && (
         <div className="portal-modal-backdrop" onMouseDown={() => setShowModal(false)}>
           <div className="portal-modal" onMouseDown={(event) => event.stopPropagation()}>
-            <div className="portal-modal-head"><div><h3>{editingFlat ? 'Edit Flat' : 'Add Flat'}</h3><p>Maintain flat details and optional resident assignment.</p></div><button onClick={() => setShowModal(false)}>x</button></div>
+            <div className="portal-modal-head"><div><h3>{editingFlat ? 'Edit Flat details' : 'Add Flat Unit'}</h3><p>Configure wing, property classifications, and assigned owners.</p></div><button onClick={() => setShowModal(false)}>x</button></div>
             <form onSubmit={handleSubmit} className="portal-form">
               <label><span>Flat Number</span><input name="flat_no" value={formData.flat_no} onChange={handleChange} required /></label>
               <label><span>Wing</span><input name="wing" value={formData.wing} onChange={handleChange} required /></label>
               <label><span>Floor Number</span><input type="number" name="floor_no" value={formData.floor_no} onChange={handleChange} required /></label>
+              
               <label>
-                <span>Assigned Resident</span>
+                <span>Flat Type (Property Profile)</span>
+                <select name="flat_type_id" value={formData.flat_type_id} onChange={handleChange}>
+                  <option value="">Not Assigned</option>
+                  {flatTypes.filter(ft => ft.status === 'Active' || Number(ft.id) === Number(formData.flat_type_id)).map((ft) => (
+                    <option key={ft.id} value={ft.id}>
+                      {ft.name} (Default: {money(ft.default_maintenance_amount)})
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <span>Assigned Resident / Owner</span>
                 <select name="owner_id" value={formData.owner_id} onChange={handleChange}>
                   <option value="">Available / Unassigned</option>
                   {assignableUsers.map((user) => (
@@ -285,114 +515,136 @@ const Flats = () => {
                   ))}
                 </select>
               </label>
-              <label><span>Maintenance Charge</span><input type="number" min="0" name="maintenance_charge" value={formData.maintenance_charge} onChange={handleChange} required /></label>
+
+              <label>
+                <span>Base Maintenance Charge (Overrides default if customized)</span>
+                <input type="number" min="0" name="maintenance_charge" value={formData.maintenance_charge} onChange={handleChange} required />
+              </label>
+
               <div className="portal-form-actions"><button type="button" className="portal-light-btn" onClick={() => setShowModal(false)} disabled={saving}>Cancel</button><button className="portal-primary-btn" disabled={saving}>{saving ? 'Saving...' : editingFlat ? 'Update Flat' : 'Add Flat'}</button></div>
             </form>
           </div>
         </div>
       )}
 
+      {/* Flat Type Add/Edit Modal */}
+      {showFlatTypeModal && (
+        <div className="portal-modal-backdrop" onMouseDown={() => setShowFlatTypeModal(false)}>
+          <div className="portal-modal" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="portal-modal-head"><div><h3>{editingFlatType ? 'Edit Flat Type Profile' : 'Configure Flat Type Profile'}</h3><p>Manage default charges and characteristics for property groups.</p></div><button onClick={() => setShowFlatTypeModal(false)}>x</button></div>
+            <form onSubmit={handleFlatTypeSubmit} className="portal-form">
+              <label><span>Flat Type Profile Name (e.g. 2BHK, Villa, Office)</span><input value={flatTypeForm.name} onChange={(e) => setFlatTypeForm({ ...flatTypeForm, name: e.target.value })} required placeholder="e.g. 3BHK" /></label>
+              <label>
+                <span>Default Monthly Maintenance Amount</span>
+                <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                  <input type="number" min="0" value={flatTypeForm.default_maintenance_amount} onChange={(e) => setFlatTypeForm({ ...flatTypeForm, default_maintenance_amount: e.target.value })} required placeholder="e.g. 3000" />
+                </div>
+              </label>
+              <label className="portal-field-full"><span>Description / Dimension Details</span><textarea value={flatTypeForm.description} onChange={(e) => setFlatTypeForm({ ...flatTypeForm, description: e.target.value })} rows={3} placeholder="Optional size or wing criteria details" /></label>
+              
+              <label>
+                <span>Status</span>
+                <select value={flatTypeForm.status} onChange={(e) => setFlatTypeForm({ ...flatTypeForm, status: e.target.value })}>
+                  <option value="Active">Active</option>
+                  <option value="Inactive">Inactive</option>
+                </select>
+              </label>
+
+              <div className="portal-form-actions"><button type="button" className="portal-light-btn" onClick={() => setShowFlatTypeModal(false)} disabled={saving}>Cancel</button><button className="portal-primary-btn" disabled={saving}>{saving ? 'Saving...' : editingFlatType ? 'Update Type' : 'Configure Type'}</button></div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Flat Transfer Modals */}
       {showTransferModal && selectedFlatForTransfer && (
         <div className="portal-modal-backdrop" onMouseDown={() => setShowTransferModal(false)}>
           <div className="portal-modal" style={{ maxWidth: '850px', width: '95%', maxHeight: '90vh', overflowY: 'auto' }} onMouseDown={(event) => event.stopPropagation()}>
             <div className="portal-modal-head">
               <div>
                 <h3>Transfer Flat {selectedFlatForTransfer.wing}-{selectedFlatForTransfer.flat_no}</h3>
-                <p>Transfer ownership, record reasons, and view historical audit logs.</p>
+                <p>Verify history and assign a new active resident.</p>
               </div>
               <button onClick={() => setShowTransferModal(false)}>x</button>
             </div>
+            
+            {transferSuccess && (
+              <div className="mb-4 rounded-lg bg-green-50 border border-green-200 text-green-800 p-4 text-sm" style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', color: '#166534', borderRadius: '8px', padding: '16px', marginBottom: '16px' }}>
+                <strong style={{ display: 'block', marginBottom: '4px', fontSize: '15px' }}>Transfer Completed Successfully!</strong>
+                <p style={{ margin: 0, fontSize: '13px' }}>{transferSuccess.message}</p>
+                <div style={{ marginTop: '10px', fontSize: '12px', display: 'flex', flexDirection: 'column', gap: '3px', opacity: 0.9 }}>
+                  <div>• Previous Owner: {transferSuccess.previousResident}</div>
+                  <div>• New Owner: {transferSuccess.newResident}</div>
+                  <div>• Transfer Date: {new Date(transferSuccess.transferDate).toLocaleDateString()}</div>
+                </div>
+              </div>
+            )}
 
             {transferError && (
-              <div className="mb-4 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
-                <XCircle size={18} />
+              <div className="mb-4 rounded-lg bg-red-50 border border-red-200 text-red-800 p-3 text-xs font-semibold" style={{ backgroundColor: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', borderRadius: '6px', padding: '12px', marginBottom: '16px' }}>
                 {transferError}
               </div>
             )}
 
-            {transferSuccess && (
-               <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-                 <div className="flex items-center gap-2 font-semibold mb-2" style={{ fontSize: '15px' }}>
-                   <CheckCircle2 size={18} />
-                   Flat transferred successfully.
-                 </div>
-                 <p className="mb-3 font-medium">{transferSuccess.message}</p>
-                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', backgroundColor: '#dcfce7', padding: '10px', borderRadius: '6px', color: '#166534', fontSize: '12px' }}>
-                   <div><strong>Flat Number:</strong> {transferSuccess.flatNo}</div>
-                   <div><strong>Transfer Date:</strong> {transferSuccess.transferDate}</div>
-                   <div><strong>Previous Resident:</strong> {transferSuccess.previousResident}</div>
-                   <div><strong>New Resident:</strong> {transferSuccess.newResident}</div>
-                 </div>
-               </div>
-             )}
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '24px', marginTop: '10px' }}>
               <div>
-                <form onSubmit={handleTransferSubmit} className="portal-form">
+                <form onSubmit={handleTransferSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                  <div style={{ backgroundColor: '#f8fafc', padding: '14px', borderRadius: '8px', border: '1px solid #edf2f7' }}>
+                    <span style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#718096', textTransform: 'uppercase', marginBottom: '6px' }}>Current Occupancy State</span>
+                    <strong style={{ fontSize: '15px', color: '#2d3748' }}>
+                      {transferCurrentResident ? `${transferCurrentResident.name} (${transferCurrentResident.email})` : 'Unassigned / Available'}
+                    </strong>
+                    {transferCurrentResident && (
+                      <div style={{ fontSize: '12px', color: '#718096', marginTop: '4px' }}>
+                        Registered Since: {new Date(transferCurrentResident.start_date).toLocaleDateString()}
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '16px', borderBottom: '1px solid #edf2f7', paddingBottom: '8px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}>
+                      <input type="radio" name="mode" checked={transferFormData.mode === 'existing'} onChange={() => setTransferFormData({ ...transferFormData, mode: 'existing' })} /> Assign Existing Resident
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}>
+                      <input type="radio" name="mode" checked={transferFormData.mode === 'new'} onChange={() => setTransferFormData({ ...transferFormData, mode: 'new' })} /> Register New Resident
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}>
+                      <input type="radio" name="mode" checked={transferFormData.mode === 'unassign'} onChange={() => setTransferFormData({ ...transferFormData, mode: 'existing', residentId: 'unassigned' })} /> Release / Vacate
+                    </label>
+                  </div>
+
                   <label>
-                    <span>Select Old Resident</span>
-                    <select name="oldResidentId" value={transferFormData.oldResidentId} onChange={handleTransferChange} required>
-                      <option value="unassigned">-- Unassigned / Available --</option>
-                      {transferCurrentResident && (
-                        <option value={transferCurrentResident.id}>
-                          {transferCurrentResident.name} ({transferCurrentResident.email})
-                        </option>
-                      )}
-                      {users
-                        .filter((u) => u.id !== transferCurrentResident?.id)
-                        .map((u) => (
+                    <span>Transfer Effective Date</span>
+                    <input type="date" name="transferDate" value={transferFormData.transferDate} onChange={handleTransferChange} required />
+                  </label>
+
+                  <label className="portal-field-full">
+                    <span>Transfer Notes / Reference Reason</span>
+                    <textarea name="reason" value={transferFormData.reason} onChange={handleTransferChange} rows="2" placeholder="e.g., Sold flat to buyer, or tenant lease terminated" />
+                  </label>
+
+                  {transferFormData.mode === 'existing' && (
+                    <label>
+                      <span>Select Target Resident Profile</span>
+                      <select name="residentId" value={transferFormData.residentId} onChange={handleTransferChange} required>
+                        <option value="">-- Choose Resident --</option>
+                        {transferFormData.residentId === 'unassigned' && (
+                          <option value="unassigned">Release to Available Status</option>
+                        )}
+                        <option value="unassigned">Release / Set Vacant</option>
+                        {users.map((u) => (
                           <option key={u.id} value={u.id}>
                             {u.name} ({u.email})
                           </option>
                         ))}
-                    </select>
-                  </label>
-
-                  <label>
-                    <span>Transfer Date</span>
-                    <input type="date" name="transferDate" value={transferFormData.transferDate} onChange={handleTransferChange} required />
-                  </label>
-
-                  <label>
-                    <span>Transfer Reason</span>
-                    <input name="reason" value={transferFormData.reason} onChange={handleTransferChange} placeholder="e.g., Sold flat / Lease end / Rental change" required />
-                  </label>
-
-                  <div style={{ marginBottom: '15px', marginTop: '15px' }}>
-                    <span style={{ fontSize: '13px', fontWeight: '600', color: '#374151', display: 'block', marginBottom: '8px' }}>New Resident Option</span>
-                    <div style={{ display: 'flex', gap: '15px' }}>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontWeight: '500', cursor: 'pointer' }}>
-                        <input type="radio" name="mode" value="existing" checked={transferFormData.mode === 'existing'} onChange={handleTransferChange} />
-                        Search Existing
-                      </label>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontWeight: '500', cursor: 'pointer' }}>
-                        <input type="radio" name="mode" value="new" checked={transferFormData.mode === 'new'} onChange={handleTransferChange} />
-                        Create New
-                      </label>
-                    </div>
-                  </div>
-
-                  {transferFormData.mode === 'existing' ? (
-                    <label>
-                      <span>Select New Resident</span>
-                      <select name="residentId" value={transferFormData.residentId} onChange={handleTransferChange} required>
-                        <option value="">-- Choose Resident --</option>
-                        {transferCurrentResident && (
-                          <option value="unassigned">-- Unassigned / Available (Release Flat) --</option>
-                        )}
-                        {users
-                          .filter((u) => u.id !== transferCurrentResident?.id)
-                          .map((u) => (
-                            <option key={u.id} value={u.id}>
-                              {u.name} ({u.email})
-                            </option>
-                          ))}
                       </select>
                     </label>
-                  ) : (
+                  )}
+
+                  {transferFormData.mode === 'new' && (
                     <>
                       <label>
-                        <span>Full Name</span>
+                        <span>Resident Full Name</span>
                         <input name="newResidentName" value={transferFormData.newResidentName} onChange={handleTransferChange} required />
                       </label>
                       <label>

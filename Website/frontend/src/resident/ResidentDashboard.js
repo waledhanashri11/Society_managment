@@ -2,10 +2,11 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Bell, Building2, Car, Download, Eye, FileCheck2, FileText, MessageSquarePlus,
-  MessageSquareWarning, ReceiptIndianRupee, History, Calendar
+  MessageSquareWarning, ReceiptIndianRupee, History, Calendar, Printer
 } from 'lucide-react';
 import { complaintAPI, maintenanceAPI, noticeAPI, residentAPI, settingsAPI, flatAPI, nocAPI } from '../services/api';
 import { getUser } from '../utils/auth';
+import { downloadPaymentReceiptPdf, printPaymentReceipt, receiptAvailable } from '../utils/paymentReceipt';
 import { CardSkeleton, TableSkeleton } from '../components/Skeletons';
 
 const unwrap = (response) => response?.data?.data ?? response?.data ?? [];
@@ -27,6 +28,7 @@ const ResidentDashboard = () => {
   const [transfers, setTransfers] = useState([]);
   const [flatMaintenanceHistory, setFlatMaintenanceHistory] = useState([]);
   const [nocSummary, setNocSummary] = useState({});
+  const [paymentSettings, setPaymentSettings] = useState({});
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState('');
   const [showComplaint, setShowComplaint] = useState(false);
@@ -51,6 +53,7 @@ const ResidentDashboard = () => {
     if (results[0].status === 'fulfilled') setBills(unwrap(results[0].value));
     if (results[1].status === 'fulfilled') setComplaints(unwrap(results[1].value));
     if (results[2].status === 'fulfilled') setNotices(unwrap(results[2].value));
+    if (results[3].status === 'fulfilled') setPaymentSettings(results[3].value.data?.data ?? results[3].value.data ?? {});
     if (results[5].status === 'fulfilled') setNocSummary(results[5].value.data || {});
     if (results[4].status === 'fulfilled') {
       const dashboardData = results[4].value.data;
@@ -105,7 +108,7 @@ const ResidentDashboard = () => {
       due: pendingBills.reduce((sum, bill) => sum + Number(bill.remaining_amount || bill.total_amount || 0), 0),
       paid: paid.reduce((sum, bill) => sum + Number(bill.paid_amount || bill.total_amount || 0), 0),
       nextDue: pendingBills[0]?.due_date,
-      underReview: bills.filter((bill) => bill.payment_status === 'Under Review').length
+      underReview: bills.filter((bill) => ['Under Review', 'Pending Verification'].includes(bill.payment_status)).length
     };
   }, [bills, pendingBills]);
 
@@ -164,6 +167,30 @@ const ResidentDashboard = () => {
     }
   };
 
+  const getReceipt = async (bill) => {
+    if (!bill.payment_id) throw new Error('Receipt payment is unavailable');
+    const response = await maintenanceAPI.getPaymentReceipt(bill.payment_id);
+    return response.data?.data ?? response.data;
+  };
+
+  const handlePrintReceipt = async (bill) => {
+    try {
+      printPaymentReceipt(await getReceipt(bill), paymentSettings);
+    } catch (error) {
+      notify(error.message === 'Popup blocked' ? 'Popup blocked. Allow popups to print.' : 'Could not load receipt details');
+    }
+  };
+
+  const handleDownloadReceipt = async (bill) => {
+    try {
+      await downloadPaymentReceiptPdf(await getReceipt(bill), paymentSettings);
+    } catch (error) {
+      notify('Could not download the receipt PDF');
+    }
+  };
+
+
+
   const quickActions = [
     { label: 'Complaints', icon: MessageSquarePlus, action: () => navigate('/resident/complaints') },
     { label: 'Notices', icon: Bell, action: () => navigate('/resident/notices') },
@@ -215,6 +242,36 @@ const ResidentDashboard = () => {
           </>
         )}
       </section>
+
+      {!loading && pendingBills.length > 0 && (
+        <section className="portal-panel mb-4">
+          <div className="portal-panel-head">
+            <div>
+              <h2>Upcoming / Pending Bills</h2>
+              <p>Grouped maintenance dues ready for one payment.</p>
+            </div>
+            <button className="resident-pay" onClick={() => navigate('/resident/maintenance')}>Pay Now</button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-4 p-4">
+            <div className="rounded-xl bg-slate-50 border border-slate-100 p-4">
+              <span className="block text-[10px] font-extrabold uppercase tracking-wide text-slate-500 mb-2">Pending Bills</span>
+              <div className="grid gap-2">
+                {pendingBills.slice(0, 5).map((bill) => (
+                  <div key={bill.id} className="flex items-center justify-between text-sm">
+                    <span className="font-bold text-slate-800">{monthName(bill.month)} {bill.year}</span>
+                    <span className={`portal-status ${String(bill.payment_status).toLowerCase().replace(' ', '_')}`}>{bill.payment_status}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-xl bg-emerald-50/70 border border-emerald-100 p-4 min-w-[180px]">
+              <span className="block text-[10px] font-extrabold uppercase tracking-wide text-emerald-700">Outstanding Due</span>
+              <strong className="block mt-2 text-2xl font-black text-emerald-950">{money(summary.due)}</strong>
+              <button className="resident-pay mt-3 w-full" onClick={() => navigate('/resident/maintenance')}>Pay Now</button>
+            </div>
+          </div>
+        </section>
+      )}
 
       <div className="portal-dashboard-grid">
         <section className="portal-panel flex flex-col justify-between">
@@ -328,7 +385,12 @@ const ResidentDashboard = () => {
                       {bill.payment_status === 'Paid' ? (
                         <>
                           <button onClick={() => handlePrint('Maintenance Invoice', bill)}><FileText size={11} /> Invoice</button>
-                          <button onClick={() => handlePrint('Payment Receipt', bill)}><Download size={11} /> Receipt</button>
+                          {receiptAvailable(bill.payment_status) && (
+                            <>
+                              <button onClick={() => handlePrintReceipt(bill)}><Printer size={11} /> Print Receipt</button>
+                              <button className="blue-btn" onClick={() => handleDownloadReceipt(bill)}><Download size={11} /> Download PDF</button>
+                            </>
+                          )}
                         </>
                       ) : (
                         <button onClick={() => navigate('/resident/maintenance')}><Eye size={11} /> View</button>

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
-  Bell, Building2, ChevronDown, ClipboardList, CreditCard, FileBarChart, FileCheck2, Home, LogOut,
+  Bell, Building2, CalendarDays, ChevronDown, ClipboardList, CreditCard, FileBarChart, FileCheck2, Home, LogOut,
   Menu, MessageSquareWarning, ReceiptIndianRupee, User, Users, X
 } from 'lucide-react';
 import { getUser, logout } from '../utils/auth';
@@ -11,6 +11,7 @@ import '../portal.css';
 const residentLinks = [
   { to: '/resident/dashboard', label: 'Dashboard', icon: Home },
   { to: '/resident/maintenance', label: 'Maintenance', icon: CreditCard },
+  { to: '/resident/meetings', label: 'Meetings', icon: CalendarDays },
   { to: '/resident/complaints', label: 'Complaints', icon: MessageSquareWarning },
   { to: '/resident/notices', label: 'Notices', icon: Bell },
   { to: '/resident/members', label: 'Members', icon: Users },

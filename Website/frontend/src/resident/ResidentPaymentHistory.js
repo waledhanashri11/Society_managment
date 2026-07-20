@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Download, QrCode, ReceiptIndianRupee } from 'lucide-react';
+import { Download, Printer, QrCode, ReceiptIndianRupee } from 'lucide-react';
 import { maintenanceAPI, settingsAPI } from '../services/api';
-import { getUser } from '../utils/auth';
 import { CardSkeleton, TableSkeleton } from '../components/Skeletons';
+import { downloadPaymentReceiptPdf, printPaymentReceipt, receiptAvailable } from '../utils/paymentReceipt';
 
 const unwrap = (response) => response?.data?.data ?? response?.data ?? [];
 const money = (value) => `₹ ${Number(value || 0).toLocaleString('en-IN')}`;
@@ -10,7 +10,6 @@ const monthName = (month) => new Date(2026, Number(month || 1) - 1).toLocaleDate
 const fullDate = (value) => value ? new Date(value).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 
 const ResidentPaymentHistory = () => {
-  const user = getUser();
   const [bills, setBills] = useState([]);
   const [paymentSettings, setPaymentSettings] = useState({});
   const [loading, setLoading] = useState(true);
@@ -38,8 +37,9 @@ const ResidentPaymentHistory = () => {
 
   const summary = useMemo(() => ({
     paid: bills.filter((bill) => bill.payment_status === 'Paid').length,
-    review: bills.filter((bill) => bill.payment_status === 'Under Review').length,
-    pending: bills.filter((bill) => bill.payment_status !== 'Paid' && bill.payment_status !== 'Under Review').length
+    review: bills.filter((bill) => ['Under Review', 'Pending Verification'].includes(bill.payment_status)).length,
+    rejected: bills.filter((bill) => bill.rejection_reason || bill.latest_payment_status === 'Rejected' || bill.payment_status === 'Rejected').length,
+    pending: bills.filter((bill) => !['Paid', 'Under Review', 'Pending Verification'].includes(bill.payment_status)).length
   }), [bills]);
 
   const downloadQrCode = () => {
@@ -53,29 +53,29 @@ const ResidentPaymentHistory = () => {
     document.body.removeChild(link);
   };
 
-  const printReceipt = (bill) => {
-    const html = `
-      <html><head><title>Payment Receipt</title><style>
-      body{font-family:Arial,sans-serif;padding:32px;color:#172033}.box{max-width:760px;margin:0 auto;border:1px solid #dfe5ee;border-radius:14px;padding:28px}
-      h1{margin:0;font-size:26px}.muted{color:#667085;margin-top:6px}table{width:100%;border-collapse:collapse;margin-top:24px}
-      td,th{border-bottom:1px solid #edf0f3;padding:12px;text-align:left}.total{font-size:22px;font-weight:800}.right{text-align:right}
-      </style></head><body><div class="box">
-      <h1>Payment Receipt</h1><div class="muted">Society Management System</div>
-      <table>
-      <tr><th>Bill No.</th><td>${bill.bill_number || `BILL-${bill.id}`}</td></tr>
-      <tr><th>Resident</th><td>${user?.name || 'Resident'}</td></tr>
-      <tr><th>Flat</th><td>${bill.flat_no || ''}</td></tr>
-      <tr><th>Period</th><td>${monthName(bill.month)} ${bill.year || ''}</td></tr>
-      <tr><th>Status</th><td>${bill.payment_status}</td></tr>
-      <tr><th>Paid Amount</th><td>${money(bill.paid_amount || bill.total_amount)}</td></tr>
-      <tr><th class="total">Total</th><td class="total">${money(bill.total_amount)}</td></tr>
-      </table><p class="muted right">Generated on ${new Date().toLocaleString('en-IN')}</p>
-      </div><script>window.print();</script></body></html>`;
-    const docWindow = window.open('', '_blank', 'width=900,height=700');
-    if (!docWindow) return notify('Popup blocked. Allow popups to print.');
-    docWindow.document.write(html);
-    docWindow.document.close();
+  const getReceipt = async (bill) => {
+    if (!bill.payment_id) throw new Error('Receipt payment is unavailable');
+    const response = await maintenanceAPI.getPaymentReceipt(bill.payment_id);
+    return response.data?.data ?? response.data;
   };
+
+  const printReceipt = async (bill) => {
+    try {
+      printPaymentReceipt(await getReceipt(bill), paymentSettings);
+    } catch (error) {
+      notify(error.message === 'Popup blocked' ? 'Popup blocked. Allow popups to print.' : 'Could not load receipt details');
+    }
+  };
+
+  const downloadReceipt = async (bill) => {
+    try {
+      await downloadPaymentReceiptPdf(await getReceipt(bill), paymentSettings);
+    } catch (error) {
+      notify('Could not download the receipt PDF');
+    }
+  };
+
+
 
   return (
     <div className="portal-module">
@@ -102,7 +102,7 @@ const ResidentPaymentHistory = () => {
           <div className="portal-status-summary" style={{ marginBottom: 20 }}>
             <div><span>Paid</span><strong>{summary.paid}</strong></div>
             <div><span>Under Review</span><strong>{summary.review}</strong></div>
-            <div><span>Pending</span><strong>{summary.pending}</strong></div>
+            <div><span>Rejected</span><strong>{summary.rejected}</strong></div>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
@@ -187,6 +187,8 @@ const ResidentPaymentHistory = () => {
                         <th>Amount</th>
                         <th>Status</th>
                         <th>Due Date</th>
+                        <th>Reason</th>
+                        <th>Rejected On</th>
                         <th>Receipt</th>
                       </tr>
                     </thead>
@@ -195,12 +197,21 @@ const ResidentPaymentHistory = () => {
                         <tr key={bill.id}>
                           <td><strong>{monthName(bill.month)} {bill.year}</strong><div className="portal-muted-text">{bill.bill_number || `BILL-${bill.id}`}</div></td>
                           <td>{money(bill.total_amount)}</td>
-                          <td><span className={`portal-status ${String(bill.payment_status).toLowerCase().replace(' ', '_')}`}>{bill.payment_status}</span></td>
+                          <td><span className={`portal-status ${String(bill.payment_status).toLowerCase().replace(/\s+/g, '_')}`}>{bill.payment_status}</span></td>
                           <td>{fullDate(bill.due_date)}</td>
                           <td>
-                            {bill.payment_status === 'Paid' ? (
+                            {bill.rejection_reason ? (
+                              <span className="text-xs font-semibold text-red-700">{bill.rejection_reason}</span>
+                            ) : (
+                              <span className="portal-muted-text">-</span>
+                            )}
+                          </td>
+                          <td>{bill.rejection_reason ? fullDate(bill.rejected_at) : <span className="portal-muted-text">-</span>}</td>
+                          <td>
+                            {receiptAvailable(bill.payment_status) ? (
                               <div className="portal-row-actions">
-                                <button onClick={() => printReceipt(bill)}><Download size={12} /> Receipt</button>
+                                <button onClick={() => printReceipt(bill)} title="Print Receipt"><Printer size={12} /> Print Receipt</button>
+                                <button onClick={() => downloadReceipt(bill)} title="Download PDF"><Download size={12} /> Download PDF</button>
                               </div>
                             ) : (
                               <span className="portal-muted-text">Not paid yet</span>

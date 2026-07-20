@@ -12,7 +12,7 @@ import {
   WalletCards
 } from 'lucide-react';
 
-import { complaintAPI, maintenanceAPI } from '../services/api';
+import { complaintAPI, maintenanceAPI, flatTypeAPI } from '../services/api';
 import { CardSkeleton, TableSkeleton } from '../components/Skeletons';
 
 const unwrap = (response) => response?.data?.data ?? response?.data ?? [];
@@ -43,8 +43,10 @@ const Reports = () => {
   const [filters, setFilters] = useState({
     month: '',
     year: String(currentYear),
-    status: ''
+    status: '',
+    flat_type: ''
   });
+  const [flatTypes, setFlatTypes] = useState([]);
 
   const [bills, setBills] = useState([]);
   const [complaints, setComplaints] = useState([]);
@@ -57,15 +59,17 @@ const Reports = () => {
     setError('');
 
     try {
-      const [billsRes, complaintsRes, expensesRes] = await Promise.all([
-        maintenanceAPI.getBills(),
-        complaintAPI.getAll(),
-        maintenanceAPI.getExpenses()
+      const [billsRes, complaintsRes, expensesRes, flatTypesRes] = await Promise.all([
+        maintenanceAPI.getBills({ force: true }),
+        complaintAPI.getAll({ force: true }),
+        maintenanceAPI.getExpenses({ force: true }),
+        flatTypeAPI.getAll({ force: true })
       ]);
 
       setBills(unwrap(billsRes));
       setComplaints(unwrap(complaintsRes));
       setExpenses(unwrap(expensesRes));
+      setFlatTypes(unwrap(flatTypesRes));
     } catch (err) {
       console.error('Error fetching reports:', err);
       setError(
@@ -127,9 +131,16 @@ const Reports = () => {
         return false;
       }
 
+      if (
+        filters.flat_type &&
+        (bill.flat_type_name || 'Not Assigned').toLowerCase() !== filters.flat_type.toLowerCase()
+      ) {
+        return false;
+      }
+
       return true;
     });
-  }, [bills, filters.status, matchesMonthYear]);
+  }, [bills, filters.status, filters.flat_type, matchesMonthYear]);
 
   const filteredComplaints = useMemo(() => {
     return complaints.filter((complaint) =>
@@ -226,6 +237,7 @@ const Reports = () => {
       [
         'Resident',
         'Flat',
+        'Flat Type',
         'Month',
         'Year',
         'Title',
@@ -241,6 +253,7 @@ const Reports = () => {
       ...filteredBills.map((bill) => [
         bill.resident_name,
         bill.flat_no,
+        bill.flat_type_name || 'Not Assigned',
         monthName(bill.month),
         bill.year,
         bill.title,
@@ -326,6 +339,7 @@ const Reports = () => {
               <tr>
                 <th>Resident</th>
                 <th>Flat</th>
+                <th>Flat Type</th>
                 <th>Month</th>
                 <th>Total</th>
                 <th>Paid</th>
@@ -340,6 +354,7 @@ const Reports = () => {
                     <tr>
                       <td>${bill.resident_name || ''}</td>
                       <td>${bill.flat_no || ''}</td>
+                      <td>${bill.flat_type_name || 'Not Assigned'}</td>
                       <td>${monthName(bill.month)} ${bill.year || ''}</td>
                       <td>${money(bill.total_amount)}</td>
                       <td>${money(bill.paid_amount)}</td>
@@ -434,7 +449,7 @@ const Reports = () => {
         </div>
       )}
 
-      <div className="mb-4 grid gap-3 rounded-xl border border-slate-200 bg-white p-4 md:grid-cols-4">
+      <div className="mb-4 grid gap-3 rounded-xl border border-slate-200 bg-white p-4 md:grid-cols-5">
         <label className="grid gap-1 text-xs font-bold uppercase text-slate-500">
           Month
           <select
@@ -477,6 +492,24 @@ const Reports = () => {
             <option>Paid</option>
             <option>Overdue</option>
             <option>Partial</option>
+          </select>
+        </label>
+
+        <label className="grid gap-1 text-xs font-bold uppercase text-slate-500">
+          Flat Type
+          <select
+            name="flat_type"
+            value={filters.flat_type}
+            onChange={updateFilter}
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-normal normal-case text-slate-900"
+          >
+            <option value="">All</option>
+            <option value="Not Assigned">Not Assigned</option>
+            {flatTypes.map((ft) => (
+              <option key={ft.id} value={ft.name}>
+                {ft.name}
+              </option>
+            ))}
           </select>
         </label>
 
@@ -596,6 +629,7 @@ const Reports = () => {
               <tr>
                 <th>Resident</th>
                 <th>Flat</th>
+                <th>Flat Type</th>
                 <th>Month</th>
                 <th>Year</th>
                 <th>Title</th>
@@ -617,6 +651,11 @@ const Reports = () => {
                     <strong>{bill.resident_name || '-'}</strong>
                   </td>
                   <td>{bill.flat_no || '-'}</td>
+                  <td>
+                    <span style={{ fontWeight: '500', color: bill.flat_type_name ? '#1e293b' : '#94a3b8' }}>
+                      {bill.flat_type_name || 'Not Assigned'}
+                    </span>
+                  </td>
                   <td>{monthName(bill.month)}</td>
                   <td>{bill.year || '-'}</td>
                   <td>{bill.title || 'Maintenance Bill'}</td>

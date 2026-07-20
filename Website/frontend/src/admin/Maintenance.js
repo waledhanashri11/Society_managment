@@ -1,13 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Activity, AlertCircle, ArrowDownRight, ArrowUpRight, Bell, CalendarDays,
-  CheckCircle2, ChevronDown, CircleDollarSign, Download, FileBarChart, FileText,
+  Activity, AlertCircle, ArrowDownRight, ArrowUpRight, CalendarDays,
+  CheckCircle2, ChevronDown, Download, FileBarChart, FileText, Printer,
   Eye, Filter, Image, IndianRupee, LayoutDashboard, Plus, ReceiptIndianRupee,
   RefreshCcw, Search, SlidersHorizontal, TrendingUp, Wallet,
-  X
+  Trash2, X
 } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
-import { maintenanceAPI } from '../services/api';
+import { maintenanceAPI, settingsAPI } from '../services/api';
+import { printPaymentReceipt, receiptAvailable } from '../utils/paymentReceipt';
 import './maintenance.css';
 
 const money = (value) => `₹${Number(value || 0).toLocaleString('en-IN')}`;
@@ -87,26 +88,61 @@ const Maintenance = () => {
   const [toast, setToast] = useState('');
   const [bills, setBills] = useState([]);
   const [payments, setPayments] = useState([]);
-  const [categories, setCategories] = useState([]);
   const [expenses, setExpenses] = useState([]);
   const [settings, setSettings] = useState(null);
+  const [paymentSettings, setPaymentSettings] = useState({});
   const [dashboard, setDashboard] = useState({ summary: initialStats, trend: [], expenseDistribution: [], overdueFlats: [] });
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('All');
   const [monthFilter, setMonthFilter] = useState('All');
   const [yearFilter, setYearFilter] = useState('All');
   const [modal, setModal] = useState(null);
-  const [selected, setSelected] = useState(null);
   const [saving, setSaving] = useState(false);
   const [viewingScreenshot, setViewingScreenshot] = useState(null);
   const [brokenProofs, setBrokenProofs] = useState({});
+  const [rejectingPayment, setRejectingPayment] = useState(null);
+  const [deletingExpense, setDeletingExpense] = useState(null);
+  const [deletingExpenseId, setDeletingExpenseId] = useState(null);
+  
+  // Custom bill editing states
+  const [editingBill, setEditingBill] = useState(null);
+  const [editBillForm, setEditBillForm] = useState({ amount: '', reason: '' });
+
+  // Payment Verification States
+  const [rejectionType, setRejectionType] = useState('Invalid Screenshot');
+  const [customRejectionReason, setCustomRejectionReason] = useState('');
+  const [selectedPaymentIds, setSelectedPaymentIds] = useState(new Set());
+  const [viewingDetails, setViewingDetails] = useState(null);
+  const [zoomScale, setZoomScale] = useState(1);
+  const [loadingScreenshot, setLoadingScreenshot] = useState(true);
+
+  // Payments Filters States
+  const [payFilterResident, setPayFilterResident] = useState('');
+  const [payFilterBillNo, setPayFilterBillNo] = useState('');
+  const [payFilterUTR, setPayFilterUTR] = useState('');
+  const [payFilterStatus, setPayFilterStatus] = useState('All');
+  const [payFilterMonth, setPayFilterMonth] = useState('All');
+  const [payFilterDate, setPayFilterDate] = useState('');
+  const [payFilterFlat, setPayFilterFlat] = useState('');
+
+  // Payments Pagination States
+  const [currentPage, setCurrentPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+
+  const resetPaymentsFilters = () => {
+    setPayFilterResident('');
+    setPayFilterBillNo('');
+    setPayFilterUTR('');
+    setPayFilterStatus('All');
+    setPayFilterMonth('All');
+    setPayFilterDate('');
+    setPayFilterFlat('');
+  };
   const current = new Date();
   
   const [cycleForm, setCycleForm] = useState({ month: current.getMonth() + 1, year: current.getFullYear() });
   const [settingsForm, setSettingsForm] = useState({ title: 'Monthly Maintenance', fixed_amount: '', due_day: 10, late_fee_type: 'fixed', late_fee_value: '', grace_days: 2 });
-  const [categoryForm, setCategoryForm] = useState({ name: '', amount: '', calculationType: 'FIXED', active: true });
   const [expenseForm, setExpenseForm] = useState({ category: 'Repairs', vendor: '', amount: '', expenseDate: new Date().toISOString().slice(0, 10), paymentMethod: 'Bank Transfer', status: 'Paid', description: '' });
-  const [payForm, setPayForm] = useState({ paidAmount: '', paymentDate: new Date().toISOString().slice(0, 10) });
   const location = useLocation();
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -126,20 +162,24 @@ const Maintenance = () => {
     const requests = [
       maintenanceAPI.getBills(), maintenanceAPI.getDashboard(),
       maintenanceAPI.getCategories(), maintenanceAPI.getExpenses(), maintenanceAPI.getPayments(),
-      maintenanceAPI.getSettings()
+      maintenanceAPI.getSettings(), settingsAPI.getPayment()
     ];
     const results = await Promise.allSettled(requests);
     if (results[0].status === 'fulfilled') setBills(unwrap(results[0].value));
     if (results[1].status === 'fulfilled') setDashboard(unwrap(results[1].value, dashboard));
-    if (results[2].status === 'fulfilled') setCategories(unwrap(results[2].value));
     if (results[3].status === 'fulfilled') setExpenses(unwrap(results[3].value));
     if (results[4].status === 'fulfilled') setPayments(unwrap(results[4].value));
     if (results[5].status === 'fulfilled') setSettings(unwrap(results[5].value, null));
+    if (results[6].status === 'fulfilled') setPaymentSettings(results[6].value.data?.data ?? results[6].value.data ?? {});
     if (results.every((result) => result.status === 'rejected')) setError('The maintenance service is unavailable. Start the backend and refresh this page.');
     setLoading(false);
   };
 
   useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [payFilterResident, payFilterBillNo, payFilterUTR, payFilterStatus, payFilterMonth, payFilterDate, payFilterFlat, rowsPerPage]);
 
   useEffect(() => {
     if (tab !== 'payments') return;
@@ -155,15 +195,6 @@ const Maintenance = () => {
       active = false;
     };
   }, [tab]);
-
-  useEffect(() => {
-    if (selected && modal === 'pay') {
-      setPayForm({
-        paidAmount: selected.remaining_amount !== undefined ? selected.remaining_amount : selected.amount,
-        paymentDate: new Date().toISOString().slice(0, 10)
-      });
-    }
-  }, [selected, modal]);
 
   useEffect(() => {
     if (settings) {
@@ -255,6 +286,434 @@ const Maintenance = () => {
     });
   }, [bills, query, status, monthFilter, yearFilter]);
 
+  const downloadExcel = (filename, rows) => {
+    if (!rows.length) {
+      notify('No data available to export');
+      return;
+    }
+    const headers = Object.keys(rows[0]);
+    let xml = '<?xml version="1.0"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"><Worksheet ss:Name="Sheet1"><Table>';
+    
+    // Headers row
+    xml += '<Row>';
+    headers.forEach(h => {
+      xml += `<Cell><Data ss:Type="String">${h}</Data></Cell>`;
+    });
+    xml += '</Row>';
+    
+    // Data rows
+    rows.forEach(row => {
+      xml += '<Row>';
+      headers.forEach(h => {
+        const val = row[h] === null || row[h] === undefined ? '' : String(row[h]);
+        const type = isNaN(val) || val === '' ? 'String' : 'Number';
+        xml += `<Cell><Data ss:Type="${type}">${val}</Data></Cell>`;
+      });
+      xml += '</Row>';
+    });
+    
+    xml += '</Table></Worksheet></Workbook>';
+    const blob = new Blob([xml], { type: 'application/vnd.ms-excel' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    notify('Excel file downloaded');
+  };
+
+  const paymentRows = useMemo(() => {
+    return payments.flatMap((payment) => {
+      const coveredBills = Array.isArray(payment.covered_bills) && payment.covered_bills.length
+        ? payment.covered_bills
+        : [payment];
+      return coveredBills.map((bill, index) => ({
+        ...payment,
+        id: `${payment.id}-${bill.bill_id || bill.id || index}`,
+        payment_id: payment.id,
+        bill_id: bill.bill_id || bill.id || payment.bill_id,
+        bill_number: bill.bill_number || payment.bill_number,
+        month: bill.month || payment.month,
+        year: bill.year || payment.year,
+        due_date: bill.due_date || payment.due_date,
+        amount: bill.total_amount || bill.amount || payment.amount,
+        total_amount: bill.total_amount || bill.amount || payment.total_amount,
+        payment_status: payment.payment_status || bill.payment_status || bill.status,
+        original_payment_status: payment.payment_status,
+        flat_no: bill.flat_no || payment.flat_no
+      }));
+    });
+  }, [payments]);
+
+  const filteredPayments = useMemo(() => {
+    let list = [...paymentRows];
+
+    // Filter by Resident Name
+    if (payFilterResident.trim()) {
+      const q = payFilterResident.toLowerCase();
+      list = list.filter(p => (p.resident_name || '').toLowerCase().includes(q));
+    }
+
+    // Filter by Bill Number
+    if (payFilterBillNo.trim()) {
+      const q = payFilterBillNo.toLowerCase();
+      list = list.filter(p => (p.bill_number || '').toLowerCase().includes(q));
+    }
+
+    // Filter by UTR Number
+    if (payFilterUTR.trim()) {
+      const q = payFilterUTR.toLowerCase();
+      list = list.filter(p => (p.utr_number || p.transaction_id || '').toLowerCase().includes(q));
+    }
+
+    // Filter by Status (Pending, Approved, Rejected)
+    if (payFilterStatus !== 'All') {
+      list = list.filter(p => {
+        const status = p.original_payment_status || p.payment_status;
+        if (payFilterStatus === 'Pending') {
+          return ['Pending', 'Pending Verification', 'Under Review'].includes(status);
+        } else if (payFilterStatus === 'Approved') {
+          return ['Approved', 'Paid'].includes(status);
+        } else if (payFilterStatus === 'Rejected') {
+          return status === 'Rejected';
+        }
+        return true;
+      });
+    }
+
+    // Filter by Bill Month
+    if (payFilterMonth !== 'All') {
+      list = list.filter(p => Number(p.month) === Number(payFilterMonth));
+    }
+
+    // Filter by Payment Date (YYYY-MM-DD matches paid_at)
+    if (payFilterDate) {
+      list = list.filter(p => {
+        if (!p.paid_at) return false;
+        const pDate = new Date(p.paid_at).toISOString().split('T')[0];
+        return pDate === payFilterDate;
+      });
+    }
+
+    // Filter by Flat Number
+    if (payFilterFlat.trim()) {
+      const q = payFilterFlat.toLowerCase();
+      list = list.filter(p => (p.flat_no || '').toLowerCase().includes(q));
+    }
+
+    // Sort: Pending payments should always appear at the top of the table by default.
+    list.sort((a, b) => {
+      const statusA = a.original_payment_status || a.payment_status;
+      const statusB = b.original_payment_status || b.payment_status;
+      const isPendingA = ['Pending', 'Pending Verification', 'Under Review'].includes(statusA);
+      const isPendingB = ['Pending', 'Pending Verification', 'Under Review'].includes(statusB);
+
+      if (isPendingA && !isPendingB) return -1;
+      if (!isPendingA && isPendingB) return 1;
+
+      const dateA = new Date(a.created_at || 0);
+      const dateB = new Date(b.created_at || 0);
+      return dateB - dateA;
+    });
+
+    return list;
+  }, [paymentRows, payFilterResident, payFilterBillNo, payFilterUTR, payFilterStatus, payFilterMonth, payFilterDate, payFilterFlat]);
+
+  const paymentsStats = useMemo(() => {
+    const totalRequests = payments.length;
+    const pendingVerification = payments.filter(p => ['Pending', 'Pending Verification', 'Under Review'].includes(p.payment_status)).length;
+    const approvedPayments = payments.filter(p => ['Approved', 'Paid'].includes(p.payment_status)).length;
+    const rejectedPayments = payments.filter(p => p.payment_status === 'Rejected').length;
+    
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+    const totalReceivedThisMonth = payments
+      .filter(p => ['Approved', 'Paid'].includes(p.payment_status) && p.paid_at && new Date(p.paid_at).getMonth() === currentMonth && new Date(p.paid_at).getFullYear() === currentYear)
+      .reduce((sum, p) => sum + Number(p.amount || 0), 0);
+      
+    const pendingCollection = calculatedStats.pending;
+
+    return {
+      totalRequests,
+      pendingVerification,
+      approvedPayments,
+      rejectedPayments,
+      totalReceivedThisMonth,
+      pendingCollection
+    };
+  }, [payments, calculatedStats.pending]);
+
+  const totalPages = Math.ceil(filteredPayments.length / rowsPerPage);
+  const paginatedPayments = useMemo(() => {
+    const start = (currentPage - 1) * rowsPerPage;
+    const end = start + rowsPerPage;
+    return filteredPayments.slice(start, end);
+  }, [filteredPayments, currentPage, rowsPerPage]);
+
+  const pendingPayments = useMemo(() => {
+    return filteredPayments.filter(p => ['Pending', 'Pending Verification', 'Under Review'].includes(p.original_payment_status || p.payment_status));
+  }, [filteredPayments]);
+
+  const allPendingSelected = useMemo(() => {
+    if (!pendingPayments.length) return false;
+    return pendingPayments.every(p => selectedPaymentIds.has(p.payment_id));
+  }, [pendingPayments, selectedPaymentIds]);
+
+  const toggleSelectAllPending = () => {
+    if (allPendingSelected) {
+      setSelectedPaymentIds(prev => {
+        const next = new Set(prev);
+        pendingPayments.forEach(p => next.delete(p.payment_id));
+        return next;
+      });
+    } else {
+      setSelectedPaymentIds(prev => {
+        const next = new Set(prev);
+        pendingPayments.forEach(p => next.add(p.payment_id));
+        return next;
+      });
+    }
+  };
+
+  const toggleSelectPayment = (paymentId) => {
+    setSelectedPaymentIds(prev => {
+      const next = new Set(prev);
+      if (next.has(paymentId)) {
+        next.delete(paymentId);
+      } else {
+        next.add(paymentId);
+      }
+      return next;
+    });
+  };
+
+  const exportPaymentsExcel = () => {
+    const rows = filteredPayments.map((payment) => ({
+      resident: payment.resident_name,
+      flat: payment.flat_no,
+      bill: payment.bill_number || `BILL-${payment.bill_id}`,
+      month: `${months[(Number(payment.month) || 1) - 1]} ${payment.year || ''}`,
+      amount: payment.amount,
+      payment_method: payment.payment_method || '',
+      payment_date: date(payment.paid_at),
+      utr: payment.utr_number || payment.transaction_id,
+      submitted_date: date(payment.created_at),
+      status: payment.original_payment_status || payment.payment_status
+    }));
+    downloadExcel('payments-report.xls', rows);
+    notify('Export Completed');
+  };
+
+  const exportPaymentsCsv = () => {
+    const rows = filteredPayments.map((payment) => ({
+      resident: payment.resident_name,
+      flat: payment.flat_no,
+      bill: payment.bill_number || `BILL-${payment.bill_id}`,
+      month: `${months[(Number(payment.month) || 1) - 1]} ${payment.year || ''}`,
+      amount: payment.amount,
+      payment_method: payment.payment_method || '',
+      payment_date: date(payment.paid_at),
+      utr: payment.utr_number || payment.transaction_id,
+      submitted_date: date(payment.created_at),
+      status: payment.original_payment_status || payment.payment_status
+    }));
+    downloadCsv('payments-report.csv', rows);
+    notify('Export Completed');
+  };
+
+  const printPaymentsReport = () => {
+    window.print();
+    notify('Export Completed');
+  };
+
+  const getReceipt = async (payment) => {
+    const response = await maintenanceAPI.getPaymentReceipt(payment.payment_id || payment.id);
+    return response.data?.data ?? response.data;
+  };
+
+  const handlePrintReceipt = async (payment) => {
+    try {
+      printPaymentReceipt(await getReceipt(payment), paymentSettings);
+    } catch (err) {
+      notify(err.message === 'Popup blocked' ? 'Popup blocked. Allow popups to print receipt.' : 'Could not load receipt details');
+    }
+  };
+
+
+
+  const handleApprovePayment = async (payment) => {
+    if (!window.confirm(`Are you sure you want to approve the payment of ${money(payment.amount)} from ${payment.resident_name}?`)) {
+      return;
+    }
+    setSaving(true);
+    try {
+      await maintenanceAPI.approvePayment(payment.payment_id || payment.id);
+      notify('Payment approved successfully.');
+      await load();
+    } catch (err) {
+      notify(err.response?.data?.message || 'Could not approve payment');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSingleReject = async (payment, reason) => {
+    setSaving(true);
+    try {
+      await maintenanceAPI.rejectPayment(payment.payment_id || payment.id, { rejectionReason: reason });
+      notify('Payment rejected successfully.');
+      setRejectingPayment(null);
+      setCustomRejectionReason('');
+      await load();
+    } catch (err) {
+      notify(err.response?.data?.message || 'Could not reject payment');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleBulkReject = async (reason) => {
+    const ids = Array.from(selectedPaymentIds);
+    setSaving(true);
+    let successCount = 0;
+    let errorCount = 0;
+
+    try {
+      await Promise.all(
+        ids.map(async (id) => {
+          try {
+            await maintenanceAPI.rejectPayment(id, { rejectionReason: reason });
+            successCount++;
+          } catch (err) {
+            errorCount++;
+          }
+        })
+      );
+
+      notify(`Successfully rejected ${successCount} payments.${errorCount > 0 ? ` Failed to reject ${errorCount} payments.` : ''}`);
+      setSelectedPaymentIds(new Set());
+      setRejectingPayment(null);
+      setCustomRejectionReason('');
+      await load();
+    } catch (err) {
+      notify('An error occurred during bulk rejection');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const submitRejectionForm = async (e) => {
+    e.preventDefault();
+    const reason = rejectionType === 'Other' ? customRejectionReason.trim() : rejectionType;
+    if (!reason) return notify('Rejection reason is required');
+
+    if (rejectingPayment && rejectingPayment.id === 'bulk') {
+      await handleBulkReject(reason);
+    } else if (rejectingPayment) {
+      await handleSingleReject(rejectingPayment, reason);
+    }
+  };
+
+  const handleBulkApprove = async () => {
+    const ids = Array.from(selectedPaymentIds);
+    if (!ids.length) return;
+
+    if (!window.confirm(`Are you sure you want to approve ${ids.length} selected payments?`)) {
+      return;
+    }
+
+    setSaving(true);
+    let successCount = 0;
+    let errorCount = 0;
+
+    try {
+      await Promise.all(
+        ids.map(async (id) => {
+          try {
+            await maintenanceAPI.approvePayment(id);
+            successCount++;
+          } catch (err) {
+            errorCount++;
+          }
+        })
+      );
+
+      notify(`Successfully approved ${successCount} payments.${errorCount > 0 ? ` Failed to approve ${errorCount} payments.` : ''}`);
+      setSelectedPaymentIds(new Set());
+      await load();
+    } catch (err) {
+      notify('An error occurred during bulk approval');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleReconsiderPayment = async (payment) => {
+    setSaving(true);
+    try {
+      await maintenanceAPI.updatePayment(payment.payment_id || payment.id, {
+        paymentStatus: 'Pending Verification',
+        remarks: 'Reconsidering payment verification'
+      });
+      notify('Payment returned to pending verification status');
+      await load();
+    } catch (err) {
+      notify(err.response?.data?.message || 'Could not reconsider payment');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const exportSelectedPayments = () => {
+    const ids = Array.from(selectedPaymentIds);
+    const selectedRows = paymentRows.filter(row => ids.includes(row.payment_id));
+    if (!selectedRows.length) {
+      notify('No payments selected to export');
+      return;
+    }
+    const dataToExport = selectedRows.map((payment) => ({
+      resident: payment.resident_name,
+      flat: payment.flat_no,
+      bill: payment.bill_number || `BILL-${payment.bill_id}`,
+      month: `${months[(Number(payment.month) || 1) - 1]} ${payment.year || ''}`,
+      amount: payment.amount,
+      payment_method: payment.payment_method || '',
+      payment_date: date(payment.paid_at),
+      utr: payment.utr_number || payment.transaction_id,
+      submitted_date: date(payment.created_at),
+      status: payment.original_payment_status || payment.payment_status
+    }));
+    downloadCsv('selected-payments.csv', dataToExport);
+    notify('Export Completed');
+  };
+
+  const downloadScreenshot = async (url, filename) => {
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = filename || 'screenshot.jpg';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(blobUrl);
+    } catch (error) {
+      const link = document.createElement('a');
+      link.href = url;
+      link.target = '_blank';
+      link.download = filename || 'screenshot.jpg';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+  };
+
   const yearOptions = useMemo(() => {
     const billsList = Array.isArray(bills) ? bills : [];
     const years = [...new Set(billsList.map((bill) => bill && Number(bill.year)).filter(Boolean))].sort((a, b) => b - a);
@@ -308,6 +767,23 @@ const Maintenance = () => {
     return timeline;
   }, [bills, dashboard]);
 
+  const expenseSummary = useMemo(() => {
+    const now = new Date();
+    const currentMonthSpend = expenses.reduce((sum, item) => {
+      const expenseDate = item.expense_date ? new Date(item.expense_date) : null;
+      const isCurrentMonth = expenseDate
+        && expenseDate.getMonth() === now.getMonth()
+        && expenseDate.getFullYear() === now.getFullYear();
+      return sum + (isCurrentMonth ? Number(item.amount || 0) : 0);
+    }, 0);
+
+    return {
+      currentMonthSpend,
+      transactions: expenses.length,
+      pendingApproval: expenses.filter((item) => item.status === 'Pending').length
+    };
+  }, [expenses]);
+
   const csvEscape = (value) => {
     const text = value === null || value === undefined ? '' : String(value);
     return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
@@ -355,12 +831,6 @@ const Maintenance = () => {
 
   const exportCurrentView = () => {
     if (tab === 'bills') return downloadCsv('maintenance-records.csv', billRows());
-    if (tab === 'categories') return downloadCsv('maintenance-categories.csv', categories.map((item) => ({
-      name: item.name,
-      amount: Number(item.amount || 0),
-      calculation_type: item.calculation_type,
-      active: item.active ? 'Active' : 'Inactive'
-    })));
     if (tab === 'expenses') return downloadCsv('maintenance-expenses.csv', expenses.map((item) => ({
       expense_number: item.expense_number,
       category: item.category,
@@ -389,106 +859,13 @@ const Maintenance = () => {
     return exportCurrentView();
   };
 
-  const printDocument = (type, bill) => {
-    const itemsHtml = bill.items && bill.items.length > 0
-      ? bill.items.map(item => `<tr><th>${item.name}</th><td>${money(item.amount)}</td></tr>`).join('')
-      : '';
-      
-    const prevOutstandingHtml = Number(bill.previous_outstanding || 0) > 0
-      ? `<tr><th>Previous Outstanding</th><td>${money(bill.previous_outstanding)}</td></tr>`
-      : '';
-
-    const html = `
-      <html>
-        <head>
-          <title>${type} - ${bill.id}</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 32px; color: #172033; }
-            .box { max-width: 760px; margin: 0 auto; border: 1px solid #dfe5ee; border-radius: 14px; padding: 28px; }
-            h1 { margin: 0; font-size: 26px; }
-            .muted { color: #667085; margin-top: 6px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 24px; }
-            td, th { border-bottom: 1px solid #edf0f3; padding: 12px; text-align: left; }
-            .total { font-size: 22px; font-weight: 800; }
-            .right { text-align: right; }
-          </style>
-        </head>
-        <body>
-          <div class="box">
-            <h1>${type}</h1>
-            <div class="muted">Society Management System</div>
-            <table>
-              <tr><th>Resident</th><td>${bill.resident_name || 'Resident'}</td></tr>
-              <tr><th>Flat</th><td>Flat ${bill.flat_no || ''}</td></tr>
-              <tr><th>Period</th><td>${months[(Number(bill.month) || 1) - 1]} ${bill.year || ''}</td></tr>
-              <tr><th>Title</th><td>${bill.title || ''}</td></tr>
-              <tr><th>Due Date</th><td>${date(bill.due_date)}</td></tr>
-              <tr><th>Status</th><td>${bill.payment_status || bill.status || ''}</td></tr>
-              <tr><th>Base Maintenance Charge</th><td>${money(bill.amount)}</td></tr>
-              ${itemsHtml}
-              <tr><th>Penalty Amount</th><td>${money(bill.penalty_amount)}</td></tr>
-              ${prevOutstandingHtml}
-              <tr><th class="total">Total Amount</th><td class="total">${money(Number(bill.total_amount || 0) + Number(bill.previous_outstanding || 0))}</td></tr>
-              <tr><th>Paid Amount</th><td>${money(bill.paid_amount)}</td></tr>
-              <tr><th>Remaining Amount</th><td>${money(Number(bill.remaining_amount || 0) + Number(bill.previous_outstanding || 0))}</td></tr>
-            </table>
-            <p class="muted right">Generated on ${new Date().toLocaleString('en-IN')}</p>
-          </div>
-          <script>window.print();</script>
-        </body>
-      </html>`;
-    const docWindow = window.open('', '_blank', 'width=900,height=700');
-    if (!docWindow) {
-      notify('Popup blocked. Allow popups to print this document.');
-      return;
-    }
-    docWindow.document.write(html);
-    docWindow.document.close();
-    notify('Document printed');
-  };
-
-  const viewBillDetails = async (bill) => {
-    try {
-      const response = await maintenanceAPI.getBillById(bill.id);
-      const fullBill = response.data?.data?.bill || response.data?.bill || bill;
-      setSelected(fullBill);
-      setModal('bill');
-    } catch (err) {
-      notify('Failed to load bill details');
-    }
-  };
-
-  const markPaid = async (bill) => {
-    setSelected(bill);
-    setModal('pay');
-  };
-
-  const submitPay = async (e) => {
-    e.preventDefault();
-    setSaving(true);
-    try {
-      await maintenanceAPI.pay(selected.id, {
-        paidAmount: Number(payForm.paidAmount),
-        paymentDate: payForm.paymentDate
-      });
-      notify('Payment marked successfully');
-      setModal(null);
-      setSelected(null);
-      await load();
-    } catch (err) {
-      notify(err.response?.data?.message || 'Could not save payment');
-    } finally {
-      setSaving(false);
-    }
-  };
-
   const submitSettings = async (e) => {
     e.preventDefault();
     setSaving(true);
     try {
       await maintenanceAPI.saveSettings({
         title: settingsForm.title,
-        fixed_amount: Number(settingsForm.fixed_amount),
+        fixed_amount: Number(settingsForm.fixed_amount || 0),
         due_day: Number(settingsForm.due_day),
         late_fee_type: settingsForm.late_fee_type,
         late_fee_value: Number(settingsForm.late_fee_value),
@@ -516,30 +893,7 @@ const Maintenance = () => {
     }
   };
 
-  const updatePaymentStatus = async (payment, paymentStatus) => {
-    try {
-      if (paymentStatus === 'Paid') {
-        await maintenanceAPI.approvePayment(payment.id);
-      } else {
-        const rejectionReason = window.prompt('Enter rejection reason');
-        if (!rejectionReason) return;
-        await maintenanceAPI.rejectPayment(payment.id, { rejectionReason });
-      }
-      notify(paymentStatus === 'Paid' ? 'Payment approved' : 'Payment rejected');
-      await load();
-    } catch (err) {
-      notify(err.response?.data?.message || 'Could not update payment');
-    }
-  };
 
-  const sendReminder = async (bill) => {
-    try {
-      await maintenanceAPI.sendReminder(bill.id);
-      notify('Payment reminder recorded');
-    } catch (err) {
-      notify(err.response?.data?.message || 'Could not send reminder');
-    }
-  };
 
   const validateGenerationCycle = () => {
     const billsList = Array.isArray(bills) ? bills : [];
@@ -551,21 +905,11 @@ const Maintenance = () => {
       )
     ).sort((a, b) => b - a);
 
-    const now = new Date();
-    const nowYear = now.getFullYear();
-    const nowMonth = now.getMonth() + 1;
-    const nowCycle = nowYear * 12 + nowMonth;
-
     if (!cycleForm || !cycleForm.year || !cycleForm.month) {
       return 'Invalid selected month or year.';
     }
 
     const selectedCycle = cycleNumber(cycleForm.year, cycleForm.month);
-    
-    // Future check
-    if (selectedCycle > nowCycle) {
-      return 'Future maintenance bills cannot be generated.';
-    }
 
     // Previous months are blocked only after the first bill exists.
     if (!generatedCycles.length) {
@@ -621,16 +965,6 @@ const Maintenance = () => {
     }
   };
 
-  const submitCategory = async (e) => {
-    e.preventDefault(); setSaving(true);
-    try {
-      if (selected) await maintenanceAPI.updateCategory(selected.id, categoryForm);
-      else await maintenanceAPI.createCategory(categoryForm);
-      notify(selected ? 'Category updated' : 'Category added'); setModal(null); setSelected(null); await load();
-    } catch (err) { notify(err.response?.data?.message || 'Could not save category'); }
-    finally { setSaving(false); }
-  };
-
   const submitExpense = async (e) => {
     e.preventDefault(); setSaving(true);
     try { await maintenanceAPI.createExpense(expenseForm); notify('Expense recorded'); setModal(null); await load(); }
@@ -638,10 +972,81 @@ const Maintenance = () => {
     finally { setSaving(false); }
   };
 
-  const openEditCategory = (item) => {
-    setSelected(item);
-    setCategoryForm({ name: item.name, amount: item.amount, calculationType: item.calculation_type, active: Boolean(item.active) });
-    setModal('category');
+  const handleEditBill = (bill) => {
+    setEditingBill(bill);
+    setEditBillForm({
+      amount: String(bill.amount),
+      reason: bill.custom_reason || ''
+    });
+    setModal('edit_bill');
+  };
+
+  const submitEditBill = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await maintenanceAPI.update(editingBill.id, {
+        amount: Number(editBillForm.amount),
+        custom_reason: editBillForm.reason
+      });
+      notify('Bill updated successfully');
+      setModal(null);
+      setEditingBill(null);
+      await load();
+    } catch (err) {
+      console.error('Error updating bill:', err);
+      notify(err.response?.data?.message || 'Could not update bill');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const applyExpenseRemovalToDashboard = (expense) => {
+    const expenseAmount = Number(expense?.amount || 0);
+    const expenseDate = expense?.expense_date ? new Date(expense.expense_date) : null;
+    const now = new Date();
+    const isCurrentMonth = expenseDate
+      && expenseDate.getMonth() === now.getMonth()
+      && expenseDate.getFullYear() === now.getFullYear();
+
+    setDashboard((currentDashboard) => ({
+      ...currentDashboard,
+      summary: {
+        ...(currentDashboard?.summary || initialStats),
+        monthExpense: Math.max(0, Number(currentDashboard?.summary?.monthExpense || 0) - (isCurrentMonth ? expenseAmount : 0))
+      },
+      expenseDistribution: (currentDashboard?.expenseDistribution || []).map((item) => (
+        item.name === expense?.category ? { ...item, value: Math.max(0, Number(item.value || 0) - expenseAmount) } : item
+      )).filter((item) => Number(item.value || 0) > 0)
+    }));
+  };
+
+  const confirmDeleteExpense = async () => {
+    if (!deletingExpense || deletingExpenseId) return;
+    const expenseToDelete = deletingExpense;
+    const previousExpenses = expenses;
+    const previousDashboard = dashboard;
+
+    setDeletingExpenseId(expenseToDelete.id);
+    setExpenses((currentExpenses) => currentExpenses.filter((item) => item.id !== expenseToDelete.id));
+    applyExpenseRemovalToDashboard(expenseToDelete);
+
+    try {
+      await maintenanceAPI.deleteExpense(expenseToDelete.id);
+      notify('Expense deleted successfully.');
+      setDeletingExpense(null);
+    } catch (err) {
+      setExpenses(previousExpenses);
+      setDashboard(previousDashboard);
+      if (err.response?.status === 404) {
+        notify('Expense not found.');
+        setDeletingExpense(null);
+      } else {
+        notify('Failed to delete expense. Please try again.');
+      }
+    } finally {
+      setDeletingExpenseId(null);
+    }
   };
 
   const statCards = [
@@ -676,7 +1081,7 @@ const Maintenance = () => {
         {[
           ['overview', LayoutDashboard, 'Overview'], ['bills', ReceiptIndianRupee, 'Bills'],
           ['settings', SlidersHorizontal, 'Settings'],
-          ['categories', SlidersHorizontal, 'Categories'], ['expenses', Wallet, 'Expenses'],
+          ['expenses', Wallet, 'Expenses'],
           ['payments', CheckCircle2, 'Payments'], ['reports', FileBarChart, 'Reports']
         ].map(([key, Icon, label]) => (
           <button key={key} className={tab === key ? 'active' : ''} onClick={() => setTab(key)}><Icon size={17} />{label}</button>
@@ -775,7 +1180,7 @@ const Maintenance = () => {
                     <th>Remaining</th>
                     <th>Due Date</th>
                     <th>Status</th>
-                    <th>Action</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>{filteredBills.map((bill) => {
@@ -786,7 +1191,29 @@ const Maintenance = () => {
                       <td>Flat {bill.flat_no || '—'}</td>
                       <td>{months[(Number(bill.month) || 1) - 1]}</td>
                       <td>{bill.year}</td>
-                      <td>{money(bill.amount)}</td>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span>{money(bill.amount)}</span>
+                          {bill.is_custom_amount && (
+                            <span 
+                              className="mm-status mm-status-pending"
+                              style={{ 
+                                cursor: 'help', 
+                                fontSize: '10px', 
+                                padding: '1px 6px',
+                                textTransform: 'capitalize',
+                                backgroundColor: '#fffbeb',
+                                color: '#b45309',
+                                border: '1px solid #fde68a',
+                                borderRadius: '4px'
+                              }}
+                              title={`Original Amount: ${money(bill.default_maintenance_amount)}\nDifference: ${money(Number(bill.final_maintenance_amount) - Number(bill.default_maintenance_amount))}\nEdited by: ${bill.edited_by_name || 'Admin'}\nReason: ${bill.custom_reason || 'N/A'}`}
+                            >
+                              Custom
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td className="text-red-500 font-semibold">{money(bill.penalty_amount)}</td>
                       <td><strong>{money(bill.total_amount)}</strong></td>
                       <td className="text-green-600 font-semibold">{money(bill.paid_amount)}</td>
@@ -794,11 +1221,22 @@ const Maintenance = () => {
                       <td>{date(bill.due_date)}</td>
                       <td><span className={statusClass(currentStatus)}>{currentStatus}</span></td>
                       <td>
-                        <div className="mm-action-group" style={{ display: 'flex', gap: '6px' }}>
-                          {currentStatus !== 'Paid' && (
-                            <button className="mm-mini-action green" onClick={() => markPaid(bill)}>Mark Paid</button>
-                          )}
-                          <button className="mm-mini-action blue" onClick={() => viewBillDetails(bill)}>Details</button>
+                        <div className="mm-action-group">
+                          <button
+                            className="mm-mini-action"
+                            style={{ 
+                              padding: '2px 8px', 
+                              fontSize: '11px', 
+                              backgroundColor: '#e0f2fe', 
+                              color: '#0369a1',
+                              border: 'none',
+                              borderRadius: '4px',
+                              cursor: 'pointer'
+                            }}
+                            onClick={() => handleEditBill(bill)}
+                          >
+                            Edit
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -824,14 +1262,7 @@ const Maintenance = () => {
               <input required value={settingsForm.title} onChange={(e) => setSettingsForm({ ...settingsForm, title: e.target.value })} placeholder="e.g. Monthly Maintenance" />
             </label>
             <div className="mm-form-row">
-              <label className="mm-field">
-                <span>Fixed Monthly Amount</span>
-                <div className="mm-money-input">
-                  <IndianRupee size={16} />
-                  <input type="number" min="0" required value={settingsForm.fixed_amount} onChange={(e) => setSettingsForm({ ...settingsForm, fixed_amount: e.target.value })} placeholder="e.g. 2000" />
-                </div>
-              </label>
-              <label className="mm-field">
+              <label className="mm-field mm-field-full">
                 <span>Due Day of Month</span>
                 <input type="number" min="1" max="28" required value={settingsForm.due_day} onChange={(e) => setSettingsForm({ ...settingsForm, due_day: e.target.value })} placeholder="e.g. 10" />
               </label>
@@ -861,83 +1292,347 @@ const Maintenance = () => {
           </form>
         </section>
       ) : tab === 'payments' ? (
-        <section className="mm-panel mm-table-panel">
-          <div className="mm-panel-head"><div><h2>Payment Verification</h2><p>Review UPI payment proofs before marking bills as paid.</p></div><button className="mm-button mm-button-light" onClick={() => downloadCsv('payment-approvals.csv', payments.map((payment) => ({ resident: payment.resident_name, flat: payment.flat_no, bill: payment.bill_number || `BILL-${payment.bill_id}`, month: `${payment.month || ''}/${payment.year || ''}`, utr: payment.utr_number || payment.transaction_id, amount: payment.amount, payment_date: payment.paid_at, status: payment.payment_status })))}><Download size={17} /> Export CSV</button></div>
-          <div className="mm-table-wrap">
-            <table className="mm-table">
-              <thead><tr><th>Resident</th><th>Flat</th><th>Bill</th><th>Month</th><th>Amount</th><th>Payment Date</th><th>UTR</th><th>Screenshot</th><th>Status</th><th>Actions</th></tr></thead>
-              <tbody>{payments.map((payment) => {
-                const proofPath = paymentProofPath(payment);
-                const proofUrl = paymentProofUrl(payment);
-                const proofBroken = brokenProofs[payment.id];
-                return (
-                  <tr key={payment.id}>
-                    <td><strong>{payment.resident_name}</strong><small>{date(payment.created_at)}</small></td>
-                    <td>{payment.flat_no}</td>
-                    <td>{payment.bill_number || `BILL-${payment.bill_id}`}</td>
-                    <td>{months[(Number(payment.month) || 1) - 1]} {payment.year || ''}</td>
-                    <td><strong>{money(payment.amount)}</strong></td>
-                    <td>{date(payment.paid_at)}</td>
-                    <td>{payment.utr_number || payment.transaction_id}</td>
-                    <td>
-                      {proofPath && !proofBroken ? (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 150 }}>
-                          <button
-                            type="button"
-                            onClick={() => setViewingScreenshot({ ...payment, proofUrl })}
-                            style={{ border: 0, padding: 0, background: 'transparent', cursor: 'pointer' }}
-                            title="View Screenshot"
-                          >
-                            <img
-                              src={proofUrl}
-                              alt="Payment proof thumbnail"
-                              loading="lazy"
-                              style={{ width: 54, height: 42, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--portal-line)', background: '#f8fafc' }}
-                              onError={() => setBrokenProofs((current) => ({ ...current, [payment.id]: true }))}
-                            />
-                          </button>
-                          <button className="mm-mini-action" onClick={() => setViewingScreenshot({ ...payment, proofUrl })}>
-                            <Eye size={13} /> View Screenshot
-                          </button>
-                        </div>
-                      ) : proofPath && proofBroken ? (
-                        <span className="text-xs text-red-500">Screenshot link is broken</span>
-                      ) : (
-                        <span className="text-xs text-slate-400">No payment proof uploaded.</span>
-                      )}
-                    </td>
-                    <td><span className={statusClass(payment.payment_status)}>{payment.payment_status}</span></td>
-                    <td>
-                      <div className="mm-action-group">
-                        {payment.payment_status !== 'Paid' && <button className="mm-mini-action green" onClick={() => updatePaymentStatus(payment, 'Paid')}>Approve</button>}
-                        {payment.payment_status !== 'Rejected' && payment.payment_status !== 'Paid' && <button className="mm-mini-action red" onClick={() => updatePaymentStatus(payment, 'Rejected')}>Reject</button>}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}</tbody>
-            </table>
-            {!payments.length && <Empty title="No payment submissions" copy="Resident payment proofs will appear here for admin approval." />}
+        <>
+          <div className="mm-stat-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', marginBottom: '20px' }}>
+            <article className="mm-stat">
+              <div className="mm-stat-icon blue"><Activity size={20} /></div>
+              <div className="mm-stat-label">Total Payment Requests</div>
+              <div className="mm-stat-value">{paymentsStats.totalRequests}</div>
+              <div className="mm-stat-note">Submitted submissions</div>
+            </article>
+            <article className="mm-stat">
+              <div className="mm-stat-icon amber"><AlertCircle size={20} /></div>
+              <div className="mm-stat-label">Pending Verification</div>
+              <div className="mm-stat-value">{paymentsStats.pendingVerification}</div>
+              <div className="mm-stat-note">Awaiting admin review</div>
+            </article>
+            <article className="mm-stat">
+              <div className="mm-stat-icon green"><CheckCircle2 size={20} /></div>
+              <div className="mm-stat-label">Approved Payments</div>
+              <div className="mm-stat-value">{paymentsStats.approvedPayments}</div>
+              <div className="mm-stat-note">Successfully verified</div>
+            </article>
+            <article className="mm-stat">
+              <div className="mm-stat-icon red"><X size={20} /></div>
+              <div className="mm-stat-label">Rejected Payments</div>
+              <div className="mm-stat-value">{paymentsStats.rejectedPayments}</div>
+              <div className="mm-stat-note">Invalid submissions</div>
+            </article>
+            <article className="mm-stat">
+              <div className="mm-stat-icon blue"><IndianRupee size={20} /></div>
+              <div className="mm-stat-label">Received This Month</div>
+              <div className="mm-stat-value">{money(paymentsStats.totalReceivedThisMonth)}</div>
+              <div className="mm-stat-note">Current month collections</div>
+            </article>
+            <article className="mm-stat">
+              <div className="mm-stat-icon red"><Wallet size={20} /></div>
+              <div className="mm-stat-label">Pending Collection</div>
+              <div className="mm-stat-value">{money(paymentsStats.pendingCollection)}</div>
+              <div className="mm-stat-note">Unpaid dues total</div>
+            </article>
           </div>
-        </section>
-      ) : tab === 'categories' ? (
-        <section className="mm-panel">
-          <div className="mm-panel-head"><div><h2>Maintenance categories</h2><p>Build a transparent itemised maintenance structure.</p></div><button className="mm-button mm-button-primary" onClick={() => { setSelected(null); setCategoryForm({ name: '', amount: '', calculationType: 'FIXED', active: true }); setModal('category'); }}><Plus size={17} /> Add category</button></div>
-          <div className="mm-category-grid">{categories.map((item) => (
-            <button className="mm-category" key={item.id} onClick={() => openEditCategory(item)}>
-              <span className="mm-category-icon"><CircleDollarSign size={20} /></span>
-              <span><strong>{item.name}</strong><small>{item.calculation_type === 'PER_SQ_FT' ? 'Per sq. ft.' : 'Fixed monthly charge'}</small></span>
-              <b>{money(item.amount)}</b><i className={item.active ? 'active' : ''}>{item.active ? 'Active' : 'Inactive'}</i>
-            </button>
-          ))}</div>
-          {!categories.length && <Empty title="No categories" copy="Add water, security, lift, sinking fund and other bill items." />}
-        </section>
+
+          <section className="mm-panel mm-table-panel" style={{ padding: '0', overflow: 'visible' }}>
+            <div className="mm-panel-head" style={{ padding: '19px 19px 12px' }}>
+              <div>
+                <h2>Payment Verification</h2>
+                <p>Review and verify resident payment requests instantly.</p>
+              </div>
+              <div className="mm-head-actions">
+                <button className="mm-button mm-button-light" onClick={printPaymentsReport}><Eye size={17} /> Print Report</button>
+                <button className="mm-button mm-button-light" onClick={exportPaymentsExcel}><Download size={17} /> Export Excel</button>
+                <button className="mm-button mm-button-light" onClick={exportPaymentsCsv}><Download size={17} /> Export CSV</button>
+              </div>
+            </div>
+
+            <div className="mm-payments-toolbar">
+              <label className="mm-search">
+                <Search size={17} />
+                <input 
+                  value={payFilterResident} 
+                  onChange={(e) => setPayFilterResident(e.target.value)} 
+                  placeholder="Search Resident Name..." 
+                />
+              </label>
+              <div className="mm-filter">
+                <input 
+                  value={payFilterBillNo} 
+                  onChange={(e) => setPayFilterBillNo(e.target.value)} 
+                  placeholder="Bill Number (e.g. BILL-1)..." 
+                />
+              </div>
+              <div className="mm-filter">
+                <input 
+                  value={payFilterUTR} 
+                  onChange={(e) => setPayFilterUTR(e.target.value)} 
+                  placeholder="UTR / Transaction ID..." 
+                />
+              </div>
+              <div className="mm-filter">
+                <input 
+                  value={payFilterFlat} 
+                  onChange={(e) => setPayFilterFlat(e.target.value)} 
+                  placeholder="Flat No..." 
+                />
+              </div>
+              <div className="mm-filter">
+                <select value={payFilterStatus} onChange={(e) => setPayFilterStatus(e.target.value)}>
+                  <option value="All">All Statuses</option>
+                  <option value="Pending">Pending</option>
+                  <option value="Approved">Approved</option>
+                  <option value="Rejected">Rejected</option>
+                </select>
+              </div>
+              <div className="mm-filter">
+                <select value={payFilterMonth} onChange={(e) => setPayFilterMonth(e.target.value)}>
+                  <option value="All">All Bill Months</option>
+                  {months.map((m, idx) => (
+                    <option key={m} value={idx + 1}>{m}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="mm-filter">
+                <input 
+                  type="date"
+                  value={payFilterDate} 
+                  onChange={(e) => setPayFilterDate(e.target.value)} 
+                  title="Payment Date"
+                />
+              </div>
+              <button 
+                className="mm-button mm-button-light" 
+                onClick={resetPaymentsFilters}
+                style={{ padding: '8px 12px' }}
+              >
+                Reset Filters
+              </button>
+            </div>
+
+            <div className="mm-table-wrap">
+              <table className="mm-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: '40px', textAlign: 'center' }}>
+                      <input 
+                        type="checkbox" 
+                        checked={allPendingSelected}
+                        onChange={toggleSelectAllPending}
+                        disabled={!pendingPayments.length}
+                      />
+                    </th>
+                    <th>Resident</th>
+                    <th>Flat No.</th>
+                    <th>Bill Number</th>
+                    <th>Bill Month</th>
+                    <th>Amount</th>
+                    <th>Payment Method</th>
+                    <th>Payment Date</th>
+                    <th>UTR Number</th>
+                    <th>Screenshot Thumbnail</th>
+                    <th>Status</th>
+                    <th>Submitted Date</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginatedPayments.map((payment) => {
+                    const proofPath = paymentProofPath(payment);
+                    const proofUrl = paymentProofUrl(payment);
+                    const proofBroken = brokenProofs[payment.id];
+                    const currentPaymentStatus = payment.original_payment_status || payment.payment_status;
+                    const isPending = ['Pending', 'Pending Verification', 'Under Review'].includes(currentPaymentStatus);
+                    
+                    return (
+                      <tr key={payment.id} style={{ background: selectedPaymentIds.has(payment.payment_id) ? 'var(--blue-soft)' : 'transparent' }}>
+                        <td style={{ textAlign: 'center' }}>
+                          <input 
+                            type="checkbox"
+                            checked={selectedPaymentIds.has(payment.payment_id)}
+                            onChange={() => toggleSelectPayment(payment.payment_id)}
+                            disabled={!isPending}
+                          />
+                        </td>
+                        <td>
+                          <strong>{payment.resident_name}</strong>
+                          <small>Reg: {date(payment.created_at)}</small>
+                        </td>
+                        <td>Flat {payment.flat_no}</td>
+                        <td>{payment.bill_number || `BILL-${payment.bill_id}`}</td>
+                        <td>{months[(Number(payment.month) || 1) - 1]} {payment.year}</td>
+                        <td><strong>{money(payment.amount)}</strong></td>
+                        <td>{payment.payment_method}</td>
+                        <td>{date(payment.paid_at)}</td>
+                        <td className="font-mono text-xs">{payment.utr_number || payment.transaction_id}</td>
+                        <td>
+                          {proofPath && !proofBroken ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setViewingScreenshot({ ...payment, proofUrl });
+                                  setZoomScale(1);
+                                  setLoadingScreenshot(true);
+                                }}
+                                style={{ border: 0, padding: 0, background: 'transparent', cursor: 'pointer' }}
+                                title="Zoom Screenshot"
+                              >
+                                <img
+                                  src={proofUrl}
+                                  alt="Payment proof thumbnail"
+                                  loading="lazy"
+                                  style={{ width: 48, height: 36, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--portal-line)', background: '#f8fafc', transition: 'transform 0.15s ease' }}
+                                  onError={() => setBrokenProofs((current) => ({ ...current, [payment.id]: true }))}
+                                />
+                              </button>
+                            </div>
+                          ) : proofPath && proofBroken ? (
+                            <span className="text-xs text-red-500 font-semibold">Broken link</span>
+                          ) : (
+                            <span className="text-xs text-slate-400">No proof</span>
+                          )}
+                        </td>
+                        <td>
+                          <span className={statusClass(currentPaymentStatus)}>
+                            {currentPaymentStatus}
+                          </span>
+                        </td>
+                        <td>{date(payment.created_at)}</td>
+                        <td>
+                          <div className="mm-action-group">
+                            <button
+                              className="mm-mini-action"
+                              onClick={() => setViewingDetails(payment)}
+                              title="View Details"
+                            >
+                              Details
+                            </button>
+                            
+                            {isPending && (
+                              <>
+                                <button
+                                  className="mm-mini-action green"
+                                  onClick={() => handleApprovePayment(payment)}
+                                  disabled={saving}
+                                  title="Approve"
+                                >
+                                  Approve
+                                </button>
+                                <button
+                                  className="mm-mini-action red"
+                                  onClick={() => {
+                                    setRejectingPayment(payment);
+                                    setRejectionType('Invalid Screenshot');
+                                    setCustomRejectionReason('');
+                                  }}
+                                  disabled={saving}
+                                  title="Reject"
+                                >
+                                  Reject
+                                </button>
+                              </>
+                            )}
+                            
+                            {receiptAvailable(currentPaymentStatus) && (
+                              <button className="mm-mini-action blue" onClick={() => handlePrintReceipt(payment)} title="Print Receipt"><Printer size={13} /> Print Receipt</button>
+                            )}
+                              
+                              {currentPaymentStatus === 'Rejected' && (
+                                <button
+                                  className="mm-mini-action red"
+                                  onClick={() => handleReconsiderPayment(payment)}
+                                  disabled={saving}
+                                  title="Reconsider"
+                                >
+                                  Reconsider
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                {!filteredPayments.length && (
+                  <Empty 
+                    title="No payment submissions found" 
+                    copy="Try resetting your filters or waiting for resident submissions." 
+                  />
+                )}
+              </div>
+
+              {filteredPayments.length > 0 && (
+                <div className="mm-pagination">
+                  <div className="mm-pagination-info">
+                    Showing {(currentPage - 1) * rowsPerPage + 1}–{Math.min(filteredPayments.length, currentPage * rowsPerPage)} of {filteredPayments.length} payments
+                  </div>
+                  <div className="mm-pagination-controls">
+                    <button
+                      className="mm-pagination-page-btn"
+                      disabled={currentPage === 1}
+                      onClick={() => setCurrentPage(1)}
+                    >
+                      First
+                    </button>
+                    <button
+                      className="mm-pagination-page-btn"
+                      disabled={currentPage === 1}
+                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                    >
+                      Prev
+                    </button>
+                    {Array.from({ length: totalPages }, (_, i) => {
+                      const pNum = i + 1;
+                      if (pNum === 1 || pNum === totalPages || Math.abs(currentPage - pNum) <= 1) {
+                        return (
+                          <button
+                            key={pNum}
+                            className={`mm-pagination-page-btn ${currentPage === pNum ? 'active' : ''}`}
+                            onClick={() => setCurrentPage(pNum)}
+                          >
+                            {pNum}
+                          </button>
+                        );
+                      }
+                      if (pNum === 2 || pNum === totalPages - 1) {
+                        return <span key={pNum} style={{ padding: '0 4px', fontSize: '10px' }}>...</span>;
+                      }
+                      return null;
+                    })}
+                    <button
+                      className="mm-pagination-page-btn"
+                      disabled={currentPage === totalPages}
+                      onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                    >
+                      Next
+                    </button>
+                    <button
+                      className="mm-pagination-page-btn"
+                      disabled={currentPage === totalPages}
+                      onClick={() => setCurrentPage(totalPages)}
+                    >
+                      Last
+                    </button>
+                  </div>
+                  <div className="mm-pagination-limit">
+                    <span>Rows per page:</span>
+                    <select value={rowsPerPage} onChange={(e) => setRowsPerPage(Number(e.target.value))}>
+                      <option value={5}>5</option>
+                      <option value={10}>10</option>
+                      <option value={25}>25</option>
+                      <option value={50}>50</option>
+                    </select>
+                  </div>
+                </div>
+              )}
+            </section>
+          </>
       ) : tab === 'expenses' ? (
         <section className="mm-panel mm-table-panel">
           <div className="mm-panel-head"><div><h2>Maintenance expenses</h2><p>Operational spending and vendor payments.</p></div><button className="mm-button mm-button-primary" onClick={() => setModal('expense')}><Plus size={17} /> Record expense</button></div>
-          <div className="mm-expense-summary"><div><span>Current month spend</span><strong>{money(calculatedStats.monthExpense || expenses.reduce((sum, item) => sum + Number(item.amount), 0))}</strong></div><div><span>Transactions</span><strong>{expenses.length}</strong></div><div><span>Pending approval</span><strong>{expenses.filter((item) => item.status === 'Pending').length}</strong></div></div>
-          <div className="mm-table-wrap"><table className="mm-table"><thead><tr><th>Expense</th><th>Category</th><th>Vendor</th><th>Date</th><th>Amount</th><th>Status</th></tr></thead>
-            <tbody>{expenses.map((item) => <tr key={item.id}><td><strong>{item.expense_number}</strong><small>{item.description || 'Maintenance expense'}</small></td><td>{item.category}</td><td>{item.vendor}</td><td>{date(item.expense_date)}</td><td><strong>{money(item.amount)}</strong></td><td><span className={statusClass(item.status)}>{item.status}</span></td></tr>)}</tbody>
+          <div className="mm-expense-summary"><div><span>Current month spend</span><strong>{money(expenseSummary.currentMonthSpend)}</strong></div><div><span>Transactions</span><strong>{expenseSummary.transactions}</strong></div><div><span>Pending approval</span><strong>{expenseSummary.pendingApproval}</strong></div></div>
+          <div className="mm-table-wrap"><table className="mm-table"><thead><tr><th>Expense</th><th>Category</th><th>Vendor</th><th>Date</th><th>Amount</th><th>Status</th><th>Action</th></tr></thead>
+            <tbody>{expenses.map((item) => <tr key={item.id}><td><strong>{item.expense_number}</strong><small>{item.description || 'Maintenance expense'}</small></td><td>{item.category}</td><td>{item.vendor}</td><td>{date(item.expense_date)}</td><td><strong>{money(item.amount)}</strong></td><td><span className={statusClass(item.status)}>{item.status}</span></td><td><button className="mm-delete-expense-btn" disabled={deletingExpenseId === item.id} onClick={() => setDeletingExpense(item)}>{deletingExpenseId === item.id ? <RefreshCcw className="spin" size={13} /> : <Trash2 size={13} />} Delete</button></td></tr>)}</tbody>
           </table>{!expenses.length && <Empty title="No expenses recorded" copy="Record vendor bills and operational spending here." />}</div>
         </section>
       ) : (
@@ -1010,50 +1705,6 @@ const Maintenance = () => {
         </Modal>
       )}
 
-      {modal === 'pay' && selected && (
-        <Modal title="Mark as Paid" subtitle={`${selected.resident_name} · Flat ${selected.flat_no}`} onClose={() => { setModal(null); setSelected(null); }}>
-          <form onSubmit={submitPay} className="mm-form">
-            <label className="mm-field mm-field-full">
-              <span>Paid Amount</span>
-              <div className="mm-money-input">
-                <IndianRupee size={16} />
-                <input 
-                  type="number" 
-                  min="0" 
-                  required 
-                  value={payForm.paidAmount} 
-                  onChange={(e) => setPayForm({ ...payForm, paidAmount: e.target.value })} 
-                />
-              </div>
-            </label>
-            <label className="mm-field mm-field-full">
-              <span>Payment Date</span>
-              <input 
-                type="date" 
-                required 
-                value={payForm.paymentDate} 
-                onChange={(e) => setPayForm({ ...payForm, paymentDate: e.target.value })} 
-              />
-            </label>
-            <div className="mm-form-actions">
-              <button type="button" className="mm-button mm-button-light" onClick={() => { setModal(null); setSelected(null); }}>Cancel</button>
-              <button className="mm-button mm-button-primary" disabled={saving}>
-                {saving ? 'Saving...' : 'Save Payment'}
-              </button>
-            </div>
-          </form>
-        </Modal>
-      )}
-
-      {modal === 'category' && <Modal title={selected ? 'Edit category' : 'Add maintenance category'} subtitle="This item appears in each resident's bill breakdown." onClose={() => setModal(null)}>
-        <form onSubmit={submitCategory} className="mm-form">
-          <label className="mm-field mm-field-full"><span>Category name</span><input required value={categoryForm.name} onChange={(e) => setCategoryForm({ ...categoryForm, name: e.target.value })} placeholder="e.g. Lift maintenance" /></label>
-          <div className="mm-form-row"><label className="mm-field"><span>Amount</span><div className="mm-money-input"><IndianRupee size={16} /><input type="number" min="0" required value={categoryForm.amount} onChange={(e) => setCategoryForm({ ...categoryForm, amount: e.target.value })} /></div></label><label className="mm-field"><span>Calculation</span><select value={categoryForm.calculationType} onChange={(e) => setCategoryForm({ ...categoryForm, calculationType: e.target.value })}><option value="FIXED">Fixed amount</option><option value="PER_SQ_FT">Per sq. ft.</option></select></label></div>
-          <label className="mm-toggle"><input type="checkbox" checked={categoryForm.active} onChange={(e) => setCategoryForm({ ...categoryForm, active: e.target.checked })} /><span />Category is active</label>
-          <div className="mm-form-actions"><button type="button" className="mm-button mm-button-light" onClick={() => setModal(null)}>Cancel</button><button className="mm-button mm-button-primary" disabled={saving}>Save category</button></div>
-        </form>
-      </Modal>}
-
       {modal === 'expense' && <Modal title="Record expense" subtitle="Add a society maintenance expense or vendor payment." onClose={() => setModal(null)}>
         <form onSubmit={submitExpense} className="mm-form">
           <div className="mm-form-row"><label className="mm-field"><span>Category</span><select value={expenseForm.category} onChange={(e) => setExpenseForm({ ...expenseForm, category: e.target.value })}>{['Security Salary', 'Lift Service', 'Electricity', 'Water', 'Cleaning', 'Garden', 'Repairs', 'Painting', 'Fire Safety', 'Generator', 'Others'].map((item) => <option key={item}>{item}</option>)}</select></label><label className="mm-field"><span>Expense date</span><input type="date" required value={expenseForm.expenseDate} onChange={(e) => setExpenseForm({ ...expenseForm, expenseDate: e.target.value })} /></label></div>
@@ -1064,69 +1715,345 @@ const Maintenance = () => {
         </form>
       </Modal>}
 
-       {modal === 'bill' && selected && <Modal wide title={selected.title || `Bill #${selected.id}`} subtitle={`${selected.resident_name} · Flat ${selected.flat_no}`} onClose={() => setModal(null)}>
-        <div className="mm-bill-preview" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 20px', padding: '15px 20px' }}>
-          <div><span>Base Amount Charge</span><strong>{money(selected.amount)}</strong></div>
-          {selected.items && selected.items.map((item, idx) => (
-            <div key={idx}><span>{item.name}</span><strong>{money(item.amount)}</strong></div>
-          ))}
-          <div><span>Penalty Fee</span><strong>{money(selected.penalty_amount)}</strong></div>
-          {Number(selected.previous_outstanding || 0) > 0 && (
-            <div><span>Previous Outstanding</span><strong>{money(selected.previous_outstanding)}</strong></div>
-          )}
-          <hr style={{ gridColumn: '1 / -1', margin: '4px 0', borderColor: '#edf2f7' }} />
-          <div><span>Total amount</span><strong>{money(Number(selected.total_amount) + Number(selected.previous_outstanding || 0))}</strong></div>
-          <div><span>Paid amount</span><strong>{money(selected.paid_amount)}</strong></div>
-          <div><span>Remaining amount</span><strong>{money(Number(selected.remaining_amount) + Number(selected.previous_outstanding || 0))}</strong></div>
-          <div><span>Due date</span><strong>{date(selected.due_date)}</strong></div>
-          <div><span>Status</span><strong className={statusClass(selected.payment_status || selected.status)}>{selected.payment_status || selected.status}</strong></div>
-        </div>
-        <div className="mm-bill-actions">
-          <button className="mm-button mm-button-light" onClick={() => printDocument('Maintenance Invoice', selected)}><FileText size={17} /> Invoice PDF</button>
-          {(selected.payment_status || selected.status) === 'Paid' && <button className="mm-button mm-button-light" onClick={() => printDocument('Payment Receipt', selected)}><ReceiptIndianRupee size={17} /> Receipt PDF</button>}
-          {(selected.payment_status || selected.status) !== 'Paid' && <button className="mm-button mm-button-light" onClick={() => markPaid(selected)}><CheckCircle2 size={17} /> Mark Paid</button>}
-          {(selected.payment_status || selected.status) !== 'Paid' && <button className="mm-button mm-button-primary" onClick={() => sendReminder(selected)}><Bell size={17} /> Send reminder</button>}
-        </div>
-      </Modal>}
+      {modal === 'edit_bill' && editingBill && (
+        <Modal 
+          title="Edit Maintenance Bill" 
+          subtitle={`${editingBill.resident_name || 'Resident'} · Flat ${editingBill.flat_no || ''}`} 
+          onClose={() => { setModal(null); setEditingBill(null); }}
+        >
+          <form onSubmit={submitEditBill} className="mm-form p-4">
+            <div className="rounded-lg p-4 mb-4 border text-sm" style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0', borderRadius: '8px', padding: '16px', marginBottom: '16px' }}>
+              <div style={{ marginBottom: '8px' }}><strong>Billing Cycle:</strong> {months[(Number(editingBill.month) || 1) - 1]} {editingBill.year}</div>
+              <div style={{ marginBottom: '8px' }}><strong>Flat Type:</strong> {editingBill.flat_type_name || 'Not Assigned'}</div>
+              <div style={{ marginBottom: '8px' }}><strong>Default Base Amount:</strong> {money(editingBill.default_maintenance_amount)}</div>
+              {editingBill.is_custom_amount && (
+                <div style={{ color: '#d97706', fontWeight: '600', marginTop: '4px' }}>
+                  * This bill currently uses a custom overridden amount.
+                </div>
+              )}
+            </div>
+            
+            <label className="mm-field mm-field-full" style={{ marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <span style={{ fontSize: '13px', fontWeight: '600', color: '#374151' }}>Maintenance Base Amount (₹)</span>
+              <input 
+                type="number" 
+                min="0" 
+                required 
+                value={editBillForm.amount} 
+                onChange={(e) => setEditBillForm({ ...editBillForm, amount: e.target.value })} 
+                placeholder="e.g. 2500" 
+                style={{ padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '6px' }}
+              />
+            </label>
+
+            <label className="mm-field mm-field-full" style={{ marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <span style={{ fontSize: '13px', fontWeight: '600', color: '#374151' }}>Reason for Override (Optional)</span>
+              <textarea 
+                rows="3" 
+                value={editBillForm.reason} 
+                onChange={(e) => setEditBillForm({ ...editBillForm, reason: e.target.value })} 
+                placeholder="Explain why this unit's maintenance amount is being customized." 
+                style={{ padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '6px' }}
+              />
+            </label>
+
+            <div className="mm-form-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px' }}>
+              <button type="button" className="mm-button mm-button-light" onClick={() => { setModal(null); setEditingBill(null); }} style={{ padding: '8px 16px', border: '1px solid #d1d5db', background: '#fff', borderRadius: '6px', cursor: 'pointer' }}>Cancel</button>
+              <button type="submit" className="mm-button mm-button-primary" disabled={saving} style={{ padding: '8px 16px', background: '#4f46e5', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>
+                {saving ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {deletingExpense && (
+        <Modal
+          title="Delete Expense"
+          subtitle="Are you sure you want to permanently delete this expense? This action cannot be undone."
+          onClose={() => {
+            if (!deletingExpenseId) setDeletingExpense(null);
+          }}
+        >
+          <div className="mm-form">
+            <div className="rounded-lg bg-red-50 border border-red-100 p-3 text-sm text-red-800">
+              <strong>{deletingExpense.expense_number}</strong>
+              <p style={{ margin: '5px 0 0', fontSize: 12 }}>{deletingExpense.description || deletingExpense.vendor || 'Maintenance expense'} · {money(deletingExpense.amount)}</p>
+            </div>
+            <div className="mm-form-actions">
+              <button type="button" className="mm-button mm-button-light" disabled={Boolean(deletingExpenseId)} onClick={() => setDeletingExpense(null)}>Cancel</button>
+              <button type="button" className="mm-button mm-button-danger" disabled={Boolean(deletingExpenseId)} onClick={confirmDeleteExpense}>
+                {deletingExpenseId ? <RefreshCcw className="spin" size={17} /> : <Trash2 size={17} />}
+                Delete
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {rejectingPayment && (
+        <Modal
+          title="Reject Payment"
+          subtitle={`${rejectingPayment.resident_name || 'Resident'} · ${rejectingPayment.bill_number || `BILL-${rejectingPayment.bill_id}`}`}
+          onClose={() => {
+            if (!saving) {
+              setRejectingPayment(null);
+              setRejectionType('Invalid Screenshot');
+              setCustomRejectionReason('');
+            }
+          }}
+        >
+          <form onSubmit={submitRejectionForm} className="mm-form">
+            <div className="rounded-lg bg-red-50 border border-red-100 text-red-700 p-3 text-xs font-semibold">
+              This will mark the selected payment as rejected, return bills to Overdue, and notify residents.
+            </div>
+            
+            <label className="mm-field mm-field-full">
+              <span>Select Rejection Reason</span>
+              <select 
+                value={rejectionType} 
+                onChange={(e) => setRejectionType(e.target.value)}
+                required
+              >
+                <option value="Invalid Screenshot">Invalid Screenshot</option>
+                <option value="Incorrect Amount">Incorrect Amount</option>
+                <option value="Duplicate Payment">Duplicate Payment</option>
+                <option value="Invalid UTR">Invalid UTR</option>
+                <option value="Other">Other (Write Custom Reason)</option>
+              </select>
+            </label>
+
+            {rejectionType === 'Other' && (
+              <label className="mm-field mm-field-full">
+                <span>Custom Rejection Reason</span>
+                <textarea
+                  rows="4"
+                  required
+                  value={customRejectionReason}
+                  onChange={(event) => setCustomRejectionReason(event.target.value)}
+                  placeholder="Example: Payment screenshot is unclear. Please upload a clear payment proof."
+                />
+              </label>
+            )}
+
+            <div className="mm-form-actions">
+              <button 
+                type="button" 
+                className="mm-button mm-button-light" 
+                disabled={saving} 
+                onClick={() => { 
+                  setRejectingPayment(null); 
+                  setRejectionType('Invalid Screenshot'); 
+                  setCustomRejectionReason(''); 
+                }}
+              >
+                Cancel
+              </button>
+              <button 
+                className="mm-button mm-button-danger" 
+                disabled={saving || (rejectionType === 'Other' && !customRejectionReason.trim())}
+              >
+                {saving ? 'Rejecting...' : 'Reject Payment'}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
 
       {viewingScreenshot && (
         <Modal
           wide
-          title="Payment Screenshot"
+          title="Payment Screenshot Proof"
           subtitle={`${viewingScreenshot.resident_name || 'Resident'} · ${viewingScreenshot.bill_number || `BILL-${viewingScreenshot.bill_id}`}`}
           onClose={() => setViewingScreenshot(null)}
         >
           <div style={{ padding: '18px 20px', background: '#f8fafc' }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, marginBottom: 14 }}>
               <div><span className="text-xs text-slate-500">Flat</span><strong style={{ display: 'block' }}>{viewingScreenshot.flat_no || '-'}</strong></div>
-              <div><span className="text-xs text-slate-500">UTR</span><strong style={{ display: 'block' }}>{viewingScreenshot.utr_number || viewingScreenshot.transaction_id || '-'}</strong></div>
+              <div><span className="text-xs text-slate-500">UTR / Ref</span><strong style={{ display: 'block' }}>{viewingScreenshot.utr_number || viewingScreenshot.transaction_id || '-'}</strong></div>
               <div><span className="text-xs text-slate-500">Amount</span><strong style={{ display: 'block' }}>{money(viewingScreenshot.amount)}</strong></div>
               <div><span className="text-xs text-slate-500">Payment Date</span><strong style={{ display: 'block' }}>{date(viewingScreenshot.paid_at)}</strong></div>
             </div>
-            <div style={{ minHeight: 260, display: 'grid', placeItems: 'center', borderRadius: 12, border: '1px solid var(--portal-line)', background: 'white', overflow: 'hidden' }}>
+
+            <div className="mm-zoom-container">
               {brokenProofs[viewingScreenshot.id] ? (
                 <div style={{ padding: 24, textAlign: 'center', color: '#dc2626' }}>
                   <Image size={32} style={{ margin: '0 auto 10px' }} />
                   <strong>Screenshot could not be loaded.</strong>
-                  <p style={{ margin: '6px 0 0', color: '#64748b', fontSize: 12 }}>The saved image path may be missing or inaccessible.</p>
+                  <p style={{ margin: '6px 0 0', color: '#64748b', fontSize: 12 }}>The image path is missing or broken.</p>
                 </div>
               ) : (
-                <img
-                  src={viewingScreenshot.proofUrl}
-                  alt="Full size payment proof"
-                  style={{ maxWidth: '100%', maxHeight: '72vh', objectFit: 'contain' }}
-                  onError={() => setBrokenProofs((current) => ({ ...current, [viewingScreenshot.id]: true }))}
-                />
+                <>
+                  {loadingScreenshot && (
+                    <div style={{ position: 'absolute', display: 'flex', alignItems: 'center', gap: 8, color: '#94a3b8' }}>
+                      <RefreshCcw className="spin" size={20} /> Loading Image...
+                    </div>
+                  )}
+                  <div className="mm-zoom-viewport">
+                    <img
+                      src={viewingScreenshot.proofUrl}
+                      alt="Full proof"
+                      className="mm-zoom-img"
+                      style={{ transform: `scale(${zoomScale})` }}
+                      onLoad={() => setLoadingScreenshot(false)}
+                      onError={() => setBrokenProofs((current) => ({ ...current, [viewingScreenshot.id]: true }))}
+                    />
+                  </div>
+                  <div className="mm-zoom-controls">
+                    <button className="mm-zoom-btn" onClick={() => setZoomScale(z => Math.max(0.5, z - 0.25))}>- Zoom Out</button>
+                    <button className="mm-zoom-btn" onClick={() => setZoomScale(1)}>Reset ({Math.round(zoomScale * 100)}%)</button>
+                    <button className="mm-zoom-btn" onClick={() => setZoomScale(z => Math.min(3, z + 0.25))}>+ Zoom In</button>
+                  </div>
+                </>
               )}
             </div>
           </div>
           <div className="mm-form-actions" style={{ padding: '0 20px 20px', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             {viewingScreenshot.proofUrl && !brokenProofs[viewingScreenshot.id] && (
-              <a className="mm-button mm-button-light" href={viewingScreenshot.proofUrl} target="_blank" rel="noreferrer">Open Full Image</a>
+              <button 
+                className="mm-button mm-button-primary"
+                onClick={() => downloadScreenshot(viewingScreenshot.proofUrl, `proof-${viewingScreenshot.utr_number || viewingScreenshot.id}.jpg`)}
+              >
+                <Download size={14} /> Download Proof
+              </button>
             )}
             <button className="mm-button mm-button-light" onClick={() => setViewingScreenshot(null)}>Close</button>
           </div>
         </Modal>
+      )}
+
+      {viewingDetails && (
+        <Modal
+          wide
+          title="Payment Request Details"
+          subtitle={`Payment ID: #${viewingDetails.payment_id || viewingDetails.id}`}
+          onClose={() => setViewingDetails(null)}
+        >
+          <div className="mm-details-grid">
+            <div className="mm-details-item">
+              <span className="mm-details-label">Resident</span>
+              <span className="mm-details-value">{viewingDetails.resident_name}</span>
+            </div>
+            <div className="mm-details-item">
+              <span className="mm-details-label">Flat No.</span>
+              <span className="mm-details-value">Flat {viewingDetails.flat_no}</span>
+            </div>
+            <div className="mm-details-item">
+              <span className="mm-details-label">Bill Number</span>
+              <span className="mm-details-value">{viewingDetails.bill_number || `BILL-${viewingDetails.bill_id}`}</span>
+            </div>
+            <div className="mm-details-item">
+              <span className="mm-details-label">Bill Month</span>
+              <span className="mm-details-value">{months[(Number(viewingDetails.month) || 1) - 1]} {viewingDetails.year}</span>
+            </div>
+            <div className="mm-details-item">
+              <span className="mm-details-label">Amount Paid</span>
+              <span className="mm-details-value">{money(viewingDetails.amount)}</span>
+            </div>
+            <div className="mm-details-item">
+              <span className="mm-details-label">Payment Method</span>
+              <span className="mm-details-value">{viewingDetails.payment_method || 'UPI'}</span>
+            </div>
+            <div className="mm-details-item">
+              <span className="mm-details-label">UTR Number</span>
+              <span className="mm-details-value">{viewingDetails.utr_number || viewingDetails.transaction_id}</span>
+            </div>
+            <div className="mm-details-item">
+              <span className="mm-details-label">Payment Date</span>
+              <span className="mm-details-value">{date(viewingDetails.paid_at)}</span>
+            </div>
+            <div className="mm-details-item">
+              <span className="mm-details-label">Submission Date</span>
+              <span className="mm-details-value">{new Date(viewingDetails.created_at).toLocaleString('en-IN')}</span>
+            </div>
+            <div className="mm-details-item">
+              <span className="mm-details-label">Admin Status</span>
+              <span className="mm-details-value">
+                <span className={statusClass(viewingDetails.original_payment_status || viewingDetails.payment_status)}>
+                  {viewingDetails.original_payment_status || viewingDetails.payment_status}
+                </span>
+              </span>
+            </div>
+            <div className="mm-details-item" style={{ gridColumn: '1 / -1' }}>
+              <span className="mm-details-label">Admin Remarks / Rejection Reason</span>
+              <span className="mm-details-value" style={{ fontWeight: 'normal', color: '#475467' }}>
+                {viewingDetails.remarks || viewingDetails.rejection_reason || '—'}
+              </span>
+            </div>
+            {(viewingDetails.verified_at || viewingDetails.rejected_at) && (
+              <div className="mm-details-item" style={{ gridColumn: '1 / -1' }}>
+                <span className="mm-details-label">Action Date & Time</span>
+                <span className="mm-details-value">
+                  {new Date(viewingDetails.verified_at || viewingDetails.rejected_at).toLocaleString('en-IN')}
+                </span>
+              </div>
+            )}
+          </div>
+          
+          <div style={{ padding: '20px', background: '#ffffff', display: 'flex', gap: '12px', alignItems: 'center' }}>
+            <div style={{ fontWeight: '600', fontSize: '12px', color: '#64748b' }}>Screenshot Proof:</div>
+            {paymentProofPath(viewingDetails) ? (
+              <button 
+                className="mm-button mm-button-light"
+                onClick={() => {
+                  setViewingScreenshot({ ...viewingDetails, proofUrl: paymentProofUrl(viewingDetails) });
+                  setViewingDetails(null);
+                  setZoomScale(1);
+                  setLoadingScreenshot(true);
+                }}
+              >
+                <Eye size={14} /> Open Screenshot
+              </button>
+            ) : (
+              <span className="text-xs text-slate-400">No screenshot uploaded</span>
+            )}
+          </div>
+          
+          <div className="mm-form-actions" style={{ padding: '0 20px 20px' }}>
+            <button className="mm-button mm-button-light" onClick={() => setViewingDetails(null)}>Close</button>
+          </div>
+        </Modal>
+      )}
+
+      {/* Floating Bulk Actions Bar */}
+      {selectedPaymentIds.size > 0 && (
+        <div className="mm-bulk-bar">
+          <div className="mm-bulk-info">
+            {selectedPaymentIds.size} pending payments selected
+          </div>
+          <div className="mm-bulk-actions">
+            <button 
+              className="mm-bulk-btn mm-bulk-btn-approve" 
+              onClick={handleBulkApprove}
+              disabled={saving}
+            >
+              Approve Selected
+            </button>
+            <button 
+              className="mm-bulk-btn mm-bulk-btn-reject" 
+              onClick={() => {
+                setRejectingPayment({ id: 'bulk', resident_name: 'Selected Residents', bill_number: 'Multiple Bills' });
+                setRejectionType('Invalid Screenshot');
+                setCustomRejectionReason('');
+              }}
+              disabled={saving}
+            >
+              Reject Selected
+            </button>
+            <button 
+              className="mm-bulk-btn mm-bulk-btn-export" 
+              onClick={exportSelectedPayments}
+            >
+              Export Selected
+            </button>
+            <button 
+              className="mm-bulk-btn mm-bulk-btn-cancel" 
+              onClick={() => setSelectedPaymentIds(new Set())}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

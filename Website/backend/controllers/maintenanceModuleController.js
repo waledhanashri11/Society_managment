@@ -177,13 +177,63 @@ const createExpense = async (req, res) => {
 };
 
 const deleteExpense = async (req, res) => {
+  const connection = await promisePool.getConnection();
   try {
-    const [result] = await promisePool.query('DELETE FROM maintenance_expenses WHERE id = ?', [req.params.id]);
-    if (!result.affectedRows) return respond(res, 404, 'Expense not found');
-    await audit(req.user.id, 'DELETE', 'EXPENSE', req.params.id);
-    return respond(res, 200, 'Expense deleted');
+    await connection.beginTransaction();
+
+    const [expenses] = await connection.query(
+      `SELECT id, expense_number, description, amount
+       FROM maintenance_expenses
+       WHERE id = ?`,
+      [req.params.id]
+    );
+
+    if (!expenses.length) {
+      await connection.rollback();
+      return respond(res, 404, 'Expense not found.');
+    }
+
+    const expense = expenses[0];
+    const [admins] = await connection.query('SELECT name FROM users WHERE id = ?', [req.user.id]);
+    const adminName = admins[0]?.name || req.user.name || 'Admin';
+
+    const [result] = await connection.query('DELETE FROM maintenance_expenses WHERE id = ?', [req.params.id]);
+    if (!result.affectedRows) {
+      await connection.rollback();
+      return respond(res, 404, 'Expense not found.');
+    }
+
+    await connection.query(
+      `INSERT INTO maintenance_audit_logs (user_id, action, entity_type, entity_id, details)
+       VALUES (?, ?, ?, ?, ?)`,
+      [
+        req.user.id,
+        'DELETE',
+        'EXPENSE',
+        expense.id,
+        JSON.stringify({
+          expenseId: expense.id,
+          expenseNumber: expense.expense_number,
+          description: expense.description,
+          amount: Number(expense.amount || 0),
+          deletedBy: adminName,
+          deletedAt: new Date().toISOString()
+        })
+      ]
+    );
+
+    await connection.commit();
+    return respond(res, 200, 'Expense deleted successfully.');
   } catch (error) {
-    return respond(res, 500, 'Unable to delete expense');
+    try {
+      await connection.rollback();
+    } catch (rollbackError) {
+      console.error('Delete expense rollback error:', rollbackError);
+    }
+    console.error('Delete expense error:', error);
+    return respond(res, 500, 'Failed to delete expense. Please try again.');
+  } finally {
+    connection.release();
   }
 };
 

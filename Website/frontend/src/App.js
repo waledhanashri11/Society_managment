@@ -20,10 +20,10 @@ const Flats = lazy(() => import('./admin/Flats'));
 const Maintenance = lazy(() => import('./admin/Maintenance'));
 const Complaints = lazy(() => import('./admin/Complaints'));
 const Notices = lazy(() => import('./admin/Notices'));
-const Staff = lazy(() => import('./admin/Staff'));
 const Reports = lazy(() => import('./admin/Reports'));
 const NOCManagement = lazy(() => import('./admin/NOCManagement'));
 const AdminSettings = lazy(() => import('./admin/AdminSettings'));
+const AdminMeetings = lazy(() => import('./admin/Meetings'));
 
 const ResidentLayout = lazy(() => import('./resident/ResidentLayout'));
 const ResidentDashboard = lazy(() => import('./resident/ResidentDashboard'));
@@ -35,6 +35,7 @@ const ResidentPaymentHistory = lazy(() => import('./resident/ResidentPaymentHist
 const ResidentMembers = lazy(() => import('./resident/ResidentMembers'));
 const ResidentReports = lazy(() => import('./resident/ResidentReports'));
 const ResidentNOCRequests = lazy(() => import('./resident/ResidentNOCRequests'));
+const ResidentMeetings = lazy(() => import('./resident/Meetings'));
 
 const RouteLoader = () => <DashboardSkeleton />;
 
@@ -54,7 +55,7 @@ const PrivateRoute = ({ children, role }) => {
 
 function App() {
   return (
-    <Router>
+    <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <Suspense fallback={<RouteLoader />}>
         <Routes>
           <Route path="/" element={<Landing />} />
@@ -79,10 +80,10 @@ function App() {
             <Route path="dashboard" element={<AdminDashboard />} />
             <Route path="residents" element={<Residents />} />
             <Route path="flats" element={<Flats />} />
+            <Route path="meetings" element={<AdminMeetings />} />
             <Route path="maintenance" element={<Maintenance />} />
             <Route path="complaints" element={<Complaints />} />
             <Route path="notices" element={<Notices />} />
-            <Route path="staff" element={<Staff />} />
             <Route path="reports" element={<Reports />} />
             <Route path="noc-management" element={<NOCManagement />} />
             <Route path="settings" element={<AdminSettings />} />
@@ -99,6 +100,7 @@ function App() {
             <Route index element={<Navigate to="dashboard" replace />} />
             <Route path="dashboard" element={<ResidentDashboard />} />
             <Route path="maintenance" element={<ResidentMaintenance />} />
+            <Route path="meetings" element={<ResidentMeetings />} />
             <Route path="complaints" element={<ResidentComplaints />} />
             <Route path="notices" element={<ResidentNotices />} />
             <Route path="profile" element={<ResidentProfile />} />

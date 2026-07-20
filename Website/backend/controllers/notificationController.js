@@ -58,15 +58,19 @@ const getResidentNotifications = async (req, res) => {
     const [notifications] = await promisePool.query(
       `SELECT id, resident_id, title, message, type, reference_id, is_read, created_at
        FROM notifications
-       WHERE resident_id = ?
+       WHERE resident_id = ? AND is_read = false
        ORDER BY created_at DESC
        LIMIT 20`,
       [residentId]
     );
-    const mapped = notifications.map((item) => ({
-      ...item,
-      path: item.type === 'noc' ? '/resident/noc-requests' : item.type === 'notice' ? '/resident/notices' : '/resident/dashboard'
-    }));
+    const mapped = notifications.map((item) => {
+      let path = '/resident/dashboard';
+      if (item.type === 'noc') path = '/resident/noc-requests';
+      else if (item.type === 'complaints') path = '/resident/complaints';
+      else if (item.type === 'notice') path = '/resident/notices';
+      else if (item.type === 'maintenance' || item.type === 'payment') path = '/resident/maintenance';
+      return { ...item, path };
+    });
     const unreadCount = mapped.filter((item) => !item.is_read).length;
     res.json({ notifications: mapped, unreadCount });
   } catch (error) {
