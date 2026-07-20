@@ -1,10 +1,13 @@
 package com.example.application.ui.screens.noc
 
 import android.net.Uri
+import android.content.Intent
 import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -28,6 +31,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -37,8 +41,10 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -62,7 +68,7 @@ import com.example.application.viewmodel.ResidentNocViewModel
 import java.io.ByteArrayOutputStream
 
 private val NocTypes = listOf("Address Proof", "Vehicle NOC", "Tenant NOC", "Sale/Transfer NOC", "Other")
-private val NocStatuses = listOf("All", "Submitted", "Under Review", "Approved", "Rejected", "Cancelled")
+private val NocStatuses = listOf("All", "Pending", "Under Review", "Approved", "Rejected", "Cancelled")
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -72,6 +78,16 @@ fun ResidentNocScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var showCreate by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+
+    LaunchedEffect(state.certificateUri) {
+        state.certificateUri?.let { uri ->
+            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(uri)).apply {
+                type = "text/html"
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            })
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -106,7 +122,8 @@ fun ResidentNocScreen(
                 else -> NocList(
                     items = state.items,
                     modifier = Modifier.fillMaxSize(),
-                    onCancel = { viewModel.cancel(it) }
+                    onCancel = { viewModel.cancel(it) },
+                    onDownload = { id, number -> viewModel.downloadCertificate(id, number) }
                 )
             }
         }
@@ -116,8 +133,8 @@ fun ResidentNocScreen(
         CreateNocDialog(
             submitting = state.submitting,
             onDismiss = { showCreate = false },
-            onSubmit = { type, purpose, description, documentData ->
-                viewModel.createNoc(type, purpose, description, documentData)
+            onSubmit = { type, purpose, remarks, documentData ->
+                viewModel.createNoc(type, purpose, remarks, documentData)
                 showCreate = false
             }
         )
@@ -214,7 +231,8 @@ fun AdminNocScreen(
 private fun NocList(
     items: List<NocRequestDto>,
     modifier: Modifier = Modifier,
-    onCancel: (String) -> Unit
+    onCancel: (String) -> Unit,
+    onDownload: (String, String?) -> Unit
 ) {
     LazyColumn(
         modifier = modifier,
@@ -222,7 +240,7 @@ private fun NocList(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         items(items, key = { it.id ?: it.hashCode() }) { item ->
-            NocCard(item = item, admin = false, onCancel = { onCancel(item.id.orEmpty()) })
+            NocCard(item = item, admin = false, onCancel = { onCancel(item.id.orEmpty()) }, onDownload = { onDownload(item.id.orEmpty(), item.nocNumber) })
         }
     }
 }
@@ -233,9 +251,10 @@ private fun NocCard(
     admin: Boolean,
     onCancel: (() -> Unit)? = null,
     onApprove: (() -> Unit)? = null,
-    onReject: (() -> Unit)? = null
+    onReject: (() -> Unit)? = null,
+    onDownload: (() -> Unit)? = null
 ) {
-    val status = item.status ?: "Submitted"
+    val status = item.status ?: "Pending"
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(22.dp),
@@ -255,10 +274,16 @@ private fun NocCard(
             KeyValue("Created", shortDate(item.createdAt))
             item.nocNumber?.let { KeyValue("NOC number", it) }
             item.adminComments?.takeIf { it.isNotBlank() }?.let { KeyValue("Admin note", it) }
-            if (!admin && status in listOf("Draft", "Submitted", "Under Review")) {
+            if (!admin && status in listOf("Draft", "Pending", "Under Review")) {
                 OutlinedButton(onClick = { onCancel?.invoke() }, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Filled.Cancel, contentDescription = null)
                     Text("Cancel Request", modifier = Modifier.padding(start = 8.dp))
+                }
+            }
+            if (!admin && status == "Approved") {
+                Button(onClick = { onDownload?.invoke() }, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Filled.Description, contentDescription = null)
+                    Text("Download NOC Certificate", modifier = Modifier.padding(start = 8.dp))
                 }
             }
             if (admin && status !in listOf("Approved", "Rejected", "Cancelled")) {
@@ -281,62 +306,77 @@ private fun NocCard(
 private fun CreateNocDialog(
     submitting: Boolean,
     onDismiss: () -> Unit,
-    onSubmit: (String, String, String, String?) -> Unit
+    onSubmit: (String, String, String, List<String>) -> Unit
 ) {
     val context = LocalContext.current
     var selectedType by remember { mutableStateOf(NocTypes.first()) }
     var purpose by remember { mutableStateOf("") }
-    var description by remember { mutableStateOf("") }
-    var documentName by remember { mutableStateOf<String?>(null) }
-    var documentData by remember { mutableStateOf<String?>(null) }
+    var remarks by remember { mutableStateOf("") }
+    var menuExpanded by remember { mutableStateOf(false) }
+    var documentNames by remember { mutableStateOf<List<String>>(emptyList()) }
+    var documentData by remember { mutableStateOf<List<String>>(emptyList()) }
     var localError by remember { mutableStateOf<String?>(null) }
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
-        uri ?: return@rememberLauncherForActivityResult
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
         runCatching {
+            if (uris.size > 3) error("Please select up to 3 documents.")
             val resolver = context.contentResolver
-            val bytes = resolver.openInputStream(uri)?.use { input ->
-                val output = ByteArrayOutputStream()
-                input.copyTo(output)
-                output.toByteArray()
-            } ?: ByteArray(0)
-            if (bytes.size > 5 * 1024 * 1024) error("Please select a file smaller than 5 MB.")
-            val mime = resolver.getType(uri) ?: "application/octet-stream"
-            documentName = uri.lastPathSegment ?: "Selected document"
-            documentData = "data:$mime;base64,${Base64.encodeToString(bytes, Base64.NO_WRAP)}"
+            val encoded = uris.map { uri ->
+                val bytes = resolver.openInputStream(uri)?.use { input ->
+                    val output = ByteArrayOutputStream()
+                    input.copyTo(output)
+                    output.toByteArray()
+                } ?: ByteArray(0)
+                if (bytes.size > 5 * 1024 * 1024) error("Each document must be smaller than 5 MB.")
+                val mime = resolver.getType(uri) ?: "application/octet-stream"
+                "data:$mime;base64,${Base64.encodeToString(bytes, Base64.NO_WRAP)}"
+            }
+            documentNames = uris.map { it.lastPathSegment ?: "Selected document" }
+            documentData = encoded
             localError = null
-        }.onFailure { localError = it.message ?: "Unable to read selected file." }
+        }.onFailure { localError = it.message ?: "Unable to read selected documents." }
     }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Create NOC Request") },
+        title = { Text("Apply for NOC") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    NocTypes.take(3).forEach { type ->
-                        FilterChip(selected = selectedType == type, onClick = { selectedType = type }, label = { Text(type) })
+                Text("NOC Type", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                Box {
+                    OutlinedTextField(
+                        value = selectedType,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Select NOC type") },
+                        modifier = Modifier.fillMaxWidth().clickable { menuExpanded = !menuExpanded }
+                    )
+                    DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                        NocTypes.forEach { type ->
+                            DropdownMenuItem(text = { Text(type) }, onClick = { selectedType = type; menuExpanded = false })
+                        }
                     }
                 }
-                OutlinedTextField(value = purpose, onValueChange = { purpose = it }, label = { Text("Purpose") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = purpose, onValueChange = { purpose = it }, label = { Text("Purpose") }, modifier = Modifier.fillMaxWidth(), minLines = 3)
                 OutlinedTextField(
-                    value = description,
-                    onValueChange = { description = it },
-                    label = { Text("Description") },
+                    value = remarks,
+                    onValueChange = { remarks = it },
+                    label = { Text("Remarks") },
                     modifier = Modifier.fillMaxWidth(),
                     minLines = 3
                 )
                 OutlinedButton(onClick = { picker.launch("*/*") }, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Filled.UploadFile, contentDescription = null)
-                    Text(documentName ?: "Attach document / image", modifier = Modifier.padding(start = 8.dp))
+                    Text(if (documentNames.isEmpty()) "Required documents" else "${documentNames.size} document(s) selected", modifier = Modifier.padding(start = 8.dp))
                 }
+                if (documentNames.isNotEmpty()) Text(documentNames.joinToString("\n"), style = MaterialTheme.typography.bodySmall)
                 localError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
         },
         confirmButton = {
             Button(
-                onClick = { onSubmit(selectedType, purpose, description, documentData) },
-                enabled = !submitting && purpose.isNotBlank()
-            ) { Text(if (submitting) "Submitting..." else "Submit") }
+                onClick = { onSubmit(selectedType, purpose, remarks, documentData) },
+                enabled = !submitting && purpose.isNotBlank() && documentData.isNotEmpty()
+            ) { Text(if (submitting) "Submitting..." else "Submit Request") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
@@ -380,7 +420,7 @@ private fun StatusChip(status: String) {
         "Approved" -> Color(0xFF1B8F4D)
         "Rejected", "Cancelled" -> Color(0xFFD14343)
         "Under Review" -> Color(0xFF8A5A00)
-        else -> Color(0xFF5E3FD1)
+        else -> Color(0xFF0B5FFF)
     }
     AssistChip(onClick = {}, label = { Text(status, color = color) })
 }

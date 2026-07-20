@@ -238,14 +238,14 @@ const deleteExpense = async (req, res) => {
 };
 
 const getLateFeeRule = async (req, res) => {
-  const [rows] = await promisePool.query('SELECT * FROM late_fee_rules WHERE active = 1 ORDER BY id DESC LIMIT 1');
+    const [rows] = await promisePool.query('SELECT * FROM late_fee_rules WHERE active = TRUE ORDER BY id DESC LIMIT 1');
   return respond(res, 200, 'Late fee rule fetched', rows[0] || null);
 };
 
 const saveLateFeeRule = async (req, res) => {
   try {
     const { gracePeriod = 0, penaltyType = 'DAILY', penaltyAmount = 0, maximumLateFee = 0, active = true } = req.body;
-    await promisePool.query('UPDATE late_fee_rules SET active = 0');
+    await promisePool.query('UPDATE late_fee_rules SET active = FALSE');
     const [result] = await promisePool.query(
       `INSERT INTO late_fee_rules (grace_period, penalty_type, penalty_amount, maximum_late_fee, active)
        VALUES (?, ?, ?, ?, ?)`,

@@ -444,10 +444,14 @@ const getMaintenanceById = async (req, res) => {
 const createMaintenance = async (req, res) => {
   try {
     const { title, month, year, dueDate, amount = 0, residentId, flatId } = req.body;
+    const numericAmount = Number(amount);
+    if (!title || !month || !year || !dueDate || !Number.isFinite(numericAmount) || numericAmount <= 0) {
+      return sendResponse(res, 400, 'Title, month, year, due date and a valid positive amount are required');
+    }
     const [result] = await promisePool.query(
       `INSERT INTO maintenance (resident_id, flat_id, title, month, year, amount, penalty_amount, total_amount, paid_amount, remaining_amount, status, due_date)
        VALUES (?, ?, ?, ?, ?, ?, 0.00, ?, 0.00, ?, 'Pending', ?)`,
-      [residentId || null, flatId || null, title, month, year, amount, amount, amount, dueDate]
+      [residentId || null, flatId || null, title, month, year, numericAmount, numericAmount, numericAmount, dueDate]
     );
     return sendResponse(res, 201, 'Maintenance created successfully', { id: result.insertId });
   } catch (error) {

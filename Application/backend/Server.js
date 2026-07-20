@@ -52,6 +52,7 @@ const settingsRoutes = require('./routes/settings');
 const notificationRoutes = require('./routes/notifications');
 const nocRoutes = require('./routes/noc');
 const nocController = require('./controllers/nocController');
+const adminRoutes = require('./routes/admin');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
@@ -64,6 +65,7 @@ app.use('/api/residents', residentMgmtRoutes);
 app.use('/api/staff', staffRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/admin', adminRoutes);
 app.get('/share/noc/:token', nocController.getSharedPdf);
 app.use('/api/noc', nocRoutes);
 

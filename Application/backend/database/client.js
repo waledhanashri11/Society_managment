@@ -32,7 +32,9 @@ const normalizeSql = (sql) => {
     .replace(/CURDATE\(\)/gi, 'CURRENT_DATE')
     .replace(/DATE_FORMAT\(([^,]+),\s*'%b'\)/gi, "TO_CHAR($1, 'Mon')")
     .replace(/MONTH\(([^)]+)\)/gi, 'EXTRACT(MONTH FROM $1)')
-    .replace(/YEAR\(([^)]+)\)/gi, 'EXTRACT(YEAR FROM $1)');
+    .replace(/YEAR\(([^)]+)\)/gi, 'EXTRACT(YEAR FROM $1)')
+    .replace(/\b(active|is_active)\s*=\s*1\b/gi, '$1 = TRUE')
+    .replace(/\b(active|is_active)\s*=\s*0\b/gi, '$1 = FALSE');
 
   if (/^\s*INSERT\s+/i.test(normalized) && !/\bRETURNING\b/i.test(normalized)) {
     normalized = `${normalized.trim()} RETURNING *`;

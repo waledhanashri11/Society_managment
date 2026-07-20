@@ -33,7 +33,7 @@ data class AdminMaintenanceUiState(
     val filter: String = "All",
     val error: String? = null,
     val message: String? = null,
-    val activeTab: String = "Bills",
+    val activeTab: String = "Overview",
     val submitting: Boolean = false
 )
 
@@ -89,17 +89,26 @@ class AdminMaintenanceViewModel @Inject constructor(
     fun createManualBill(title: String, month: Int, year: Int, dueDate: String, amount: String, residentId: String?, flatId: String?) =
         action { repository.createMaintenance(MaintenanceCreateRequest(title, month, year, dueDate, amount, residentId, flatId)) }
     fun deleteBill(id: String) = action { repository.deleteMaintenance(id) }
-    fun markPaid(id: String, amount: String, method: String, transactionId: String, remarks: String) =
-        action { repository.markPaid(id, MarkPaidRequest(method, transactionId, remarks, amount)) }
+    fun cancelBill(id: String, reason: String) = action { repository.cancelBill(id, reason) }
+    fun markPaid(id: String, amount: String, paymentDate: String) =
+        action { repository.manualPay(id, ManualPayRequest(amount, paymentDate)) }
     fun sendReminder(id: String) = action { repository.sendReminder(id) }
     fun applyPenalty() = action { repository.applyPenalty() }
+    fun applyPenaltyToBill(id: String, amount: String, reason: String?) = action { repository.applyPenaltyToBill(id, amount, reason) }
     fun waiveLateFee(id: String) = action { repository.waiveLateFee(id) }
+    fun applyWaiver(id: String, amount: String, reason: String, type: String, reference: String?, date: String?, note: String?) =
+        action { repository.applyWaiver(id, amount, reason, type, reference, date, note) }
     fun updatePayment(id: String, status: String, reason: String? = null) = action {
+        val normalizedStatus = when (status.trim().uppercase()) {
+            "APPROVED", "APPROVE", "PAID" -> "Paid"
+            "REJECTED", "REJECT" -> "Rejected"
+            else -> status
+        }
         repository.updatePayment(
             id,
             UpdatePaymentRequest(
-                paymentStatus = status,
-                remarks = reason ?: if (status == "Paid" || status == "APPROVED") "Approved by admin" else "Rejected by admin",
+                paymentStatus = normalizedStatus,
+                remarks = reason ?: if (normalizedStatus == "Paid") "Approved by admin" else "Rejected by admin",
                 rejectionReason = reason
             )
         )

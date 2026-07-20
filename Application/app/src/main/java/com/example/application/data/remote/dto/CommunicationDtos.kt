@@ -4,7 +4,10 @@ import com.google.gson.annotations.SerializedName
 
 data class ComplaintSaveRequest(
     val title: String,
-    val description: String
+    val description: String,
+    @SerializedName("images") val images: List<String> = emptyList(),
+    @SerializedName("image_url") val imageUrl: String? = images.firstOrNull(),
+    @SerializedName("imageUrl") val imageUrlCamel: String? = images.firstOrNull()
 )
 
 data class ComplaintUpdateRequest(
@@ -33,5 +36,6 @@ data class NotificationDto(
     val message: String?,
     val type: String?,
     val path: String?,
+    @SerializedName("is_read") val isRead: Boolean? = null,
     @SerializedName("created_at") val createdAt: String?
 )

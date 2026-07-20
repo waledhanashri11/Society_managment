@@ -13,7 +13,7 @@ data class RegisterRequest(
     val phone: String?,
     val password: String,
     val role: String = "resident",
-    @SerializedName("flat_id") val flatId: String
+    @SerializedName("flat_id") val flatId: String? = null
 )
 
 data class RegisterResponse(

@@ -15,6 +15,7 @@ import android.graphics.pdf.PdfDocument
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -31,19 +32,31 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Payments
+import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Wallet
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -51,14 +64,17 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -67,11 +83,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
@@ -84,7 +106,11 @@ import com.example.application.data.remote.dto.ExpenseDto
 import com.example.application.data.remote.dto.MaintenanceBillDto
 import com.example.application.data.remote.dto.MaintenanceCategoryDto
 import com.example.application.data.remote.dto.MaintenancePaymentDto
+import com.example.application.data.remote.dto.MaintenanceWaiverDto
 import com.example.application.data.remote.dto.PaymentSettingsDto
+import com.example.application.ui.components.AppBottomNavigation
+import com.example.application.ui.components.AppRoleTheme
+import com.example.application.ui.screens.resident.saveResidentReceiptPdf
 import com.example.application.util.DashboardFormatters
 import com.example.application.viewmodel.AdminMaintenanceViewModel
 import com.example.application.viewmodel.ResidentMaintenanceViewModel
@@ -93,16 +119,21 @@ import java.math.RoundingMode
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
+import kotlin.math.max
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun AdminMaintenanceScreen(
     onBack: () -> Unit,
+    initialTab: String = "Overview",
     viewModel: AdminMaintenanceViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val data = state.data
     var dialog by remember { mutableStateOf<MaintenanceDialog?>(null) }
+    LaunchedEffect(initialTab) {
+        viewModel.setTab(initialTab)
+    }
     val bills by remember(data?.bills, state.query, state.filter) {
         derivedStateOf {
             data?.bills.orEmpty()
@@ -114,7 +145,7 @@ fun AdminMaintenanceScreen(
     Scaffold(topBar = {
         MaintenanceTopBar(
             title = "Maintenance",
-            subtitle = "Bills, payments, expenses and late fees",
+            subtitle = "Maintenance & Payments",
             navigationText = "Back",
             onNavigationClick = onBack,
             actionText = "Apply Penalty",
@@ -124,17 +155,24 @@ fun AdminMaintenanceScreen(
         PullToRefreshBox(
             isRefreshing = state.isRefreshing,
             onRefresh = { viewModel.load(refresh = true) },
-            modifier = Modifier.fillMaxSize().padding(padding)
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .background(Color(0xFFF7F9FC))
         ) {
-            LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            LazyColumn(
+                contentPadding = PaddingValues(start = 16.dp, top = 14.dp, end = 16.dp, bottom = 18.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
                 item {
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf("Bills", "Payments", "Expenses", "Settings", "Categories", "Late Fee", "Disputes").forEach {
-                            FilterChip(selected = state.activeTab == it, onClick = { viewModel.setTab(it) }, label = { Text(it) })
-                        }
+                    AdminMaintenanceTabs(
+                        selected = state.activeTab,
+                        onSelected = viewModel::setTab
+                    )
+                    state.message?.let {
+                        AdminInlineMessage(it, Color(0xFF0B56D9), Color(0xFFEAF2FF), Modifier.padding(top = 10.dp))
                     }
-                    state.message?.let { Text(it, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 8.dp)) }
-                    state.error?.let { RetryState(it, { viewModel.load(refresh = true) }, Modifier.padding(top = 8.dp)) }
+                    state.error?.let { RetryState(it, { viewModel.load(refresh = true) }, Modifier.padding(top = 10.dp)) }
                 }
                 if (state.isLoading && data == null) {
                     item { DashboardSkeleton() }
@@ -152,12 +190,12 @@ fun AdminMaintenanceScreen(
                         )
                     }
                     when (state.activeTab) {
+                        "Overview" -> item { AdminMaintenanceOverviewSection(data, viewModel) }
                         "Payments" -> item { PaymentVerificationSection(data.payments, state.query, state.filter, viewModel) }
                         "Expenses" -> expensesTab(data.expenses, viewModel, { dialog = it })
+                        "Reports" -> reportsTab(data)
                         "Settings" -> settingsTab(data.settings, viewModel, { dialog = it })
                         "Categories" -> categoriesTab(data.categories, viewModel, { dialog = it })
-                        "Late Fee" -> lateFeeTab(data.lateFeeRule, viewModel, { dialog = it })
-                        "Disputes" -> disputesTab(data.disputes)
                         else -> billsTab(bills, state.query, state.filter, viewModel, { dialog = it })
                     }
                     if (data.warnings.isNotEmpty()) {
@@ -174,28 +212,34 @@ fun AdminMaintenanceScreen(
 @Composable
 fun ResidentMaintenanceScreen(
     onBack: () -> Unit,
+    onPayBill: (String) -> Unit = {},
+    onPaymentHistory: () -> Unit = {},
+    onHome: () -> Unit = {},
+    onNotices: () -> Unit = {},
+    onProfile: () -> Unit = {},
     viewModel: ResidentMaintenanceViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val data = state.data
-    var dialog by remember { mutableStateOf<ResidentDialog?>(null) }
-    val bills by remember(data?.bills, state.query, state.filter) {
-        derivedStateOf {
-            data?.bills.orEmpty()
-                .filter { it.matchesBill(state.query) }
-                .filter { state.filter == "All" || (it.paymentStatus ?: it.status) == state.filter }
-        }
-    }
+    val context = LocalContext.current
     Scaffold(topBar = {
-        MaintenanceTopBar(
-            title = "My Maintenance",
-            subtitle = "Bills, payments and disputes",
-            navigationText = "Back",
-            onNavigationClick = onBack
+        ResidentMaintenanceTopBar(onBack = onBack, onPaymentHistory = onPaymentHistory)
+    }, bottomBar = {
+        ResidentMaintenanceBottomBar(
+            onHome = onHome,
+            onNotices = onNotices,
+            onPayments = {},
+            onProfile = onProfile
         )
     }) { padding ->
         PullToRefreshBox(isRefreshing = state.isRefreshing, onRefresh = { viewModel.load(refresh = true) }, modifier = Modifier.fillMaxSize().padding(padding)) {
-            LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            LazyColumn(
+                contentPadding = PaddingValues(start = 16.dp, top = 14.dp, end = 16.dp, bottom = 18.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0xFFF7F9FC))
+            ) {
                 item {
                     state.message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
                     state.error?.let { RetryState(it, { viewModel.load(refresh = true) }) }
@@ -207,44 +251,439 @@ fun ResidentMaintenanceScreen(
                 } else {
                     val pending = data.bills.filter { !(it.paymentStatus ?: it.status).isApprovedStatus() }
                     val paid = data.bills.filter { (it.paymentStatus ?: it.status).isApprovedStatus() }
+                    val firstPayable = data.bills.firstOrNull { (it.paymentStatus ?: it.status).isResidentPayableStatus() }
                     item {
-                        MetricGrid(
-                            listOf(
-                                Triple("Outstanding", DashboardFormatters.money(pending.fold(0.toBigDecimal()) { sum, bill -> sum + (bill.remainingAmount ?: bill.totalAmount).toMoneyDecimal() }), "${pending.size} bills"),
-                                Triple("Paid", DashboardFormatters.money(paid.fold(0.toBigDecimal()) { sum, bill -> sum + (bill.paidAmount ?: bill.totalAmount).toMoneyDecimal() }), "${paid.size} bills"),
-                                Triple("Under Review", data.bills.count { (it.paymentStatus ?: it.status).isVerificationPendingStatus() }.toString(), "payment proofs"),
-                                Triple("Total Bills", data.bills.size.toString(), "all time")
-                            )
+                        ResidentMaintenanceOverviewCard(
+                            totalOutstanding = pending.fold(BigDecimal.ZERO) { sum, bill -> sum + (bill.remainingAmount ?: bill.totalAmount ?: bill.amount).toMoneyDecimal() },
+                            nextDueDate = data.bills.nextDueDateLabel(),
+                            pendingCount = pending.size,
+                            paidThisMonth = paidThisMonthAmount(paid)
                         )
                     }
+                    item { ResidentMaintenanceTrendCard(data.bills) }
                     item {
-                        SectionCard("Payment Instructions") {
-                            KeyValue("Society", data.paymentSettings?.societyName ?: "Society Payment")
-                            KeyValue("UPI ID", data.paymentSettings?.paymentUpiId ?: "Not configured")
-                            Text(data.paymentSettings?.paymentNote ?: "Complete payment and submit transaction details for admin approval.")
-                            PaymentQrBox(data.paymentSettings)
+                        Text("Current Bills", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    }
+                    if (data.bills.isEmpty()) {
+                        item { ResidentMaintenanceEmptyCard() }
+                    } else {
+                        items(data.bills, key = { it.id ?: "${it.month}-${it.year}" }) { bill ->
+                            ResidentMaintenanceBillCard(
+                                bill = bill,
+                                onPay = { bill.id?.let(onPayBill) },
+                                onDownloadReceipt = { saveResidentReceiptPdf(context, bill) },
+                                onViewStatus = onPaymentHistory
+                            )
+                        }
+                    }
+                    item { ResidentMaintenanceEmptyCard() }
+                    item {
+                        ResidentUpiCard(paymentSettings = data.paymentSettings)
+                    }
+                    item {
+                        Button(
+                            onClick = { firstPayable?.id?.let(onPayBill) },
+                            enabled = firstPayable?.id != null,
+                            modifier = Modifier.fillMaxWidth().height(54.dp),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Icon(Icons.Filled.OpenInNew, contentDescription = null)
+                            Spacer(Modifier.width(10.dp))
+                            Text("Continue to Payment")
                         }
                     }
                     item {
-                        SearchAndFilter(state.query, viewModel::setQuery, state.filter, viewModel::setFilter)
-                    }
-                    if (bills.isEmpty()) {
-                        item { EmptyState("No bills found", "Try changing the filter.") }
-                    } else {
-                        items(bills, key = { it.id ?: "${it.month}-${it.year}" }) { bill ->
-                            BillCard(
-                                bill = bill,
-                                admin = false,
-                                onPay = { dialog = ResidentDialog.Payment(bill) },
-                                onDispute = { dialog = ResidentDialog.Dispute(bill) }
-                            )
+                        OutlinedButton(
+                            onClick = onPaymentHistory,
+                            modifier = Modifier.fillMaxWidth().height(54.dp),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Icon(Icons.Filled.Download, contentDescription = null)
+                            Spacer(Modifier.width(10.dp))
+                            Text("View Payment History")
                         }
                     }
                 }
             }
         }
     }
-    ResidentDialogHost(dialog, paymentSettings = data?.paymentSettings, onDismiss = { dialog = null }, viewModel = viewModel)
+}
+
+@Composable
+private fun ResidentMaintenanceTopBar(onBack: () -> Unit, onPaymentHistory: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(horizontal = 8.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        IconButton(onClick = onBack) {
+            Icon(Icons.Filled.ArrowBack, contentDescription = "Back", tint = Color(0xFF0B56D9))
+        }
+        Text(
+            "Maintenance",
+            modifier = Modifier.weight(1f).padding(start = 8.dp),
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            color = Color(0xFF101828)
+        )
+        IconButton(onClick = onPaymentHistory) {
+            Icon(Icons.Filled.Download, contentDescription = null, tint = Color(0xFF0B56D9))
+        }
+    }
+}
+
+@Composable
+private fun ResidentMaintenanceOverviewCard(
+    totalOutstanding: BigDecimal,
+    nextDueDate: String,
+    pendingCount: Int,
+    paidThisMonth: BigDecimal
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White)
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Text("Maintenance Overview", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                ResidentMetricItem(
+                    label = "Total Outstanding",
+                    value = DashboardFormatters.money(totalOutstanding),
+                    tint = Color(0xFFE31B23),
+                    bg = Color(0xFFFFE4E6),
+                    modifier = Modifier.weight(1f)
+                )
+                ResidentMetricItem(
+                    label = "Next Due Date",
+                    value = nextDueDate,
+                    tint = Color(0xFF0B56D9),
+                    bg = Color(0xFFE8F0FF),
+                    modifier = Modifier.weight(1f)
+                )
+                ResidentMetricItem(
+                    label = "Pending Bills Count",
+                    value = pendingCount.toString(),
+                    tint = Color(0xFF6D28D9),
+                    bg = Color(0xFFF0E7FF),
+                    modifier = Modifier.weight(1f)
+                )
+                ResidentMetricItem(
+                    label = "Paid This Month",
+                    value = DashboardFormatters.money(paidThisMonth),
+                    tint = Color(0xFF087A2E),
+                    bg = Color(0xFFE0F7E8),
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ResidentMaintenanceTrendCard(bills: List<MaintenanceBillDto>) {
+    val points = remember(bills) {
+        bills
+            .sortedWith(compareBy<MaintenanceBillDto>({ it.year?.toIntOrNull() ?: 0 }, { maintenanceMonthIndex(it.month) }))
+            .takeLast(6)
+            .map { bill ->
+                val label = bill.month?.take(3)?.replaceFirstChar { it.uppercase() } ?: "-"
+                label to (bill.totalAmount ?: bill.amount).toMoneyDecimal().toFloat()
+            }
+    }
+    if (points.isEmpty()) return
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White)
+    ) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Monthly maintenance trend", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text("Compare your last ${points.size} bill${if (points.size == 1) "" else "s"} at a glance", color = Color(0xFF667085), style = MaterialTheme.typography.bodySmall)
+            val maximum = max(points.maxOfOrNull { it.second } ?: 0f, 1f)
+            Canvas(modifier = Modifier.fillMaxWidth().height(150.dp).padding(top = 12.dp)) {
+                val left = 8.dp.toPx()
+                val right = size.width - 8.dp.toPx()
+                val top = 8.dp.toPx()
+                val bottom = size.height - 12.dp.toPx()
+                val graphHeight = bottom - top
+                val step = if (points.size > 1) (right - left) / (points.size - 1) else 0f
+                val path = Path()
+
+                repeat(3) { index ->
+                    val y = top + graphHeight * index / 2f
+                    drawLine(Color(0xFFE4E7EC), start = androidx.compose.ui.geometry.Offset(left, y), end = androidx.compose.ui.geometry.Offset(right, y), strokeWidth = 1.dp.toPx())
+                }
+                points.forEachIndexed { index, point ->
+                    val x = if (points.size == 1) size.width / 2f else left + step * index
+                    val y = bottom - (point.second / maximum) * graphHeight
+                    if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                }
+                drawPath(path, color = Color(0xFF0B56D9), style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round))
+                points.forEachIndexed { index, point ->
+                    val x = if (points.size == 1) size.width / 2f else left + step * index
+                    val y = bottom - (point.second / maximum) * graphHeight
+                    drawCircle(Color.White, radius = 6.dp.toPx(), center = androidx.compose.ui.geometry.Offset(x, y))
+                    drawCircle(Color(0xFF0B56D9), radius = 4.dp.toPx(), center = androidx.compose.ui.geometry.Offset(x, y))
+                }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                points.forEach { (label, _) ->
+                    Text(label, style = MaterialTheme.typography.labelSmall, color = Color(0xFF667085))
+                }
+            }
+            Text(
+                "Latest: ${DashboardFormatters.money(points.last().second.toBigDecimal())}",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = Color(0xFF0B56D9)
+            )
+        }
+    }
+}
+
+private fun maintenanceMonthIndex(month: String?): Int {
+    val normalized = month?.trim()?.lowercase().orEmpty()
+    if (normalized.isEmpty()) return 0
+    return normalized.toIntOrNull()?.coerceIn(1, 12)
+        ?: listOf("january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december")
+            .indexOfFirst { it.startsWith(normalized.take(3)) }
+            .takeIf { it >= 0 }
+            ?.plus(1)
+        ?: 0
+}
+
+@Composable
+private fun ResidentMetricItem(
+    label: String,
+    value: String,
+    tint: Color,
+    bg: Color,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(7.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(50.dp)
+                .clip(CircleShape)
+                .background(bg),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(Icons.Filled.Payments, contentDescription = null, tint = tint)
+        }
+        Text(label, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center, color = Color(0xFF101828))
+        Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, color = tint)
+    }
+}
+
+@Composable
+private fun ResidentMaintenanceBillCard(
+    bill: MaintenanceBillDto,
+    onPay: () -> Unit,
+    onDownloadReceipt: () -> Unit,
+    onViewStatus: () -> Unit
+) {
+    val status = bill.paymentStatus ?: bill.latestPaymentStatus ?: bill.status
+    val canPay = status.isResidentPayableStatus()
+    val paid = status.isApprovedStatus()
+    val verifying = status.isVerificationPendingStatus()
+    val overdue = isBillOverdue(bill) && canPay
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White)
+    ) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(62.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFFEAF2FF)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Filled.Payments, contentDescription = null, tint = Color(0xFF0B56D9), modifier = Modifier.size(30.dp))
+            }
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(bill.displayTitle(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color(0xFF101828))
+                Text("Due ${DashboardFormatters.date(bill.dueDate ?: bill.maintenanceDueDate)}", color = Color(0xFF667085))
+                if (overdue) Text("Overdue", color = Color(0xFFE31B23), fontWeight = FontWeight.SemiBold)
+            }
+            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(DashboardFormatters.money((bill.remainingAmount ?: bill.totalAmount ?: bill.amount).toMoneyDecimal()), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                ResidentStatusBadge(
+                    text = when {
+                        paid -> "Paid"
+                        verifying -> "Verification Pending"
+                        else -> "Pending"
+                    },
+                    fg = when {
+                        paid -> Color(0xFF087A2E)
+                        verifying -> Color(0xFF174EA6)
+                        else -> Color(0xFFE86D00)
+                    },
+                    bg = when {
+                        paid -> Color(0xFFDDF8E7)
+                        verifying -> Color(0xFFE6F0FF)
+                        else -> Color(0xFFFFE8C7)
+                    }
+                )
+                when {
+                    canPay -> Button(onClick = onPay, shape = RoundedCornerShape(10.dp)) {
+                        Icon(Icons.Filled.Payments, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Pay Now")
+                    }
+                    paid -> OutlinedButton(onClick = onDownloadReceipt, shape = RoundedCornerShape(10.dp)) {
+                        Icon(Icons.Filled.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Download receipt")
+                    }
+                    verifying -> OutlinedButton(onClick = onViewStatus, shape = RoundedCornerShape(10.dp)) {
+                        Icon(Icons.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Status")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ResidentStatusBadge(text: String, fg: Color, bg: Color) {
+    Text(
+        text,
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(bg)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        color = fg,
+        style = MaterialTheme.typography.labelLarge,
+        fontWeight = FontWeight.SemiBold
+    )
+}
+
+@Composable
+private fun ResidentMaintenanceEmptyCard() {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White)
+    ) {
+        Row(
+            modifier = Modifier.padding(18.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(18.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(76.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFFEAF2FF)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Filled.Download, contentDescription = null, tint = Color(0xFF0B56D9), modifier = Modifier.size(34.dp))
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("No maintenance dues found.", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text("You're all caught up! Thank you.", color = Color(0xFF667085))
+            }
+        }
+    }
+}
+
+@Composable
+private fun ResidentUpiCard(paymentSettings: PaymentSettingsDto?) {
+    val context = LocalContext.current
+    val upiId = paymentSettings?.paymentUpiId?.ifBlank { null } ?: "8999823244@upi"
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Pay Using UPI", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White)
+        ) {
+            Row(
+                modifier = Modifier.padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Society UPI ID", color = Color(0xFF101828))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(upiId, color = Color(0xFF0B56D9), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        IconButton(onClick = { copyText(context, "UPI ID", upiId) }) {
+                            Icon(Icons.Filled.ContentCopy, contentDescription = "Copy UPI ID", tint = Color(0xFF0B56D9))
+                        }
+                    }
+                    Text("Secure. Fast. Easy.\nPay directly using any UPI app.", color = Color(0xFF667085), style = MaterialTheme.typography.bodySmall)
+                }
+                Box(
+                    modifier = Modifier
+                        .size(116.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .border(1.dp, Color(0xFFE4E7EC), RoundedCornerShape(12.dp))
+                        .background(Color.White)
+                        .padding(8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    val qrImage = paymentSettings?.paymentQrImage?.ifBlank { null }
+                    if (qrImage != null) {
+                        AsyncImage(
+                            model = fullMediaUrl(qrImage),
+                            contentDescription = "Society payment QR code",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Fit
+                        )
+                    } else {
+                        Image(
+                            painter = painterResource(R.drawable.my_payment_qr),
+                            contentDescription = "Society payment QR code",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Fit
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ResidentMaintenanceBottomBar(
+    onHome: () -> Unit,
+    onNotices: () -> Unit,
+    onPayments: () -> Unit,
+    onProfile: () -> Unit
+) {
+    AppBottomNavigation(
+        role = AppRoleTheme.Resident,
+        selected = "Payments",
+        items = listOf("Home", "Notices", "Payments", "Profile")
+    ) { item ->
+        when (item) {
+            "Home" -> onHome()
+            "Notices" -> onNotices()
+            "Payments" -> onPayments()
+            "Profile" -> onProfile()
+        }
+    }
 }
 
 private fun androidx.compose.foundation.lazy.LazyListScope.billsTab(
@@ -256,8 +695,44 @@ private fun androidx.compose.foundation.lazy.LazyListScope.billsTab(
 ) {
     item {
         SearchAndFilter(query, viewModel::setQuery, filter, viewModel::setFilter)
-        Button(onClick = { openDialog(MaintenanceDialog.Generate) }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) { Text("Generate Monthly Bills") }
-        Button(onClick = { openDialog(MaintenanceDialog.ManualBill) }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) { Text("Create Manual Bill") }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Button(
+                onClick = { openDialog(MaintenanceDialog.Generate) },
+                modifier = Modifier
+                    .weight(1f)
+                    .height(54.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0B56D9))
+            ) {
+                Icon(Icons.Filled.ReceiptLong, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Generate Monthly Bills")
+            }
+            Button(
+                onClick = { openDialog(MaintenanceDialog.ManualBill) },
+                modifier = Modifier
+                    .weight(1f)
+                    .height(54.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0B56D9))
+            ) {
+                Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Create Manual Bill")
+            }
+        }
+        Text(
+            "Bills",
+            modifier = Modifier.padding(top = 18.dp),
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            color = Color(0xFF101828)
+        )
     }
     if (bills.isEmpty()) item { EmptyState("No bills found", "Generate bills or change filters.") }
     else items(bills, key = { it.id ?: "${it.month}-${it.year}" }) { bill ->
@@ -267,9 +742,57 @@ private fun androidx.compose.foundation.lazy.LazyListScope.billsTab(
             onPay = { openDialog(MaintenanceDialog.MarkPaid(bill)) },
             onDispute = {},
             onReminder = { bill.id?.let(viewModel::sendReminder) },
-            onWaive = { bill.id?.let(viewModel::waiveLateFee) },
-            onDelete = { bill.id?.let(viewModel::deleteBill) }
+            onWaive = { openDialog(MaintenanceDialog.ApplyWaiver(bill)) },
+            onDelete = { openDialog(MaintenanceDialog.CancelBill(bill)) }
         )
+    }
+}
+
+@Composable
+private fun AdminMaintenanceOverviewSection(
+    data: com.example.application.data.repository.AdminMaintenanceData,
+    viewModel: AdminMaintenanceViewModel
+) {
+    val summary = data.adminSummary
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        SectionCard("Overview", "Live totals from backend maintenance and payment records") {
+            MetricGrid(
+                listOf(
+                    Triple("Generated", DashboardFormatters.money(summary?.totalGenerated.toMoneyDecimal()), "all bills"),
+                    Triple("Collected", DashboardFormatters.money(summary?.totalCollected.toMoneyDecimal()), "${summary?.collectionPercentage ?: 0}% collection"),
+                    Triple("Outstanding", DashboardFormatters.money(summary?.totalOutstanding.toMoneyDecimal()), "${summary?.pendingBills ?: 0} pending"),
+                    Triple("Overdue", (summary?.overdueBills ?: 0).toString(), "residents to follow up"),
+                    Triple("Verification", (summary?.verificationPending ?: 0).toString(), "pending reviews"),
+                    Triple("Waived", DashboardFormatters.money(summary?.totalWaivedAmount.toMoneyDecimal()), "approved waivers"),
+                    Triple("Penalty", DashboardFormatters.money(summary?.totalPenaltyCollected.toMoneyDecimal()), "late fees"),
+                    Triple("This Month", DashboardFormatters.money(summary?.currentMonthCollection.toMoneyDecimal()), "collection")
+                )
+            )
+        }
+        SectionCard("Pending Payment Verifications") {
+            val pending = data.payments.filter { it.paymentStatus.normalizePaymentStatus() == "PENDING_VERIFICATION" }.take(3)
+            if (pending.isEmpty()) Text("No pending payment submissions.")
+            pending.forEach { payment ->
+                KeyValue("${payment.residentName ?: "Resident"} • Flat ${payment.flatNo ?: "-"}", DashboardFormatters.money(payment.amount.toMoneyDecimal()))
+            }
+        }
+        SectionCard("Top Outstanding Flats") {
+            val outstanding = summary?.topOutstandingFlats.orEmpty().take(5).ifEmpty {
+                data.bills.filter { !(it.paymentStatus ?: it.status).isApprovedStatus() }
+                    .sortedByDescending { (it.remainingAmount ?: it.totalAmount).toMoneyDecimal() }
+                    .take(5)
+            }
+            if (outstanding.isEmpty()) Text("No outstanding dues.")
+            outstanding.forEach { bill ->
+                KeyValue("Flat ${bill.flatNo ?: "-"} • ${bill.residentName ?: "Resident"}", DashboardFormatters.money((bill.remainingAmount ?: bill.totalAmount).toMoneyDecimal()))
+            }
+        }
+        SectionCard("Quick Actions") {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(onClick = { viewModel.applyPenalty() }, modifier = Modifier.weight(1f)) { Text("Recalculate Penalties") }
+                OutlinedButton(onClick = { viewModel.load(refresh = true) }, modifier = Modifier.weight(1f)) { Text("Refresh") }
+            }
+        }
     }
 }
 
@@ -325,7 +848,7 @@ private fun PaymentVerificationSection(
                 PaymentVerificationCard(
                     payment = payment,
                     onOpenScreenshot = { screenshotPayment = payment },
-                    onApprove = { payment.id?.let { viewModel.updatePayment(it, "APPROVED") } },
+                    onApprove = { payment.id?.let { viewModel.updatePayment(it, "Paid") } },
                     onReject = { rejectPayment = payment },
                     onViewReceipt = { receiptPayment = payment },
                     onDownloadReceipt = { saveReceiptPdf(context, payment) },
@@ -377,7 +900,7 @@ private fun PaymentVerificationSection(
             confirmButton = {
                 Button(
                     onClick = {
-                        payment.id?.let { viewModel.updatePayment(it, "REJECTED", reason.ifBlank { "Payment proof rejected by admin" }) }
+                        payment.id?.let { viewModel.updatePayment(it, "Rejected", reason.ifBlank { "Payment proof rejected by admin" }) }
                         rejectPayment = null
                     },
                     enabled = reason.isNotBlank()
@@ -528,33 +1051,189 @@ private fun BillCard(
     onWaive: () -> Unit = {},
     onDelete: () -> Unit = {}
 ) {
+    val context = LocalContext.current
     val status = bill.paymentStatus ?: bill.status ?: "Pending"
     val canSubmitPayment = !admin && status.isResidentPayableStatus()
     val isVerificationPending = !admin && status.isVerificationPendingStatus()
-    ManagementCard {
-        Text(bill.title ?: "Maintenance Bill", fontWeight = FontWeight.Bold)
-        Text("${bill.residentName ?: "My Bill"} • Flat ${bill.flatNo ?: "-"}")
-        Text("Month ${bill.month ?: "-"} / ${bill.year ?: "-"} • Due ${DashboardFormatters.date(bill.dueDate ?: bill.maintenanceDueDate)}")
-        KeyValue("Base amount", DashboardFormatters.money(bill.amount.toMoneyDecimal()))
-        KeyValue("Late fee", DashboardFormatters.money((bill.lateFee ?: bill.penaltyAmount).toMoneyDecimal()))
-        KeyValue("Total", DashboardFormatters.money(bill.totalAmount.toMoneyDecimal()))
-        KeyValue("Paid", DashboardFormatters.money(bill.paidAmount.toMoneyDecimal()))
-        KeyValue("Remaining", DashboardFormatters.money((bill.remainingAmount ?: bill.totalAmount).toMoneyDecimal()))
-        Text("Status: $status")
-        if (isVerificationPending) {
-            Text(
-                "Your payment proof has been submitted and is waiting for admin verification.",
-                color = MaterialTheme.colorScheme.primary,
-                style = MaterialTheme.typography.bodySmall
-            )
+    val paid = status.isApprovedStatus()
+    val verifying = status.isVerificationPendingStatus()
+    val statusColors = when {
+        paid -> Triple("Paid", Color(0xFF087A2E), Color(0xFFDDF8E7))
+        verifying -> Triple("Under Review", Color(0xFF174EA6), Color(0xFFE6F0FF))
+        status.equals("Overdue", true) || isBillOverdue(bill) -> Triple("Overdue", Color(0xFFE31B23), Color(0xFFFFE4E6))
+        else -> Triple(status.ifBlank { "Pending" }, Color(0xFFE86D00), Color(0xFFFFE8C7))
+    }
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text(
+                        bill.title ?: "Maintenance Bill",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF101828)
+                    )
+                    Text(
+                        "${bill.residentName ?: "My Bill"} • Flat ${bill.flatNo ?: "-"}",
+                        color = Color(0xFF475467),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        "Month ${bill.month ?: "-"} / ${bill.year ?: "-"} • Due ${DashboardFormatters.date(bill.dueDate ?: bill.maintenanceDueDate)}",
+                        color = Color(0xFF667085),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                AdminStatusPill(statusColors.first, statusColors.second, statusColors.third)
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                AdminAmountRow("Base amount", DashboardFormatters.money(bill.amount.toMoneyDecimal()))
+                AdminAmountRow("Late fee", DashboardFormatters.money((bill.lateFee ?: bill.penaltyAmount).toMoneyDecimal()))
+                AdminAmountRow("Total", DashboardFormatters.money(bill.totalAmount.toMoneyDecimal()), strong = true)
+                AdminAmountRow("Paid", DashboardFormatters.money(bill.paidAmount.toMoneyDecimal()), valueColor = if (paid) Color(0xFF087A2E) else Color(0xFF101828))
+                AdminAmountRow(
+                    "Remaining",
+                    DashboardFormatters.money((bill.remainingAmount ?: bill.totalAmount).toMoneyDecimal()),
+                    strong = true,
+                    valueColor = if (paid) Color(0xFF087A2E) else Color(0xFFE31B23)
+                )
+            }
+
+            if (isVerificationPending) {
+                AdminInlineMessage(
+                    "Payment proof is waiting for admin verification.",
+                    Color(0xFF174EA6),
+                    Color(0xFFE6F0FF)
+                )
+            }
+
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (admin && !paid) {
+                    OutlinedButton(onClick = onPay, shape = RoundedCornerShape(10.dp)) {
+                        Icon(Icons.Filled.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Mark Paid")
+                    }
+                    OutlinedButton(onClick = onReminder, shape = RoundedCornerShape(10.dp)) {
+                        Icon(Icons.Filled.Notifications, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Reminder")
+                    }
+                    OutlinedButton(onClick = onWaive, shape = RoundedCornerShape(10.dp)) {
+                        Icon(Icons.Filled.Payments, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Waive Late Fee")
+                    }
+                }
+                if (canSubmitPayment) Button(onClick = onPay, shape = RoundedCornerShape(10.dp)) {
+                    Icon(Icons.Filled.Payments, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Pay Now")
+                }
+                if (!admin && !paid && !isVerificationPending) TextButton(onClick = onDispute) { Text("Dispute") }
+                if (admin && paid) {
+                    OutlinedButton(onClick = { saveAdminBillReceiptPdf(context, bill) }, shape = RoundedCornerShape(10.dp)) {
+                        Icon(Icons.Filled.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Receipt")
+                    }
+                }
+                if (admin) {
+                    OutlinedButton(onClick = onDelete, shape = RoundedCornerShape(10.dp)) {
+                        Icon(Icons.Filled.Delete, contentDescription = "Delete", tint = Color(0xFFE31B23), modifier = Modifier.size(18.dp))
+                    }
+                }
+            }
         }
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (admin && !status.isApprovedStatus()) Button(onClick = onPay) { Text("Mark Paid") }
-            if (canSubmitPayment) Button(onClick = onPay) { Text("Pay Now") }
-            if (!admin && !status.isApprovedStatus() && !isVerificationPending) TextButton(onClick = onDispute) { Text("Dispute") }
-            if (admin && !status.isApprovedStatus()) TextButton(onClick = onReminder) { Text("Reminder") }
-            if (admin && !status.isApprovedStatus()) TextButton(onClick = onWaive) { Text("Waive Late Fee") }
-            if (admin) TextButton(onClick = onDelete) { Text("Delete") }
+    }
+}
+
+private fun androidx.compose.foundation.lazy.LazyListScope.transactionsTab(payments: List<MaintenancePaymentDto>) {
+    if (payments.isEmpty()) item { EmptyState("No transactions", "Approved and submitted payments will appear here.") }
+    else items(payments, key = { it.id ?: it.transactionId.orEmpty() }) { payment ->
+        ManagementCard {
+            Text(payment.receiptNumber ?: payment.transactionId ?: "Transaction", fontWeight = FontWeight.Bold)
+            KeyValue("Resident", "${payment.residentName ?: "-"} • Flat ${payment.flatNo ?: "-"}")
+            KeyValue("Amount", DashboardFormatters.money(payment.amount.toMoneyDecimal()))
+            KeyValue("Method", payment.paymentMethod ?: "-")
+            KeyValue("Status", friendlyPaymentStatus(payment.paymentStatus))
+            KeyValue("Payment date", DashboardFormatters.date(payment.paidAt ?: payment.createdAt))
+        }
+    }
+}
+
+private fun androidx.compose.foundation.lazy.LazyListScope.penaltiesTab(
+    bills: List<MaintenanceBillDto>,
+    rule: com.example.application.data.remote.dto.LateFeeRuleDto?,
+    viewModel: AdminMaintenanceViewModel,
+    openDialog: (MaintenanceDialog) -> Unit
+) {
+    lateFeeTab(rule, viewModel, openDialog)
+    item {
+        SectionCard("Penalty Actions", "Apply or waive bill-level penalties with audit history") {
+            Button(onClick = { viewModel.applyPenalty() }, modifier = Modifier.fillMaxWidth()) { Text("Recalculate All Penalties") }
+        }
+    }
+    val penaltyBills = bills.filter { (it.penaltyAmount ?: it.lateFee).toMoneyDecimal() > BigDecimal.ZERO }
+    if (penaltyBills.isEmpty()) item { EmptyState("No penalty bills", "Bills with penalties will appear here.") }
+    else items(penaltyBills.take(20), key = { it.id ?: it.flatNo.orEmpty() }) { bill ->
+        ManagementCard {
+            Text(bill.displayTitle(), fontWeight = FontWeight.Bold)
+            KeyValue("Flat", bill.flatNo ?: "-")
+            KeyValue("Penalty", DashboardFormatters.money((bill.penaltyAmount ?: bill.lateFee).toMoneyDecimal()))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = { openDialog(MaintenanceDialog.ApplyPenalty(bill)) }) { Text("Add Penalty") }
+                TextButton(onClick = { bill.id?.let(viewModel::waiveLateFee) }) { Text("Waive Penalty") }
+            }
+        }
+    }
+}
+
+private fun androidx.compose.foundation.lazy.LazyListScope.waiversTab(
+    waivers: List<MaintenanceWaiverDto>,
+    viewModel: AdminMaintenanceViewModel,
+    openDialog: (MaintenanceDialog) -> Unit
+) {
+    item {
+        SectionCard("Maintenance Waivers", "Every waiver keeps the original bill amount and audit trail") {
+            Button(onClick = { openDialog(MaintenanceDialog.ApplyWaiver(null)) }, modifier = Modifier.fillMaxWidth()) { Text("Apply Waiver") }
+        }
+    }
+    if (waivers.isEmpty()) item { EmptyState("No waivers", "Approved waivers and write-offs will appear here.") }
+    else items(waivers, key = { it.id ?: "${it.billId}-${it.createdAt}" }) { waiver ->
+        ManagementCard {
+            Text(waiver.waiverType ?: "Waiver", fontWeight = FontWeight.Bold)
+            KeyValue("Bill", waiver.billNumber ?: waiver.billId ?: "-")
+            KeyValue("Resident", "${waiver.residentName ?: "-"} • Flat ${waiver.flatNo ?: "-"}")
+            KeyValue("Amount", DashboardFormatters.money(waiver.waiverAmount.toMoneyDecimal()))
+            KeyValue("Reason", waiver.reason ?: "-")
+            KeyValue("Date", DashboardFormatters.date(waiver.createdAt))
+        }
+    }
+}
+
+private fun androidx.compose.foundation.lazy.LazyListScope.reportsTab(data: com.example.application.data.repository.AdminMaintenanceData) {
+    item {
+        SectionCard("Reports", "Use filters on bill and transaction tabs for drill-down, then export from backend reports when needed") {
+            KeyValue("Monthly Collection", DashboardFormatters.money(data.adminSummary?.currentMonthCollection.toMoneyDecimal()))
+            KeyValue("Previous Month", DashboardFormatters.money(data.adminSummary?.previousMonthCollection.toMoneyDecimal()))
+            KeyValue("Outstanding", DashboardFormatters.money(data.adminSummary?.totalOutstanding.toMoneyDecimal()))
+            KeyValue("Waived", DashboardFormatters.money(data.adminSummary?.totalWaivedAmount.toMoneyDecimal()))
+        }
+    }
+    item {
+        SectionCard("Payment Method Breakdown") {
+            val methods = data.adminSummary?.paymentMethodBreakdown.orEmpty()
+            if (methods.isEmpty()) Text("No transaction breakdown available.")
+            methods.forEach { row ->
+                KeyValue("${row.method ?: "Unknown"} (${row.count ?: "0"})", DashboardFormatters.money(row.amount.toMoneyDecimal()))
+            }
         }
     }
 }
@@ -562,8 +1241,16 @@ private fun BillCard(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SearchAndFilter(query: String, onQuery: (String) -> Unit, filter: String, onFilter: (String) -> Unit) {
-    OutlinedTextField(query, onQuery, modifier = Modifier.fillMaxWidth(), label = { Text("Search bills") }, singleLine = true)
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
+    OutlinedTextField(
+        query,
+        onQuery,
+        modifier = Modifier.fillMaxWidth(),
+        label = { Text("Search bills") },
+        leadingIcon = { Icon(Icons.Filled.FilterList, contentDescription = null, tint = Color(0xFF667085)) },
+        singleLine = true,
+        shape = RoundedCornerShape(12.dp)
+    )
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 10.dp)) {
         listOf("All", "Pending", "Paid", "Partial", "Overdue", "Under Review", "Rejected").forEach {
             FilterChip(selected = filter == it, onClick = { onFilter(it) }, label = { Text(it) })
         }
@@ -581,6 +1268,9 @@ private sealed interface MaintenanceDialog {
     data object Generate : MaintenanceDialog
     data object ManualBill : MaintenanceDialog
     data class MarkPaid(val bill: MaintenanceBillDto) : MaintenanceDialog
+    data class ApplyPenalty(val bill: MaintenanceBillDto) : MaintenanceDialog
+    data class ApplyWaiver(val bill: MaintenanceBillDto?) : MaintenanceDialog
+    data class CancelBill(val bill: MaintenanceBillDto) : MaintenanceDialog
     data object Settings : MaintenanceDialog
     data object LateFee : MaintenanceDialog
     data class Category(val category: MaintenanceCategoryDto?) : MaintenanceDialog
@@ -621,12 +1311,58 @@ private fun MaintenanceDialogHost(dialog: MaintenanceDialog?, onDismiss: () -> U
         }
         is MaintenanceDialog.MarkPaid -> SimpleFormDialog("Mark Paid", onDismiss) {
             var amount by remember { mutableStateOf((dialog.bill.remainingAmount ?: dialog.bill.totalAmount).orEmpty()) }
-            var method by remember { mutableStateOf("Manual") }
-            var txn by remember { mutableStateOf("ADMIN-${System.currentTimeMillis()}") }
+            var paymentDate by remember { mutableStateOf(LocalDate.now().toString()) }
             BasicAppTextField(amount, { amount = it }, "Paid amount")
-            BasicAppTextField(method, { method = it }, "Payment method")
-            BasicAppTextField(txn, { txn = it }, "Transaction ID")
-            Button(onClick = { dialog.bill.id?.let { viewModel.markPaid(it, amount, method, txn, "Marked paid by admin") }; onDismiss() }, modifier = Modifier.fillMaxWidth()) { Text("Save Payment") }
+            BasicAppTextField(paymentDate, { paymentDate = it }, "Payment date YYYY-MM-DD")
+            Button(onClick = { dialog.bill.id?.let { viewModel.markPaid(it, amount, paymentDate) }; onDismiss() }, modifier = Modifier.fillMaxWidth()) { Text("Save Payment") }
+        }
+        is MaintenanceDialog.ApplyPenalty -> SimpleFormDialog("Apply Penalty", onDismiss) {
+            var amount by remember { mutableStateOf("") }
+            var reason by remember { mutableStateOf("") }
+            BasicAppTextField(amount, { amount = it }, "Penalty amount")
+            BasicAppTextField(reason, { reason = it }, "Reason")
+            Button(
+                onClick = {
+                    dialog.bill.id?.let { viewModel.applyPenaltyToBill(it, amount, reason.ifBlank { null }) }
+                    onDismiss()
+                },
+                enabled = amount.toMoneyDecimal() > BigDecimal.ZERO,
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Apply Penalty") }
+        }
+        is MaintenanceDialog.ApplyWaiver -> SimpleFormDialog("Apply Waiver", onDismiss) {
+            var billId by remember { mutableStateOf(dialog.bill?.id.orEmpty()) }
+            var amount by remember { mutableStateOf("") }
+            var reason by remember { mutableStateOf("") }
+            var type by remember { mutableStateOf("Partial waiver") }
+            var reference by remember { mutableStateOf("") }
+            BasicAppTextField(billId, { billId = it }, "Bill ID")
+            BasicAppTextField(amount, { amount = it }, "Waiver amount")
+            BasicAppTextField(type, { type = it }, "Waiver type")
+            BasicAppTextField(reason, { reason = it }, "Mandatory reason")
+            BasicAppTextField(reference, { reference = it }, "Approval reference")
+            Button(
+                onClick = {
+                    viewModel.applyWaiver(billId, amount, reason, type, reference.ifBlank { null }, LocalDate.now().toString(), null)
+                    onDismiss()
+                },
+                enabled = billId.isNotBlank() && reason.isNotBlank() && amount.toMoneyDecimal() > BigDecimal.ZERO,
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Apply Waiver") }
+        }
+        is MaintenanceDialog.CancelBill -> SimpleFormDialog("Cancel Bill", onDismiss) {
+            var reason by remember { mutableStateOf("") }
+            Text("This only cancels unpaid bills and keeps the record for audit.")
+            BasicAppTextField(reason, { reason = it }, "Cancellation reason")
+            Button(
+                onClick = {
+                    dialog.bill.id?.let { viewModel.cancelBill(it, reason) }
+                    onDismiss()
+                },
+                enabled = reason.isNotBlank(),
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+            ) { Text("Cancel Bill") }
         }
         MaintenanceDialog.Settings -> SimpleFormDialog("Maintenance Settings", onDismiss) {
             var title by remember { mutableStateOf("Monthly Maintenance") }
@@ -684,7 +1420,7 @@ private fun MaintenanceDialogHost(dialog: MaintenanceDialog?, onDismiss: () -> U
 
 @Composable
 private fun PaymentQrBox(paymentSettings: PaymentSettingsDto?) {
-    val qrImage = paymentSettings?.paymentQrImage
+    val qrImage = paymentSettings?.paymentQrImage?.ifBlank { null }
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -698,16 +1434,16 @@ private fun PaymentQrBox(paymentSettings: PaymentSettingsDto?) {
             .background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center
     ) {
-        if (!qrImage.isNullOrBlank()) {
+        if (qrImage != null) {
             AsyncImage(
-                model = qrImage,
-                contentDescription = "Payment QR code",
-                modifier = Modifier.fillMaxSize(),
+                model = fullMediaUrl(qrImage),
+                contentDescription = "Society payment QR code",
+                modifier = Modifier.fillMaxSize().padding(14.dp),
                 contentScale = ContentScale.Fit
             )
         } else {
             Image(
-                painter = painterResource(R.drawable.society_payment_qr),
+                painter = painterResource(R.drawable.my_payment_qr),
                 contentDescription = "Society payment QR code",
                 modifier = Modifier
                     .fillMaxSize()
@@ -732,7 +1468,7 @@ private fun ResidentDialogHost(
             val bill = dialog.bill
             val societyName = paymentSettings?.societyName?.ifBlank { null } ?: "Society Management System"
             val accountName = paymentSettings?.paymentAccountHolderName?.ifBlank { null } ?: "PRIYANKA S DHAWALE"
-            val upiId = paymentSettings?.paymentUpiId?.ifBlank { null } ?: "89998232442@ypi"
+            val upiId = paymentSettings?.paymentUpiId?.ifBlank { null } ?: "8999823244@upi"
             val expectedAmount = (bill.remainingAmount ?: bill.totalAmount ?: bill.amount ?: "0").toMoneyDecimal()
             var showProofForm by remember { mutableStateOf(false) }
             var method by remember { mutableStateOf("UPI") }
@@ -977,14 +1713,14 @@ private fun saveQrToGallery(context: Context) {
     runCatching {
         val resolver = context.contentResolver
         val values = ContentValues().apply {
-            put(MediaStore.Images.Media.DISPLAY_NAME, "society_payment_qr.png")
+            put(MediaStore.Images.Media.DISPLAY_NAME, "my_payment_qr.png")
             put(MediaStore.Images.Media.MIME_TYPE, "image/png")
             put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Society Management")
             put(MediaStore.Images.Media.IS_PENDING, 1)
         }
         val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: error("Unable to create image file")
         resolver.openOutputStream(uri)?.use { output ->
-            context.resources.openRawResource(R.drawable.society_payment_qr).use { input -> input.copyTo(output) }
+            context.resources.openRawResource(R.drawable.my_payment_qr).use { input -> input.copyTo(output) }
         } ?: error("Unable to write QR image")
         values.clear()
         values.put(MediaStore.Images.Media.IS_PENDING, 0)
@@ -998,8 +1734,8 @@ private fun saveQrToGallery(context: Context) {
 
 private fun shareQr(context: Context) {
     runCatching {
-        val file = java.io.File(context.cacheDir, "society_payment_qr.png")
-        context.resources.openRawResource(R.drawable.society_payment_qr).use { input ->
+        val file = java.io.File(context.cacheDir, "my_payment_qr.png")
+        context.resources.openRawResource(R.drawable.my_payment_qr).use { input ->
             file.outputStream().use { output -> input.copyTo(output) }
         }
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
@@ -1142,6 +1878,56 @@ private fun String?.normalizePaymentStatus(): String {
         .uppercase()
 }
 
+private fun MaintenanceBillDto.displayTitle(): String {
+    val billTitle = title?.takeIf { it.isNotBlank() } ?: "Maintenance"
+    val monthLabel = monthName(month)
+    return if (monthLabel.isNotBlank() && !billTitle.contains(monthLabel, ignoreCase = true)) {
+        "$billTitle - $monthLabel ${year.orEmpty()}".trim()
+    } else {
+        billTitle
+    }
+}
+
+private fun List<MaintenanceBillDto>.nextDueDateLabel(): String {
+    return filter { !(it.paymentStatus ?: it.status).isApprovedStatus() }
+        .mapNotNull { (it.dueDate ?: it.maintenanceDueDate).toLocalDateOrNull() }
+        .minOrNull()
+        ?.let { DashboardFormatters.date(it.toString()) }
+        ?: "No dues"
+}
+
+private fun paidThisMonthAmount(bills: List<MaintenanceBillDto>): BigDecimal {
+    val now = LocalDate.now()
+    return bills
+        .filter {
+            val paidDate = (it.paidAt ?: it.paymentDate ?: it.verifiedAt).toLocalDateOrNull()
+            paidDate == null || (paidDate.monthValue == now.monthValue && paidDate.year == now.year)
+        }
+        .fold(BigDecimal.ZERO) { sum, bill -> sum + (bill.paidAmount ?: bill.totalAmount ?: bill.amount).toMoneyDecimal() }
+}
+
+private fun isBillOverdue(bill: MaintenanceBillDto): Boolean {
+    val due = (bill.dueDate ?: bill.maintenanceDueDate).toLocalDateOrNull() ?: return false
+    return due.isBefore(LocalDate.now())
+}
+
+private fun monthName(value: String?): String {
+    val clean = value?.trim().orEmpty()
+    val numeric = clean.toIntOrNull()
+    if (numeric != null) {
+        return listOf(
+            "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+        ).getOrNull(numeric - 1).orEmpty()
+    }
+    return clean.take(3).replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+}
+
+private fun String?.toLocalDateOrNull(): LocalDate? {
+    val date = orEmpty().take(10)
+    return runCatching { LocalDate.parse(date) }.getOrNull()
+}
+
 @Composable
 private fun SimpleFormDialog(title: String, onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
     AlertDialog(
@@ -1278,6 +2064,63 @@ private fun KeyValue(label: String, value: String) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun AdminMaintenanceTabs(selected: String, onSelected: (String) -> Unit) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        listOf("Overview", "Bills", "Settings", "Categories", "Expenses", "Payments", "Reports").forEach { tab ->
+            FilterChip(
+                selected = selected == tab,
+                onClick = { onSelected(tab) },
+                label = { Text(tab) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun AdminInlineMessage(message: String, fg: Color, bg: Color, modifier: Modifier = Modifier) {
+    Surface(modifier = modifier.fillMaxWidth(), color = bg, shape = RoundedCornerShape(12.dp)) {
+        Text(
+            message,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            color = fg,
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Medium
+        )
+    }
+}
+
+@Composable
+private fun AdminStatusPill(text: String, fg: Color, bg: Color) {
+    Text(
+        text,
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(bg)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        color = fg,
+        style = MaterialTheme.typography.labelLarge,
+        fontWeight = FontWeight.SemiBold
+    )
+}
+
+@Composable
+private fun AdminAmountRow(label: String, value: String, strong: Boolean = false, valueColor: Color = Color(0xFF101828)) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(
+            label,
+            color = if (strong) Color(0xFF101828) else Color(0xFF667085),
+            fontWeight = if (strong) FontWeight.SemiBold else FontWeight.Normal
+        )
+        Text(
+            value,
+            color = valueColor,
+            fontWeight = if (strong) FontWeight.Bold else FontWeight.SemiBold
+        )
+    }
+}
+
 @Composable
 private fun SectionCard(
     title: String,
@@ -1298,23 +2141,112 @@ private fun SectionCard(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun MetricGrid(items: List<Triple<String, String, String?>>) {
+    val visualItems = items.map { item ->
+        when (item.first) {
+            "Collected" -> AdminMetricVisual(item, Icons.Filled.Wallet, Color(0xFF087A2E), Color(0xFFEAF8EE), Color(0xFFC8EBD2))
+            "Pending" -> AdminMetricVisual(item, Icons.Filled.Payments, Color(0xFFE86D00), Color(0xFFFFF4DF), Color(0xFFFFDCA8))
+            "Overdue" -> AdminMetricVisual(item, Icons.Filled.Warning, Color(0xFFE31B23), Color(0xFFFFECEF), Color(0xFFFFCCD3))
+            else -> AdminMetricVisual(item, Icons.Filled.ReceiptLong, Color(0xFF0B56D9), Color(0xFFEAF2FF), Color(0xFFCFE0FF))
+        }
+    }
     FlowRow(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
         maxItemsInEachRow = 2
     ) {
-        items.forEach { (label, value, note) ->
-            Card(modifier = Modifier.weight(1f)) {
-                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    Text(label, style = MaterialTheme.typography.labelLarge)
-                    note?.let {
-                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        visualItems.forEach { item ->
+            Card(
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = item.container),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+            ) {
+                Column(
+                    Modifier
+                        .border(1.dp, item.border, RoundedCornerShape(18.dp))
+                        .padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(7.dp)
+                ) {
+                    Surface(modifier = Modifier.size(46.dp), shape = CircleShape, color = Color.White.copy(alpha = 0.72f)) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(item.icon, contentDescription = null, tint = item.tint, modifier = Modifier.size(24.dp))
+                        }
+                    }
+                    Text(item.data.second, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Color(0xFF101828))
+                    Text(item.data.first, style = MaterialTheme.typography.labelLarge, color = item.tint, fontWeight = FontWeight.SemiBold)
+                    item.data.third?.let {
+                        Text(it, style = MaterialTheme.typography.bodySmall, color = item.tint)
                     }
                 }
             }
         }
+    }
+}
+
+private data class AdminMetricVisual(
+    val data: Triple<String, String, String?>,
+    val icon: ImageVector,
+    val tint: Color,
+    val container: Color,
+    val border: Color
+)
+
+private fun saveAdminBillReceiptPdf(context: Context, bill: MaintenanceBillDto) {
+    val resolver = context.contentResolver
+    val fileName = "maintenance-bill-receipt-${bill.id ?: System.currentTimeMillis()}.pdf"
+    val document = PdfDocument()
+    val page = document.startPage(PdfDocument.PageInfo.Builder(595, 842, 1).create())
+    val canvas = page.canvas
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textSize = 16f
+        color = android.graphics.Color.BLACK
+    }
+    var y = 60f
+    fun line(text: String, bold: Boolean = false) {
+        paint.isFakeBoldText = bold
+        canvas.drawText(text, 48f, y, paint)
+        y += 30f
+    }
+    line("Society Management System", true)
+    line("Maintenance Bill Receipt", true)
+    y += 10f
+    line("Bill ID: ${bill.id ?: "-"}")
+    line("Resident: ${bill.residentName ?: "-"}")
+    line("Flat: ${bill.flatNo ?: "-"}")
+    line("Maintenance: ${bill.title ?: "Maintenance"}")
+    line("Billing: ${bill.month ?: "-"} / ${bill.year ?: "-"}")
+    line("Due date: ${DashboardFormatters.date(bill.dueDate ?: bill.maintenanceDueDate)}")
+    y += 10f
+    line("Base amount: ${DashboardFormatters.money(bill.amount.toMoneyDecimal())}")
+    line("Late fee: ${DashboardFormatters.money((bill.lateFee ?: bill.penaltyAmount).toMoneyDecimal())}")
+    line("Total: ${DashboardFormatters.money(bill.totalAmount.toMoneyDecimal())}", true)
+    line("Paid: ${DashboardFormatters.money(bill.paidAmount.toMoneyDecimal())}")
+    line("Remaining: ${DashboardFormatters.money((bill.remainingAmount ?: bill.totalAmount).toMoneyDecimal())}")
+    line("Status: ${bill.paymentStatus ?: bill.status ?: "-"}")
+    y += 20f
+    paint.textSize = 12f
+    line("This is a digitally generated receipt and does not require a signature.")
+    document.finishPage(page)
+    try {
+        val values = ContentValues().apply {
+            put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+            put(MediaStore.Downloads.MIME_TYPE, "application/pdf")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                put(MediaStore.Downloads.RELATIVE_PATH, "Download")
+            }
+        }
+        val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+        if (uri != null) {
+            resolver.openOutputStream(uri)?.use { document.writeTo(it) }
+            Toast.makeText(context, "Receipt downloaded", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(context, "Unable to download receipt", Toast.LENGTH_SHORT).show()
+        }
+    } catch (_: Exception) {
+        Toast.makeText(context, "Unable to download receipt", Toast.LENGTH_SHORT).show()
+    } finally {
+        document.close()
     }
 }
 

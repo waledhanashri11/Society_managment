@@ -269,11 +269,24 @@ const saveLateFeeRule = async (req, res) => {
 
 const waiveLateFee = async (req, res) => {
   try {
-    const [result] = await promisePool.query(
-      `UPDATE maintenance_bills SET total_amount = total_amount - late_fee,
-       remaining_amount = GREATEST(0, remaining_amount - late_fee), late_fee = 0,
-       remarks = CONCAT(COALESCE(remarks, ''), ' Late fee waived.') WHERE id = ?`,
+    const [[bill]] = await promisePool.query(
+      'SELECT id, penalty_amount, total_amount, remaining_amount FROM maintenance WHERE id = ?',
       [req.params.id]
+    );
+    if (!bill) return respond(res, 404, 'Bill not found');
+
+    const lateFee = Number(bill.penalty_amount || 0);
+    if (lateFee <= 0) return respond(res, 200, 'No late fee to waive');
+
+    const [result] = await promisePool.query(
+      `UPDATE maintenance
+       SET penalty_amount = 0,
+           total_amount = GREATEST(amount, total_amount - ?),
+           remaining_amount = GREATEST(0, remaining_amount - ?),
+           remarks = CONCAT(COALESCE(remarks, ''), ' Late fee waived.'),
+           updated_at = NOW()
+       WHERE id = ?`,
+      [lateFee, lateFee, req.params.id]
     );
     if (!result.affectedRows) return respond(res, 404, 'Bill not found');
     await audit(req.user.id, 'WAIVE_LATE_FEE', 'BILL', req.params.id);
@@ -286,7 +299,7 @@ const waiveLateFee = async (req, res) => {
 const createDispute = async (req, res) => {
   try {
     const { billId, subject, description } = req.body;
-    const [[bill]] = await promisePool.query('SELECT resident_id FROM maintenance_bills WHERE id = ?', [billId]);
+    const [[bill]] = await promisePool.query('SELECT resident_id FROM maintenance WHERE id = ?', [billId]);
     if (!bill || bill.resident_id !== req.user.id) return respond(res, 403, 'Bill is not available to this resident');
     const [result] = await promisePool.query(
       `INSERT INTO maintenance_disputes (bill_id, resident_id, subject, description) VALUES (?, ?, ?, ?)`,
@@ -301,9 +314,9 @@ const createDispute = async (req, res) => {
 const listDisputes = async (req, res) => {
   try {
     const [rows] = await promisePool.query(`
-      SELECT d.*, u.name resident_name, f.flat_no, mb.bill_number
+      SELECT d.*, u.name resident_name, f.flat_no, CONCAT('BILL-', m.id) AS bill_number
       FROM maintenance_disputes d JOIN users u ON u.id = d.resident_id
-      JOIN maintenance_bills mb ON mb.id = d.bill_id JOIN flats f ON f.id = mb.flat_id
+      JOIN maintenance m ON m.id = d.bill_id JOIN flats f ON f.id = m.flat_id
       ORDER BY d.created_at DESC
     `);
     return respond(res, 200, 'Disputes fetched', rows);

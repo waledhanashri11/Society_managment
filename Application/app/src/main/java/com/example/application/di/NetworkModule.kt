@@ -3,6 +3,7 @@ package com.example.application.di
 import com.example.application.BuildConfig
 import com.example.application.data.remote.api.HealthApiService
 import com.example.application.data.remote.api.AdminManagementApiService
+import com.example.application.data.remote.api.AdvancedApiService
 import com.example.application.data.remote.api.AuthApiService
 import com.example.application.data.remote.api.MaintenanceApiService
 import com.example.application.data.remote.api.CommunicationApiService
@@ -146,5 +147,11 @@ object NetworkModule {
     @Singleton
     fun provideNocApiService(retrofit: Retrofit): NocApiService {
         return retrofit.create(NocApiService::class.java)
+    }
+
+    @Provides
+    @Singleton
+    fun provideAdvancedApiService(retrofit: Retrofit): AdvancedApiService {
+        return retrofit.create(AdvancedApiService::class.java)
     }
 }

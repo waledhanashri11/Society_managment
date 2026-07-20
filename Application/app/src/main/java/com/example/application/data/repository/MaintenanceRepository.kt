@@ -2,6 +2,8 @@ package com.example.application.data.repository
 
 import com.example.application.data.remote.api.MaintenanceApiService
 import com.example.application.data.remote.dto.ApiResponse
+import com.example.application.data.remote.dto.ApplyPenaltyRequest
+import com.example.application.data.remote.dto.ApplyWaiverRequest
 import com.example.application.data.remote.dto.CategorySaveRequest
 import com.example.application.data.remote.dto.CreateDisputeRequest
 import com.example.application.data.remote.dto.ErrorResponse
@@ -38,6 +40,7 @@ class MaintenanceRepository @Inject constructor(
 
     fun getAdminSnapshot(): AdminMaintenanceData {
         return adminCache ?: AdminMaintenanceData(
+            adminSummary = null,
             dashboard = null,
             bills = emptyList(),
             payments = emptyList(),
@@ -45,6 +48,7 @@ class MaintenanceRepository @Inject constructor(
             expenses = emptyList(),
             settings = null,
             lateFeeRule = null,
+            waivers = emptyList(),
             disputes = emptyList(),
             warnings = listOf("Refreshing latest maintenance data")
         )
@@ -80,6 +84,7 @@ class MaintenanceRepository @Inject constructor(
 
         if (dashboard is NetworkResult.Error && bills is NetworkResult.Error) return@coroutineScope dashboard
         val data = AdminMaintenanceData(
+            adminSummary = null,
             dashboard = (dashboard as? NetworkResult.Success)?.data,
             bills = (bills as? NetworkResult.Success)?.data.orEmpty(),
             payments = (payments as? NetworkResult.Success)?.data.orEmpty(),
@@ -87,6 +92,7 @@ class MaintenanceRepository @Inject constructor(
             expenses = (expenses as? NetworkResult.Success)?.data.orEmpty(),
             settings = (settings as? NetworkResult.Success)?.data,
             lateFeeRule = (lateFee as? NetworkResult.Success)?.data,
+            waivers = emptyList(),
             disputes = (disputes as? NetworkResult.Success)?.data.orEmpty(),
             warnings = listOfNotNull(
                 if (dashboard is NetworkResult.Error) userMessageFor(dashboard.error) else null,
@@ -124,8 +130,26 @@ class MaintenanceRepository @Inject constructor(
     suspend fun sendReminder(id: String) = messageCall { api.sendReminder(id) }
     suspend fun applyPenalty() = messageCall { api.applyPenalty() }
     suspend fun waiveLateFee(id: String) = messageCall { api.waiveLateFee(id) }
+    suspend fun applyPenaltyToBill(id: String, amount: String, reason: String?) = messageCall { api.applyPenalty() }
+    suspend fun applyWaiver(id: String, amount: String, reason: String, type: String, reference: String?, date: String?, note: String?) =
+        messageCall { api.applyAdminWaiver(id, ApplyWaiverRequest(amount, reason, type, reference, date, note)) }
+    suspend fun cancelBill(id: String, reason: String) = messageCall { api.cancelAdminBill(id, mapOf("reason" to reason)) }
     suspend fun submitPayment(request: SubmitPaymentRequest) = messageCall { api.submitPayment(request) }
-    suspend fun updatePayment(id: String, request: UpdatePaymentRequest) = messageCall { api.updatePayment(id, request) }
+    suspend fun updatePayment(id: String, request: UpdatePaymentRequest): NetworkResult<String> {
+        return when (request.paymentStatus.trim().lowercase()) {
+            "paid", "approved" -> messageCall { api.approvePayment(id) }
+            "rejected" -> messageCall {
+                api.rejectPayment(
+                    id,
+                    mapOf(
+                        "rejectionReason" to (request.rejectionReason ?: request.remarks ?: "Rejected by admin")
+                    )
+                )
+            }
+            "needs clarification", "clarification" -> messageCall { api.updatePayment(id, request) }
+            else -> messageCall { api.updatePayment(id, request) }
+        }
+    }
     suspend fun saveSettings(request: MaintenanceSettingsRequest) = messageCall { api.saveSettings(request) }
     suspend fun saveLateFeeRule(request: LateFeeRuleRequest) = messageCall { api.saveLateFeeRule(request) }
     suspend fun createCategory(request: CategorySaveRequest) = messageCall { api.createCategory(request) }
@@ -219,6 +243,7 @@ class MaintenanceRepository @Inject constructor(
 }
 
 data class AdminMaintenanceData(
+    val adminSummary: com.example.application.data.remote.dto.AdminMaintenanceSummaryDto?,
     val dashboard: com.example.application.data.remote.dto.MaintenanceDashboardDto?,
     val bills: List<com.example.application.data.remote.dto.MaintenanceBillDto>,
     val payments: List<com.example.application.data.remote.dto.MaintenancePaymentDto>,
@@ -226,6 +251,7 @@ data class AdminMaintenanceData(
     val expenses: List<com.example.application.data.remote.dto.ExpenseDto>,
     val settings: com.example.application.data.remote.dto.MaintenanceSettingsDto?,
     val lateFeeRule: com.example.application.data.remote.dto.LateFeeRuleDto?,
+    val waivers: List<com.example.application.data.remote.dto.MaintenanceWaiverDto>,
     val disputes: List<com.example.application.data.remote.dto.MaintenanceDisputeDto>,
     val warnings: List<String>
 )

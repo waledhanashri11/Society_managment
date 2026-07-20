@@ -46,7 +46,7 @@ data class MaintenanceBillDto(
     @SerializedName("transaction_id") val transactionId: String?,
     @SerializedName("payment_method") val paymentMethod: String?,
     @SerializedName("latest_payment_status") val latestPaymentStatus: String?,
-    @SerializedName("screenshot_url") val screenshotUrl: String?,
+    @SerializedName(value = "screenshot_url", alternate = ["screenshot", "payment_proof"]) val screenshotUrl: String?,
     @SerializedName("receipt_number") val receiptNumber: String?,
     @SerializedName("verified_at") val verifiedAt: String?,
     @SerializedName("rejection_reason") val rejectionReason: String?,
@@ -62,6 +62,12 @@ data class ComplaintDto(
     val reply: String?,
     @SerializedName("user_name") val userName: String?,
     @SerializedName("resident_name") val residentName: String?,
+    @SerializedName(value = "image_url", alternate = ["imageUrl", "attachment_url", "attachmentUrl", "photo_url", "photoUrl"])
+    val imageUrl: String?,
+    @SerializedName(value = "complaint_image_urls", alternate = ["image_urls", "images"])
+    val complaintImageUrls: List<String>? = null,
+    @SerializedName("complaint_images")
+    val complaintImages: List<String>? = null,
     @SerializedName("created_at") val createdAt: String?
 )
 

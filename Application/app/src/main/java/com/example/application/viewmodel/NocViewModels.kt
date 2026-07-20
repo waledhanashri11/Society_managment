@@ -21,7 +21,8 @@ data class NocUiState(
     val filter: String = "All",
     val error: String? = null,
     val message: String? = null,
-    val submitting: Boolean = false
+    val submitting: Boolean = false,
+    val certificateUri: String? = null
 )
 
 @HiltViewModel
@@ -44,14 +45,14 @@ class ResidentNocViewModel @Inject constructor(
         }
     }
 
-    fun createNoc(nocType: String, purpose: String, description: String, documentData: String?) {
+    fun createNoc(nocType: String, purpose: String, remarks: String, documentData: List<String>) {
         viewModelScope.launch {
             _state.update { it.copy(submitting = true, error = null, message = null) }
             val request = CreateNocRequest(
                 nocType = nocType,
                 purpose = purpose,
-                description = description.takeIf { it.isNotBlank() },
-                documentData = documentData
+                remarks = remarks.takeIf { it.isNotBlank() },
+                documents = documentData
             )
             when (val result = repository.createNoc(request)) {
                 is NetworkResult.Success -> {
@@ -72,6 +73,17 @@ class ResidentNocViewModel @Inject constructor(
                     _state.update { it.copy(submitting = false, message = result.data) }
                     load(refresh = true)
                 }
+                is NetworkResult.Error -> _state.update { it.copy(submitting = false, error = repository.userMessageFor(result.error)) }
+                NetworkResult.Loading -> Unit
+            }
+        }
+    }
+
+    fun downloadCertificate(id: String, requestNumber: String?) {
+        viewModelScope.launch {
+            _state.update { it.copy(submitting = true, error = null, message = null) }
+            when (val result = repository.downloadCertificate(id, requestNumber)) {
+                is NetworkResult.Success -> _state.update { it.copy(submitting = false, certificateUri = result.data, message = "Certificate downloaded.") }
                 is NetworkResult.Error -> _state.update { it.copy(submitting = false, error = repository.userMessageFor(result.error)) }
                 NetworkResult.Loading -> Unit
             }

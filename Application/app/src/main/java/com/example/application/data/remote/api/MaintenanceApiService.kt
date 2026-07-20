@@ -1,6 +1,9 @@
 package com.example.application.data.remote.api
 
 import com.example.application.data.remote.dto.ApiResponse
+import com.example.application.data.remote.dto.AdminMaintenanceSummaryDto
+import com.example.application.data.remote.dto.ApplyPenaltyRequest
+import com.example.application.data.remote.dto.ApplyWaiverRequest
 import com.example.application.data.remote.dto.BillDetailsDto
 import com.example.application.data.remote.dto.CategorySaveRequest
 import com.example.application.data.remote.dto.CreateDisputeRequest
@@ -19,6 +22,7 @@ import com.example.application.data.remote.dto.MaintenancePaymentDto
 import com.example.application.data.remote.dto.MaintenanceSettingsDto
 import com.example.application.data.remote.dto.MaintenanceSettingsRequest
 import com.example.application.data.remote.dto.MaintenanceUpdateRequest
+import com.example.application.data.remote.dto.MaintenanceWaiverDto
 import com.example.application.data.remote.dto.ManualPayRequest
 import com.example.application.data.remote.dto.MarkPaidRequest
 import com.example.application.data.remote.dto.PaymentSettingsDto
@@ -34,6 +38,30 @@ import retrofit2.http.Path
 import retrofit2.http.Query
 
 interface MaintenanceApiService {
+    @GET("api/admin/maintenance/summary")
+    suspend fun getAdminSummary(): Response<ApiResponse<AdminMaintenanceSummaryDto>>
+
+    @GET("api/admin/maintenance/waivers")
+    suspend fun getAdminWaivers(): Response<ApiResponse<List<MaintenanceWaiverDto>>>
+
+    @POST("api/admin/maintenance/bills/{id}/waiver")
+    suspend fun applyAdminWaiver(@Path("id") id: String, @Body request: ApplyWaiverRequest): Response<ApiResponse<Map<String, String>>>
+
+    @POST("api/admin/maintenance/bills/{id}/penalty")
+    suspend fun applyAdminPenalty(@Path("id") id: String, @Body request: ApplyPenaltyRequest): Response<ApiResponse<Unit>>
+
+    @POST("api/admin/maintenance/bills/{id}/cancel")
+    suspend fun cancelAdminBill(@Path("id") id: String, @Body request: Map<String, String>): Response<ApiResponse<Unit>>
+
+    @POST("api/admin/payments/reviews/{id}/approve")
+    suspend fun approvePaymentReview(@Path("id") id: String, @Body request: Map<String, String?> = emptyMap()): Response<ApiResponse<Map<String, String>>>
+
+    @POST("api/admin/payments/reviews/{id}/reject")
+    suspend fun rejectPaymentReview(@Path("id") id: String, @Body request: Map<String, String>): Response<ApiResponse<Unit>>
+
+    @POST("api/admin/payments/reviews/{id}/clarification")
+    suspend fun requestPaymentClarification(@Path("id") id: String, @Body request: Map<String, String>): Response<ApiResponse<Unit>>
+
     @GET("api/maintenance/dashboard")
     suspend fun getDashboard(): Response<ApiResponse<MaintenanceDashboardDto>>
 
@@ -78,6 +106,12 @@ interface MaintenanceApiService {
 
     @PUT("api/maintenance/payments/{id}")
     suspend fun updatePayment(@Path("id") id: String, @Body request: UpdatePaymentRequest): Response<ApiResponse<Unit>>
+
+    @PUT("api/maintenance/payments/{id}/approve")
+    suspend fun approvePayment(@Path("id") id: String): Response<ApiResponse<Map<String, String>>>
+
+    @PUT("api/maintenance/payments/{id}/reject")
+    suspend fun rejectPayment(@Path("id") id: String, @Body request: Map<String, String>): Response<ApiResponse<Unit>>
 
     @GET("api/maintenance/user/my-maintenance")
     suspend fun getMyMaintenance(): Response<ApiResponse<List<MaintenanceBillDto>>>

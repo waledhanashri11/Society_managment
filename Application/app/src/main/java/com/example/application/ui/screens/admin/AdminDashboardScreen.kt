@@ -26,10 +26,8 @@ import androidx.compose.material.icons.filled.Apartment
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Assignment
 import androidx.compose.material.icons.filled.Campaign
-import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Menu
@@ -38,7 +36,6 @@ import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.Card
@@ -77,9 +74,9 @@ import com.example.application.viewmodel.AdminDashboardViewModel
 import com.example.application.viewmodel.SessionViewModel
 import kotlinx.coroutines.launch
 
-private val NavyTop = Color(0xFF062B57)
-private val NavyBottom = Color(0xFF021B3D)
-private val AdminBlue = Color(0xFF1D72F3)
+private val NavyTop = Color(0xFF0B6BFF)
+private val NavyBottom = Color(0xFF083B92)
+private val AdminBlue = Color(0xFF0B5FFF)
 private val TextNavy = Color(0xFF061C43)
 
 @Composable
@@ -208,6 +205,7 @@ private fun AdminDashboardBody(
         Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 24.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
             SectionHeader("Overview", "View All") { onQuickAction("Reports") }
             OverviewGrid(data, isLoading)
+            TodayWorkCard(data = data, isLoading = isLoading, onQuickAction = onQuickAction)
             Text("Quick Access", color = TextNavy, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
@@ -220,7 +218,7 @@ private fun AdminDashboardBody(
             RecentActivityCard(data = data, isLoading = isLoading, onViewAll = { onQuickAction("Notifications") })
             errorMessage?.let { ErrorInline(message = it, onRetry = onRetry) }
             data?.warnings?.takeIf { it.isNotEmpty() }?.let { warnings ->
-                SoftInfoCard("Unavailable sections") { warnings.forEach { Text("• $it", color = MaterialTheme.colorScheme.onSurfaceVariant) } }
+                SoftInfoCard("Unavailable sections") { warnings.forEach { Text("- $it", color = MaterialTheme.colorScheme.onSurfaceVariant) } }
             }
         }
     }
@@ -256,9 +254,88 @@ private fun OverviewCard(item: OverviewItem, isLoading: Boolean, modifier: Modif
         Column(modifier = Modifier.fillMaxSize().padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
             Icon(item.icon, contentDescription = item.label, tint = item.tint, modifier = Modifier.size(28.dp))
             Spacer(Modifier.height(8.dp))
-            Text(if (isLoading) "…" else item.value.ifBlank { "0" }, color = TextNavy, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+            Text(if (isLoading) "..." else item.value.ifBlank { "0" }, color = TextNavy, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
             Text(item.label, color = TextNavy, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
         }
+    }
+}
+
+@Composable
+private fun TodayWorkCard(data: AdminDashboardData?, isLoading: Boolean, onQuickAction: (String) -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFF7FAFF)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .border(1.dp, Color(0xFFE0E6F0), RoundedCornerShape(20.dp))
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text("Today's Work", color = TextNavy, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            if (isLoading && data == null) {
+                repeat(3) { ActivitySkeletonRow() }
+            } else {
+                DailyWorkRow(
+                    title = "Verify payments",
+                    value = "${data?.recentPayments?.count { !(it.paymentStatus).equals("Paid", true) && !(it.paymentStatus).equals("Approved", true) } ?: 0}",
+                    note = "resident proofs",
+                    icon = Icons.Filled.Payments,
+                    tint = Color(0xFF1D72F3),
+                    onClick = { onQuickAction("Dues & Payments") }
+                )
+                DailyWorkRow(
+                    title = "Follow up dues",
+                    value = "${data?.pendingBillCount ?: 0}",
+                    note = "${data?.overdueBillCount ?: 0} overdue",
+                    icon = Icons.Filled.Assignment,
+                    tint = Color(0xFFFF8A00),
+                    onClick = { onQuickAction("Maintenance") }
+                )
+                DailyWorkRow(
+                    title = "Resolve complaints",
+                    value = "${data?.openComplaints ?: 0}",
+                    note = "${data?.inProgressComplaints ?: 0} in progress",
+                    icon = Icons.Filled.WarningAmber,
+                    tint = Color(0xFFFF5A4F),
+                    onClick = { onQuickAction("Complaints") }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DailyWorkRow(
+    title: String,
+    value: String,
+    note: String,
+    icon: ImageVector,
+    tint: Color,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick)
+            .background(Color.White)
+            .padding(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Surface(modifier = Modifier.size(40.dp), shape = CircleShape, color = tint.copy(alpha = 0.12f)) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
+            }
+        }
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(title, color = TextNavy, fontWeight = FontWeight.Bold)
+            Text(note, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+        }
+        Text(value, color = TextNavy, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -342,11 +419,11 @@ private fun AdminDrawer(adminName: String, onAction: (String) -> Unit) {
         listOf(
             AdminAction("Residents", "Residents", Icons.Filled.Groups, AdminBlue),
             AdminAction("Flats", "Flats", Icons.Filled.Apartment, Color(0xFF20B86B)),
-            AdminAction("Maintenance", "Maintenance", Icons.Filled.Payments, Color(0xFF9C3ED7)),
+            AdminAction("Maintenance & Payments", "Maintenance & Payments", Icons.Filled.Payments, Color(0xFF9C3ED7)),
             AdminAction("Notices", "Notices", Icons.Filled.Campaign, Color(0xFF2F80ED)),
             AdminAction("Complaints", "Complaints", Icons.Filled.WarningAmber, Color(0xFFFFA000)),
             AdminAction("Reports", "Reports", Icons.Filled.TrendingUp, Color(0xFF9C3ED7)),
-                        AdminAction("NOC", "NOC Requests", Icons.Filled.Description, Color(0xFF16B6A4)),
+            AdminAction("NOC", "NOC Requests", Icons.Filled.Description, Color(0xFF16B6A4)),
             AdminAction("Logout", "Logout", Icons.Filled.Logout, Color(0xFFE53935))
         ).forEach { action ->
             NavigationDrawerItem(label = { Text(action.label) }, selected = false, icon = { Icon(action.icon, contentDescription = action.label, tint = action.tint) }, onClick = { onAction(action.routeName) }, modifier = Modifier.padding(horizontal = 12.dp))
@@ -358,16 +435,13 @@ private fun adminQuickActions(): List<AdminAction> = listOf(
     AdminAction("Residents", "Residents", Icons.Filled.Groups, Color(0xFF2F80ED)),
     AdminAction("Flats", "Flats", Icons.Filled.Apartment, Color(0xFF20B86B)),
     AdminAction("Add Resident", "Add Resident", Icons.Filled.PersonAdd, Color(0xFFFF8A00)),
-    AdminAction("Maintenance\nCollection", "Maintenance Collection", Icons.Filled.Payments, Color(0xFF9C3ED7)),
-    AdminAction("Dues & Payments", "Dues & Payments", Icons.Filled.Assignment, Color(0xFFFF5A4F)),
+    AdminAction("Maintenance\n& Payments", "Maintenance & Payments", Icons.Filled.Payments, Color(0xFF9C3ED7)),
+    AdminAction("Payment Reviews", "Payment Reviews", Icons.Filled.Assignment, Color(0xFFFF5A4F)),
     AdminAction("Notices", "Notices", Icons.Filled.Campaign, Color(0xFF2F80ED)),
-    AdminAction("Events", "Events", Icons.Filled.CalendarMonth, Color(0xFF20B86B)),
     AdminAction("Complaints", "Complaints", Icons.Filled.WarningAmber, Color(0xFFFFA000)),
     AdminAction("Reports", "Reports", Icons.Filled.TrendingUp, Color(0xFF9C3ED7)),
-        AdminAction("NOC", "NOC Requests", Icons.Filled.Description, Color(0xFF16B6A4)),
-    AdminAction("Visitors", "Visitors", Icons.Filled.DirectionsCar, Color(0xFF16B6A4)),
-    AdminAction("Security", "Security", Icons.Filled.Security, Color(0xFF2F80ED)),
-    AdminAction("Settings", "Settings", Icons.Filled.Settings, Color(0xFF8D99A8))
+    AdminAction("NOC", "NOC Requests", Icons.Filled.Description, Color(0xFF16B6A4)),
+    AdminAction("Staff", "Staff", Icons.Filled.Security, Color(0xFF2F80ED))
 )
 
 private fun buildRecentActivities(data: AdminDashboardData?): List<ActivityItem> {
