@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Building2, CheckCircle2, Edit3, IndianRupee, Plus, Trash2, XCircle, RefreshCw, History, Calendar, Eye, Settings } from 'lucide-react';
+import { Building2, CheckCircle2, Edit3, IndianRupee, Plus, Trash2, XCircle, RefreshCw, History, Calendar } from 'lucide-react';
 import { flatAPI, userAPI, residentsAPI, flatTypeAPI } from '../services/api';
-import { CardSkeleton, TableSkeleton } from '../components/Skeletons';
+import { CardSkeleton } from '../components/Skeletons';
 
 const money = (value) => `Rs. ${Number(value || 0).toLocaleString('en-IN')}`;
 

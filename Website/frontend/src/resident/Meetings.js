@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { 
-  Calendar, Clock, MapPin, AlertTriangle, FileText, CheckSquare, Vote, Download,
-  Search, CheckCircle2, XCircle, ArrowRight, User, AlertCircle, ChevronLeft, ChevronRight
+  Calendar, Clock, MapPin, AlertTriangle, Vote, Download,
+  CheckCircle2, XCircle, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { meetingAPI } from '../services/api';
 import { TableSkeleton } from '../components/Skeletons';
