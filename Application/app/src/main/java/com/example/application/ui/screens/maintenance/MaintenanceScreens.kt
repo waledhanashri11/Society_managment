@@ -254,7 +254,7 @@ fun ResidentMaintenanceScreen(
                     val firstPayable = data.bills.firstOrNull { (it.paymentStatus ?: it.status).isResidentPayableStatus() }
                     item {
                         ResidentMaintenanceOverviewCard(
-                            totalOutstanding = pending.fold(BigDecimal.ZERO) { sum, bill -> sum + (bill.remainingAmount ?: bill.totalAmount ?: bill.amount).toMoneyDecimal() },
+                            totalOutstanding = pending.fold(BigDecimal.ZERO) { sum, bill -> sum + bill.expectedPayableAmount() },
                             nextDueDate = data.bills.nextDueDateLabel(),
                             pendingCount = pending.size,
                             paidThisMonth = paidThisMonthAmount(paid)
@@ -391,7 +391,7 @@ private fun ResidentMaintenanceTrendCard(bills: List<MaintenanceBillDto>) {
             .takeLast(6)
             .map { bill ->
                 val label = bill.month?.take(3)?.replaceFirstChar { it.uppercase() } ?: "-"
-                label to (bill.totalAmount ?: bill.amount).toMoneyDecimal().toFloat()
+                label to bill.expectedPayableAmount().toFloat()
             }
     }
     if (points.isEmpty()) return
@@ -495,6 +495,8 @@ private fun ResidentMaintenanceBillCard(
     val status = bill.paymentStatus ?: bill.latestPaymentStatus ?: bill.status
     val canPay = status.isResidentPayableStatus()
     val paid = status.isApprovedStatus()
+    val settledByWriteOff = status.normalizePaymentStatus() in setOf("WRITTEN_OFF", "SETTLED")
+    val finished = paid || settledByWriteOff
     val verifying = status.isVerificationPendingStatus()
     val overdue = isBillOverdue(bill) && canPay
     Card(
@@ -523,20 +525,21 @@ private fun ResidentMaintenanceBillCard(
                 if (overdue) Text("Overdue", color = Color(0xFFE31B23), fontWeight = FontWeight.SemiBold)
             }
             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(DashboardFormatters.money((bill.remainingAmount ?: bill.totalAmount ?: bill.amount).toMoneyDecimal()), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(DashboardFormatters.money((bill.remainingDue ?: bill.currentDue ?: bill.remainingAmount ?: bill.totalAmount ?: bill.amount).toMoneyDecimal()), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 ResidentStatusBadge(
                     text = when {
+                        settledByWriteOff -> "Settled"
                         paid -> "Paid"
                         verifying -> "Verification Pending"
                         else -> "Pending"
                     },
                     fg = when {
-                        paid -> Color(0xFF087A2E)
+                        finished -> Color(0xFF087A2E)
                         verifying -> Color(0xFF174EA6)
                         else -> Color(0xFFE86D00)
                     },
                     bg = when {
-                        paid -> Color(0xFFDDF8E7)
+                        finished -> Color(0xFFDDF8E7)
                         verifying -> Color(0xFFE6F0FF)
                         else -> Color(0xFFFFE8C7)
                     }
@@ -649,6 +652,8 @@ private fun ResidentUpiCard(paymentSettings: PaymentSettingsDto?) {
                             model = fullMediaUrl(qrImage),
                             contentDescription = "Society payment QR code",
                             modifier = Modifier.fillMaxSize(),
+                            error = painterResource(R.drawable.my_payment_qr),
+                            placeholder = painterResource(R.drawable.my_payment_qr),
                             contentScale = ContentScale.Fit
                         )
                     } else {
@@ -743,6 +748,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.billsTab(
             onDispute = {},
             onReminder = { bill.id?.let(viewModel::sendReminder) },
             onWaive = { openDialog(MaintenanceDialog.ApplyWaiver(bill)) },
+            onWriteOff = { openDialog(MaintenanceDialog.WriteOff(bill)) },
             onDelete = { openDialog(MaintenanceDialog.CancelBill(bill)) }
         )
     }
@@ -779,12 +785,12 @@ private fun AdminMaintenanceOverviewSection(
         SectionCard("Top Outstanding Flats") {
             val outstanding = summary?.topOutstandingFlats.orEmpty().take(5).ifEmpty {
                 data.bills.filter { !(it.paymentStatus ?: it.status).isApprovedStatus() }
-                    .sortedByDescending { (it.remainingAmount ?: it.totalAmount).toMoneyDecimal() }
+                    .sortedByDescending { it.expectedPayableAmount() }
                     .take(5)
             }
             if (outstanding.isEmpty()) Text("No outstanding dues.")
             outstanding.forEach { bill ->
-                KeyValue("Flat ${bill.flatNo ?: "-"} • ${bill.residentName ?: "Resident"}", DashboardFormatters.money((bill.remainingAmount ?: bill.totalAmount).toMoneyDecimal()))
+                KeyValue("Flat ${bill.flatNo ?: "-"} • ${bill.residentName ?: "Resident"}", DashboardFormatters.money(bill.expectedPayableAmount()))
             }
         }
         SectionCard("Quick Actions") {
@@ -826,9 +832,13 @@ private fun PaymentVerificationSection(
     val visiblePayments = remember(payments, query, filter) {
         payments.filter { payment ->
             val status = payment.paymentStatus.orEmpty()
+            val normalizedStatus = status.normalizePaymentStatus()
             val filterOk = filter == "All" ||
                 status.equals(filter, true) ||
-                (filter == "Pending" && status.normalizePaymentStatus() in setOf("PAYMENT_PROOF_SUBMITTED", "UNDER_REVIEW", "PENDING_VERIFICATION"))
+                (filter == "Pending" && normalizedStatus in setOf("PENDING", "PAYMENT_PROOF_SUBMITTED", "UNDER_REVIEW", "PENDING_VERIFICATION", "NEEDS_CLARIFICATION")) ||
+                (filter == "Paid" && normalizedStatus in setOf("PAID", "APPROVED")) ||
+                (filter == "Rejected" && normalizedStatus == "REJECTED") ||
+                filter in setOf("Partial", "Overdue")
             val q = query.trim().lowercase()
             val queryOk = q.isBlank() || listOf(payment.residentName, payment.flatNo, payment.transactionId, payment.month, payment.year)
                 .any { it?.lowercase()?.contains(q) == true }
@@ -864,9 +874,11 @@ private fun PaymentVerificationSection(
             title = { Text("Payment Screenshot") },
             text = {
                 AsyncImage(
-                    model = fullMediaUrl(payment.screenshotUrl ?: payment.screenshot),
+                    model = fullMediaUrl(payment.proofImage()),
                     contentDescription = "Payment screenshot",
                     modifier = Modifier.fillMaxWidth().height(520.dp).clip(RoundedCornerShape(14.dp)),
+                    error = painterResource(R.drawable.ic_launcher_background),
+                    placeholder = painterResource(R.drawable.ic_launcher_background),
                     contentScale = ContentScale.Fit
                 )
             },
@@ -926,9 +938,11 @@ private fun PaymentVerificationCard(
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
                 AsyncImage(
-                    model = fullMediaUrl(payment.screenshotUrl ?: payment.screenshot),
+                    model = fullMediaUrl(payment.proofImage()),
                     contentDescription = "Payment screenshot thumbnail",
                     modifier = Modifier.height(92.dp).weight(0.36f).clip(RoundedCornerShape(14.dp)).clickable { onOpenScreenshot() },
+                    error = painterResource(R.drawable.ic_launcher_background),
+                    placeholder = painterResource(R.drawable.ic_launcher_background),
                     contentScale = ContentScale.Crop
                 )
                 Column(modifier = Modifier.weight(0.64f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -945,8 +959,8 @@ private fun PaymentVerificationCard(
             payment.rejectionReason?.takeIf { it.isNotBlank() }?.let { KeyValue("Reject reason", it) }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 TextButton(onClick = onOpenScreenshot) { Text("Open Screenshot") }
-                if (!(payment.paymentStatus).isApprovedStatus()) Button(onClick = onApprove) { Text("Approve") }
-                if (!(payment.paymentStatus).isApprovedStatus()) TextButton(onClick = onReject) { Text("Reject") }
+                if ((payment.paymentStatus).isVerificationPendingStatus()) Button(onClick = onApprove) { Text("Approve") }
+                if ((payment.paymentStatus).isVerificationPendingStatus()) TextButton(onClick = onReject) { Text("Reject") }
                 if ((payment.paymentStatus).isApprovedStatus()) TextButton(onClick = onViewReceipt) { Text("View Receipt") }
                 if ((payment.paymentStatus).isApprovedStatus()) TextButton(onClick = onDownloadReceipt) { Text("Download PDF") }
                 if ((payment.paymentStatus).isApprovedStatus()) TextButton(onClick = onShareReceipt) { Text("Share") }
@@ -1049,6 +1063,7 @@ private fun BillCard(
     onDispute: () -> Unit,
     onReminder: () -> Unit = {},
     onWaive: () -> Unit = {},
+    onWriteOff: () -> Unit = {},
     onDelete: () -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -1056,8 +1071,13 @@ private fun BillCard(
     val canSubmitPayment = !admin && status.isResidentPayableStatus()
     val isVerificationPending = !admin && status.isVerificationPendingStatus()
     val paid = status.isApprovedStatus()
+    val settledByWriteOff = status.normalizePaymentStatus() in setOf("WRITTEN_OFF", "SETTLED")
+    val finished = paid || settledByWriteOff
     val verifying = status.isVerificationPendingStatus()
     val statusColors = when {
+        status.normalizePaymentStatus() in setOf("WRITTEN_OFF", "SETTLED") && admin -> Triple("Written Off", Color(0xFF475467), Color(0xFFE5E7EB))
+        status.normalizePaymentStatus() == "PARTIAL_WRITE_OFF" && admin -> Triple("Partial Write-off", Color(0xFF0B56D9), Color(0xFFE6F0FF))
+        status.normalizePaymentStatus() in setOf("WRITTEN_OFF", "SETTLED") && !admin -> Triple("Settled", Color(0xFF087A2E), Color(0xFFDDF8E7))
         paid -> Triple("Paid", Color(0xFF087A2E), Color(0xFFDDF8E7))
         verifying -> Triple("Under Review", Color(0xFF174EA6), Color(0xFFE6F0FF))
         status.equals("Overdue", true) || isBillOverdue(bill) -> Triple("Overdue", Color(0xFFE31B23), Color(0xFFFFE4E6))
@@ -1096,12 +1116,15 @@ private fun BillCard(
                 AdminAmountRow("Base amount", DashboardFormatters.money(bill.amount.toMoneyDecimal()))
                 AdminAmountRow("Late fee", DashboardFormatters.money((bill.lateFee ?: bill.penaltyAmount).toMoneyDecimal()))
                 AdminAmountRow("Total", DashboardFormatters.money(bill.totalAmount.toMoneyDecimal()), strong = true)
-                AdminAmountRow("Paid", DashboardFormatters.money(bill.paidAmount.toMoneyDecimal()), valueColor = if (paid) Color(0xFF087A2E) else Color(0xFF101828))
+                AdminAmountRow("Paid", DashboardFormatters.money(bill.paidAmount.toMoneyDecimal()), valueColor = if (finished) Color(0xFF087A2E) else Color(0xFF101828))
+                if (admin && bill.writeOffAmount.toMoneyDecimal() > BigDecimal.ZERO) {
+                    AdminAmountRow("Write-off", DashboardFormatters.money(bill.writeOffAmount.toMoneyDecimal()), valueColor = Color(0xFF0B56D9))
+                }
                 AdminAmountRow(
                     "Remaining",
-                    DashboardFormatters.money((bill.remainingAmount ?: bill.totalAmount).toMoneyDecimal()),
+                    DashboardFormatters.money((bill.remainingDue ?: bill.currentDue ?: bill.remainingAmount ?: bill.totalAmount).toMoneyDecimal()),
                     strong = true,
-                    valueColor = if (paid) Color(0xFF087A2E) else Color(0xFFE31B23)
+                    valueColor = if (finished) Color(0xFF087A2E) else Color(0xFFE31B23)
                 )
             }
 
@@ -1114,7 +1137,7 @@ private fun BillCard(
             }
 
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (admin && !paid) {
+                if (admin && !finished) {
                     OutlinedButton(onClick = onPay, shape = RoundedCornerShape(10.dp)) {
                         Icon(Icons.Filled.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
@@ -1130,6 +1153,11 @@ private fun BillCard(
                         Spacer(Modifier.width(6.dp))
                         Text("Waive Late Fee")
                     }
+                    OutlinedButton(onClick = onWriteOff, shape = RoundedCornerShape(10.dp)) {
+                        Icon(Icons.Filled.Wallet, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Write-off")
+                    }
                 }
                 if (canSubmitPayment) Button(onClick = onPay, shape = RoundedCornerShape(10.dp)) {
                     Icon(Icons.Filled.Payments, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -1137,7 +1165,7 @@ private fun BillCard(
                     Text("Pay Now")
                 }
                 if (!admin && !paid && !isVerificationPending) TextButton(onClick = onDispute) { Text("Dispute") }
-                if (admin && paid) {
+                if (admin && finished) {
                     OutlinedButton(onClick = { saveAdminBillReceiptPdf(context, bill) }, shape = RoundedCornerShape(10.dp)) {
                         Icon(Icons.Filled.Download, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
@@ -1270,6 +1298,7 @@ private sealed interface MaintenanceDialog {
     data class MarkPaid(val bill: MaintenanceBillDto) : MaintenanceDialog
     data class ApplyPenalty(val bill: MaintenanceBillDto) : MaintenanceDialog
     data class ApplyWaiver(val bill: MaintenanceBillDto?) : MaintenanceDialog
+    data class WriteOff(val bill: MaintenanceBillDto) : MaintenanceDialog
     data class CancelBill(val bill: MaintenanceBillDto) : MaintenanceDialog
     data object Settings : MaintenanceDialog
     data object LateFee : MaintenanceDialog
@@ -1284,13 +1313,40 @@ private sealed interface ResidentDialog {
 
 @Composable
 private fun MaintenanceDialogHost(dialog: MaintenanceDialog?, onDismiss: () -> Unit, viewModel: AdminMaintenanceViewModel) {
+    val viewState by viewModel.state.collectAsStateWithLifecycle()
     when (dialog) {
         MaintenanceDialog.Generate -> SimpleFormDialog("Generate Bills", onDismiss) {
             var month by remember { mutableStateOf("${LocalDate.now().monthValue}") }
             var year by remember { mutableStateOf("${LocalDate.now().year}") }
+            var amount by remember { mutableStateOf("") }
+            var dueDate by remember { mutableStateOf(LocalDate.now().plusDays(10).toString()) }
+            var title by remember { mutableStateOf("Monthly Maintenance") }
+            var notes by remember { mutableStateOf("") }
+            var penaltyType by remember { mutableStateOf("") }
+            var penaltyValue by remember { mutableStateOf("") }
+            var penaltyGraceDays by remember { mutableStateOf("") }
             BasicAppTextField(month, { month = it }, "Month number")
             BasicAppTextField(year, { year = it }, "Year")
-            Button(onClick = { viewModel.generateBills(month.toIntOrNull() ?: 0, year.toIntOrNull() ?: 0); onDismiss() }, modifier = Modifier.fillMaxWidth()) { Text("Generate") }
+            BasicAppTextField(title, { title = it }, "Bill title")
+            BasicAppTextField(amount, { amount = it }, "Amount (blank uses flat default)")
+            BasicAppTextField(dueDate, { dueDate = it }, "Due date YYYY-MM-DD")
+            BasicAppTextField(penaltyType, { penaltyType = it }, "Penalty type optional")
+            BasicAppTextField(penaltyValue, { penaltyValue = it }, "Penalty value optional")
+            BasicAppTextField(penaltyGraceDays, { penaltyGraceDays = it }, "Penalty grace days optional")
+            BasicAppTextField(notes, { notes = it }, "Notes optional")
+            Button(
+                onClick = {
+                    viewModel.generateBills(
+                        month.toIntOrNull() ?: 0,
+                        year.toIntOrNull() ?: 0,
+                        amount.ifBlank { null }, dueDate, title, notes.ifBlank { null },
+                        penaltyType = penaltyType.ifBlank { null }, penaltyValue = penaltyValue.ifBlank { null }, penaltyGraceDays = penaltyGraceDays.ifBlank { null }
+                    )
+                    onDismiss()
+                },
+                enabled = !viewState.submitting && month.toIntOrNull()?.let { it in 1..12 } == true && year.toIntOrNull()?.let { it >= 2000 } == true,
+                modifier = Modifier.fillMaxWidth()
+            ) { Text(if (viewState.submitting) "Generating…" else "Generate") }
         }
         MaintenanceDialog.ManualBill -> SimpleFormDialog("Create Manual Bill", onDismiss) {
             var title by remember { mutableStateOf("Monthly Maintenance") }
@@ -1310,7 +1366,7 @@ private fun MaintenanceDialogHost(dialog: MaintenanceDialog?, onDismiss: () -> U
             Button(onClick = { viewModel.createManualBill(title, month.toIntOrNull() ?: 0, year.toIntOrNull() ?: 0, due, amount, residentId.ifBlank { null }, flatId.ifBlank { null }); onDismiss() }, modifier = Modifier.fillMaxWidth()) { Text("Create") }
         }
         is MaintenanceDialog.MarkPaid -> SimpleFormDialog("Mark Paid", onDismiss) {
-            var amount by remember { mutableStateOf((dialog.bill.remainingAmount ?: dialog.bill.totalAmount).orEmpty()) }
+            var amount by remember { mutableStateOf(dialog.bill.expectedPayableAmount().toPlainString()) }
             var paymentDate by remember { mutableStateOf(LocalDate.now().toString()) }
             BasicAppTextField(amount, { amount = it }, "Paid amount")
             BasicAppTextField(paymentDate, { paymentDate = it }, "Payment date YYYY-MM-DD")
@@ -1349,6 +1405,61 @@ private fun MaintenanceDialogHost(dialog: MaintenanceDialog?, onDismiss: () -> U
                 enabled = billId.isNotBlank() && reason.isNotBlank() && amount.toMoneyDecimal() > BigDecimal.ZERO,
                 modifier = Modifier.fillMaxWidth()
             ) { Text("Apply Waiver") }
+        }
+        is MaintenanceDialog.WriteOff -> SimpleFormDialog("Maintenance Write-off", onDismiss) {
+            val bill = dialog.bill
+            val reasons = listOf("Billing Error", "Society Decision", "Financial Assistance", "Management Approval", "Other")
+            val currentDue = (bill.remainingDue ?: bill.currentDue ?: bill.remainingAmount ?: bill.totalAmount).toMoneyDecimal()
+            val originalAmount = (bill.originalAmount ?: bill.amount).toMoneyDecimal()
+            var type by remember { mutableStateOf("PARTIAL") }
+            var amount by remember { mutableStateOf("") }
+            var reason by remember { mutableStateOf(reasons.first()) }
+            var remarks by remember { mutableStateOf("") }
+            val writeOffAmount = if (type == "TOTAL") currentDue else amount.toMoneyDecimal()
+            val finalDue = (currentDue - writeOffAmount).coerceAtLeast(BigDecimal.ZERO)
+
+            Text("This keeps the bill record and creates an admin audit entry.", color = Color(0xFF475467))
+            KeyValue("Resident", bill.residentName ?: "-")
+            KeyValue("Flat", bill.flatNo ?: "-")
+            KeyValue("Original Amount", DashboardFormatters.money(originalAmount))
+            KeyValue("Penalty", DashboardFormatters.money((bill.penaltyAmount ?: bill.lateFee).toMoneyDecimal()))
+            KeyValue("Paid", DashboardFormatters.money(bill.paidAmount.toMoneyDecimal()))
+            KeyValue("Current Due", DashboardFormatters.money(currentDue))
+
+            Text("Write-off type", fontWeight = FontWeight.SemiBold)
+            WriteOffChoiceChips(listOf("PARTIAL", "TOTAL"), type) { type = it }
+
+            if (type == "PARTIAL") {
+                BasicAppTextField(amount, { amount = it }, "Write-off amount")
+            }
+
+            Text("Reason", fontWeight = FontWeight.SemiBold)
+            WriteOffChoiceChips(reasons, reason) { reason = it }
+            BasicAppTextField(remarks, { remarks = it }, "Admin remarks optional")
+
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                color = Color(0xFFE6F0FF)
+            ) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Preview", fontWeight = FontWeight.Bold, color = Color(0xFF174EA6))
+                    KeyValue("Write-off", DashboardFormatters.money(writeOffAmount))
+                    KeyValue("Final Due", DashboardFormatters.money(finalDue))
+                    Text("Resident side will only show updated due/status, not admin reason or remarks.", color = Color(0xFF475467))
+                }
+            }
+
+            Button(
+                onClick = {
+                    bill.id?.let {
+                        viewModel.createWriteOff(it, type, if (type == "TOTAL") null else amount, reason, remarks)
+                    }
+                    onDismiss()
+                },
+                enabled = bill.id != null && currentDue > BigDecimal.ZERO && writeOffAmount > BigDecimal.ZERO && writeOffAmount <= currentDue,
+                modifier = Modifier.fillMaxWidth()
+            ) { Text(if (type == "TOTAL") "Write-off Full Due" else "Apply Write-off") }
         }
         is MaintenanceDialog.CancelBill -> SimpleFormDialog("Cancel Bill", onDismiss) {
             var reason by remember { mutableStateOf("") }
@@ -1418,6 +1529,20 @@ private fun MaintenanceDialogHost(dialog: MaintenanceDialog?, onDismiss: () -> U
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun WriteOffChoiceChips(options: List<String>, selected: String, onSelect: (String) -> Unit) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        options.forEach { option ->
+            FilterChip(
+                selected = selected == option,
+                onClick = { onSelect(option) },
+                label = { Text(option) }
+            )
+        }
+    }
+}
+
 @Composable
 private fun PaymentQrBox(paymentSettings: PaymentSettingsDto?) {
     val qrImage = paymentSettings?.paymentQrImage?.ifBlank { null }
@@ -1439,6 +1564,8 @@ private fun PaymentQrBox(paymentSettings: PaymentSettingsDto?) {
                 model = fullMediaUrl(qrImage),
                 contentDescription = "Society payment QR code",
                 modifier = Modifier.fillMaxSize().padding(14.dp),
+                error = painterResource(R.drawable.my_payment_qr),
+                placeholder = painterResource(R.drawable.my_payment_qr),
                 contentScale = ContentScale.Fit
             )
         } else {
@@ -1469,7 +1596,7 @@ private fun ResidentDialogHost(
             val societyName = paymentSettings?.societyName?.ifBlank { null } ?: "Society Management System"
             val accountName = paymentSettings?.paymentAccountHolderName?.ifBlank { null } ?: "PRIYANKA S DHAWALE"
             val upiId = paymentSettings?.paymentUpiId?.ifBlank { null } ?: "8999823244@upi"
-            val expectedAmount = (bill.remainingAmount ?: bill.totalAmount ?: bill.amount ?: "0").toMoneyDecimal()
+            val expectedAmount = bill.expectedPayableAmount()
             var showProofForm by remember { mutableStateOf(false) }
             var method by remember { mutableStateOf("UPI") }
             var amount by remember { mutableStateOf(expectedAmount.toPlainString()) }
@@ -1658,10 +1785,14 @@ private fun PaymentDetailsCard(
 }
 
 private fun previousPendingAmount(bill: MaintenanceBillDto): BigDecimal {
-    val remaining = (bill.remainingAmount ?: bill.totalAmount).toMoneyDecimal()
+    val remaining = bill.expectedPayableAmount()
     val base = bill.amount.toMoneyDecimal()
     val late = (bill.lateFee ?: bill.penaltyAmount).toMoneyDecimal()
     return (remaining - base - late).takeIf { it > BigDecimal.ZERO } ?: BigDecimal.ZERO
+}
+
+private fun MaintenanceBillDto.expectedPayableAmount(): BigDecimal {
+    return (remainingDue ?: currentDue ?: remainingAmount ?: totalAmount ?: amount).toMoneyDecimal()
 }
 
 private fun friendlyPaymentStatus(status: String?): String {
@@ -1868,6 +1999,14 @@ private fun String?.isVerificationPendingStatus(): Boolean {
 private fun String?.isApprovedStatus(): Boolean {
     val normalized = normalizePaymentStatus()
     return normalized in setOf("PAID", "APPROVED")
+}
+
+private fun MaintenancePaymentDto.proofImage(): String? {
+    return listOfNotNull(
+        screenshotUrl?.takeIf { it.isNotBlank() },
+        screenshot?.takeIf { it.isNotBlank() },
+        screenshotPath?.takeIf { it.isNotBlank() }
+    ).firstOrNull()
 }
 
 private fun String?.normalizePaymentStatus(): String {
@@ -2222,7 +2361,7 @@ private fun saveAdminBillReceiptPdf(context: Context, bill: MaintenanceBillDto) 
     line("Late fee: ${DashboardFormatters.money((bill.lateFee ?: bill.penaltyAmount).toMoneyDecimal())}")
     line("Total: ${DashboardFormatters.money(bill.totalAmount.toMoneyDecimal())}", true)
     line("Paid: ${DashboardFormatters.money(bill.paidAmount.toMoneyDecimal())}")
-    line("Remaining: ${DashboardFormatters.money((bill.remainingAmount ?: bill.totalAmount).toMoneyDecimal())}")
+    line("Remaining: ${DashboardFormatters.money(bill.expectedPayableAmount())}")
     line("Status: ${bill.paymentStatus ?: bill.status ?: "-"}")
     y += 20f
     paint.textSize = 12f

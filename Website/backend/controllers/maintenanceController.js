@@ -646,27 +646,32 @@ const getWriteOffReport = async (req, res) => {
 
 const createMaintenance = async (req, res) => {
   try {
-    const { title, month, year, dueDate, amount = 0, residentId, flatId } = req.body;
-    let flatTypeId = null;
-    let defaultAmt = Number(amount);
-
-    if (flatId) {
-      const [flatRows] = await promisePool.query(
-        `SELECT f.flat_type_id, ft.default_maintenance_amount
-         FROM flats f
-         LEFT JOIN flat_types ft ON f.flat_type_id = ft.id
-         WHERE f.id = ?`,
-        [flatId]
-      );
-      if (flatRows.length > 0) {
-        flatTypeId = flatRows[0].flat_type_id || null;
-        if (flatRows[0].default_maintenance_amount !== null && flatRows[0].default_maintenance_amount !== undefined) {
-          defaultAmt = Number(flatRows[0].default_maintenance_amount);
-        }
-      }
+    const { title, month, year, dueDate, amount, residentId, flatId } = req.body;
+    const reqMonth = Number(month);
+    const reqYear = Number(year);
+    if (!title || !Number.isInteger(reqMonth) || reqMonth < 1 || reqMonth > 12 || !Number.isInteger(reqYear) || reqYear < 2000) {
+      return sendResponse(res, 400, 'Title, valid billing month and year are required');
     }
-
-    const amt = Number(amount);
+    if (!residentId || !flatId) return sendResponse(res, 400, 'Resident and flat are required for a bill');
+    const [assignmentRows] = await promisePool.query(
+      `SELECT u.id AS resident_id, f.id AS flat_id, f.status, f.current_resident_id, f.flat_type_id,
+              ft.default_maintenance_amount
+       FROM users u JOIN flats f ON f.id = ?
+       LEFT JOIN flat_types ft ON ft.id = f.flat_type_id
+       WHERE u.id = ? AND u.role = 'resident' AND u.status = 'approved'`,
+      [flatId, residentId]
+    );
+    if (!assignmentRows.length || Number(assignmentRows[0].current_resident_id) !== Number(residentId) || String(assignmentRows[0].status).toLowerCase() !== 'occupied') {
+      return sendResponse(res, 400, 'Resident is not an active resident assigned to the selected occupied flat');
+    }
+    let flatTypeId = null;
+    const defaultAmt = Number(assignmentRows[0].default_maintenance_amount || 0);
+    flatTypeId = assignmentRows[0].flat_type_id || null;
+    const amt = amount === undefined || amount === null || String(amount).trim() === '' ? defaultAmt : Number(amount);
+    if (!Number.isFinite(amt) || amt <= 0) return sendResponse(res, 400, 'Maintenance amount must be greater than zero');
+    if (dueDate && (!/^\d{4}-\d{2}-\d{2}$/.test(String(dueDate)) || Number.isNaN(Date.parse(String(dueDate))))) return sendResponse(res, 400, 'Due date must be a valid YYYY-MM-DD date');
+    const [duplicates] = await promisePool.query('SELECT id FROM maintenance WHERE resident_id = ? AND flat_id = ? AND month = ? AND year = ? LIMIT 1', [residentId, flatId, reqMonth, reqYear]);
+    if (duplicates.length) return sendResponse(res, 409, 'A maintenance bill already exists for this resident, flat and billing cycle');
     const isCustom = amt !== defaultAmt;
 
     const [result] = await promisePool.query(
@@ -675,11 +680,11 @@ const createMaintenance = async (req, res) => {
         flat_type_id, default_maintenance_amount, final_maintenance_amount, is_custom_amount, custom_reason, edited_by, edited_at)
        VALUES (?, ?, ?, ?, ?, ?, 0.00, ?, 0.00, ?, 'Pending', ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        residentId || null,
-        flatId || null,
+         residentId,
+         flatId,
         title,
-        month,
-        year,
+         reqMonth,
+         reqYear,
         amt,
         amt,
         amt,
@@ -702,145 +707,101 @@ const createMaintenance = async (req, res) => {
 
 // POST /api/maintenance/generate
 const generateMaintenanceBills = async (req, res) => {
+  const connection = await promisePool.getConnection();
   try {
-    const { month, year } = req.body;
-
-    if (!month || !year) {
-      return sendResponse(res, 400, 'Month and year are required');
+    const body = req.body || {};
+    const reqMonth = Number(body.month);
+    const reqYear = Number(body.year);
+    if (!Number.isInteger(reqMonth) || reqMonth < 1 || reqMonth > 12 || !Number.isInteger(reqYear) || reqYear < 2000) {
+      return sendResponse(res, 400, 'Valid billing month and year are required');
     }
-
-    const reqMonth = Number(month);
-    const reqYear = Number(year);
-
-    // 1. Get settings rules
+    if (body.societyId !== undefined && body.societyId !== null && String(body.societyId).trim()) {
+      return sendResponse(res, 400, 'Society filtering is not available in this single-society database');
+    }
     const [settingsRows] = await promisePool.query('SELECT * FROM maintenance_settings ORDER BY id DESC LIMIT 1');
-    if (settingsRows.length === 0) {
-      return sendResponse(res, 400, 'Configure maintenance settings first');
+    const settings = settingsRows[0] || {};
+    const requestedAmount = body.amount === undefined || body.amount === null || String(body.amount).trim() === '' ? null : Number(body.amount);
+    if (requestedAmount !== null && (!Number.isFinite(requestedAmount) || requestedAmount <= 0)) {
+      return sendResponse(res, 400, 'Maintenance amount must be greater than zero');
     }
-    const settings = settingsRows[0];
-
-    // 2. Enforce strict chronological generation.
-    const [cycleRows] = await promisePool.query(
-      `SELECT year, month, MAX(year * 12 + month) AS cycle
-       FROM maintenance
-       WHERE resident_id IS NOT NULL AND flat_id IS NOT NULL
-       GROUP BY year, month
-       ORDER BY cycle DESC`
-    );
-    
-    const reqCycle = reqYear * 12 + reqMonth;
-
-    const months = [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December'
-    ];
-    const reqMonthName = months[reqMonth - 1];
-
-    if (cycleRows.length > 0) {
-      const latestCycle = Number(cycleRows[0].cycle);
-      const nextPendingCycle = latestCycle + 1;
-
-      if (reqCycle < nextPendingCycle) {
-        const allCycles = cycleRows.map(row => Number(row.cycle));
-        if (allCycles.includes(reqCycle)) {
-          return sendResponse(res, 400, `Maintenance bills for ${reqMonthName} ${reqYear} have already been generated.`);
+    const dueDateString = body.dueDate ? String(body.dueDate) : `${reqYear}-${String(reqMonth).padStart(2, '0')}-${String(Number(settings.due_day || 10)).padStart(2, '0')}`;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dueDateString) || Number.isNaN(Date.parse(dueDateString))) {
+      return sendResponse(res, 400, 'Due date must be a valid YYYY-MM-DD date');
+    }
+    const requestedResidents = [body.residentId, ...(Array.isArray(body.residentIds) ? body.residentIds : [])].filter(Boolean).map(Number).filter(Number.isInteger);
+    const requestedFlats = [body.flatId, ...(Array.isArray(body.flatIds) ? body.flatIds : [])].filter(Boolean).map(Number).filter(Number.isInteger);
+    const where = ["u.role = 'resident'", "u.status = 'approved'", 'f.current_resident_id = u.id', "f.status = 'Occupied'", 'f.current_resident_id IS NOT NULL'];
+    const params = [];
+    if (requestedResidents.length) { where.push('u.id = ANY(?::int[])'); params.push([...new Set(requestedResidents)]); }
+    if (requestedFlats.length) { where.push('f.id = ANY(?::int[])'); params.push([...new Set(requestedFlats)]); }
+    if (body.wing) { where.push("LOWER(COALESCE(f.wing, f.wing_block, '')) = LOWER(?)"); params.push(String(body.wing).trim()); }
+    if (body.building) { where.push("LOWER(COALESCE(f.wing_block, f.wing, '')) = LOWER(?)"); params.push(String(body.building).trim()); }
+    if (body.floor !== undefined && String(body.floor).trim()) { const value = Number(body.floor); if (!Number.isInteger(value)) return sendResponse(res, 400, 'Floor must be a valid number'); where.push('f.floor_no = ?'); params.push(value); }
+    if (body.flatTypeId !== undefined && String(body.flatTypeId).trim()) { const value = Number(body.flatTypeId); if (!Number.isInteger(value)) return sendResponse(res, 400, 'Flat type must be valid'); where.push('f.flat_type_id = ?'); params.push(value); }
+    const [candidates] = await promisePool.query(`
+      SELECT u.id AS resident_id, f.id AS flat_id, f.flat_type_id,
+             COALESCE(ft.default_maintenance_amount, f.maintenance_charge, s.fixed_amount, 0) AS default_amount
+      FROM users u JOIN flats f ON f.current_resident_id = u.id
+      LEFT JOIN flat_types ft ON ft.id = f.flat_type_id
+      LEFT JOIN (SELECT fixed_amount FROM maintenance_settings ORDER BY id DESC LIMIT 1) s ON TRUE
+      WHERE ${where.join(' AND ')}
+      ORDER BY f.wing, f.floor_no, f.flat_no, u.id`, params);
+    const result = { generatedCount: 0, skippedCount: 0, duplicateCount: 0, failedCount: 0, failureReasons: [], generated: [], skipped: [] };
+    if (!candidates.length) return sendResponse(res, 400, 'No active residents with assigned occupied flats match the selected filters', result);
+    const penalty = body.penaltyRule && typeof body.penaltyRule === 'object' ? body.penaltyRule : {};
+    const penaltyType = body.penaltyType || penalty.type || null;
+    const penaltyValue = body.penaltyValue ?? penalty.value ?? null;
+    const penaltyGraceDays = body.penaltyGraceDays ?? penalty.graceDays ?? null;
+    await connection.beginTransaction();
+    for (const candidate of candidates) {
+      const baseAmount = requestedAmount ?? Number(candidate.default_amount || 0);
+      if (!Number.isFinite(baseAmount) || baseAmount <= 0) {
+        result.failedCount += 1;
+        result.failureReasons.push({ residentId: candidate.resident_id, flatId: candidate.flat_id, reason: 'No valid maintenance amount' });
+        continue;
+      }
+      try {
+        const [existing] = await connection.query('SELECT id FROM maintenance WHERE resident_id = ? AND flat_id = ? AND month = ? AND year = ? LIMIT 1', [candidate.resident_id, candidate.flat_id, reqMonth, reqYear]);
+        if (existing.length) {
+          result.skippedCount += 1; result.duplicateCount += 1;
+          result.skipped.push({ residentId: candidate.resident_id, flatId: candidate.flat_id, reason: 'Duplicate bill for billing cycle' });
+          continue;
         }
-        return sendResponse(res, 400, 'Previous months cannot be generated.');
-      }
-
-      if (reqCycle > nextPendingCycle) {
-        const nextPendingYear = Math.floor((nextPendingCycle - 1) / 12);
-        const nextPendingMonth = nextPendingCycle - (nextPendingYear * 12);
-        const nextPendingMonthName = months[nextPendingMonth - 1];
-        return sendResponse(res, 400, `${nextPendingMonthName} ${nextPendingYear} maintenance has not been generated yet. Please generate ${nextPendingMonthName} first.`);
-      }
-    }
-
-    // 3. Prevent bill generation if any occupied flat lacks a Flat Type
-    const [missingFlatTypes] = await promisePool.query(
-      `SELECT f.id, f.flat_no, f.wing 
-       FROM flats f
-       WHERE f.current_resident_id IS NOT NULL 
-         AND f.status = 'Occupied' 
-         AND f.flat_type_id IS NULL`
-    );
-
-    if (missingFlatTypes.length > 0) {
-      const flatNames = missingFlatTypes.map(f => `${f.wing || 'A'}-${f.flat_no}`).join(', ');
-      return sendResponse(
-        res,
-        400,
-        `Cannot generate bills. Some occupied flats are not assigned a Flat Type: ${flatNames}. Please assign a Flat Type to all occupied flats in Flat Master before billing.`
-      );
-    }
-
-    // 4. Fetch occupied flats using active flat assignments or directly from occupied flats table (with Flat Types)
-    const [flats] = await promisePool.query(`
-      SELECT f.id, f.current_resident_id, f.flat_no, f.wing,
-             ft.id as flat_type_id, ft.default_maintenance_amount
-      FROM flats f
-      JOIN flat_types ft ON f.flat_type_id = ft.id
-      WHERE f.current_resident_id IS NOT NULL AND f.status = 'Occupied'
-    `);
-    if (flats.length === 0) {
-      return sendResponse(res, 404, 'No occupied flats found to bill');
-    }
-
-    // Use transaction to insert bills and their items
-    const connection = await promisePool.getConnection();
-    try {
-      await connection.beginTransaction();
-
-      for (const flat of flats) {
-        const dueDateString = `${reqYear}-${String(reqMonth).padStart(2, '0')}-${String(settings.due_day).padStart(2, '0')}`;
-        
-        // Fetch active categories assigned specifically to this flat
-        const [flatCategories] = await connection.query(
-          `SELECT mc.*
-           FROM flat_category_assignments fca
-           JOIN maintenance_categories mc ON fca.category_id = mc.id
-           WHERE fca.flat_id = ? AND mc.active = TRUE`,
-          [flat.id]
-        );
-
-        const flatCategoriesSum = flatCategories.reduce((sum, cat) => sum + Number(cat.amount || 0), 0);
-        
-        // Use flat type's default maintenance amount as the base amount
-        const baseAmt = Number(flat.default_maintenance_amount || 0);
-        const flatTotalAmt = baseAmt + flatCategoriesSum;
-
         const [insertResult] = await connection.query(
-          `INSERT INTO maintenance 
-           (resident_id, flat_id, title, month, year, amount, penalty_amount, total_amount, paid_amount, remaining_amount, status, due_date, created_at, updated_at,
-            flat_type_id, default_maintenance_amount, final_maintenance_amount, is_custom_amount) 
-           VALUES (?, ?, ?, ?, ?, ?, 0.00, ?, 0.00, ?, 'Pending', ?, NOW(), NOW(), ?, ?, ?, false)`,
-          [flat.current_resident_id, flat.id, settings.title, reqMonth, reqYear, baseAmt, flatTotalAmt, flatTotalAmt, dueDateString, flat.flat_type_id, baseAmt, baseAmt]
+          `INSERT INTO maintenance
+             (resident_id, flat_id, title, month, year, amount, penalty_amount, total_amount, paid_amount, remaining_amount,
+              status, due_date, created_at, updated_at, flat_type_id, default_maintenance_amount, final_maintenance_amount,
+              is_custom_amount, notes, penalty_type, penalty_value, penalty_grace_days)
+           VALUES (?, ?, ?, ?, ?, ?, 0, ?, 0, ?, 'Pending', ?, NOW(), NOW(), ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT DO NOTHING RETURNING id`,
+          [candidate.resident_id, candidate.flat_id, body.title || settings.title || 'Monthly Maintenance', reqMonth, reqYear,
+            baseAmount, baseAmount, baseAmount, dueDateString, candidate.flat_type_id || null, Number(candidate.default_amount || 0),
+            requestedAmount !== null, body.notes || null, penaltyType,
+            penaltyValue === null || penaltyValue === '' ? null : Number(penaltyValue),
+            penaltyGraceDays === null || penaltyGraceDays === '' ? null : Number(penaltyGraceDays)]
         );
-
-        const billId = insertResult.insertId;
-
-        // Insert items into maintenance_bill_items
-        for (const cat of flatCategories) {
-          await connection.query(
-            `INSERT INTO maintenance_bill_items (bill_id, category_id, name, amount)
-             VALUES (?, ?, ?, ?)`,
-            [billId, cat.id, cat.name, cat.amount]
-          );
+        const billId = insertResult.insertId || insertResult.id;
+        if (!billId) {
+          result.skippedCount += 1; result.duplicateCount += 1;
+          result.skipped.push({ residentId: candidate.resident_id, flatId: candidate.flat_id, reason: 'Duplicate bill for billing cycle' });
+        } else {
+          result.generatedCount += 1;
+          result.generated.push({ id: billId, residentId: candidate.resident_id, flatId: candidate.flat_id });
         }
+      } catch (candidateError) {
+        result.failedCount += 1;
+        result.failureReasons.push({ residentId: candidate.resident_id, flatId: candidate.flat_id, reason: candidateError.message });
       }
-
-      await connection.commit();
-    } catch (err) {
-      await connection.rollback();
-      throw err;
-    } finally {
-      connection.release();
     }
-
-    return sendResponse(res, 201, 'Maintenance bills generated successfully', { billsGenerated: flats.length });
+    await connection.commit();
+    if (result.generatedCount === 0) return sendResponse(res, 409, 'No bills were generated. All matching residents were skipped or failed validation.', result);
+    return sendResponse(res, 201, 'Maintenance bills generated successfully', result);
   } catch (error) {
+    try { await connection.rollback(); } catch (_) { /* no-op */ }
     console.error('Generate bills error:', error);
-    return sendResponse(res, 500, 'Server error', null, ['Unable to generate maintenance bills']);
+    return sendResponse(res, 500, 'Unable to generate maintenance bills', null, [error.message]);
+  } finally {
+    connection.release();
   }
 };
 
@@ -1232,14 +1193,14 @@ const approvePayment = async (req, res) => {
   try {
     const { id } = req.params;
     await connection.beginTransaction();
-    const [paymentRows] = await connection.query('SELECT * FROM payments WHERE id = ?', [id]);
+    const [paymentRows] = await connection.query('SELECT * FROM payments WHERE id = ? FOR UPDATE', [id]);
     if (paymentRows.length === 0) {
       await connection.rollback();
       return sendResponse(res, 404, 'Payment record not found');
     }
 
     const payment = paymentRows[0];
-    if (['Approved', 'Paid', 'Rejected'].includes(payment.payment_status)) {
+    if (['Approved', 'Paid', 'Rejected'].includes(String(payment.payment_status || '').trim())) {
       await connection.rollback();
       return sendResponse(res, 400, `Payment has already been ${String(payment.payment_status).toLowerCase()}`);
     }
@@ -1371,14 +1332,14 @@ const rejectPayment = async (req, res) => {
     }
 
     await connection.beginTransaction();
-    const [paymentRows] = await connection.query('SELECT * FROM payments WHERE id = ?', [id]);
+    const [paymentRows] = await connection.query('SELECT * FROM payments WHERE id = ? FOR UPDATE', [id]);
     if (paymentRows.length === 0) {
       await connection.rollback();
       return sendResponse(res, 404, 'Payment record not found');
     }
 
     const payment = paymentRows[0];
-    if (['Approved', 'Paid', 'Rejected'].includes(payment.payment_status)) {
+    if (['Approved', 'Paid', 'Rejected'].includes(String(payment.payment_status || '').trim())) {
       await connection.rollback();
       return sendResponse(res, 400, `Payment has already been ${String(payment.payment_status).toLowerCase()}`);
     }
@@ -1428,7 +1389,7 @@ const rejectPayment = async (req, res) => {
     const billIds = linkedBills.length ? linkedBills.map((row) => row.maintenance_id) : [payment.bill_id];
     const validBillIds = billIds.filter(Boolean);
 
-    const maintenanceSet = ["status = 'Overdue'"];
+    const maintenanceSet = ["status = CASE WHEN due_date IS NOT NULL AND due_date < CURRENT_DATE THEN 'Overdue' ELSE 'Pending' END"];
     const maintenanceValues = [];
     if (maintenanceHasPaymentDate) maintenanceSet.push('payment_date = NULL');
     if (maintenanceHasRemarks) {

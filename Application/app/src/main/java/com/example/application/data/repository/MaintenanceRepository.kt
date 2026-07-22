@@ -2,7 +2,6 @@ package com.example.application.data.repository
 
 import com.example.application.data.remote.api.MaintenanceApiService
 import com.example.application.data.remote.dto.ApiResponse
-import com.example.application.data.remote.dto.ApplyPenaltyRequest
 import com.example.application.data.remote.dto.ApplyWaiverRequest
 import com.example.application.data.remote.dto.CategorySaveRequest
 import com.example.application.data.remote.dto.CreateDisputeRequest
@@ -17,6 +16,7 @@ import com.example.application.data.remote.dto.ManualPayRequest
 import com.example.application.data.remote.dto.MarkPaidRequest
 import com.example.application.data.remote.dto.SubmitPaymentRequest
 import com.example.application.data.remote.dto.UpdatePaymentRequest
+import com.example.application.data.remote.dto.WriteOffRequest
 import com.example.application.util.AppError
 import com.example.application.util.NetworkResult
 import com.google.gson.Gson
@@ -67,6 +67,7 @@ class MaintenanceRepository @Inject constructor(
         val dashboardCall = async { safeApiCall { api.getDashboard() } }
         val billsCall = async { safeApiCall { api.getBills() } }
         val paymentsCall = async { safeApiCall { api.getPayments() } }
+        val pendingPaymentsCall = async { safeApiCall { api.getPendingVerificationPayments() } }
         val categoriesCall = async { safeApiCall { api.getCategories() } }
         val expensesCall = async { safeApiCall { api.getExpenses() } }
         val settingsCall = async { safeApiCall { api.getSettings() } }
@@ -76,6 +77,7 @@ class MaintenanceRepository @Inject constructor(
         val dashboard = dashboardCall.await()
         val bills = billsCall.await()
         val payments = paymentsCall.await()
+        val pendingPayments = pendingPaymentsCall.await()
         val categories = categoriesCall.await()
         val expenses = expensesCall.await()
         val settings = settingsCall.await()
@@ -87,7 +89,10 @@ class MaintenanceRepository @Inject constructor(
             adminSummary = null,
             dashboard = (dashboard as? NetworkResult.Success)?.data,
             bills = (bills as? NetworkResult.Success)?.data.orEmpty(),
-            payments = (payments as? NetworkResult.Success)?.data.orEmpty(),
+            payments = mergePayments(
+                (payments as? NetworkResult.Success)?.data.orEmpty(),
+                (pendingPayments as? NetworkResult.Success)?.data.orEmpty()
+            ),
             categories = (categories as? NetworkResult.Success)?.data.orEmpty(),
             expenses = (expenses as? NetworkResult.Success)?.data.orEmpty(),
             settings = (settings as? NetworkResult.Success)?.data,
@@ -97,7 +102,7 @@ class MaintenanceRepository @Inject constructor(
             warnings = listOfNotNull(
                 if (dashboard is NetworkResult.Error) userMessageFor(dashboard.error) else null,
                 if (bills is NetworkResult.Error) userMessageFor(bills.error) else null,
-                if (payments is NetworkResult.Error) "Payments unavailable" else null,
+                if (payments is NetworkResult.Error && pendingPayments is NetworkResult.Error) "Payments unavailable" else null,
                 if (expenses is NetworkResult.Error) "Expenses unavailable" else null,
                 if (disputes is NetworkResult.Error) "Disputes unavailable" else null
             )
@@ -121,7 +126,27 @@ class MaintenanceRepository @Inject constructor(
         NetworkResult.Success(data)
     }
 
-    suspend fun generateBills(month: Int, year: Int) = messageCall { api.generateBills(GenerateBillsRequest(month, year)) }
+    suspend fun generateBills(
+        month: Int,
+        year: Int,
+        amount: String? = null,
+        dueDate: String? = null,
+        title: String? = null,
+        notes: String? = null,
+        residentId: String? = null,
+        residentIds: List<String>? = null,
+        flatId: String? = null,
+        flatIds: List<String>? = null,
+        wing: String? = null,
+        building: String? = null,
+        floor: String? = null,
+        flatTypeId: String? = null,
+        penaltyType: String? = null,
+        penaltyValue: String? = null,
+        penaltyGraceDays: String? = null
+    ) = messageCall {
+        api.generateBills(GenerateBillsRequest(month, year, amount, dueDate, title, notes, residentId, residentIds, flatId, flatIds, wing, building, floor, flatTypeId, penaltyType, penaltyValue, penaltyGraceDays))
+    }
     suspend fun createMaintenance(request: MaintenanceCreateRequest) = messageCall { api.createMaintenance(request) }
     suspend fun updateMaintenance(id: String, request: MaintenanceUpdateRequest) = messageCall { api.updateMaintenance(id, request) }
     suspend fun deleteMaintenance(id: String) = messageCall { api.deleteMaintenance(id) }
@@ -133,7 +158,8 @@ class MaintenanceRepository @Inject constructor(
     suspend fun applyPenaltyToBill(id: String, amount: String, reason: String?) = messageCall { api.applyPenalty() }
     suspend fun applyWaiver(id: String, amount: String, reason: String, type: String, reference: String?, date: String?, note: String?) =
         messageCall { api.applyAdminWaiver(id, ApplyWaiverRequest(amount, reason, type, reference, date, note)) }
-    suspend fun cancelBill(id: String, reason: String) = messageCall { api.cancelAdminBill(id, mapOf("reason" to reason)) }
+    suspend fun createWriteOff(id: String, request: WriteOffRequest) = messageCall { api.createWriteOff(id, request) }
+    suspend fun cancelBill(id: String, reason: String) = messageCall { api.deleteMaintenance(id) }
     suspend fun submitPayment(request: SubmitPaymentRequest) = messageCall { api.submitPayment(request) }
     suspend fun updatePayment(id: String, request: UpdatePaymentRequest): NetworkResult<String> {
         return when (request.paymentStatus.trim().lowercase()) {
@@ -158,6 +184,14 @@ class MaintenanceRepository @Inject constructor(
     suspend fun createExpense(request: ExpenseCreateRequest) = messageCall { api.createExpense(request) }
     suspend fun deleteExpense(id: String) = messageCall { api.deleteExpense(id) }
     suspend fun createDispute(request: CreateDisputeRequest) = messageCall { api.createDispute(request) }
+
+    private fun mergePayments(
+        payments: List<com.example.application.data.remote.dto.MaintenancePaymentDto>,
+        pendingPayments: List<com.example.application.data.remote.dto.MaintenancePaymentDto>
+    ): List<com.example.application.data.remote.dto.MaintenancePaymentDto> {
+        return (pendingPayments + payments)
+            .distinctBy { it.id ?: "${it.billId}-${it.transactionId}-${it.createdAt}" }
+    }
 
     private suspend fun <T> messageCall(call: suspend () -> Response<ApiResponse<T>>): NetworkResult<String> {
         return try {

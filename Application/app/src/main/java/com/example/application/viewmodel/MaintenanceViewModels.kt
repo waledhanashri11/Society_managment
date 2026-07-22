@@ -12,6 +12,7 @@ import com.example.application.data.remote.dto.ManualPayRequest
 import com.example.application.data.remote.dto.MarkPaidRequest
 import com.example.application.data.remote.dto.SubmitPaymentRequest
 import com.example.application.data.remote.dto.UpdatePaymentRequest
+import com.example.application.data.remote.dto.WriteOffRequest
 import com.example.application.data.repository.AdminMaintenanceData
 import com.example.application.data.repository.MaintenanceRepository
 import com.example.application.data.repository.ResidentMaintenanceData
@@ -85,7 +86,27 @@ class AdminMaintenanceViewModel @Inject constructor(
     fun setQuery(query: String) = _state.update { it.copy(query = query) }
     fun setFilter(filter: String) = _state.update { it.copy(filter = filter) }
 
-    fun generateBills(month: Int, year: Int) = action { repository.generateBills(month, year) }
+    fun generateBills(
+        month: Int,
+        year: Int,
+        amount: String? = null,
+        dueDate: String? = null,
+        title: String? = null,
+        notes: String? = null,
+        residentId: String? = null,
+        residentIds: List<String>? = null,
+        flatId: String? = null,
+        flatIds: List<String>? = null,
+        wing: String? = null,
+        building: String? = null,
+        floor: String? = null,
+        flatTypeId: String? = null,
+        penaltyType: String? = null,
+        penaltyValue: String? = null,
+        penaltyGraceDays: String? = null
+    ) = action {
+        repository.generateBills(month, year, amount, dueDate, title, notes, residentId, residentIds, flatId, flatIds, wing, building, floor, flatTypeId, penaltyType, penaltyValue, penaltyGraceDays)
+    }
     fun createManualBill(title: String, month: Int, year: Int, dueDate: String, amount: String, residentId: String?, flatId: String?) =
         action { repository.createMaintenance(MaintenanceCreateRequest(title, month, year, dueDate, amount, residentId, flatId)) }
     fun deleteBill(id: String) = action { repository.deleteMaintenance(id) }
@@ -98,6 +119,8 @@ class AdminMaintenanceViewModel @Inject constructor(
     fun waiveLateFee(id: String) = action { repository.waiveLateFee(id) }
     fun applyWaiver(id: String, amount: String, reason: String, type: String, reference: String?, date: String?, note: String?) =
         action { repository.applyWaiver(id, amount, reason, type, reference, date, note) }
+    fun createWriteOff(id: String, type: String, amount: String?, reason: String, remarks: String?) =
+        action { repository.createWriteOff(id, WriteOffRequest(type, amount?.ifBlank { null }, reason, remarks?.ifBlank { null })) }
     fun updatePayment(id: String, status: String, reason: String? = null) = action {
         val normalizedStatus = when (status.trim().uppercase()) {
             "APPROVED", "APPROVE", "PAID" -> "Paid"

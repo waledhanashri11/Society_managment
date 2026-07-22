@@ -96,11 +96,37 @@ data class MaintenanceSettingsRequest(
 
 data class GenerateBillsRequest(
     val month: Int,
-    val year: Int
+    val year: Int,
+    val amount: String? = null,
+    val dueDate: String? = null,
+    val title: String? = null,
+    val notes: String? = null,
+    val residentId: String? = null,
+    val residentIds: List<String>? = null,
+    val flatId: String? = null,
+    val flatIds: List<String>? = null,
+    val wing: String? = null,
+    val building: String? = null,
+    val floor: String? = null,
+    val flatTypeId: String? = null,
+    val penaltyType: String? = null,
+    val penaltyValue: String? = null,
+    val penaltyGraceDays: String? = null
 )
 
 data class GenerateBillsResultDto(
-    val billsGenerated: Int?
+    @SerializedName(value = "generatedCount", alternate = ["billsGenerated"])
+    val generatedCount: Int?,
+    val skippedCount: Int? = null,
+    val duplicateCount: Int? = null,
+    val failedCount: Int? = null,
+    val failureReasons: List<GenerateBillFailureDto>? = null
+)
+
+data class GenerateBillFailureDto(
+    val residentId: String? = null,
+    val flatId: String? = null,
+    val reason: String? = null
 )
 
 data class MaintenanceCreateRequest(
@@ -155,11 +181,12 @@ data class MaintenancePaymentDto(
     val id: String?,
     @SerializedName("bill_id") val billId: String?,
     @SerializedName("payment_method") val paymentMethod: String?,
-    @SerializedName("transaction_id") val transactionId: String?,
+    @SerializedName(value = "transaction_id", alternate = ["utr_number", "utrNumber"]) val transactionId: String?,
     val amount: String?,
     @SerializedName("payment_status") val paymentStatus: String?,
     @SerializedName("paid_at") val paidAt: String?,
-    @SerializedName(value = "screenshot_url", alternate = ["screenshot", "payment_proof"]) val screenshotUrl: String?,
+    @SerializedName(value = "screenshot_url", alternate = ["screenshot", "payment_proof", "screenshot_path", "payment_screenshot", "proofUrl"]) val screenshotUrl: String?,
+    @SerializedName(value = "screenshot_path", alternate = ["payment_proof", "payment_screenshot"]) val screenshotPath: String?,
     @SerializedName("created_at") val createdAt: String?,
     @SerializedName("resident_name") val residentName: String?,
     @SerializedName("flat_no") val flatNo: String?,
@@ -276,6 +303,23 @@ data class ApplyWaiverRequest(
     @SerializedName("approvalReference") val approvalReference: String? = null,
     @SerializedName("approvalDate") val approvalDate: String? = null,
     @SerializedName("adminNote") val adminNote: String? = null
+)
+
+data class WriteOffRequest(
+    val writeoffType: String,
+    val amount: String?,
+    val reason: String,
+    val remarks: String? = null
+)
+
+data class WriteOffResultDto(
+    val id: String?,
+    val billId: String?,
+    val writeoffType: String?,
+    val amount: String?,
+    val previousDue: String?,
+    val finalDue: String?,
+    val status: String?
 )
 
 data class ApplyPenaltyRequest(
