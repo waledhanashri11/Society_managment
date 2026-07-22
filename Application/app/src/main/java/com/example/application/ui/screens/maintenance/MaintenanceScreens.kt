@@ -877,8 +877,6 @@ private fun PaymentVerificationSection(
                     model = fullMediaUrl(payment.proofImage()),
                     contentDescription = "Payment screenshot",
                     modifier = Modifier.fillMaxWidth().height(520.dp).clip(RoundedCornerShape(14.dp)),
-                    error = painterResource(R.drawable.ic_launcher_background),
-                    placeholder = painterResource(R.drawable.ic_launcher_background),
                     contentScale = ContentScale.Fit
                 )
             },
@@ -941,8 +939,6 @@ private fun PaymentVerificationCard(
                     model = fullMediaUrl(payment.proofImage()),
                     contentDescription = "Payment screenshot thumbnail",
                     modifier = Modifier.height(92.dp).weight(0.36f).clip(RoundedCornerShape(14.dp)).clickable { onOpenScreenshot() },
-                    error = painterResource(R.drawable.ic_launcher_background),
-                    placeholder = painterResource(R.drawable.ic_launcher_background),
                     contentScale = ContentScale.Crop
                 )
                 Column(modifier = Modifier.weight(0.64f), verticalArrangement = Arrangement.spacedBy(4.dp)) {

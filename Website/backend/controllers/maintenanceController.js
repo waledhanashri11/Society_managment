@@ -1200,7 +1200,8 @@ const approvePayment = async (req, res) => {
     }
 
     const payment = paymentRows[0];
-    if (['Approved', 'Paid', 'Rejected'].includes(String(payment.payment_status || '').trim())) {
+    const currentStatus = String(payment.payment_status || '').trim().toLowerCase();
+    if (['approved', 'paid', 'rejected'].includes(currentStatus)) {
       await connection.rollback();
       return sendResponse(res, 400, `Payment has already been ${String(payment.payment_status).toLowerCase()}`);
     }
@@ -1339,7 +1340,8 @@ const rejectPayment = async (req, res) => {
     }
 
     const payment = paymentRows[0];
-    if (['Approved', 'Paid', 'Rejected'].includes(String(payment.payment_status || '').trim())) {
+    const currentStatus = String(payment.payment_status || '').trim().toLowerCase();
+    if (['approved', 'paid', 'rejected'].includes(currentStatus)) {
       await connection.rollback();
       return sendResponse(res, 400, `Payment has already been ${String(payment.payment_status).toLowerCase()}`);
     }
