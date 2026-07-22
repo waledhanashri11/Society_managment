@@ -349,7 +349,16 @@ const getAttendance = async (req, res) => {
 const saveAttendance = async (req, res) => {
   try {
     const { id } = req.params;
-    const { attendance = [] } = req.body;
+    let { attendance = [] } = req.body;
+    if (req.user.role === 'resident') {
+      const requestedStatus = req.body.status || attendance?.[0]?.status || 'Present';
+      if (requestedStatus !== 'Present') {
+        return res.status(400).json({ message: 'Residents can only mark themselves Present. Contact an admin for another status.' });
+      }
+      attendance = [{ resident_id: req.user.id, status: 'Present' }];
+    } else if (!['admin', 'committee'].includes(req.user.role)) {
+      return res.status(403).json({ message: 'Access denied.' });
+    }
 
     // Enforce Validation: Cannot take attendance before meeting starts
     const [meetings] = await promisePool.query('SELECT meeting_date, start_time FROM meetings WHERE id = ?', [id]);
@@ -378,6 +387,7 @@ const saveAttendance = async (req, res) => {
       await connection.beginTransaction();
 
       for (const att of attendance) {
+        if (!att.resident_id || !['Present', 'Absent', 'Late', 'Excused'].includes(att.status)) continue;
         await connection.query(
           `INSERT INTO meeting_attendance (meeting_id, resident_id, status, marked_at)
            VALUES (?, ?, ?, NOW())

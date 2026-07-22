@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Assignment
 import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Menu
@@ -422,6 +423,7 @@ private fun AdminDrawer(adminName: String, onAction: (String) -> Unit) {
             AdminAction("Maintenance & Payments", "Maintenance & Payments", Icons.Filled.Payments, Color(0xFF9C3ED7)),
             AdminAction("Notices", "Notices", Icons.Filled.Campaign, Color(0xFF2F80ED)),
             AdminAction("Rules", "Society Rules", Icons.Filled.Assignment, Color(0xFF0B7F77)),
+            AdminAction("Meetings", "Meeting Management", Icons.Filled.Event, Color(0xFF5B5BD6)),
             AdminAction("Complaints", "Complaints", Icons.Filled.WarningAmber, Color(0xFFFFA000)),
             AdminAction("Reports", "Reports", Icons.Filled.TrendingUp, Color(0xFF9C3ED7)),
             AdminAction("NOC", "NOC Requests", Icons.Filled.Description, Color(0xFF16B6A4)),
@@ -440,6 +442,7 @@ private fun adminQuickActions(): List<AdminAction> = listOf(
     AdminAction("Payment Reviews", "Payment Reviews", Icons.Filled.Assignment, Color(0xFFFF5A4F)),
     AdminAction("Notices", "Notices", Icons.Filled.Campaign, Color(0xFF2F80ED)),
     AdminAction("Rules", "Society Rules", Icons.Filled.Assignment, Color(0xFF0B7F77)),
+    AdminAction("Meetings", "Meeting Management", Icons.Filled.Event, Color(0xFF5B5BD6)),
     AdminAction("Complaints", "Complaints", Icons.Filled.WarningAmber, Color(0xFFFFA000)),
     AdminAction("Reports", "Reports", Icons.Filled.TrendingUp, Color(0xFF9C3ED7)),
     AdminAction("NOC", "NOC Requests", Icons.Filled.Description, Color(0xFF16B6A4)),

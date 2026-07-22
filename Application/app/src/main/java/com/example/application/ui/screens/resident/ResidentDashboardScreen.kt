@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Menu
@@ -353,6 +354,7 @@ private fun ResidentQuickActions(onQuickAction: (String) -> Unit) {
             ResidentAction("Complaints", Icons.Filled.ReportProblem) { onQuickAction("My Complaints") }
             ResidentAction("Notices", Icons.Filled.Campaign) { onQuickAction("Notices") }
             ResidentAction("Rules", Icons.Filled.TaskAlt) { onQuickAction("Society Rules") }
+            ResidentAction("Meetings", Icons.Filled.Event) { onQuickAction("Meeting Management") }
             ResidentAction("NOC", Icons.Filled.Description) { onQuickAction("NOC Requests") }
         }
     }

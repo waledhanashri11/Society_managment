@@ -36,7 +36,9 @@ router.delete('/:id', auth, adminOrCommitteeAuth, deleteMeeting);
 // Agendas, Attendance, and MoM reports
 router.put('/:id/agenda', auth, adminOrCommitteeAuth, updateAgendas);
 router.get('/:id/attendance', auth, adminOrCommitteeAuth, getAttendance);
-router.post('/:id/attendance', auth, adminOrCommitteeAuth, saveAttendance);
+// Admin/committee can submit the full roster; residents can submit only their
+// own attendance through this same endpoint.
+router.post('/:id/attendance', auth, saveAttendance);
 router.post('/:id/report', auth, adminOrCommitteeAuth, saveMeetingReport);
 
 // Action items tracker

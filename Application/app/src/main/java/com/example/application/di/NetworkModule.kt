@@ -12,6 +12,7 @@ import com.example.application.data.remote.api.NocApiService
 import com.example.application.data.remote.api.ReportsApiService
 import com.example.application.data.remote.api.ResidentApiService
 import com.example.application.data.remote.api.SocietyRulesApiService
+import com.example.application.data.remote.api.MeetingsApiService
 import com.example.application.data.remote.api.DashboardApiService
 import com.example.application.data.remote.interceptor.AcceptHeaderInterceptor
 import com.example.application.data.remote.interceptor.AuthHeaderInterceptor
@@ -160,5 +161,11 @@ object NetworkModule {
     @Singleton
     fun provideSocietyRulesApiService(retrofit: Retrofit): SocietyRulesApiService {
         return retrofit.create(SocietyRulesApiService::class.java)
+    }
+
+    @Provides
+    @Singleton
+    fun provideMeetingsApiService(retrofit: Retrofit): MeetingsApiService {
+        return retrofit.create(MeetingsApiService::class.java)
     }
 }

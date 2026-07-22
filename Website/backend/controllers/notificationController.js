@@ -19,6 +19,7 @@ const getAdminNotifications = async (req, res) => {
       else if (item.type === 'maintenance') path = '/admin/maintenance';
       else if (item.type === 'notice' || item.type === 'notices') path = '/admin/notices';
       else if (item.type === 'rule' || item.type === 'rule_reminder') path = '/admin/rules';
+      else if (item.type === 'meetings' || item.type === 'meeting') path = '/admin/meetings';
       else if (item.type === 'noc') path = '/admin/noc-management';
 
       return {
@@ -70,6 +71,7 @@ const getResidentNotifications = async (req, res) => {
       else if (item.type === 'complaints') path = '/resident/complaints';
       else if (item.type === 'notice') path = '/resident/notices';
       else if (item.type === 'rule' || item.type === 'rule_reminder') path = '/resident/rules';
+      else if (item.type === 'meetings' || item.type === 'meeting') path = '/resident/meetings';
       else if (item.type === 'maintenance' || item.type === 'payment') path = '/resident/maintenance';
       return { ...item, path };
     });
