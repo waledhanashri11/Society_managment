@@ -1325,6 +1325,12 @@ private fun MaintenanceDialogHost(dialog: MaintenanceDialog?, onDismiss: () -> U
             var penaltyType by remember { mutableStateOf("") }
             var penaltyValue by remember { mutableStateOf("") }
             var penaltyGraceDays by remember { mutableStateOf("") }
+            var residentId by remember { mutableStateOf("") }
+            var flatId by remember { mutableStateOf("") }
+            var wing by remember { mutableStateOf("") }
+            var building by remember { mutableStateOf("") }
+            var floor by remember { mutableStateOf("") }
+            var flatTypeId by remember { mutableStateOf("") }
             BasicAppTextField(month, { month = it }, "Month number")
             BasicAppTextField(year, { year = it }, "Year")
             BasicAppTextField(title, { title = it }, "Bill title")
@@ -1333,6 +1339,12 @@ private fun MaintenanceDialogHost(dialog: MaintenanceDialog?, onDismiss: () -> U
             BasicAppTextField(penaltyType, { penaltyType = it }, "Penalty type optional")
             BasicAppTextField(penaltyValue, { penaltyValue = it }, "Penalty value optional")
             BasicAppTextField(penaltyGraceDays, { penaltyGraceDays = it }, "Penalty grace days optional")
+            BasicAppTextField(residentId, { residentId = it }, "Resident ID optional")
+            BasicAppTextField(flatId, { flatId = it }, "Flat ID optional")
+            BasicAppTextField(wing, { wing = it }, "Wing optional")
+            BasicAppTextField(building, { building = it }, "Building optional")
+            BasicAppTextField(floor, { floor = it }, "Floor optional")
+            BasicAppTextField(flatTypeId, { flatTypeId = it }, "Flat type ID optional")
             BasicAppTextField(notes, { notes = it }, "Notes optional")
             Button(
                 onClick = {
@@ -1340,6 +1352,8 @@ private fun MaintenanceDialogHost(dialog: MaintenanceDialog?, onDismiss: () -> U
                         month.toIntOrNull() ?: 0,
                         year.toIntOrNull() ?: 0,
                         amount.ifBlank { null }, dueDate, title, notes.ifBlank { null },
+                        residentId = residentId.ifBlank { null }, flatId = flatId.ifBlank { null },
+                        wing = wing.ifBlank { null }, building = building.ifBlank { null }, floor = floor.ifBlank { null }, flatTypeId = flatTypeId.ifBlank { null },
                         penaltyType = penaltyType.ifBlank { null }, penaltyValue = penaltyValue.ifBlank { null }, penaltyGraceDays = penaltyGraceDays.ifBlank { null }
                     )
                     onDismiss()
