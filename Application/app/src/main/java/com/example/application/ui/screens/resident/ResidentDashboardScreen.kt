@@ -340,13 +340,19 @@ private fun ResidentHeroCard(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ResidentQuickActions(onQuickAction: (String) -> Unit) {
     SectionCard("Quick Actions") {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(18.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
             ResidentAction("Maintenance", Icons.Filled.Payments) { onQuickAction("Maintenance") }
             ResidentAction("Complaints", Icons.Filled.ReportProblem) { onQuickAction("My Complaints") }
             ResidentAction("Notices", Icons.Filled.Campaign) { onQuickAction("Notices") }
+            ResidentAction("Rules", Icons.Filled.TaskAlt) { onQuickAction("Society Rules") }
             ResidentAction("NOC", Icons.Filled.Description) { onQuickAction("NOC Requests") }
         }
     }
