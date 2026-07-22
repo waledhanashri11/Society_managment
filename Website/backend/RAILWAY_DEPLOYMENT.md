@@ -20,6 +20,7 @@ Add these in the Railway dashboard. Do not commit real values to Git.
 DATABASE_URL=your_supabase_postgresql_connection_string
 JWT_SECRET=your_strong_secret_key
 FRONTEND_URL=http://localhost:3000
+BACKEND_PUBLIC_URL=https://societymanagment-production-e0d3.up.railway.app
 NODE_ENV=production
 DATABASE_SSL=true
 DB_POOL_SIZE=20

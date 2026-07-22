@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { promisePool } = require('../config/database');
+const { buildPublicFileUrl } = require('../utils/fileUrl');
 
 const saveBase64File = (base64Data, originalFileName) => {
   const match = base64Data.match(/^data:([^;]+);base64,(.+)$/);
@@ -19,6 +20,15 @@ const saveBase64File = (base64Data, originalFileName) => {
     fileType: match[1]
   };
 };
+
+const withPublicDocumentUrls = (req, documents = []) => documents.map((doc) => {
+  const publicUrl = buildPublicFileUrl(req, doc.file_path, { mustExist: true, rootDir: path.resolve(__dirname, '..') });
+  return {
+    ...doc,
+    file_url: publicUrl,
+    file_path: publicUrl || doc.file_path
+  };
+});
 
 // GET /api/meetings
 const getAllMeetings = async (req, res) => {
@@ -137,7 +147,7 @@ const getMeetingById = async (req, res) => {
       agendas,
       report,
       actions,
-      documents,
+      documents: withPublicDocumentUrls(req, documents),
       vote: vote ? { ...vote, has_voted: hasVoted, my_choice: myChoice } : null,
       my_attendance: myAttendance
     });

@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { promisePool } = require('../config/database');
+const { buildPublicFileUrl, uploadFileExists } = require('../utils/fileUrl');
 
 const MAX_COMPLAINT_IMAGES = 3;
 const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
@@ -17,20 +18,17 @@ const parseImages = (value) => {
   }
 };
 
-const complaintImageUrl = (req, imagePath) => {
-  if (!imagePath) return '';
-  const cleanPath = String(imagePath);
-  if (/^https?:\/\//i.test(cleanPath)) return cleanPath;
-  const host = `${req.protocol}://${req.get('host')}`;
-  return `${host}${cleanPath.startsWith('/') ? cleanPath : `/${cleanPath}`}`;
+const complaintImageExists = (imagePath) => {
+  return uploadFileExists(imagePath, path.resolve(__dirname, '..'));
 };
 
 const withComplaintImageUrls = (req, complaint) => {
   const complaintImages = parseImages(complaint.complaint_images);
+  const availableImages = complaintImages.filter(complaintImageExists);
   return {
     ...complaint,
     complaint_images: complaintImages,
-    complaint_image_urls: complaintImages.map((item) => complaintImageUrl(req, item))
+    complaint_image_urls: availableImages.map((item) => buildPublicFileUrl(req, item))
   };
 };
 
@@ -136,7 +134,7 @@ const createComplaint = async (req, res) => {
       title,
       description,
       complaint_images: complaintImages,
-      complaint_image_urls: complaintImages.map((item) => complaintImageUrl(req, item)),
+      complaint_image_urls: complaintImages.map((item) => buildPublicFileUrl(req, item)),
       status: 'pending'
     });
   } catch (error) {
