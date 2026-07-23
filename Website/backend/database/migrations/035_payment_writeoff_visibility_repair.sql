@@ -18,7 +18,7 @@ ALTER TABLE payments
   CHECK (payment_status IN (
     'Pending', 'Under Review', 'Pending Verification', 'Needs Clarification',
     'Approved', 'Paid', 'Rejected'
-  ));
+  )) NOT VALID;
 
 ALTER TABLE maintenance DROP CONSTRAINT IF EXISTS maintenance_status_check;
 ALTER TABLE maintenance
@@ -28,7 +28,7 @@ ALTER TABLE maintenance
     'Under Review', 'Partial', 'Partially Paid', 'Paid', 'Overdue', 'Rejected',
     'Waived', 'Written Off', 'Cancelled', 'pending', 'paid',
     'UNPAID', 'PARTIALLY_PAID', 'PAID', 'PARTIAL_WRITE_OFF', 'WRITTEN_OFF', 'SETTLED'
-  ));
+  )) NOT VALID;
 
 CREATE TABLE IF NOT EXISTS payment_maintenance (
   payment_id INTEGER NOT NULL REFERENCES payments(id) ON DELETE CASCADE,
@@ -83,6 +83,33 @@ CREATE TABLE IF NOT EXISTS maintenance_writeoffs (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE maintenance_writeoffs
+  ADD COLUMN IF NOT EXISTS bill_id INTEGER REFERENCES maintenance(id) ON DELETE CASCADE,
+  ADD COLUMN IF NOT EXISTS resident_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS flat_id INTEGER REFERENCES flats(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS admin_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS admin_name VARCHAR(255),
+  ADD COLUMN IF NOT EXISTS writeoff_type VARCHAR(20),
+  ADD COLUMN IF NOT EXISTS amount NUMERIC(12, 2),
+  ADD COLUMN IF NOT EXISTS previous_due NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS final_due NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS reason VARCHAR(80),
+  ADD COLUMN IF NOT EXISTS remarks TEXT,
+  ADD COLUMN IF NOT EXISTS ip_address VARCHAR(80),
+  ADD COLUMN IF NOT EXISTS device_info TEXT,
+  ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+ALTER TABLE maintenance_writeoffs DROP CONSTRAINT IF EXISTS maintenance_writeoffs_writeoff_type_check;
+ALTER TABLE maintenance_writeoffs
+  ADD CONSTRAINT maintenance_writeoffs_writeoff_type_check
+  CHECK (writeoff_type IN ('PARTIAL', 'TOTAL')) NOT VALID;
+
+ALTER TABLE maintenance_writeoffs DROP CONSTRAINT IF EXISTS maintenance_writeoffs_reason_check;
+ALTER TABLE maintenance_writeoffs
+  ADD CONSTRAINT maintenance_writeoffs_reason_check
+  CHECK (reason IN ('Billing Error', 'Financial Assistance', 'Society Decision', 'Management Approval', 'Special Approval', 'Other')) NOT VALID;
 
 CREATE INDEX IF NOT EXISTS idx_maintenance_writeoffs_bill_id ON maintenance_writeoffs(bill_id);
 CREATE INDEX IF NOT EXISTS idx_maintenance_writeoffs_resident_id ON maintenance_writeoffs(resident_id);
