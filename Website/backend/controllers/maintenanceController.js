@@ -18,7 +18,8 @@ const resolvePaymentScreenshotUrl = (req, value) => {
 
 const withPaymentScreenshotUrls = (req, payments = []) => payments.map((payment) => {
   const rawScreenshot = payment.screenshot_url || payment.screenshot || null;
-  const publicUrl = resolvePaymentScreenshotUrl(req, rawScreenshot);
+  const fallbackProof = payment.payment_proof || payment.paymentProof || null;
+  const publicUrl = resolvePaymentScreenshotUrl(req, rawScreenshot) || resolvePaymentScreenshotUrl(req, fallbackProof);
   return {
     ...payment,
     screenshot_url: publicUrl,
@@ -549,11 +550,15 @@ const createWriteOff = async (req, res) => {
     );
 
     if (bill.resident_id) {
-      await connection.query(
-        `INSERT INTO notifications (resident_id, title, message, type, is_read, created_at)
-         VALUES (?, 'Maintenance balance updated', 'Your maintenance balance has been updated.', 'maintenance', false, NOW())`,
-        [bill.resident_id]
-      );
+      try {
+        await connection.query(
+          `INSERT INTO notifications (resident_id, title, message, type, is_read, created_at)
+           VALUES (?, 'Maintenance balance updated', 'Your maintenance balance has been updated.', 'maintenance', false, NOW())`,
+          [bill.resident_id]
+        );
+      } catch (notificationError) {
+        console.error('Write-off notification failed:', notificationError);
+      }
     }
 
     await connection.commit();
@@ -1122,7 +1127,7 @@ const createPayment = async (req, res) => {
     }
     if (paymentsHasPaymentProof) {
       insertColumns.push('payment_proof');
-      insertValues.push(screenshotPath);
+      insertValues.push((screenshot || screenshotUrl) || screenshotPath);
     }
 
     const placeholders = insertColumns.map(() => '?').join(', ');
@@ -1295,8 +1300,8 @@ const approvePayment = async (req, res) => {
         [req.user.id, 'APPROVE_PAYMENT', 'PAYMENT', id, JSON.stringify(auditDetails)]
       );
 
-      // Notify the resident
-      await connection.query(
+      try {
+        await connection.query(
         `INSERT INTO notifications (resident_id, title, message, type, is_read, created_at)
          VALUES (?, ?, ?, ?, false, NOW())`,
         [
@@ -1305,7 +1310,10 @@ const approvePayment = async (req, res) => {
           `Your maintenance payment of ₹${Number(payment.amount).toLocaleString('en-IN')} for ${auditBillNumbers} has been approved. Receipt: ${receiptNumber}`,
           'payment'
         ]
-      );
+        );
+      } catch (notificationError) {
+        console.error('Payment approval notification failed:', notificationError);
+      }
     }
 
     await connection.commit();
@@ -1426,16 +1434,20 @@ const rejectPayment = async (req, res) => {
     }
 
     if (residentId) {
-      await connection.query(
-        `INSERT INTO notifications (resident_id, title, message, type, is_read, created_at)
-         VALUES (?, ?, ?, ?, false, NOW())`,
-        [
-          residentId,
-          'Payment Rejected',
-          `Your maintenance payment for ${monthText} has been rejected. Reason: ${reason}`,
-          'payment'
-        ]
-      );
+      try {
+        await connection.query(
+          `INSERT INTO notifications (resident_id, title, message, type, is_read, created_at)
+           VALUES (?, ?, ?, ?, false, NOW())`,
+          [
+            residentId,
+            'Payment Rejected',
+            `Your maintenance payment for ${monthText} has been rejected. Reason: ${reason}`,
+            'payment'
+          ]
+        );
+      } catch (notificationError) {
+        console.error('Payment rejection notification failed:', notificationError);
+      }
     }
 
     // Fetch details for audit log

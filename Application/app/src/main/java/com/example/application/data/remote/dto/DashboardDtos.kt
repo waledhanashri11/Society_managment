@@ -72,6 +72,8 @@ data class ComplaintDto(
     val complaintImageUrls: List<String>? = null,
     @SerializedName(value = "complaint_images", alternate = ["complaintImages"])
     val complaintImages: List<String>? = null,
+    @SerializedName(value = "complaint_image_data", alternate = ["complaintImageData"])
+    val complaintImageData: List<String>? = null,
     @SerializedName("created_at") val createdAt: String?
 )
 

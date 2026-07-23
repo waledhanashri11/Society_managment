@@ -420,7 +420,14 @@ private fun uriToBase64DataUrl(context: Context, uri: Uri): String? {
     val mime = context.contentResolver.getType(uri)?.takeIf { it.startsWith("image/") } ?: "image/jpeg"
     val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return null
     if (bytes.isEmpty() || bytes.size > 5 * 1024 * 1024) return null
-    return "data:$mime;base64,${Base64.encodeToString(bytes, Base64.NO_WRAP)}"
+    val backendMime = mime.lowercase().takeIf { it in setOf("image/jpeg", "image/jpg", "image/png", "image/webp") }
+    if (backendMime != null) return "data:$backendMime;base64,${Base64.encodeToString(bytes, Base64.NO_WRAP)}"
+    val bitmap = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return null
+    val output = java.io.ByteArrayOutputStream()
+    bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, output)
+    val jpgBytes = output.toByteArray()
+    if (jpgBytes.isEmpty() || jpgBytes.size > 5 * 1024 * 1024) return null
+    return "data:image/jpeg;base64,${Base64.encodeToString(jpgBytes, Base64.NO_WRAP)}"
 }
 
 private fun createPaymentCameraUri(context: Context): Uri? = runCatching {

@@ -311,9 +311,9 @@ class MaintenanceRepository @Inject constructor(
             404 -> AppError.Unknown(safe ?: "Record not found.")
             408 -> AppError.Timeout
             429 -> AppError.Server("Too many requests.")
-            500 -> AppError.Server("Server error.")
-            502, 503 -> AppError.Server("Railway server unavailable.")
-            else -> AppError.Unknown("Request failed.")
+            500 -> AppError.Server(safe ?: "Server error.")
+            502, 503 -> AppError.Server(safe ?: "Railway server unavailable.")
+            else -> AppError.Unknown(safe ?: "Request failed.")
         }
     }
 }
