@@ -508,13 +508,14 @@ const createWriteOff = async (req, res) => {
       return sendResponse(res, 409, 'Duplicate write-off request already exists for this bill');
     }
     const adminName = req.user?.name || req.user?.email || 'Admin';
+    const adminId = Number.isInteger(Number(req.user?.id)) ? Number(req.user.id) : null;
     const ip = req.ip || req.headers['x-forwarded-for'] || null;
     const device = req.headers['user-agent'] || null;
     const [inserted] = await connection.query(
       `INSERT INTO maintenance_writeoffs
        (bill_id, resident_id, flat_id, admin_id, admin_name, writeoff_type, amount, previous_due, final_due, reason, remarks, ip_address, device_info)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [bill.id, bill.resident_id, bill.flat_id, req.user.id, adminName, writeoffType, requestedAmount, previousDue, finalDue, reason, remarks, ip, device]
+      [bill.id, bill.resident_id, bill.flat_id, adminId, adminName, writeoffType, requestedAmount, previousDue, finalDue, reason, remarks, ip, device]
     );
     const writeOffId = inserted.insertId || inserted.id;
 
@@ -531,23 +532,27 @@ const createWriteOff = async (req, res) => {
       [newWriteOffTotal, finalDue, finalDue, finalDue, newStatus, bill.id]
     );
 
-    await connection.query(
-      `INSERT INTO maintenance_audit_logs (user_id, action, entity_type, entity_id, details)
-       VALUES (?, 'CREATE_WRITEOFF', 'WRITEOFF', ?, ?)`,
-      [req.user.id, writeOffId, JSON.stringify({
-        billId: bill.id,
-        residentId: bill.resident_id,
-        residentName: bill.resident_name,
-        flatNo: bill.flat_no,
-        previousDue,
-        writeOffAmount: requestedAmount,
-        finalDue,
-        reason,
-        remarks,
-        adminName,
-        dateTime: new Date().toISOString()
-      })]
-    );
+    try {
+      await connection.query(
+        `INSERT INTO maintenance_audit_logs (user_id, action, entity_type, entity_id, details)
+         VALUES (?, 'CREATE_WRITEOFF', 'WRITEOFF', ?, ?)`,
+        [adminId, writeOffId, JSON.stringify({
+          billId: bill.id,
+          residentId: bill.resident_id,
+          residentName: bill.resident_name,
+          flatNo: bill.flat_no,
+          previousDue,
+          writeOffAmount: requestedAmount,
+          finalDue,
+          reason,
+          remarks,
+          adminName,
+          dateTime: new Date().toISOString()
+        })]
+      );
+    } catch (auditError) {
+      console.error('Write-off audit failed:', auditError);
+    }
 
     if (bill.resident_id) {
       try {
@@ -1520,7 +1525,7 @@ const getPendingVerificationPayments = async (req, res) => {
       JOIN maintenance m ON p.bill_id = m.id
       JOIN users u ON m.resident_id = u.id
       JOIN flats f ON m.flat_id = f.id
-      WHERE p.payment_status = 'Pending Verification'
+      WHERE p.payment_status IN ('Pending Verification', 'Pending', 'Under Review', 'Needs Clarification')
       ORDER BY p.created_at DESC
     `);
     return sendResponse(res, 200, 'Pending verification payments fetched successfully', withPaymentScreenshotUrls(req, payments));
