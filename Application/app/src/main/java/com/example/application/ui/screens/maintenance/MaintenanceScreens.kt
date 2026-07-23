@@ -238,7 +238,7 @@ fun AdminPaymentVerificationScreen(
     val data = state.data
     LaunchedEffect(Unit) {
         viewModel.setTab("Verification")
-        viewModel.setFilter("Pending")
+        viewModel.setFilter("All")
     }
     Scaffold(topBar = {
         MaintenanceTopBar(

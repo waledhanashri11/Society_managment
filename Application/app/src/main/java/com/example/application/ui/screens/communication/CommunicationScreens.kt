@@ -8,6 +8,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -73,6 +74,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -345,13 +347,11 @@ private fun ResidentComplaintCard(complaint: ComplaintDto) {
                 if (images.isNotEmpty()) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                         images.take(3).forEach { image ->
-                            AsyncImage(
-                                model = fullMediaUrl(image),
-                                contentDescription = "Complaint picture",
+                            ComplaintProofImage(
+                                image = image,
                                 modifier = Modifier
                                     .size(96.dp)
-                                    .clip(RoundedCornerShape(10.dp)),
-                                contentScale = ContentScale.Crop
+                                    .clip(RoundedCornerShape(10.dp))
                             )
                         }
                     }
@@ -583,15 +583,13 @@ private fun ComplaintCard(complaint: ComplaintDto, admin: Boolean, onReply: () -
         if (complaintImages.isNotEmpty()) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 complaintImages.take(3).forEach { image ->
-                    AsyncImage(
-                        model = fullMediaUrl(image),
-                        contentDescription = "Complaint picture",
+                    ComplaintProofImage(
+                        image = image,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(180.dp)
                             .clip(RoundedCornerShape(14.dp))
-                            .clickable { },
-                        contentScale = ContentScale.Crop
+                            .clickable { }
                     )
                 }
             }
@@ -746,6 +744,39 @@ private fun ComplaintDto.complaintImagesForDisplay(): List<String> {
         .map { it.trim() }
         .filter { it.isNotBlank() }
         .distinct()
+}
+
+@Composable
+private fun ComplaintProofImage(image: String, modifier: Modifier = Modifier) {
+    val dataBitmap = remember(image) {
+        decodeDataImage(image)
+    }
+    if (dataBitmap != null) {
+        Image(
+            bitmap = dataBitmap.asImageBitmap(),
+            contentDescription = "Complaint picture",
+            modifier = modifier,
+            contentScale = ContentScale.Crop
+        )
+    } else {
+        AsyncImage(
+            model = fullMediaUrl(image),
+            contentDescription = "Complaint picture",
+            modifier = modifier,
+            contentScale = ContentScale.Crop
+        )
+    }
+}
+
+private fun decodeDataImage(value: String): android.graphics.Bitmap? {
+    val marker = ";base64,"
+    if (!value.startsWith("data:image/", ignoreCase = true) || !value.contains(marker, ignoreCase = true)) return null
+    val encoded = value.substringAfter(marker, missingDelimiterValue = "")
+    if (encoded.isBlank()) return null
+    return runCatching {
+        val bytes = Base64.decode(encoded, Base64.DEFAULT)
+        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+    }.getOrNull()
 }
 
 private data class ComplaintUiColors(
