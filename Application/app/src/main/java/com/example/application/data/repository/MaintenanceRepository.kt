@@ -147,8 +147,26 @@ class MaintenanceRepository @Inject constructor(
         penaltyType: String? = null,
         penaltyValue: String? = null,
         penaltyGraceDays: String? = null
-    ) = messageCall {
-        api.generateBills(GenerateBillsRequest(month, year, amount, dueDate, title, notes, residentId, residentIds, flatId, flatIds, wing, building, floor, flatTypeId, penaltyType, penaltyValue, penaltyGraceDays))
+    ): NetworkResult<String> {
+        return try {
+            val response = api.generateBills(GenerateBillsRequest(month, year, amount, dueDate, title, notes, residentId, residentIds, flatId, flatIds, wing, building, floor, flatTypeId, penaltyType, penaltyValue, penaltyGraceDays))
+            if (response.isSuccessful && response.body()?.success != false) {
+                clearCaches()
+                val data = response.body()?.data
+                NetworkResult.Success(response.body()?.message ?: "Generated ${data?.generatedCount ?: 0} bills")
+            } else {
+                val raw = response.errorBody()?.string()
+                NetworkResult.Error(mapHttpError(response.code(), parseGenerateError(raw) ?: response.body()?.message))
+            }
+        } catch (_: UnknownHostException) {
+            NetworkResult.Error(AppError.NoInternet)
+        } catch (_: SocketTimeoutException) {
+            NetworkResult.Error(AppError.Timeout)
+        } catch (_: IOException) {
+            NetworkResult.Error(AppError.NoInternet)
+        } catch (_: Exception) {
+            NetworkResult.Error(AppError.Unknown("Unable to generate bills. Please try again."))
+        }
     }
     suspend fun createMaintenance(request: MaintenanceCreateRequest) = messageCall { api.createMaintenance(request) }
     suspend fun updateMaintenance(id: String, request: MaintenanceUpdateRequest) = messageCall { api.updateMaintenance(id, request) }
@@ -258,6 +276,27 @@ class MaintenanceRepository @Inject constructor(
     private fun parseErrorMessage(errorBody: String?): String? {
         if (errorBody.isNullOrBlank()) return null
         return try { gson.fromJson(errorBody, ErrorResponse::class.java)?.message } catch (_: Exception) { null }
+    }
+
+    private fun parseGenerateError(errorBody: String?): String? {
+        if (errorBody.isNullOrBlank()) return null
+        return try {
+            val root = gson.fromJson(errorBody, com.google.gson.JsonObject::class.java)
+            val message = root.get("message")?.asString
+            val data = root.getAsJsonObject("data")
+            val failures = data?.getAsJsonArray("failureReasons")?.mapNotNull { item ->
+                val obj = item.asJsonObject
+                obj.get("reason")?.asString
+            }.orEmpty().distinct()
+            val skipped = data?.getAsJsonArray("skipped")?.mapNotNull { item ->
+                val obj = item.asJsonObject
+                obj.get("reason")?.asString
+            }.orEmpty().distinct()
+            val details = (failures + skipped).distinct().take(3).joinToString("; ")
+            listOfNotNull(message, details.takeIf { it.isNotBlank() }).joinToString(" Reason: ").ifBlank { null }
+        } catch (_: Exception) {
+            parseErrorMessage(errorBody)
+        }
     }
 
     private fun mapHttpError(code: Int, serverMessage: String?): AppError {

@@ -1,5 +1,9 @@
 package com.example.application.ui.screens.reports
 
+import android.content.Context
+import android.content.Intent
+import android.graphics.Paint
+import android.graphics.pdf.PdfDocument
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -67,6 +71,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.core.content.FileProvider
 import com.example.application.data.remote.dto.ComplaintDto
 import com.example.application.data.remote.dto.ExpenseDto
 import com.example.application.data.remote.dto.MaintenanceBillDto
@@ -83,6 +88,7 @@ import com.example.application.util.DashboardFormatters
 import com.example.application.viewmodel.AdminReportsViewModel
 import com.example.application.viewmodel.ResidentReportsViewModel
 import java.math.BigDecimal
+import java.io.File
 import java.time.LocalDate
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -114,14 +120,21 @@ fun AdminReportsScreen(
         isRefreshing = state.isRefreshing,
         onRefresh = { viewModel.load(refresh = true) },
         action = {
-            IconButton(onClick = {
-                val csv = state.data?.let { buildAdminReportCsv(it, state.filter) }.orEmpty()
-                if (csv.isBlank()) Toast.makeText(context, "No report data available", Toast.LENGTH_SHORT).show()
-                else {
-                    pendingCsv = csv
-                    csvLauncher.launch("admin_report.csv")
-                }
-            }) { Icon(Icons.Filled.Download, contentDescription = "Download report") }
+            Row {
+                TextButton(onClick = {
+                    val csv = state.data?.let { buildAdminReportCsv(it, state.filter) }.orEmpty()
+                    if (csv.isBlank()) Toast.makeText(context, "No report data available", Toast.LENGTH_SHORT).show()
+                    else {
+                        pendingCsv = csv
+                        csvLauncher.launch("admin_report.csv")
+                    }
+                }) { Text("CSV") }
+                TextButton(onClick = {
+                    val csv = state.data?.let { buildAdminReportCsv(it, state.filter) }.orEmpty()
+                    if (csv.isBlank()) Toast.makeText(context, "No report data available", Toast.LENGTH_SHORT).show()
+                    else shareReportPdf(context, "Admin Reports", csv)
+                }) { Text("PDF") }
+            }
         },
         showRefresh = false
     ) {
@@ -155,6 +168,11 @@ fun AdminReportsScreen(
                         pendingCsv = csv
                         csvLauncher.launch("admin_report.csv")
                     }
+                },
+                onExportPdf = {
+                    val csv = buildAdminReportCsv(state.data!!, state.filter)
+                    if (csv.isBlank()) Toast.makeText(context, "No report data available", Toast.LENGTH_SHORT).show()
+                    else shareReportPdf(context, "Admin Reports", csv)
                 }
             )
         }
@@ -191,11 +209,18 @@ fun ResidentReportsScreen(
         showRefresh = false,
         onRefresh = { viewModel.load(refresh = true) },
         action = {
-            IconButton(onClick = {
-                val csv = state.data?.let { buildResidentReportCsv(it, state.filter) }.orEmpty()
-                if (csv.isBlank()) Toast.makeText(context, "No report data available", Toast.LENGTH_SHORT).show()
-                else { pendingCsv = csv; csvLauncher.launch("resident_report.csv") }
-            }) { Icon(Icons.Filled.Download, contentDescription = "Download report") }
+            Row {
+                TextButton(onClick = {
+                    val csv = state.data?.let { buildResidentReportCsv(it, state.filter) }.orEmpty()
+                    if (csv.isBlank()) Toast.makeText(context, "No report data available", Toast.LENGTH_SHORT).show()
+                    else { pendingCsv = csv; csvLauncher.launch("resident_report.csv") }
+                }) { Text("CSV") }
+                TextButton(onClick = {
+                    val csv = state.data?.let { buildResidentReportCsv(it, state.filter) }.orEmpty()
+                    if (csv.isBlank()) Toast.makeText(context, "No report data available", Toast.LENGTH_SHORT).show()
+                    else shareReportPdf(context, "Resident Reports", csv)
+                }) { Text("PDF") }
+            }
         }
     ) {
         state.error?.let { error ->
@@ -215,7 +240,8 @@ fun ResidentReportsScreen(
 
 private fun androidx.compose.foundation.lazy.LazyListScope.adminReportsContent(
     data: AdminReportsData,
-    onExportCsv: () -> Unit
+    onExportCsv: () -> Unit,
+    onExportPdf: () -> Unit
 ) {
     val paid = data.bills.filter { (it.paymentStatus ?: it.status).equals("Paid", true) }
     val pending = data.bills.filterNot { (it.paymentStatus ?: it.status).equals("Paid", true) }
@@ -234,7 +260,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.adminReportsContent(
             )
         )
     }
-    item { ExportCard(onExportCsv) }
+    item { ExportCard(onExportCsv, onExportPdf) }
     data.warnings.forEach { item { InfoCard(it) } }
     item { SectionTitle("Maintenance Report") }
     if (data.bills.isEmpty()) item { EmptyState("No maintenance data", "No bills match these filters.", modifier = Modifier.padding(16.dp)) }
@@ -594,7 +620,7 @@ private fun InfoCard(message: String) {
 }
 
 @Composable
-private fun ExportCard(onClick: () -> Unit) {
+private fun ExportCard(onCsv: () -> Unit, onPdf: () -> Unit) {
     Card(
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = Color(0xFFF7FAFF)),
@@ -617,14 +643,21 @@ private fun ExportCard(onClick: () -> Unit) {
                 Text("Exports", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, color = Color(0xFF101828))
                 Text("Download filtered report data", color = Color(0xFF667085), style = MaterialTheme.typography.bodyMedium)
             }
-            Button(
-                onClick = onClick,
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = ReportBlue)
-            ) {
-                Icon(Icons.Filled.Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Export CSV")
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = onCsv,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = ReportBlue)
+                ) {
+                    Icon(Icons.Filled.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("CSV")
+                }
+                OutlinedButton(onClick = onPdf, shape = RoundedCornerShape(12.dp)) {
+                    Icon(Icons.Filled.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("PDF")
+                }
             }
         }
     }
@@ -884,6 +917,59 @@ private fun csvEscape(value: String): String {
     val escaped = normalized.replace("\"", "\"\"")
     return if (escaped.any { it == ',' || it == '"' || it == '\n' }) "\"$escaped\"" else escaped
 }
+
+private fun shareReportPdf(context: Context, title: String, csvContent: String) {
+    val file = createReportPdf(context, title, csvContent)
+    if (file == null) {
+        Toast.makeText(context, "PDF export failed", Toast.LENGTH_LONG).show()
+        return
+    }
+    val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+    val viewIntent = Intent(Intent.ACTION_VIEW)
+        .setDataAndType(uri, "application/pdf")
+        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    val shareIntent = Intent(Intent.ACTION_SEND)
+        .setType("application/pdf")
+        .putExtra(Intent.EXTRA_STREAM, uri)
+        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    val chooser = Intent.createChooser(viewIntent, "Open report PDF")
+    chooser.putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(shareIntent))
+    runCatching { context.startActivity(chooser) }
+        .onFailure { Toast.makeText(context, "Report PDF saved: ${file.name}", Toast.LENGTH_LONG).show() }
+}
+
+private fun createReportPdf(context: Context, title: String, csvContent: String): File? = runCatching {
+    val file = File(context.cacheDir, "${title.lowercase().replace(" ", "-")}-${System.currentTimeMillis()}.pdf")
+    val document = PdfDocument()
+    val pageInfo = PdfDocument.PageInfo.Builder(595, 842, 1).create()
+    val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 18f; isFakeBoldText = true }
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 10.5f }
+    var page = document.startPage(pageInfo)
+    var canvas = page.canvas
+    var y = 40f
+    fun newPage() {
+        document.finishPage(page)
+        page = document.startPage(pageInfo)
+        canvas = page.canvas
+        y = 40f
+    }
+    canvas.drawText(title, 36f, y, titlePaint)
+    y += 28f
+    canvas.drawText("Generated by Society Management Android App", 36f, y, paint)
+    y += 24f
+    csvContent.lines().forEach { rawLine ->
+        val printable = rawLine.replace(",", "  |  ").ifBlank { " " }
+        printable.chunked(92).forEach { part ->
+            if (y > 805f) newPage()
+            canvas.drawText(part, 36f, y, paint)
+            y += 15f
+        }
+    }
+    document.finishPage(page)
+    file.outputStream().use { document.writeTo(it) }
+    document.close()
+    file
+}.getOrNull()
 
 private fun String?.toMoneyDecimal(): BigDecimal {
     return try {

@@ -1,5 +1,11 @@
 package com.example.application.ui.screens.advanced
 
+import android.content.Context
+import android.net.Uri
+import android.util.Base64
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -83,13 +89,52 @@ private fun AdminTools(vm: AdvancedFeaturesViewModel) {
     var address by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var phone by remember { mutableStateOf("") }
+    var paymentUpiId by remember { mutableStateOf("") }
+    var paymentNote by remember { mutableStateOf("") }
+    var paymentQrImage by remember { mutableStateOf("") }
+    var paymentQrTouched by remember { mutableStateOf(false) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val qrPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        runCatching { paymentQrImage = uri.asDataUrl(context); paymentQrTouched = true }
+            .onSuccess { Toast.makeText(context, "QR image selected", Toast.LENGTH_SHORT).show() }
+            .onFailure { Toast.makeText(context, "Unable to read QR image", Toast.LENGTH_LONG).show() }
+    }
 
     ToolSection("Society settings") {
         Field(societyName, { societyName = it }, "Society name")
         Field(address, { address = it }, "Address")
         Field(email, { email = it }, "Admin email")
         Field(phone, { phone = it }, "Phone")
-        ActionRow("Load", vm::loadSettings, "Save") { vm.saveSettings(mapOf("societyName" to societyName, "address" to address, "email" to email, "phone" to phone, "autoReminder" to true, "paymentAlerts" to true, "complaintAlerts" to true, "visitorAlerts" to true)) }
+        Field(paymentUpiId, { paymentUpiId = it }, "UPI ID / payment name")
+        Field(paymentNote, { paymentNote = it }, "Payment note")
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = { qrPicker.launch("image/*") }, modifier = Modifier.weight(1f)) { Text(if (paymentQrImage.isBlank()) "Upload QR" else "Change QR") }
+            OutlinedButton(onClick = { paymentQrImage = ""; paymentQrTouched = true }, modifier = Modifier.weight(1f)) { Text("Remove QR") }
+        }
+        Text(
+            if (paymentQrImage.isBlank()) "Resident Pay screen will use the QR currently saved on backend." else "New QR selected and ready to save.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        ActionRow("Load", vm::loadSettings, "Save") {
+            val settingsPayload = mutableMapOf<String, Any?>(
+                "societyName" to societyName,
+                "address" to address,
+                "email" to email,
+                "phone" to phone,
+                "paymentUpiId" to paymentUpiId,
+                "paymentNote" to paymentNote,
+                "autoReminder" to true,
+                "paymentAlerts" to true,
+                "complaintAlerts" to true,
+                "visitorAlerts" to true
+            )
+            if (paymentQrTouched) settingsPayload["paymentQrImage"] = paymentQrImage
+            vm.saveSettings(
+                settingsPayload
+            )
+        }
     }
     ToolSection("Flat ownership and history") {
         Field(flatId, { flatId = it }, "Flat ID")
@@ -158,3 +203,9 @@ private fun ResidentTools(vm: AdvancedFeaturesViewModel) {
 @Composable private fun ActionRow(first: String, firstAction: () -> Unit, second: String, secondAction: () -> Unit) = Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { OutlinedButton(firstAction, Modifier.weight(1f)) { Text(first) }; Button(secondAction, Modifier.weight(1f)) { Text(second) } }
 @Composable private fun WideAction(label: String, action: () -> Unit) = Button(action, Modifier.fillMaxWidth()) { Text(label) }
 @Composable private fun ResultCard(title: String, content: String) = Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Text(title, style = MaterialTheme.typography.titleMedium); Text(content, style = MaterialTheme.typography.bodySmall) } }
+
+private fun Uri.asDataUrl(context: Context): String {
+    val mimeType = context.contentResolver.getType(this) ?: "image/png"
+    val bytes = context.contentResolver.openInputStream(this)?.use { it.readBytes() } ?: error("Unable to read selected file")
+    return "data:$mimeType;base64,${Base64.encodeToString(bytes, Base64.NO_WRAP)}"
+}

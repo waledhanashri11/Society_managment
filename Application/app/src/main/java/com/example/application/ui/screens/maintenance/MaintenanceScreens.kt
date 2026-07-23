@@ -125,6 +125,7 @@ import kotlin.math.max
 @Composable
 fun AdminMaintenanceScreen(
     onBack: () -> Unit,
+    onPaymentVerification: () -> Unit = {},
     initialTab: String = "Overview",
     viewModel: AdminMaintenanceViewModel = hiltViewModel()
 ) {
@@ -147,7 +148,7 @@ fun AdminMaintenanceScreen(
     Scaffold(topBar = {
         MaintenanceTopBar(
             title = "Maintenance",
-            subtitle = "Maintenance & Payments",
+            subtitle = "Bills, dues, write-offs and settings",
             navigationText = "Back",
             onNavigationClick = onBack,
             actionText = "Apply Penalty",
@@ -200,16 +201,20 @@ fun AdminMaintenanceScreen(
                             },
                             onGenerateBills = { dialog = MaintenanceDialog.Generate },
                             onRecordPayment = { viewModel.setTab("Bills") },
-                            onVerifyPayments = { viewModel.setTab("Verification") },
+                            onVerifyPayments = onPaymentVerification,
                             onDefaulters = { viewModel.setTab("Defaulters") },
                             onWriteOff = { viewModel.setTab("Write-Offs") },
                             onReports = { viewModel.setTab("Reports") }
                         )
                     }
                     when (state.activeTab) {
-                        "Verification" -> item { PaymentVerificationSection(data.payments, state.query, state.filter, viewModel) }
                         "Defaulters" -> defaultersTab(data.bills, viewModel, { dialog = it })
                         "Write-Offs" -> waiversTab(data.waivers, viewModel, { dialog = it })
+                        "Categories" -> categoriesTab(data.categories, viewModel, { dialog = it })
+                        "Expenses" -> expensesTab(data.expenses, viewModel, { dialog = it })
+                        "Late Fee" -> lateFeeTab(data.lateFeeRule, viewModel, { dialog = it })
+                        "Settings" -> settingsTab(data.settings, viewModel, { dialog = it })
+                        "Disputes" -> disputesTab(data.disputes)
                         "Reports" -> reportsTab(data)
                         else -> billsTab(bills, state.query, state.filter, viewModel, { dialog = it })
                     }
@@ -221,6 +226,56 @@ fun AdminMaintenanceScreen(
         }
     }
     MaintenanceDialogHost(dialog, onDismiss = { dialog = null }, viewModel = viewModel)
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AdminPaymentVerificationScreen(
+    onBack: () -> Unit,
+    viewModel: AdminMaintenanceViewModel = hiltViewModel()
+) {
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    val data = state.data
+    LaunchedEffect(Unit) {
+        viewModel.setTab("Verification")
+        viewModel.setFilter("Pending")
+    }
+    Scaffold(topBar = {
+        MaintenanceTopBar(
+            title = "Payment Verification",
+            subtitle = "Review resident payment proofs",
+            navigationText = "Back",
+            onNavigationClick = onBack,
+            actionText = "Refresh",
+            onActionClick = { viewModel.load(refresh = true) }
+        )
+    }) { padding ->
+        PullToRefreshBox(
+            isRefreshing = state.isRefreshing,
+            onRefresh = { viewModel.load(refresh = true) },
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .background(Color(0xFFF7F9FC))
+        ) {
+            LazyColumn(
+                contentPadding = PaddingValues(start = 16.dp, top = 14.dp, end = 16.dp, bottom = 18.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                state.message?.let {
+                    item { AdminInlineMessage(it, Color(0xFF0B56D9), Color(0xFFEAF2FF)) }
+                }
+                state.error?.let {
+                    item { RetryState(it, { viewModel.load(refresh = true) }) }
+                }
+                when {
+                    state.isLoading && data == null -> item { DashboardSkeleton() }
+                    data == null -> item { EmptyState("Payment verification unavailable", "Pull down or tap refresh.") }
+                    else -> item { PaymentVerificationSection(data.payments, state.query, state.filter, viewModel) }
+                }
+            }
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -816,7 +871,7 @@ private fun AdminMaintenanceHomeSummary(
             FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
                 MaintenanceQuickAction("Generate Bills", Icons.Filled.ReceiptLong, onGenerateBills)
                 MaintenanceQuickAction("Record Payment", Icons.Filled.Payments, onRecordPayment)
-                MaintenanceQuickAction("Verify Payments", Icons.Filled.CheckCircle, onVerifyPayments)
+                MaintenanceQuickAction("Open Payment Verification", Icons.Filled.CheckCircle, onVerifyPayments)
                 MaintenanceQuickAction("View Defaulters", Icons.Filled.Warning, onDefaulters)
                 MaintenanceQuickAction("Write Off", Icons.Filled.Delete, onWriteOff)
                 MaintenanceQuickAction("Reports", Icons.Filled.Download, onReports)
@@ -1538,11 +1593,15 @@ private fun MaintenanceDialogHost(dialog: MaintenanceDialog?, onDismiss: () -> U
     val viewState by viewModel.state.collectAsStateWithLifecycle()
     when (dialog) {
         MaintenanceDialog.Generate -> SimpleFormDialog("Generate Bills", onDismiss) {
+            val settings = viewState.data?.settings
             var month by remember { mutableStateOf("${LocalDate.now().monthValue}") }
             var year by remember { mutableStateOf("${LocalDate.now().year}") }
-            var amount by remember { mutableStateOf("") }
-            var dueDate by remember { mutableStateOf(LocalDate.now().plusDays(10).toString()) }
-            var title by remember { mutableStateOf("Monthly Maintenance") }
+            var amount by remember(settings?.fixedAmount) { mutableStateOf(settings?.fixedAmount.orEmpty()) }
+            var dueDate by remember(settings?.dueDay, month, year) {
+                val day = settings?.dueDay?.toIntOrNull()?.coerceIn(1, 28) ?: 10
+                mutableStateOf("${year.padStart(4, '0')}-${month.padStart(2, '0')}-$day".replace("-$day", "-${day.toString().padStart(2, '0')}"))
+            }
+            var title by remember(settings?.title) { mutableStateOf(settings?.title ?: "Monthly Maintenance") }
             var notes by remember { mutableStateOf("") }
             var penaltyType by remember { mutableStateOf("") }
             var penaltyValue by remember { mutableStateOf("") }
@@ -1553,10 +1612,23 @@ private fun MaintenanceDialogHost(dialog: MaintenanceDialog?, onDismiss: () -> U
             var building by remember { mutableStateOf("") }
             var floor by remember { mutableStateOf("") }
             var flatTypeId by remember { mutableStateOf("") }
+            if (settings == null || settings.fixedAmount.toMoneyDecimal() <= BigDecimal.ZERO) {
+                SectionCard("Maintenance rule required", "Set a fixed maintenance amount before generating monthly bills.") {
+                    Text("Backend skips residents when it cannot calculate a valid bill amount. Configure Maintenance Settings first, then generate bills.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Button(onClick = { viewModel.setTab("Settings"); onDismiss() }, modifier = Modifier.fillMaxWidth()) { Text("Open Settings") }
+                }
+                return@SimpleFormDialog
+            }
+            SectionCard("Default billing rule") {
+                KeyValue("Title", settings.title ?: "Monthly Maintenance")
+                KeyValue("Fixed charge", DashboardFormatters.money(settings.fixedAmount.toMoneyDecimal()))
+                KeyValue("Due day", settings.dueDay ?: "10")
+                KeyValue("Late fee", "${settings.lateFeeValue ?: "0"} (${settings.lateFeeType ?: "fixed"})")
+            }
             BasicAppTextField(month, { month = it }, "Month number")
             BasicAppTextField(year, { year = it }, "Year")
             BasicAppTextField(title, { title = it }, "Bill title")
-            BasicAppTextField(amount, { amount = it }, "Amount (blank uses flat default)")
+            BasicAppTextField(amount, { amount = it }, "Amount")
             BasicAppTextField(dueDate, { dueDate = it }, "Due date YYYY-MM-DD")
             BasicAppTextField(penaltyType, { penaltyType = it }, "Penalty type optional")
             BasicAppTextField(penaltyValue, { penaltyValue = it }, "Penalty value optional")
@@ -1580,7 +1652,11 @@ private fun MaintenanceDialogHost(dialog: MaintenanceDialog?, onDismiss: () -> U
                     )
                     onDismiss()
                 },
-                enabled = !viewState.submitting && month.toIntOrNull()?.let { it in 1..12 } == true && year.toIntOrNull()?.let { it >= 2000 } == true,
+                enabled = !viewState.submitting &&
+                    month.toIntOrNull()?.let { it in 1..12 } == true &&
+                    year.toIntOrNull()?.let { it >= 2000 } == true &&
+                    amount.toMoneyDecimal() > BigDecimal.ZERO &&
+                    dueDate.matches(Regex("\\d{4}-\\d{2}-\\d{2}")),
                 modifier = Modifier.fillMaxWidth()
             ) { Text(if (viewState.submitting) "Generating…" else "Generate") }
         }
@@ -2491,7 +2567,7 @@ private fun KeyValue(label: String, value: String) {
 @Composable
 private fun AdminMaintenanceTabs(selected: String, onSelected: (String) -> Unit) {
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        listOf("Bills", "Verification", "Defaulters", "Write-Offs", "Reports").forEach { tab ->
+        listOf("Bills", "Defaulters", "Write-Offs", "Categories", "Expenses", "Late Fee", "Settings", "Disputes", "Reports").forEach { tab ->
             FilterChip(
                 selected = selected == tab,
                 onClick = { onSelected(tab) },

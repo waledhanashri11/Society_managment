@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material.icons.filled.WarningAmber
@@ -420,7 +421,8 @@ private fun AdminDrawer(adminName: String, onAction: (String) -> Unit) {
         listOf(
             AdminAction("Residents", "Residents", Icons.Filled.Groups, AdminBlue),
             AdminAction("Flats", "Flats", Icons.Filled.Apartment, Color(0xFF20B86B)),
-            AdminAction("Maintenance & Payments", "Maintenance & Payments", Icons.Filled.Payments, Color(0xFF9C3ED7)),
+            AdminAction("Maintenance", "Maintenance", Icons.Filled.ReceiptLong, Color(0xFF9C3ED7)),
+            AdminAction("Payment Verification", "Payment Reviews", Icons.Filled.Assignment, Color(0xFFFF5A4F)),
             AdminAction("Notices", "Notices", Icons.Filled.Campaign, Color(0xFF2F80ED)),
             AdminAction("Rules", "Society Rules", Icons.Filled.Assignment, Color(0xFF0B7F77)),
             AdminAction("Meetings", "Meeting Management", Icons.Filled.Event, Color(0xFF5B5BD6)),
@@ -438,7 +440,7 @@ private fun adminQuickActions(): List<AdminAction> = listOf(
     AdminAction("Residents", "Residents", Icons.Filled.Groups, Color(0xFF2F80ED)),
     AdminAction("Flats", "Flats", Icons.Filled.Apartment, Color(0xFF20B86B)),
     AdminAction("Add Resident", "Add Resident", Icons.Filled.PersonAdd, Color(0xFFFF8A00)),
-    AdminAction("Maintenance\n& Payments", "Maintenance & Payments", Icons.Filled.Payments, Color(0xFF9C3ED7)),
+    AdminAction("Maintenance", "Maintenance", Icons.Filled.ReceiptLong, Color(0xFF9C3ED7)),
     AdminAction("Payment Reviews", "Payment Reviews", Icons.Filled.Assignment, Color(0xFFFF5A4F)),
     AdminAction("Notices", "Notices", Icons.Filled.Campaign, Color(0xFF2F80ED)),
     AdminAction("Rules", "Society Rules", Icons.Filled.Assignment, Color(0xFF0B7F77)),

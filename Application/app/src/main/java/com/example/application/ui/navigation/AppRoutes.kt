@@ -31,7 +31,7 @@ sealed class AppRoute(val route: String) {
         fun createRoute(id: String = "new") = "admin_staff/form/$id"
     }
     data object AdminMaintenance : AppRoute("admin_maintenance")
-    data object AdminPayments : AppRoute("admin_maintenance/payments")
+    data object AdminPayments : AppRoute("admin_payment_verification")
     data object AdminReports : AppRoute("admin_reports")
     data object AdminNoc : AppRoute("admin_noc")
     data object AdminComplaints : AppRoute("admin_complaints")

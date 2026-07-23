@@ -7,7 +7,10 @@ import android.content.Intent
 import android.graphics.Paint
 import android.graphics.pdf.PdfDocument
 import android.net.Uri
+import android.util.Base64
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -265,8 +268,58 @@ private fun MeetingDetailsDialog(detail: MeetingDetailsDto, admin: Boolean, onDi
 
 @Composable
 private fun MeetingEditorDialog(existing: MeetingDto?, submitting: Boolean, onDismiss: () -> Unit, onSave: (MeetingSaveRequest) -> Unit) {
-    var title by remember { mutableStateOf(existing?.title.orEmpty()) }; var type by remember { mutableStateOf(existing?.meetingType ?: "Committee Meeting") }; var date by remember { mutableStateOf(existing?.meetingDate?.take(10).orEmpty()) }; var start by remember { mutableStateOf(existing?.startTime.orEmpty()) }; var end by remember { mutableStateOf(existing?.endTime.orEmpty()) }; var venue by remember { mutableStateOf(existing?.venue.orEmpty()) }; var description by remember { mutableStateOf(existing?.description.orEmpty()) }; var priority by remember { mutableStateOf(existing?.priority ?: "Normal") }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text(if (existing == null) "Create meeting" else "Edit meeting") }, text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) { BasicAppTextField(title, { title = it }, "Title"); BasicAppTextField(type, { type = it }, "Meeting type"); BasicAppTextField(date, { date = it }, "Date YYYY-MM-DD"); BasicAppTextField(start, { start = it }, "Start time HH:MM"); BasicAppTextField(end, { end = it }, "End time HH:MM"); BasicAppTextField(venue, { venue = it }, "Venue"); BasicAppTextField(priority, { priority = it }, "Priority"); BasicAppTextField(description, { description = it }, "Description") } }, confirmButton = { Button(enabled = !submitting && title.isNotBlank() && date.isNotBlank() && start.isNotBlank() && end.isNotBlank() && venue.isNotBlank(), onClick = { onSave(MeetingSaveRequest(title, type, date, start, end, venue, description.ifBlank { null }, priority)) }) { Text(if (submitting) "Saving…" else "Save") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } })
+    var title by remember { mutableStateOf(existing?.title.orEmpty()) }
+    var type by remember { mutableStateOf(existing?.meetingType ?: "Committee Meeting") }
+    var date by remember { mutableStateOf(existing?.meetingDate?.take(10).orEmpty()) }
+    var start by remember { mutableStateOf(existing?.startTime.orEmpty()) }
+    var end by remember { mutableStateOf(existing?.endTime.orEmpty()) }
+    var venue by remember { mutableStateOf(existing?.venue.orEmpty()) }
+    var description by remember { mutableStateOf(existing?.description.orEmpty()) }
+    var priority by remember { mutableStateOf(existing?.priority ?: "Normal") }
+    var notifyResidents by remember { mutableStateOf(false) }
+    var attachments by remember { mutableStateOf<List<MeetingDocumentUploadDto>>(emptyList()) }
+    val context = LocalContext.current
+    val documentPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        val loaded = uris.take(5).mapNotNull { uri -> runCatching { uri.toMeetingUpload(context) }.getOrNull() }
+        if (loaded.isNotEmpty()) attachments = (attachments + loaded).take(5)
+        if (uris.isNotEmpty() && loaded.isEmpty()) Toast.makeText(context, "Unable to read selected document", Toast.LENGTH_LONG).show()
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (existing == null) "Create meeting" else "Edit meeting") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                BasicAppTextField(title, { title = it }, "Title")
+                BasicAppTextField(type, { type = it }, "Meeting type")
+                BasicAppTextField(date, { date = it }, "Date YYYY-MM-DD")
+                BasicAppTextField(start, { start = it }, "Start time HH:MM")
+                BasicAppTextField(end, { end = it }, "End time HH:MM")
+                BasicAppTextField(venue, { venue = it }, "Venue")
+                BasicAppTextField(priority, { priority = it }, "Priority")
+                BasicAppTextField(description, { description = it }, "Description")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    FilterChip(selected = notifyResidents, onClick = { notifyResidents = !notifyResidents }, label = { Text("Notify residents") })
+                    OutlinedButton(onClick = { documentPicker.launch(arrayOf("application/pdf", "image/*", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")) }) {
+                        Text("Attach files")
+                    }
+                }
+                attachments.forEach { doc ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(doc.name, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                        TextButton(onClick = { attachments = attachments.filterNot { it == doc } }) { Text("Remove") }
+                    }
+                }
+                if (attachments.isNotEmpty()) Text("Files will be uploaded to the Railway backend with this meeting.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        confirmButton = {
+            Button(
+                enabled = !submitting && title.isNotBlank() && date.isNotBlank() && start.isNotBlank() && end.isNotBlank() && venue.isNotBlank(),
+                onClick = { onSave(MeetingSaveRequest(title, type, date, start, end, venue, description.ifBlank { null }, priority, notifyResidents, attachments)) }
+            ) { Text(if (submitting) "Saving…" else "Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }
 
 @Composable
@@ -384,6 +437,14 @@ private fun createMinutesPdf(context: Context, detail: MeetingDetailsDto): File?
     document.close()
     file
 }.getOrNull()
+
+private fun Uri.toMeetingUpload(context: Context): MeetingDocumentUploadDto {
+    val mimeType = context.contentResolver.getType(this) ?: "application/octet-stream"
+    val name = lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() } ?: "meeting-document-${System.currentTimeMillis()}"
+    val bytes = context.contentResolver.openInputStream(this)?.use { it.readBytes() } ?: error("Unable to read selected document")
+    val encoded = Base64.encodeToString(bytes, Base64.NO_WRAP)
+    return MeetingDocumentUploadDto(name = name, data = "data:$mimeType;base64,$encoded")
+}
 
 private fun openMeetingDocument(context: android.content.Context, doc: MeetingDocumentDto) {
     val url = fullMeetingMediaUrl(doc.fileUrl ?: doc.filePath) ?: return

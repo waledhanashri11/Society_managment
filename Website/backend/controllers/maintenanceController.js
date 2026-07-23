@@ -776,7 +776,7 @@ const generateMaintenanceBills = async (req, res) => {
            ON CONFLICT DO NOTHING RETURNING id`,
           [candidate.resident_id, candidate.flat_id, body.title || settings.title || 'Monthly Maintenance', reqMonth, reqYear,
             baseAmount, baseAmount, baseAmount, dueDateString, candidate.flat_type_id || null, Number(candidate.default_amount || 0),
-            requestedAmount !== null, body.notes || null, penaltyType,
+            baseAmount, requestedAmount !== null, body.notes || null, penaltyType,
             penaltyValue === null || penaltyValue === '' ? null : Number(penaltyValue),
             penaltyGraceDays === null || penaltyGraceDays === '' ? null : Number(penaltyGraceDays)]
         );
@@ -789,8 +789,9 @@ const generateMaintenanceBills = async (req, res) => {
           result.generated.push({ id: billId, residentId: candidate.resident_id, flatId: candidate.flat_id });
         }
       } catch (candidateError) {
+        console.error('Generate bill candidate failed:', candidateError);
         result.failedCount += 1;
-        result.failureReasons.push({ residentId: candidate.resident_id, flatId: candidate.flat_id, reason: candidateError.message });
+        result.failureReasons.push({ residentId: candidate.resident_id, flatId: candidate.flat_id, reason: 'Backend could not create this bill. Please retry after refresh.' });
       }
     }
     await connection.commit();

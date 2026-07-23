@@ -39,6 +39,7 @@ import com.example.application.ui.screens.communication.ResidentComplaintsScreen
 import com.example.application.ui.screens.events.AdminEventsScreen
 import com.example.application.ui.screens.events.ResidentEventsScreen
 import com.example.application.ui.screens.maintenance.AdminMaintenanceScreen
+import com.example.application.ui.screens.maintenance.AdminPaymentVerificationScreen
 import com.example.application.ui.screens.maintenance.ResidentMaintenanceScreen
 import com.example.application.ui.screens.noc.AdminNocScreen
 import com.example.application.ui.screens.noc.ResidentNocScreen
@@ -161,7 +162,7 @@ fun SocietyNavGraph(
                         "Add Resident" -> navController.navigate(AppRoute.ResidentForm.createRoute())
                         "Staff" -> navController.navigate(AppRoute.AdminStaff.route)
                         "Security" -> navController.navigate(AppRoute.AdminStaff.route)
-                        "Generate Maintenance", "Maintenance", "Maintenance Collection", "Maintenance & Payments" -> navController.navigate(AppRoute.AdminMaintenance.route)
+                        "Generate Maintenance", "Maintenance", "Maintenance Collection" -> navController.navigate(AppRoute.AdminMaintenance.route)
                         "Dues & Payments", "Payments", "Payment Reviews" -> navController.navigate(AppRoute.AdminPayments.route)
                         "Complaints" -> navController.navigate(AppRoute.AdminComplaints.route)
                         "Add Notice", "View Notices", "Notices" -> navController.navigate(AppRoute.AdminNotices.route)
@@ -187,14 +188,14 @@ fun SocietyNavGraph(
         }
 
         composable(AppRoute.AdminMaintenance.route) {
-            AdminMaintenanceScreen(onBack = { navController.popBackStack() })
+            AdminMaintenanceScreen(
+                onBack = { navController.popBackStack() },
+                onPaymentVerification = { navController.navigate(AppRoute.AdminPayments.route) }
+            )
         }
 
         composable(AppRoute.AdminPayments.route) {
-            AdminMaintenanceScreen(
-                onBack = { navController.popBackStack() },
-                initialTab = "Payments"
-            )
+            AdminPaymentVerificationScreen(onBack = { navController.popBackStack() })
         }
 
         composable(AppRoute.AdminComplaints.route) {

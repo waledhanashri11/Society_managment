@@ -36,7 +36,45 @@ class AdvancedFeaturesViewModel @Inject constructor(
     fun clearMessage() { _state.value = _state.value.copy(error = null, success = null) }
 
     fun loadSettings() = request("Society settings") { api.getAdminSettings() }
-    fun saveSettings(values: Map<String, Any?>) = request("Society settings", "Settings saved") { api.saveAdminSettings(values) }
+    fun saveSettings(values: Map<String, Any?>) {
+        viewModelScope.launch {
+            _state.value = AdvancedUiState(loading = true, title = "Society settings")
+            try {
+                val current = api.getAdminSettings()
+                val merged = mutableMapOf<String, Any?>()
+                if (current.isSuccessful) {
+                    current.body()?.asJsonObject?.entrySet()?.forEach { entry ->
+                        val value = entry.value
+                        merged[entry.key] = when {
+                            value.isJsonNull -> null
+                            value.isJsonPrimitive && value.asJsonPrimitive.isBoolean -> value.asBoolean
+                            value.isJsonPrimitive && value.asJsonPrimitive.isNumber -> value.asNumber
+                            value.isJsonPrimitive -> value.asString
+                            else -> value
+                        }
+                    }
+                }
+                values.forEach { (key, value) ->
+                    val shouldApply = when (value) {
+                        is String -> value.isNotBlank() || key == "paymentQrImage"
+                        null -> false
+                        else -> true
+                    }
+                    if (shouldApply) merged[key] = value
+                }
+                val response = api.saveAdminSettings(merged)
+                if (response.isSuccessful) {
+                    _state.value = AdvancedUiState(title = "Society settings", content = response.body()?.let(gson::toJson).orEmpty(), success = "Settings saved")
+                } else {
+                    val raw = response.errorBody()?.string().orEmpty()
+                    val message = runCatching { gson.fromJson(raw, JsonElement::class.java).asJsonObject.get("message")?.asString }.getOrNull()
+                    _state.value = AdvancedUiState(title = "Society settings", error = message ?: "Request failed (${response.code()})")
+                }
+            } catch (error: Exception) {
+                _state.value = AdvancedUiState(title = "Society settings", error = error.message ?: "Unable to connect to the server")
+            }
+        }
+    }
     fun currentResident(id: String) = requireId(id) { request("Current resident") { api.getCurrentResident(it) } }
     fun flatHistory(id: String) = requireId(id) { request("Flat history") { api.getFlatHistory(it) } }
     fun flatTransfers(id: String) = requireId(id) { request("Transfer history") { api.getFlatTransfers(it) } }
