@@ -12,6 +12,7 @@ router.get('/public/:token', nocController.getPublicCertificate);
 router.get('/s/:token', nocController.getSharedPdf);
 router.get('/share/:token', nocController.getSharedPdf);
 router.get('/:id', auth, nocController.getRequestById);
+router.put('/:id/cancel', auth, nocController.cancelRequest);
 router.put('/:id/review', auth, adminAuth, nocController.markUnderReview);
 router.put('/:id/approve', auth, adminAuth, nocController.approveRequest);
 router.put('/:id/reject', auth, adminAuth, nocController.rejectRequest);

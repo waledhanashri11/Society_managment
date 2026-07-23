@@ -21,7 +21,25 @@ data class FlatSaveRequest(
     val wing: String?,
     @SerializedName("floor_no") val floorNo: String,
     @SerializedName("owner_id") val ownerId: String?,
-    @SerializedName("maintenance_charge") val maintenanceCharge: String
+    @SerializedName("maintenance_charge") val maintenanceCharge: String,
+    @SerializedName("flat_type_id") val flatTypeId: String? = null
+)
+
+data class FlatTypeDto(
+    val id: String?,
+    val name: String?,
+    @SerializedName("default_maintenance_amount") val defaultMaintenanceAmount: String?,
+    val description: String?,
+    val status: String?,
+    @SerializedName("created_at") val createdAt: String? = null,
+    @SerializedName("updated_at") val updatedAt: String? = null
+)
+
+data class FlatTypeSaveRequest(
+    val name: String,
+    @SerializedName("default_maintenance_amount") val defaultMaintenanceAmount: String,
+    val description: String?,
+    val status: String = "Active"
 )
 
 data class StaffDto(

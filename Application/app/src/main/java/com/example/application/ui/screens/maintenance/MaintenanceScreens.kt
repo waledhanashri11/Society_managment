@@ -131,8 +131,10 @@ fun AdminMaintenanceScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val data = state.data
     var dialog by remember { mutableStateOf<MaintenanceDialog?>(null) }
+    var selectedMonth by remember { mutableStateOf(LocalDate.now().monthValue) }
+    var selectedYear by remember { mutableStateOf(LocalDate.now().year) }
     LaunchedEffect(initialTab) {
-        viewModel.setTab(initialTab)
+        viewModel.setTab(if (initialTab == "Payments") "Verification" else initialTab)
     }
     val bills by remember(data?.bills, state.query, state.filter) {
         derivedStateOf {
@@ -180,22 +182,35 @@ fun AdminMaintenanceScreen(
                     item { EmptyState("Maintenance unavailable", "Pull down or tap retry.") }
                 } else {
                     item {
-                        MetricGrid(
-                            listOf(
-                                Triple("Collected", DashboardFormatters.money(data.dashboard?.summary?.collected.toMoneyDecimal()), "${data.dashboard?.summary?.collectionPercentage ?: 0}% collection"),
-                                Triple("Pending", DashboardFormatters.money(data.dashboard?.summary?.pending.toMoneyDecimal()), "${bills.count { (it.paymentStatus ?: it.status) != "Paid" }} unpaid"),
-                                Triple("Overdue", DashboardFormatters.money(data.dashboard?.summary?.overdue.toMoneyDecimal()), "needs follow-up"),
-                                Triple("Expenses", DashboardFormatters.money(data.dashboard?.summary?.monthExpense.toMoneyDecimal()), "this month")
-                            )
+                        AdminMaintenanceHomeSummary(
+                            data = data,
+                            selectedMonth = selectedMonth,
+                            selectedYear = selectedYear,
+                            onPreviousMonth = {
+                                if (selectedMonth == 1) {
+                                    selectedMonth = 12
+                                    selectedYear -= 1
+                                } else selectedMonth -= 1
+                            },
+                            onNextMonth = {
+                                if (selectedMonth == 12) {
+                                    selectedMonth = 1
+                                    selectedYear += 1
+                                } else selectedMonth += 1
+                            },
+                            onGenerateBills = { dialog = MaintenanceDialog.Generate },
+                            onRecordPayment = { viewModel.setTab("Bills") },
+                            onVerifyPayments = { viewModel.setTab("Verification") },
+                            onDefaulters = { viewModel.setTab("Defaulters") },
+                            onWriteOff = { viewModel.setTab("Write-Offs") },
+                            onReports = { viewModel.setTab("Reports") }
                         )
                     }
                     when (state.activeTab) {
-                        "Overview" -> item { AdminMaintenanceOverviewSection(data, viewModel) }
-                        "Payments" -> item { PaymentVerificationSection(data.payments, state.query, state.filter, viewModel) }
-                        "Expenses" -> expensesTab(data.expenses, viewModel, { dialog = it })
+                        "Verification" -> item { PaymentVerificationSection(data.payments, state.query, state.filter, viewModel) }
+                        "Defaulters" -> defaultersTab(data.bills, viewModel, { dialog = it })
+                        "Write-Offs" -> waiversTab(data.waivers, viewModel, { dialog = it })
                         "Reports" -> reportsTab(data)
-                        "Settings" -> settingsTab(data.settings, viewModel, { dialog = it })
-                        "Categories" -> categoriesTab(data.categories, viewModel, { dialog = it })
                         else -> billsTab(bills, state.query, state.filter, viewModel, { dialog = it })
                     }
                     if (data.warnings.isNotEmpty()) {
@@ -755,6 +770,71 @@ private fun androidx.compose.foundation.lazy.LazyListScope.billsTab(
 }
 
 @Composable
+private fun AdminMaintenanceHomeSummary(
+    data: com.example.application.data.repository.AdminMaintenanceData,
+    selectedMonth: Int,
+    selectedYear: Int,
+    onPreviousMonth: () -> Unit,
+    onNextMonth: () -> Unit,
+    onGenerateBills: () -> Unit,
+    onRecordPayment: () -> Unit,
+    onVerifyPayments: () -> Unit,
+    onDefaulters: () -> Unit,
+    onWriteOff: () -> Unit,
+    onReports: () -> Unit
+) {
+    val bills = data.bills
+    val payments = data.payments
+    val totalBilled = bills.fold(BigDecimal.ZERO) { sum, bill -> sum + (bill.totalAmount ?: bill.amount).toMoneyDecimal() }
+    val totalCollected = data.dashboard?.summary?.collected.toMoneyDecimal().takeIf { it > BigDecimal.ZERO }
+        ?: payments.filter { it.paymentStatus.isApprovedStatus() }.fold(BigDecimal.ZERO) { sum, payment -> sum + payment.amount.toMoneyDecimal() }
+    val pendingAmount = bills.filter { !(it.paymentStatus ?: it.status).isSettledBillStatus() }.fold(BigDecimal.ZERO) { sum, bill -> sum + bill.expectedPayableAmount() }
+    val overdueAmount = data.dashboard?.summary?.overdue.toMoneyDecimal().takeIf { it > BigDecimal.ZERO }
+        ?: bills.filter { it.isOverdueBill() }.fold(BigDecimal.ZERO) { sum, bill -> sum + bill.expectedPayableAmount() }
+    val verificationPending = payments.count { it.paymentStatus.isVerificationPendingStatus() }
+    val writtenOffAmount = data.waivers.fold(BigDecimal.ZERO) { sum, waiver -> sum + waiver.waiverAmount.toMoneyDecimal() }
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        SectionCard("Billing Period", "Use this month/year before generating or reviewing bills") {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                OutlinedButton(onClick = onPreviousMonth) { Text("Previous") }
+                Text("${monthName(selectedMonth)} $selectedYear", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                OutlinedButton(onClick = onNextMonth) { Text("Next") }
+            }
+        }
+        MetricGrid(
+            listOf(
+                Triple("Total Billed", DashboardFormatters.money(totalBilled), "${bills.size} bills"),
+                Triple("Collected", DashboardFormatters.money(totalCollected), "approved payments"),
+                Triple("Pending", DashboardFormatters.money(pendingAmount), "outstanding"),
+                Triple("Overdue", DashboardFormatters.money(overdueAmount), "needs follow-up"),
+                Triple("Verification", verificationPending.toString(), "payment proofs"),
+                Triple("Written Off", DashboardFormatters.money(writtenOffAmount), "not collected income")
+            )
+        )
+        SectionCard("Quick Actions", "Common admin maintenance tasks") {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                MaintenanceQuickAction("Generate Bills", Icons.Filled.ReceiptLong, onGenerateBills)
+                MaintenanceQuickAction("Record Payment", Icons.Filled.Payments, onRecordPayment)
+                MaintenanceQuickAction("Verify Payments", Icons.Filled.CheckCircle, onVerifyPayments)
+                MaintenanceQuickAction("View Defaulters", Icons.Filled.Warning, onDefaulters)
+                MaintenanceQuickAction("Write Off", Icons.Filled.Delete, onWriteOff)
+                MaintenanceQuickAction("Reports", Icons.Filled.Download, onReports)
+            }
+        }
+    }
+}
+
+@Composable
+private fun MaintenanceQuickAction(label: String, icon: ImageVector, onClick: () -> Unit) {
+    OutlinedButton(onClick = onClick, modifier = Modifier.height(52.dp), shape = RoundedCornerShape(14.dp)) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(label)
+    }
+}
+
+@Composable
 private fun AdminMaintenanceOverviewSection(
     data: com.example.application.data.repository.AdminMaintenanceData,
     viewModel: AdminMaintenanceViewModel
@@ -829,6 +909,9 @@ private fun PaymentVerificationSection(
     var screenshotPayment by remember { mutableStateOf<MaintenancePaymentDto?>(null) }
     var receiptPayment by remember { mutableStateOf<MaintenancePaymentDto?>(null) }
     var rejectPayment by remember { mutableStateOf<MaintenancePaymentDto?>(null) }
+    var clarificationPayment by remember { mutableStateOf<MaintenancePaymentDto?>(null) }
+    var bulkReject by remember { mutableStateOf(false) }
+    var selectedPaymentIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     val visiblePayments = remember(payments, query, filter) {
         payments.filter { payment ->
             val status = payment.paymentStatus.orEmpty()
@@ -845,11 +928,36 @@ private fun PaymentVerificationSection(
             filterOk && queryOk
         }
     }
+    val pendingPayments = visiblePayments.filter { it.id != null && it.paymentStatus.isVerificationPendingStatus() }
+    val selectedPending = pendingPayments.filter { it.id in selectedPaymentIds }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         SectionCard("Payment Verification", "Review resident UPI proofs before marking bills paid") {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("Pending Review" to "Pending", "Needs Clarification" to "Needs Clarification", "Approved" to "Paid", "Rejected" to "Rejected", "All" to "All").forEach { (label, value) ->
+                    FilterChip(selected = filter == value, onClick = { viewModel.setFilter(value) }, label = { Text(label) })
+                }
+            }
             SearchAndFilter(query, viewModel::setQuery, filter, viewModel::setFilter)
             Text("Tip: filter by Pending, Approved/Paid, Rejected, month, flat or resident name.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (pendingPayments.isNotEmpty()) {
+                MaintenanceActions {
+                    TextButton(onClick = {
+                        selectedPaymentIds = if (selectedPending.size == pendingPayments.size) emptySet() else pendingPayments.mapNotNull { it.id }.toSet()
+                    }) { Text(if (selectedPending.size == pendingPayments.size) "Clear Selection" else "Select Pending") }
+                    Button(
+                        onClick = {
+                            selectedPending.forEach { payment -> payment.id?.let { viewModel.updatePayment(it, "Paid") } }
+                            selectedPaymentIds = emptySet()
+                        },
+                        enabled = selectedPending.isNotEmpty()
+                    ) { Text("Approve Selected (${selectedPending.size})") }
+                    Button(onClick = { bulkReject = true }, enabled = selectedPending.isNotEmpty()) { Text("Reject Selected") }
+                    OutlinedButton(onClick = { sharePaymentsCsv(context, visiblePayments) }) { Text("Export CSV") }
+                }
+            } else {
+                OutlinedButton(onClick = { sharePaymentsCsv(context, visiblePayments) }) { Text("Export CSV") }
+            }
         }
         if (visiblePayments.isEmpty()) {
             EmptyState("No payment proofs found", "Submitted resident payment screenshots will appear here.")
@@ -857,9 +965,16 @@ private fun PaymentVerificationSection(
             visiblePayments.forEach { payment ->
                 PaymentVerificationCard(
                     payment = payment,
+                    selected = payment.id in selectedPaymentIds,
+                    onSelectToggle = {
+                        payment.id?.let { id ->
+                            selectedPaymentIds = if (id in selectedPaymentIds) selectedPaymentIds - id else selectedPaymentIds + id
+                        }
+                    },
                     onOpenScreenshot = { screenshotPayment = payment },
                     onApprove = { payment.id?.let { viewModel.updatePayment(it, "Paid") } },
                     onReject = { rejectPayment = payment },
+                    onClarify = { clarificationPayment = payment },
                     onViewReceipt = { receiptPayment = payment },
                     onDownloadReceipt = { saveReceiptPdf(context, payment) },
                     onShareReceipt = { shareReceiptPdf(context, payment) }
@@ -919,14 +1034,65 @@ private fun PaymentVerificationSection(
             dismissButton = { TextButton(onClick = { rejectPayment = null }) { Text("Cancel") } }
         )
     }
+
+    clarificationPayment?.let { payment ->
+        var note by remember(payment.id) { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { clarificationPayment = null },
+            title = { Text("Ask for Clarification") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Use this when the proof may be valid but more information is needed.")
+                    BasicAppTextField(note, { note = it }, "Clarification note")
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        payment.id?.let { viewModel.updatePayment(it, "Needs Clarification", note.ifBlank { "Please provide clearer payment details." }) }
+                        clarificationPayment = null
+                    },
+                    enabled = note.isNotBlank()
+                ) { Text("Send") }
+            },
+            dismissButton = { TextButton(onClick = { clarificationPayment = null }) { Text("Cancel") } }
+        )
+    }
+
+    if (bulkReject) {
+        var reason by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { bulkReject = false },
+            title = { Text("Reject Selected Payments") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("${selectedPending.size} selected payment proofs will be rejected.")
+                    BasicAppTextField(reason, { reason = it }, "Rejection reason")
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    selectedPending.forEach { payment ->
+                        payment.id?.let { viewModel.updatePayment(it, "Rejected", reason.ifBlank { "Payment proof rejected by admin" }) }
+                    }
+                    selectedPaymentIds = emptySet()
+                    bulkReject = false
+                }, enabled = reason.isNotBlank()) { Text("Reject Selected") }
+            },
+            dismissButton = { TextButton(onClick = { bulkReject = false }) { Text("Cancel") } }
+        )
+    }
 }
 
 @Composable
 private fun PaymentVerificationCard(
     payment: MaintenancePaymentDto,
+    selected: Boolean,
+    onSelectToggle: () -> Unit,
     onOpenScreenshot: () -> Unit,
     onApprove: () -> Unit,
     onReject: () -> Unit,
+    onClarify: () -> Unit,
     onViewReceipt: () -> Unit,
     onDownloadReceipt: () -> Unit,
     onShareReceipt: () -> Unit
@@ -934,6 +1100,9 @@ private fun PaymentVerificationCard(
     val status = friendlyPaymentStatus(payment.paymentStatus)
     Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            if (payment.paymentStatus.isVerificationPendingStatus()) {
+                FilterChip(selected = selected, onClick = onSelectToggle, label = { Text(if (selected) "Selected" else "Select for bulk action") })
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
                 AsyncImage(
                     model = fullMediaUrl(payment.proofImage()),
@@ -957,6 +1126,7 @@ private fun PaymentVerificationCard(
                 TextButton(onClick = onOpenScreenshot) { Text("Open Screenshot") }
                 if ((payment.paymentStatus).isVerificationPendingStatus()) Button(onClick = onApprove) { Text("Approve") }
                 if ((payment.paymentStatus).isVerificationPendingStatus()) TextButton(onClick = onReject) { Text("Reject") }
+                if ((payment.paymentStatus).isVerificationPendingStatus()) TextButton(onClick = onClarify) { Text("Ask Clarification") }
                 if ((payment.paymentStatus).isApprovedStatus()) TextButton(onClick = onViewReceipt) { Text("View Receipt") }
                 if ((payment.paymentStatus).isApprovedStatus()) TextButton(onClick = onDownloadReceipt) { Text("Download PDF") }
                 if ((payment.paymentStatus).isApprovedStatus()) TextButton(onClick = onShareReceipt) { Text("Share") }
@@ -1219,14 +1389,60 @@ private fun androidx.compose.foundation.lazy.LazyListScope.penaltiesTab(
     }
 }
 
+private fun androidx.compose.foundation.lazy.LazyListScope.defaultersTab(
+    bills: List<MaintenanceBillDto>,
+    viewModel: AdminMaintenanceViewModel,
+    openDialog: (MaintenanceDialog) -> Unit
+) {
+    val defaulters = bills
+        .filter { !(it.paymentStatus ?: it.status).isSettledBillStatus() && (it.isOverdueBill() || it.expectedPayableAmount() > BigDecimal.ZERO) }
+        .sortedWith(compareBy<MaintenanceBillDto> { !it.isOverdueBill() }.thenBy { it.dueDate ?: it.maintenanceDueDate ?: "" })
+    item {
+        SectionCard("Defaulters", "Residents with overdue or unpaid outstanding maintenance") {
+            MetricGrid(
+                listOf(
+                    Triple("Pending", DashboardFormatters.money(defaulters.fold(BigDecimal.ZERO) { sum, bill -> sum + bill.expectedPayableAmount() }), "${defaulters.size} bills"),
+                    Triple("Overdue", DashboardFormatters.money(defaulters.filter { it.isOverdueBill() }.fold(BigDecimal.ZERO) { sum, bill -> sum + bill.expectedPayableAmount() }), "${defaulters.count { it.isOverdueBill() }} overdue")
+                )
+            )
+        }
+    }
+    if (defaulters.isEmpty()) item { EmptyState("No defaulters", "All residents are clear for the selected data.") }
+    else items(defaulters, key = { it.id ?: "${it.flatNo}-${it.month}-${it.year}" }) { bill ->
+        ManagementCard {
+            Text(bill.residentName ?: "Resident", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+            KeyValue("Flat", bill.flatNo ?: "-")
+            KeyValue("Billing", "${monthName(bill.month)} ${bill.year.orEmpty()}")
+            KeyValue("Outstanding", DashboardFormatters.money(bill.expectedPayableAmount()))
+            KeyValue("Due date", DashboardFormatters.date(bill.dueDate ?: bill.maintenanceDueDate))
+            KeyValue("Status", friendlyPaymentStatus(bill.paymentStatus ?: bill.status))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = { bill.id?.let(viewModel::sendReminder) }) { Text("Send Reminder") }
+                TextButton(onClick = { openDialog(MaintenanceDialog.MarkPaid(bill)) }) { Text("Record Payment") }
+                TextButton(onClick = { openDialog(MaintenanceDialog.WriteOff(bill)) }) { Text("Write Off") }
+            }
+        }
+    }
+}
+
 private fun androidx.compose.foundation.lazy.LazyListScope.waiversTab(
     waivers: List<MaintenanceWaiverDto>,
     viewModel: AdminMaintenanceViewModel,
     openDialog: (MaintenanceDialog) -> Unit
 ) {
     item {
-        SectionCard("Maintenance Waivers", "Every waiver keeps the original bill amount and audit trail") {
-            Button(onClick = { openDialog(MaintenanceDialog.ApplyWaiver(null)) }, modifier = Modifier.fillMaxWidth()) { Text("Apply Waiver") }
+        SectionCard("Write-Offs & Waivers", "Write-offs are adjustments, not collected income") {
+            val full = waivers.count { it.waiverType?.contains("total", true) == true || it.waiverType?.contains("full", true) == true }
+            val penalty = waivers.count { it.waiverType?.contains("penalty", true) == true || it.reason?.contains("penalty", true) == true }
+            MetricGrid(
+                listOf(
+                    Triple("Written Off", DashboardFormatters.money(waivers.fold(BigDecimal.ZERO) { sum, item -> sum + item.waiverAmount.toMoneyDecimal() }), "${waivers.size} records"),
+                    Triple("Full Write-Offs", full.toString(), "full settlements"),
+                    Triple("Partial", (waivers.size - full).coerceAtLeast(0).toString(), "partial adjustments"),
+                    Triple("Penalty", penalty.toString(), "penalty waivers")
+                )
+            )
+            Button(onClick = { openDialog(MaintenanceDialog.ApplyWaiver(null)) }, modifier = Modifier.fillMaxWidth()) { Text("Apply Waiver / Adjustment") }
         }
     }
     if (waivers.isEmpty()) item { EmptyState("No waivers", "Approved waivers and write-offs will appear here.") }
@@ -1245,10 +1461,20 @@ private fun androidx.compose.foundation.lazy.LazyListScope.waiversTab(
 private fun androidx.compose.foundation.lazy.LazyListScope.reportsTab(data: com.example.application.data.repository.AdminMaintenanceData) {
     item {
         SectionCard("Reports", "Use filters on bill and transaction tabs for drill-down, then export from backend reports when needed") {
-            KeyValue("Monthly Collection", DashboardFormatters.money(data.adminSummary?.currentMonthCollection.toMoneyDecimal()))
-            KeyValue("Previous Month", DashboardFormatters.money(data.adminSummary?.previousMonthCollection.toMoneyDecimal()))
-            KeyValue("Outstanding", DashboardFormatters.money(data.adminSummary?.totalOutstanding.toMoneyDecimal()))
-            KeyValue("Waived", DashboardFormatters.money(data.adminSummary?.totalWaivedAmount.toMoneyDecimal()))
+            val billed = data.bills.fold(BigDecimal.ZERO) { sum, bill -> sum + (bill.totalAmount ?: bill.amount).toMoneyDecimal() }
+            val collected = data.payments.filter { it.paymentStatus.isApprovedStatus() }.fold(BigDecimal.ZERO) { sum, payment -> sum + payment.amount.toMoneyDecimal() }
+            val outstanding = data.bills.filter { !(it.paymentStatus ?: it.status).isSettledBillStatus() }.fold(BigDecimal.ZERO) { sum, bill -> sum + bill.expectedPayableAmount() }
+            val writtenOff = data.waivers.fold(BigDecimal.ZERO) { sum, waiver -> sum + waiver.waiverAmount.toMoneyDecimal() }
+            val penalties = data.bills.fold(BigDecimal.ZERO) { sum, bill -> sum + (bill.penaltyAmount ?: bill.lateFee).toMoneyDecimal() }
+            val pendingVerification = data.payments.filter { it.paymentStatus.isVerificationPendingStatus() }.fold(BigDecimal.ZERO) { sum, payment -> sum + payment.amount.toMoneyDecimal() }
+            KeyValue("Total billed", DashboardFormatters.money(billed))
+            KeyValue("Total collected", DashboardFormatters.money(collected))
+            KeyValue("Total outstanding", DashboardFormatters.money(outstanding))
+            KeyValue("Total overdue", DashboardFormatters.money(data.bills.filter { it.isOverdueBill() }.fold(BigDecimal.ZERO) { sum, bill -> sum + bill.expectedPayableAmount() }))
+            KeyValue("Total written off", DashboardFormatters.money(writtenOff))
+            KeyValue("Total penalties", DashboardFormatters.money(penalties))
+            KeyValue("Verification pending", DashboardFormatters.money(pendingVerification))
+            Text("Written-off amounts are excluded from collected income.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
     item {
@@ -1537,6 +1763,12 @@ private fun MaintenanceDialogHost(dialog: MaintenanceDialog?, onDismiss: () -> U
         }
         null -> Unit
     }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun MaintenanceActions(content: @Composable androidx.compose.foundation.layout.FlowRowScope.() -> Unit) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), content = content)
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -1996,6 +2228,35 @@ private fun shareReceiptPdf(context: Context, payment: MaintenancePaymentDto) {
     }
 }
 
+private fun sharePaymentsCsv(context: Context, payments: List<MaintenancePaymentDto>) {
+    val header = listOf("Payment ID", "Resident", "Flat", "Amount", "Status", "Transaction", "Paid At", "Verified At")
+    val rows = payments.map { payment ->
+        listOf(
+            payment.id.orEmpty(),
+            payment.residentName.orEmpty(),
+            payment.flatNo.orEmpty(),
+            payment.amount.orEmpty(),
+            friendlyPaymentStatus(payment.paymentStatus),
+            payment.transactionId.orEmpty(),
+            payment.paidAt.orEmpty(),
+            payment.verifiedAt.orEmpty()
+        )
+    }
+    val csv = (listOf(header) + rows).joinToString("\n") { row -> row.joinToString(",") { it.csvCell() } }
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/csv"
+        putExtra(Intent.EXTRA_SUBJECT, "Maintenance payment verification export")
+        putExtra(Intent.EXTRA_TEXT, csv)
+    }
+    runCatching { context.startActivity(Intent.createChooser(intent, "Export Payments CSV")) }
+        .onFailure { Toast.makeText(context, "Unable to share CSV right now.", Toast.LENGTH_LONG).show() }
+}
+
+private fun String.csvCell(): String {
+    val escaped = replace("\"", "\"\"")
+    return "\"$escaped\""
+}
+
 private fun String?.isResidentPayableStatus(): Boolean {
     val normalized = normalizePaymentStatus()
     return normalized in setOf("PENDING", "PARTIAL", "OVERDUE", "UNPAID", "REJECTED")
@@ -2009,6 +2270,17 @@ private fun String?.isVerificationPendingStatus(): Boolean {
 private fun String?.isApprovedStatus(): Boolean {
     val normalized = normalizePaymentStatus()
     return normalized in setOf("PAID", "APPROVED")
+}
+
+private fun String?.isSettledBillStatus(): Boolean {
+    val normalized = normalizePaymentStatus()
+    return normalized in setOf("PAID", "APPROVED", "WRITTEN_OFF", "WRITE_OFF", "SETTLED", "CANCELLED")
+}
+
+private fun MaintenanceBillDto.isOverdueBill(): Boolean {
+    if ((paymentStatus ?: status).isSettledBillStatus()) return false
+    val due = (dueDate ?: maintenanceDueDate).toLocalDateOrNull() ?: return status.normalizePaymentStatus() == "OVERDUE"
+    return due < LocalDate.now() || status.normalizePaymentStatus() == "OVERDUE"
 }
 
 private fun MaintenancePaymentDto.proofImage(): String? {
@@ -2071,6 +2343,8 @@ private fun monthName(value: String?): String {
     }
     return clean.take(3).replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
 }
+
+private fun monthName(value: Int): String = monthName(value.toString())
 
 private fun String?.toLocalDateOrNull(): LocalDate? {
     val date = orEmpty().take(10)
@@ -2217,7 +2491,7 @@ private fun KeyValue(label: String, value: String) {
 @Composable
 private fun AdminMaintenanceTabs(selected: String, onSelected: (String) -> Unit) {
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        listOf("Overview", "Bills", "Settings", "Categories", "Expenses", "Payments", "Reports").forEach { tab ->
+        listOf("Bills", "Verification", "Defaulters", "Write-Offs", "Reports").forEach { tab ->
             FilterChip(
                 selected = selected == tab,
                 onClick = { onSelected(tab) },

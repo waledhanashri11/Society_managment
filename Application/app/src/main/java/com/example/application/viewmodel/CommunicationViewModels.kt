@@ -84,10 +84,10 @@ class ResidentComplaintsViewModel @Inject constructor(private val repository: Co
     }
     fun setQuery(value: String) = _state.update { it.copy(query = value) }
     fun setFilter(value: String) = _state.update { it.copy(filter = value) }
-    fun createComplaint(title: String, description: String, imageUrl: String? = null) {
+    fun createComplaint(title: String, description: String, imageUrls: List<String> = emptyList()) {
         viewModelScope.launch {
             _state.update { it.copy(submitting = true, error = null, message = null) }
-            when (val result = repository.createComplaint(title, description, imageUrl)) {
+            when (val result = repository.createComplaint(title, description, imageUrls)) {
                 is NetworkResult.Success -> { _state.update { it.copy(submitting = false, message = "Complaint submitted successfully") }; load(true) }
                 is NetworkResult.Error -> _state.update { it.copy(submitting = false, error = repository.userMessageFor(result.error)) }
                 NetworkResult.Loading -> Unit

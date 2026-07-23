@@ -36,4 +36,21 @@
     <string name="rules_ack_button">मी हा नियम वाचला आणि समजला आहे</string>
     <string name="rules_total">एकूण</string>
     <string name="rules_done">पूर्ण</string>
+    <string name="events_title">कार्यक्रम</string>
+    <string name="events_create">कार्यक्रम तयार करा</string>
+    <string name="events_edit">कार्यक्रम संपादित करा</string>
+    <string name="events_empty">कोणतेही कार्यक्रम नाहीत</string>
+    <string name="events_search">शीर्षक, ठिकाण किंवा आयोजक शोधा</string>
+    <string name="events_publish">प्रकाशित करा</string>
+    <string name="events_cancel">रद्द करा</string>
+    <string name="events_delete">कार्यक्रम हटवायचा?</string>
+    <string name="events_image">कार्यक्रमाचे चित्र निवडा</string>
+    <string name="language">भाषा</string>
+    <string name="language_hint">अॅपची भाषा निवडा. निवडल्यानंतर अॅप रीफ्रेश होईल.</string>
+    <string name="meeting_action_items">कार्य आयटम</string>
+    <string name="meeting_add_action">कार्य आयटम जोडा</string>
+    <string name="meeting_view_minutes">मिनिट्स पहा</string>
+    <string name="meeting_download_pdf">PDF डाउनलोड करा</string>
+    <string name="meeting_share_pdf">PDF शेअर करा</string>
+    <string name="meeting_print_minutes">मिनिट्स प्रिंट करा</string>
 </resources>

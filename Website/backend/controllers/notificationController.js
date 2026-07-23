@@ -104,9 +104,26 @@ const markResidentNotificationRead = async (req, res) => {
   }
 };
 
+const markResidentNotificationsRead = async (req, res) => {
+  try {
+    const residentId = req.user.id;
+
+    await promisePool.query(
+      'UPDATE notifications SET is_read = true WHERE resident_id = ?',
+      [residentId]
+    );
+
+    res.json({ message: 'Notifications marked as read', unreadCount: 0 });
+  } catch (error) {
+    console.error('Mark resident notifications read error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
 module.exports = {
   getAdminNotifications,
   markAdminNotificationsRead,
   getResidentNotifications,
+  markResidentNotificationsRead,
   markResidentNotificationRead
 };

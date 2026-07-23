@@ -41,8 +41,8 @@ class CommunicationRepository @Inject constructor(
 
     suspend fun getComplaint(id: String) = safeCall { api.getComplaint(id) }
 
-    suspend fun createComplaint(title: String, description: String, imageUrl: String?): NetworkResult<String> {
-        return messageCall { api.createComplaint(ComplaintSaveRequest(title, description, imageUrl?.takeIf { it.isNotBlank() }?.let(::listOf).orEmpty())) }.also { if (it is NetworkResult.Success) residentComplaintsCache = null }
+    suspend fun createComplaint(title: String, description: String, images: List<String>): NetworkResult<String> {
+        return messageCall { api.createComplaint(ComplaintSaveRequest(title, description, images.filter { it.isNotBlank() }.take(3))) }.also { if (it is NetworkResult.Success) residentComplaintsCache = null }
     }
 
     suspend fun updateComplaint(id: String, status: String, reply: String?): NetworkResult<String> {

@@ -56,15 +56,24 @@ class MeetingsViewModel @Inject constructor(private val repository: MeetingsRepo
     }
     fun saveAgenda(id: String, items: List<String>) = action { repository.agenda(id, MeetingAgendaSaveRequest(items.mapIndexed { index, text -> MeetingAgendaSaveItem(text, index) })) }
     fun saveReport(id: String, summary: String, discussion: String, decisions: String, remarks: String) = action { repository.report(id, MeetingReportSaveRequest(summary, discussion, decisions, remarks)) }
+    fun createAction(request: MeetingActionSaveRequest) = action { repository.action(request) }
+    fun updateAction(id: String, request: MeetingActionSaveRequest) = action { repository.updateAction(id, request) }
+    fun updateActionStatus(id: String, status: String, completionDetails: String? = null) = action { repository.updateActionStatus(id, MeetingActionStatusRequest(status, completionDetails)) }
+    fun deleteAction(id: String) = action { repository.deleteAction(id) }
     fun createVote(id: String, question: String) = action { repository.vote(MeetingVoteSaveRequest(id, question)) }
     fun castVote(id: String, choice: String) = action { repository.castVote(id, choice) }
     fun createMeeting(request: MeetingSaveRequest) = action { repository.create(request) }
     fun updateMeeting(id: String, request: MeetingSaveRequest) = action { repository.update(id, request) }
     fun deleteMeeting(id: String) = action { repository.delete(id) }
     private fun action(block: suspend () -> NetworkResult<String>) = viewModelScope.launch {
+        val selectedId = _state.value.selected?.id
         _state.update { it.copy(submitting = true, error = null, message = null) }
         when (val result = block()) {
-            is NetworkResult.Success -> { _state.update { it.copy(submitting = false, message = result.data) }; load(true) }
+            is NetworkResult.Success -> {
+                _state.update { it.copy(submitting = false, message = result.data) }
+                load(true)
+                selectedId?.let { open(it) }
+            }
             is NetworkResult.Error -> _state.update { it.copy(submitting = false, error = repository.userMessageFor(result.error)) }
             NetworkResult.Loading -> Unit
         }

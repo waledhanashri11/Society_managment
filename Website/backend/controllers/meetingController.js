@@ -468,15 +468,15 @@ const saveMeetingReport = async (req, res) => {
 // ACTIONS TRACKER (CRUD)
 const createAction = async (req, res) => {
   try {
-    const { meeting_id, action_text, assigned_to, due_date, priority } = req.body;
+    const { meeting_id, action_text, assigned_to, due_date, priority, notes, completion_details } = req.body;
     if (!meeting_id || !action_text) {
       return res.status(400).json({ message: 'Meeting ID and action text are required' });
     }
 
     const [result] = await promisePool.query(
-      `INSERT INTO meeting_actions (meeting_id, action_text, assigned_to, due_date, priority, status)
-       VALUES (?, ?, ?, ?, ?, 'Pending')`,
-      [meeting_id, action_text, assigned_to || null, due_date || null, priority || 'Normal']
+      `INSERT INTO meeting_actions (meeting_id, action_text, assigned_to, due_date, priority, status, notes, completion_details)
+       VALUES (?, ?, ?, ?, ?, 'Pending', ?, ?)`,
+      [meeting_id, action_text, assigned_to || null, due_date || null, priority || 'Normal', notes || null, completion_details || null]
     );
 
     res.status(201).json({ id: result.insertId, message: 'Action item created successfully' });
@@ -489,18 +489,54 @@ const createAction = async (req, res) => {
 const updateAction = async (req, res) => {
   try {
     const { id } = req.params;
-    const { action_text, assigned_to, due_date, priority, status } = req.body;
+    const { action_text, assigned_to, due_date, priority, status, notes, completion_details } = req.body;
+    const completedAtSql = status === 'Completed' ? ', completed_at = COALESCE(completed_at, NOW())' : ", completed_at = NULL";
 
     await promisePool.query(
       `UPDATE meeting_actions 
-       SET action_text = ?, assigned_to = ?, due_date = ?, priority = ?, status = ?, updated_at = NOW()
+       SET action_text = ?, assigned_to = ?, due_date = ?, priority = ?, status = ?, notes = ?, completion_details = ?, updated_at = NOW()${completedAtSql}
        WHERE id = ?`,
-      [action_text, assigned_to || null, due_date || null, priority || 'Normal', status || 'Pending', id]
+      [action_text, assigned_to || null, due_date || null, priority || 'Normal', status || 'Pending', notes || null, completion_details || null, id]
     );
 
     res.json({ message: 'Action item updated' });
   } catch (error) {
     console.error('Update action error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+const updateActionStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, completion_details } = req.body;
+    if (!['Pending', 'In Progress', 'Completed', 'Cancelled'].includes(status)) {
+      return res.status(400).json({ message: 'Invalid action status' });
+    }
+
+    const [rows] = await promisePool.query('SELECT * FROM meeting_actions WHERE id = ?', [id]);
+    if (rows.length === 0) {
+      return res.status(404).json({ message: 'Action item not found' });
+    }
+
+    const action = rows[0];
+    const admin = ['admin', 'committee'].includes(req.user.role);
+    if (!admin && String(action.assigned_to || '') !== String(req.user.id)) {
+      return res.status(403).json({ message: 'Only the assignee or an admin can update this action status.' });
+    }
+
+    await promisePool.query(
+      `UPDATE meeting_actions
+       SET status = ?, completion_details = COALESCE(?, completion_details),
+           completed_at = CASE WHEN ? = 'Completed' THEN COALESCE(completed_at, NOW()) ELSE NULL END,
+           updated_at = NOW()
+       WHERE id = ?`,
+      [status, completion_details || null, status, id]
+    );
+
+    res.json({ message: 'Action item status updated' });
+  } catch (error) {
+    console.error('Update action status error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 };
@@ -610,6 +646,7 @@ module.exports = {
   saveMeetingReport,
   createAction,
   updateAction,
+  updateActionStatus,
   deleteAction,
   createVote,
   castVote

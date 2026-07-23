@@ -378,6 +378,33 @@ const rejectRequest = async (req, res) => {
   }
 };
 
+const cancelRequest = async (req, res) => {
+  try {
+    const request = await getRequestRow(req.params.id);
+    if (!request) return sendResponse(res, 404, 'NOC request not found');
+    if (req.user.role !== 'admin' && String(request.resident_id) !== String(req.user.id)) {
+      return sendResponse(res, 403, 'Access denied');
+    }
+    if (!['Pending', 'Under Review'].includes(request.status)) {
+      return sendResponse(res, 400, 'Only pending or under review NOC requests can be cancelled');
+    }
+
+    const reason = req.body.reason || req.body.remarks || 'Cancelled by resident';
+    await promisePool.query(
+      `UPDATE noc_requests
+       SET status = 'Cancelled', rejected_reason = ?, admin_remarks = ?, updated_at = NOW()
+       WHERE id = ?`,
+      [reason, reason, request.id]
+    );
+    await logAction(request.id, 'Cancelled', req.user.id, reason);
+
+    return sendResponse(res, 200, 'NOC request cancelled successfully');
+  } catch (error) {
+    console.error('Cancel NOC error:', error);
+    return sendResponse(res, 500, 'Server error');
+  }
+};
+
 const getTypes = async (req, res) => {
   try {
     const [rows] = await promisePool.query('SELECT * FROM noc_types WHERE active = true ORDER BY name');
@@ -596,6 +623,7 @@ module.exports = {
   markUnderReview,
   approveRequest,
   rejectRequest,
+  cancelRequest,
   getTypes,
   createType,
   getPdf,

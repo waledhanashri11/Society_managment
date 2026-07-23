@@ -146,7 +146,7 @@ fun ResidentComplaintsScreen(
     var showCreate by remember { mutableStateOf(false) }
     var title by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
-    var imageUri by remember { mutableStateOf<Uri?>(null) }
+    var imageUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
     var cameraUri by remember { mutableStateOf<Uri?>(null) }
     var imageError by remember { mutableStateOf<String?>(null) }
     val items by remember(state.items, state.query, state.filter) {
@@ -156,12 +156,12 @@ fun ResidentComplaintsScreen(
                 .filter { state.filter == "All" || it.status.normalizedComplaintStatus() == state.filter.normalizedComplaintStatus() }
         }
     }
-    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
         imageError = null
-        imageUri = uri
+        imageUris = (imageUris + uris).distinct().take(3)
     }
     val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { captured ->
-        if (captured) imageUri = cameraUri
+        if (captured) cameraUri?.let { imageUris = (imageUris + it).distinct().take(3) }
     }
     Scaffold(
         topBar = {
@@ -217,25 +217,30 @@ fun ResidentComplaintsScreen(
                     onTitle = { title = it },
                     description = description,
                     onDescription = { description = it },
-                    selectedImage = imageUri,
+                    selectedImages = imageUris,
                     imageError = imageError,
                     submitting = state.submitting,
-                    onPickImage = { imagePicker.launch("image/*") },
+                    onPickImage = {
+                        if (imageUris.size >= 3) imageError = "You can upload maximum 3 images." else imagePicker.launch("image/*")
+                    },
                     onTakePhoto = {
-                        createCameraUri(context)?.let { uri ->
+                        if (imageUris.size >= 3) {
+                            imageError = "You can upload maximum 3 images."
+                        } else createCameraUri(context)?.let { uri ->
                             cameraUri = uri
                             cameraLauncher.launch(uri)
                         }
                     },
+                    onRemoveImage = { uri -> imageUris = imageUris.filterNot { it == uri } },
                     onSubmit = {
-                        val imageData = imageUri?.let { uri -> uriToBase64DataUrl(context, uri) }
-                        if (imageUri != null && imageData == null) {
-                            imageError = "Unable to read selected picture. Please choose another image under 5 MB."
+                        val imageData = imageUris.mapNotNull { uri -> uriToBase64DataUrl(context, uri) }
+                        if (imageData.size != imageUris.size) {
+                            imageError = "Unable to read one selected picture. Please choose JPG/PNG images under 5 MB."
                         } else {
                             viewModel.createComplaint(title.trim(), description.trim(), imageData)
                             title = ""
                             description = ""
-                            imageUri = null
+                            imageUris = emptyList()
                             imageError = null
                             showCreate = false
                         }
@@ -404,11 +409,12 @@ private fun ResidentComplaintForm(
     onTitle: (String) -> Unit,
     description: String,
     onDescription: (String) -> Unit,
-    selectedImage: Uri?,
+    selectedImages: List<Uri>,
     imageError: String?,
     submitting: Boolean,
     onPickImage: () -> Unit,
     onTakePhoto: () -> Unit,
+    onRemoveImage: (Uri) -> Unit,
     onSubmit: () -> Unit
 ) {
     Column(
@@ -442,7 +448,7 @@ private fun ResidentComplaintForm(
             OutlinedButton(onClick = onPickImage, modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(14.dp)) {
                 Icon(Icons.Filled.Image, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
-                Text(if (selectedImage == null) "Add Photo" else "Change Photo")
+                Text("Add Photo (${selectedImages.size}/3)")
             }
             OutlinedButton(onClick = onTakePhoto, modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(14.dp)) {
                 Icon(Icons.Filled.PhotoCamera, contentDescription = null)
@@ -450,13 +456,16 @@ private fun ResidentComplaintForm(
                 Text("Take Photo")
             }
         }
-        selectedImage?.let { uri ->
-            AsyncImage(
-                model = uri,
-                contentDescription = "Selected complaint picture",
-                modifier = Modifier.fillMaxWidth().height(110.dp).clip(RoundedCornerShape(12.dp)),
-                contentScale = ContentScale.Crop
-            )
+        selectedImages.forEach { uri ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                AsyncImage(
+                    model = uri,
+                    contentDescription = "Selected complaint picture",
+                    modifier = Modifier.weight(1f).height(92.dp).clip(RoundedCornerShape(12.dp)),
+                    contentScale = ContentScale.Crop
+                )
+                TextButton(onClick = { onRemoveImage(uri) }) { Text("Remove") }
+            }
         }
         imageError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         Button(
@@ -566,8 +575,7 @@ private fun ComplaintCard(complaint: ComplaintDto, admin: Boolean, onReply: () -
     ManagementCard {
         Text(complaint.title ?: "Complaint", fontWeight = FontWeight.Bold)
         Text(complaint.description ?: "-", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        val complaintImage = complaint.imageUrl?.takeIf { it.isNotBlank() }
-            ?: complaint.complaintImageUrls?.firstOrNull { it.isNotBlank() }
+        val complaintImage = complaint.primaryComplaintImage()
         complaintImage?.let { image ->
             AsyncImage(
                 model = fullMediaUrl(image),
@@ -722,11 +730,12 @@ private fun ComplaintDto.matchesComplaint(query: String): Boolean {
 }
 
 private fun ComplaintDto.primaryComplaintImage(): String? {
-    return listOfNotNull(
-        imageUrl?.takeIf { it.isNotBlank() },
-        complaintImageUrls?.firstOrNull { it.isNotBlank() },
-        complaintImages?.firstOrNull { it.isNotBlank() }
-    ).firstOrNull()
+    return complaintImageUrls
+        ?.firstOrNull { it.isNotBlank() }
+        ?: listOfNotNull(
+            imageUrl?.takeIf { it.isNotBlank() },
+            complaintImages?.firstOrNull { it.isNotBlank() }
+        ).firstOrNull()
 }
 
 private data class ComplaintUiColors(
@@ -811,6 +820,9 @@ private fun createCameraUri(context: Context): Uri? = runCatching {
 }.getOrNull()
 
 private fun fullMediaUrl(path: String): String {
-    if (path.startsWith("http", ignoreCase = true) || path.startsWith("content:", ignoreCase = true) || path.startsWith("data:", ignoreCase = true)) return path
+    if (path.startsWith("http://", ignoreCase = true)) {
+        return path.replace(Regex("^http://([^/]*railway\\.app)", RegexOption.IGNORE_CASE), "https://$1")
+    }
+    if (path.startsWith("https:", ignoreCase = true) || path.startsWith("content:", ignoreCase = true) || path.startsWith("data:", ignoreCase = true)) return path
     return BuildConfig.BASE_URL.trimEnd('/') + "/" + path.trimStart('/')
 }

@@ -13,6 +13,7 @@ const {
   saveMeetingReport,
   createAction,
   updateAction,
+  updateActionStatus,
   deleteAction,
   createVote,
   castVote
@@ -44,6 +45,7 @@ router.post('/:id/report', auth, adminOrCommitteeAuth, saveMeetingReport);
 // Action items tracker
 router.post('/actions', auth, adminOrCommitteeAuth, createAction);
 router.put('/actions/:id', auth, adminOrCommitteeAuth, updateAction);
+router.put('/actions/:id/status', auth, updateActionStatus);
 router.delete('/actions/:id', auth, adminOrCommitteeAuth, deleteAction);
 
 // Voting polls

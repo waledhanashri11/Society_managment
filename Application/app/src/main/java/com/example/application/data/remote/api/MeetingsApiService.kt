@@ -17,6 +17,7 @@ interface MeetingsApiService {
     @POST("api/meetings/{id}/report") suspend fun saveReport(@Path("id") id: String, @Body request: MeetingReportSaveRequest): Response<JsonElement>
     @POST("api/meetings/actions") suspend fun createAction(@Body request: MeetingActionSaveRequest): Response<JsonElement>
     @PUT("api/meetings/actions/{id}") suspend fun updateAction(@Path("id") id: String, @Body request: MeetingActionSaveRequest): Response<JsonElement>
+    @PUT("api/meetings/actions/{id}/status") suspend fun updateActionStatus(@Path("id") id: String, @Body request: MeetingActionStatusRequest): Response<JsonElement>
     @DELETE("api/meetings/actions/{id}") suspend fun deleteAction(@Path("id") id: String): Response<JsonElement>
     @POST("api/meetings/votes") suspend fun createVote(@Body request: MeetingVoteSaveRequest): Response<JsonElement>
     @POST("api/meetings/{id}/votes/cast") suspend fun castVote(@Path("id") id: String, @Body request: MeetingVoteCastRequest): Response<JsonElement>

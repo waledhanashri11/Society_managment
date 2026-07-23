@@ -34,6 +34,9 @@ class MeetingsRepository @Inject constructor(private val api: MeetingsApiService
     suspend fun saveAttendance(id: String, request: MeetingAttendanceSaveRequest) = message { api.saveAttendance(id, request) }
     suspend fun report(id: String, request: MeetingReportSaveRequest) = message { api.saveReport(id, request) }
     suspend fun action(request: MeetingActionSaveRequest) = message { api.createAction(request) }
+    suspend fun updateAction(id: String, request: MeetingActionSaveRequest) = message { api.updateAction(id, request) }
+    suspend fun updateActionStatus(id: String, request: MeetingActionStatusRequest) = message { api.updateActionStatus(id, request) }
+    suspend fun deleteAction(id: String) = message { api.deleteAction(id) }
     suspend fun vote(request: MeetingVoteSaveRequest) = message { api.createVote(request) }
     suspend fun castVote(id: String, choice: String) = message { api.castVote(id, MeetingVoteCastRequest(choice)) }
     fun clearCache() { cache = null; detailsCache.clear() }

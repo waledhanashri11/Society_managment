@@ -5,6 +5,7 @@ const {
   getAdminNotifications,
   markAdminNotificationsRead,
   getResidentNotifications,
+  markResidentNotificationsRead,
   markResidentNotificationRead
 } = require('../controllers/notificationController');
 
@@ -14,6 +15,7 @@ router.put('/admin/read', auth, adminAuth, markAdminNotificationsRead);
 
 // Resident notification routes
 router.get('/', auth, getResidentNotifications);
+router.put('/read', auth, markResidentNotificationsRead);
 router.put('/:id/read', auth, markResidentNotificationRead);
 
 module.exports = router;

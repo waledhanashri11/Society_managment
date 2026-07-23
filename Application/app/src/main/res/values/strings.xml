@@ -36,4 +36,21 @@
     <string name="rules_ack_button">I have read and understood this rule</string>
     <string name="rules_total">Total</string>
     <string name="rules_done">Done</string>
+    <string name="events_title">Events</string>
+    <string name="events_create">Create Event</string>
+    <string name="events_edit">Edit Event</string>
+    <string name="events_empty">No events</string>
+    <string name="events_search">Search title, venue, organizer</string>
+    <string name="events_publish">Publish</string>
+    <string name="events_cancel">Cancel</string>
+    <string name="events_delete">Delete Event?</string>
+    <string name="events_image">Select Event Image</string>
+    <string name="language">Language</string>
+    <string name="language_hint">Choose app language. The app will refresh after selection.</string>
+    <string name="meeting_action_items">Action Items</string>
+    <string name="meeting_add_action">Add Action Item</string>
+    <string name="meeting_view_minutes">View Minutes</string>
+    <string name="meeting_download_pdf">Download PDF</string>
+    <string name="meeting_share_pdf">Share PDF</string>
+    <string name="meeting_print_minutes">Print Minutes</string>
 </resources>

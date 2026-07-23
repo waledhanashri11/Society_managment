@@ -4,6 +4,8 @@ import com.example.application.data.remote.api.AdminManagementApiService
 import com.example.application.data.remote.dto.ErrorResponse
 import com.example.application.data.remote.dto.FlatDto
 import com.example.application.data.remote.dto.FlatSaveRequest
+import com.example.application.data.remote.dto.FlatTypeDto
+import com.example.application.data.remote.dto.FlatTypeSaveRequest
 import com.example.application.data.remote.dto.StaffDto
 import com.example.application.data.remote.dto.StaffSaveRequest
 import com.example.application.data.remote.dto.UserSaveRequest
@@ -28,6 +30,7 @@ class AdminManagementRepository @Inject constructor(
 ) {
     private var cachedUsers: List<UserSummaryDto>? = null
     private var cachedFlats: List<FlatDto>? = null
+    private var cachedFlatTypes: List<FlatTypeDto>? = null
     private var cachedStaff: List<StaffDto>? = null
 
     suspend fun getResidents(refresh: Boolean = false): NetworkResult<List<UserSummaryDto>> {
@@ -101,6 +104,39 @@ class AdminManagementRepository @Inject constructor(
         }
     }
 
+    suspend fun getFlatTypes(refresh: Boolean = false): NetworkResult<List<FlatTypeDto>> {
+        cachedFlatTypes?.takeIf { !refresh }?.let { return NetworkResult.Success(it) }
+        return when (val result = safeApiCall { api.getFlatTypes() }) {
+            is NetworkResult.Success -> {
+                cachedFlatTypes = result.data
+                NetworkResult.Success(result.data)
+            }
+            is NetworkResult.Error -> result
+            NetworkResult.Loading -> NetworkResult.Loading
+        }
+    }
+
+    suspend fun saveFlatType(id: String?, request: FlatTypeSaveRequest): NetworkResult<String> {
+        val result = if (id == null) safeApiCall { api.createFlatType(request) } else safeApiCall { api.updateFlatType(id, request) }
+        return messageResult(result, if (id == null) "Flat type created successfully" else "Flat type updated successfully").also {
+            if (it is NetworkResult.Success) clearFlatCache()
+        }
+    }
+
+    suspend fun updateFlatTypeStatus(id: String, status: String): NetworkResult<String> {
+        val result = safeApiCall { api.updateFlatTypeStatus(id, mapOf("status" to status)) }
+        return messageResult(result, "Flat type status updated successfully").also {
+            if (it is NetworkResult.Success) clearFlatCache()
+        }
+    }
+
+    suspend fun deleteFlatType(id: String): NetworkResult<String> {
+        val result = safeApiCall { api.deleteFlatType(id) }
+        return messageResult(result, "Flat type deleted successfully").also {
+            if (it is NetworkResult.Success) clearFlatCache()
+        }
+    }
+
     suspend fun getStaff(refresh: Boolean = false): NetworkResult<List<StaffDto>> {
         cachedStaff?.takeIf { !refresh }?.let { return NetworkResult.Success(it) }
         return when (val result = safeApiCall { api.getStaff() }) {
@@ -149,6 +185,7 @@ class AdminManagementRepository @Inject constructor(
     private fun clearFlatCache() {
         cachedFlats = null
         cachedUsers = null
+        cachedFlatTypes = null
     }
 
     private fun messageResult(result: NetworkResult<*>, fallback: String): NetworkResult<String> {

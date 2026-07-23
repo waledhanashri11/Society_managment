@@ -14,6 +14,7 @@ import com.example.application.data.remote.api.ResidentApiService
 import com.example.application.data.remote.api.SocietyRulesApiService
 import com.example.application.data.remote.api.MeetingsApiService
 import com.example.application.data.remote.api.DashboardApiService
+import com.example.application.data.remote.api.EventsApiService
 import com.example.application.data.remote.interceptor.AcceptHeaderInterceptor
 import com.example.application.data.remote.interceptor.AuthHeaderInterceptor
 import com.example.application.data.remote.interceptor.SessionExpiryInterceptor
@@ -167,5 +168,11 @@ object NetworkModule {
     @Singleton
     fun provideMeetingsApiService(retrofit: Retrofit): MeetingsApiService {
         return retrofit.create(MeetingsApiService::class.java)
+    }
+
+    @Provides
+    @Singleton
+    fun provideEventsApiService(retrofit: Retrofit): EventsApiService {
+        return retrofit.create(EventsApiService::class.java)
     }
 }

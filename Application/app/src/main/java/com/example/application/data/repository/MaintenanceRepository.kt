@@ -73,6 +73,7 @@ class MaintenanceRepository @Inject constructor(
         val settingsCall = async { safeApiCall { api.getSettings() } }
         val lateFeeCall = async { safeApiCall { api.getLateFeeRule() } }
         val disputesCall = async { safeApiCall { api.getDisputes() } }
+        val writeOffsCall = async { safeApiCall { api.getWriteOffs() } }
 
         val dashboard = dashboardCall.await()
         val bills = billsCall.await()
@@ -83,6 +84,7 @@ class MaintenanceRepository @Inject constructor(
         val settings = settingsCall.await()
         val lateFee = lateFeeCall.await()
         val disputes = disputesCall.await()
+        val writeOffs = writeOffsCall.await()
 
         if (dashboard is NetworkResult.Error && bills is NetworkResult.Error) return@coroutineScope dashboard
         val data = AdminMaintenanceData(
@@ -97,13 +99,14 @@ class MaintenanceRepository @Inject constructor(
             expenses = (expenses as? NetworkResult.Success)?.data.orEmpty(),
             settings = (settings as? NetworkResult.Success)?.data,
             lateFeeRule = (lateFee as? NetworkResult.Success)?.data,
-            waivers = emptyList(),
+            waivers = (writeOffs as? NetworkResult.Success)?.data.orEmpty(),
             disputes = (disputes as? NetworkResult.Success)?.data.orEmpty(),
             warnings = listOfNotNull(
                 if (dashboard is NetworkResult.Error) userMessageFor(dashboard.error) else null,
                 if (bills is NetworkResult.Error) userMessageFor(bills.error) else null,
                 if (payments is NetworkResult.Error && pendingPayments is NetworkResult.Error) "Payments unavailable" else null,
                 if (expenses is NetworkResult.Error) "Expenses unavailable" else null,
+                if (writeOffs is NetworkResult.Error) "Write-off records unavailable" else null,
                 if (disputes is NetworkResult.Error) "Disputes unavailable" else null
             )
         )

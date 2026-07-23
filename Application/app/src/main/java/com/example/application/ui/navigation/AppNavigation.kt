@@ -36,6 +36,8 @@ import com.example.application.ui.screens.communication.AdminComplaintsScreen
 import com.example.application.ui.screens.communication.NoticesScreen
 import com.example.application.ui.screens.communication.NotificationsScreen
 import com.example.application.ui.screens.communication.ResidentComplaintsScreen
+import com.example.application.ui.screens.events.AdminEventsScreen
+import com.example.application.ui.screens.events.ResidentEventsScreen
 import com.example.application.ui.screens.maintenance.AdminMaintenanceScreen
 import com.example.application.ui.screens.maintenance.ResidentMaintenanceScreen
 import com.example.application.ui.screens.noc.AdminNocScreen
@@ -168,7 +170,7 @@ fun SocietyNavGraph(
                         "Reports" -> navController.navigate(AppRoute.AdminReports.route)
                         "NOC Requests" -> navController.navigate(AppRoute.AdminNoc.route)
                         "Notifications" -> navController.navigate(AppRoute.Notifications.route)
-                        "Events" -> navController.navigate(AppRoute.ComingSoon.createRoute("Events - backend module not available yet"))
+                        "Events" -> navController.navigate(AppRoute.AdminEvents.route)
                         "Visitors", "Settings", "Advanced Tools", "More" -> navController.navigate(AppRoute.AdminAdvanced.route)
                         else -> navController.navigate(AppRoute.ComingSoon.createRoute(title))
                     }
@@ -209,6 +211,10 @@ fun SocietyNavGraph(
 
         composable(AppRoute.AdminMeetings.route) {
             AdminMeetingsScreen(onBack = { navController.popBackStack() })
+        }
+
+        composable(AppRoute.AdminEvents.route) {
+            AdminEventsScreen(onBack = { navController.popBackStack() })
         }
 
         composable(AppRoute.Notifications.route) {
@@ -310,6 +316,7 @@ fun SocietyNavGraph(
                         title == "Notices" || title == "View Notices" -> navController.navigate(AppRoute.ResidentNotices.route)
                         title == "Rules" || title == "Society Rules" -> navController.navigate(AppRoute.ResidentRules.route)
                         title == "Meetings" || title == "Meeting Management" -> navController.navigate(AppRoute.ResidentMeetings.route)
+                        title == "Events" -> navController.navigate(AppRoute.ResidentEvents.route)
                         title == "Reports" -> navController.navigate(AppRoute.ResidentReports.route)
                         title == "NOC Requests" -> navController.navigate(AppRoute.ResidentNoc.route)
                         title == "Members" -> navController.navigate(AppRoute.ResidentMembers.route)
@@ -381,6 +388,10 @@ fun SocietyNavGraph(
 
         composable(AppRoute.ResidentMeetings.route) {
             ResidentMeetingsScreen(onBack = { navController.popBackStack() })
+        }
+
+        composable(AppRoute.ResidentEvents.route) {
+            ResidentEventsScreen(onBack = { navController.popBackStack() })
         }
 
         composable(AppRoute.ResidentProfile.route) {

@@ -104,7 +104,7 @@ fun ResidentPaymentScreen(
     var proofUri by remember { mutableStateOf<Uri?>(null) }
     var cameraUri by remember { mutableStateOf<Uri?>(null) }
 
-    LaunchedEffect(bill?.id, bill?.remainingAmount, bill?.totalAmount) {
+    LaunchedEffect(bill?.id, bill?.remainingDue, bill?.currentDue, bill?.remainingAmount, bill?.totalAmount) {
         if (bill != null) amount = bill.expectedPayableAmount().toPlainString()
     }
 
@@ -280,6 +280,8 @@ private fun UpiPaymentCard(paymentSettings: PaymentSettingsDto?, onDownload: () 
                             model = fullMediaUrl(qrImage),
                             contentDescription = "Society QR code",
                             modifier = Modifier.fillMaxSize().padding(10.dp),
+                            error = painterResource(R.drawable.my_payment_qr),
+                            placeholder = painterResource(R.drawable.my_payment_qr),
                             contentScale = ContentScale.Fit
                         )
                     } else {
@@ -462,7 +464,7 @@ private fun MaintenanceBillDto.displayTitle(): String {
 }
 
 private fun MaintenanceBillDto.expectedPayableAmount(): BigDecimal {
-    return (remainingAmount ?: totalAmount ?: amount).toMoneyDecimal()
+    return (remainingDue ?: currentDue ?: remainingAmount ?: totalAmount ?: amount).toMoneyDecimal()
 }
 
 private fun String?.toMoneyDecimal(): BigDecimal {
