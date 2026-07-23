@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { auth } = require('../middleware/auth');
 const {
+  ensureMeetingRuntimeSchema,
   getAllMeetings,
   getMeetingById,
   createMeeting,
@@ -27,29 +28,40 @@ const adminOrCommitteeAuth = (req, res, next) => {
   next();
 };
 
-// Core meetings endpoints
-router.get('/', auth, getAllMeetings);
-router.get('/:id', auth, getMeetingById);
-router.post('/', auth, adminOrCommitteeAuth, createMeeting);
-router.put('/:id', auth, adminOrCommitteeAuth, updateMeeting);
-router.delete('/:id', auth, adminOrCommitteeAuth, deleteMeeting);
+router.use(auth);
+router.use(async (req, res, next) => {
+  try {
+    await ensureMeetingRuntimeSchema();
+    next();
+  } catch (error) {
+    console.error('Meeting runtime schema repair failed:', error);
+    res.status(500).json({ message: 'Meeting service unavailable' });
+  }
+});
+
+// Action items tracker. Keep these before /:id routes.
+router.post('/actions', adminOrCommitteeAuth, createAction);
+router.put('/actions/:id', adminOrCommitteeAuth, updateAction);
+router.put('/actions/:id/status', updateActionStatus);
+router.delete('/actions/:id', adminOrCommitteeAuth, deleteAction);
+
+// Voting polls. Keep collection routes before /:id routes.
+router.post('/votes', adminOrCommitteeAuth, createVote);
 
 // Agendas, Attendance, and MoM reports
-router.put('/:id/agenda', auth, adminOrCommitteeAuth, updateAgendas);
-router.get('/:id/attendance', auth, adminOrCommitteeAuth, getAttendance);
+router.put('/:id/agenda', adminOrCommitteeAuth, updateAgendas);
+router.get('/:id/attendance', adminOrCommitteeAuth, getAttendance);
 // Admin/committee can submit the full roster; residents can submit only their
 // own attendance through this same endpoint.
-router.post('/:id/attendance', auth, saveAttendance);
-router.post('/:id/report', auth, adminOrCommitteeAuth, saveMeetingReport);
+router.post('/:id/attendance', saveAttendance);
+router.post('/:id/report', adminOrCommitteeAuth, saveMeetingReport);
+router.post('/:id/votes/cast', castVote);
 
-// Action items tracker
-router.post('/actions', auth, adminOrCommitteeAuth, createAction);
-router.put('/actions/:id', auth, adminOrCommitteeAuth, updateAction);
-router.put('/actions/:id/status', auth, updateActionStatus);
-router.delete('/actions/:id', auth, adminOrCommitteeAuth, deleteAction);
-
-// Voting polls
-router.post('/votes', auth, adminOrCommitteeAuth, createVote);
-router.post('/:id/votes/cast', auth, castVote);
+// Core meetings endpoints
+router.get('/', getAllMeetings);
+router.post('/', adminOrCommitteeAuth, createMeeting);
+router.get('/:id', getMeetingById);
+router.put('/:id', adminOrCommitteeAuth, updateMeeting);
+router.delete('/:id', adminOrCommitteeAuth, deleteMeeting);
 
 module.exports = router;

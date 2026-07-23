@@ -86,6 +86,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -1043,8 +1044,8 @@ private fun PaymentVerificationSection(
             onDismissRequest = { screenshotPayment = null },
             title = { Text("Payment Screenshot") },
             text = {
-                AsyncImage(
-                    model = fullMediaUrl(payment.proofImage()),
+                PaymentProofImage(
+                    image = payment.proofImage(),
                     contentDescription = "Payment screenshot",
                     modifier = Modifier.fillMaxWidth().height(520.dp).clip(RoundedCornerShape(14.dp)),
                     contentScale = ContentScale.Fit
@@ -1159,8 +1160,8 @@ private fun PaymentVerificationCard(
                 FilterChip(selected = selected, onClick = onSelectToggle, label = { Text(if (selected) "Selected" else "Select for bulk action") })
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-                AsyncImage(
-                    model = fullMediaUrl(payment.proofImage()),
+                PaymentProofImage(
+                    image = payment.proofImage(),
                     contentDescription = "Payment screenshot thumbnail",
                     modifier = Modifier.height(92.dp).weight(0.36f).clip(RoundedCornerShape(14.dp)).clickable { onOpenScreenshot() },
                     contentScale = ContentScale.Crop
@@ -2223,8 +2224,47 @@ private fun openUpiApp(context: Context, upiId: String, accountName: String, amo
 
 private fun fullMediaUrl(path: String?): String? {
     if (path.isNullOrBlank()) return null
-    if (path.startsWith("http", ignoreCase = true) || path.startsWith("content:", ignoreCase = true)) return path
+    if (
+        path.startsWith("http", ignoreCase = true) ||
+        path.startsWith("content:", ignoreCase = true) ||
+        path.startsWith("data:image/", ignoreCase = true)
+    ) return path
     return BuildConfig.BASE_URL.trimEnd('/') + "/" + path.trimStart('/')
+}
+
+@Composable
+private fun PaymentProofImage(
+    image: String?,
+    contentDescription: String,
+    modifier: Modifier = Modifier,
+    contentScale: ContentScale = ContentScale.Crop
+) {
+    val dataBitmap = remember(image) { decodePaymentDataImage(image) }
+    if (dataBitmap != null) {
+        Image(
+            bitmap = dataBitmap.asImageBitmap(),
+            contentDescription = contentDescription,
+            modifier = modifier,
+            contentScale = contentScale
+        )
+    } else {
+        AsyncImage(
+            model = fullMediaUrl(image),
+            contentDescription = contentDescription,
+            modifier = modifier,
+            contentScale = contentScale
+        )
+    }
+}
+
+private fun decodePaymentDataImage(image: String?): android.graphics.Bitmap? {
+    if (image.isNullOrBlank() || !image.startsWith("data:image/", ignoreCase = true)) return null
+    val encoded = image.substringAfter("base64,", missingDelimiterValue = "")
+    if (encoded.isBlank()) return null
+    return runCatching {
+        val bytes = Base64.decode(encoded, Base64.DEFAULT)
+        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+    }.getOrNull()
 }
 
 private fun createReceiptPdfFile(context: Context, payment: MaintenancePaymentDto): java.io.File {

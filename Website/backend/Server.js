@@ -75,6 +75,16 @@ app.use('/api/events', eventRoutes);
 app.get('/share/noc/:token', nocController.getSharedPdf);
 app.use('/api/noc', nocRoutes);
 
+app.get('/api/health', (req, res) => {
+  res.json({
+    success: true,
+    service: 'society-management-backend',
+    backendFolder: 'Website/backend',
+    maintenanceFix: 'writeoff-payment-visibility-runtime-schema-v2',
+    generatedAt: new Date().toISOString()
+  });
+});
+
 app.get('/', (req, res) => {
   res.json({ message: 'Society Management System API' });
 });
