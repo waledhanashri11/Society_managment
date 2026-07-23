@@ -515,6 +515,7 @@ const createWriteOff = async (req, res) => {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [bill.id, bill.resident_id, bill.flat_id, req.user.id, adminName, writeoffType, requestedAmount, previousDue, finalDue, reason, remarks, ip, device]
     );
+    const writeOffId = inserted.insertId || inserted.id;
 
     await connection.query(
       `UPDATE maintenance
@@ -532,7 +533,7 @@ const createWriteOff = async (req, res) => {
     await connection.query(
       `INSERT INTO maintenance_audit_logs (user_id, action, entity_type, entity_id, details)
        VALUES (?, 'CREATE_WRITEOFF', 'WRITEOFF', ?, ?)`,
-      [req.user.id, inserted.insertId, JSON.stringify({
+      [req.user.id, writeOffId, JSON.stringify({
         billId: bill.id,
         residentId: bill.resident_id,
         residentName: bill.resident_name,
@@ -557,7 +558,7 @@ const createWriteOff = async (req, res) => {
 
     await connection.commit();
     return sendResponse(res, 201, 'Write-off completed successfully', {
-      id: inserted.insertId,
+      id: writeOffId,
       billId: bill.id,
       writeoffType,
       amount: requestedAmount,

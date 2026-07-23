@@ -58,7 +58,11 @@ class MeetingsRepository @Inject constructor(private val api: MeetingsApiService
     catch (_: IOException) { NetworkResult.Error(AppError.NoInternet) }
     catch (_: Exception) { NetworkResult.Error(AppError.Unknown("Request failed. Please try again.")) }
     private suspend fun message(call: suspend () -> Response<JsonElement>): NetworkResult<String> = when (val result = safe(call)) {
-        is NetworkResult.Success -> { clearCache(); NetworkResult.Success("Saved successfully") }
+        is NetworkResult.Success -> {
+            clearCache()
+            val message = result.data.takeIf { it.isJsonObject }?.asJsonObject?.get("message")?.asString ?: "Saved successfully"
+            NetworkResult.Success(message)
+        }
         is NetworkResult.Error -> result
         NetworkResult.Loading -> NetworkResult.Loading
     }

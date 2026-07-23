@@ -310,7 +310,7 @@ private fun ResidentComplaintFilterChips(selected: String, onSelected: (String) 
 private fun ResidentComplaintCard(complaint: ComplaintDto) {
     val status = complaint.status.normalizedComplaintStatus()
     val colors = complaintStatusColors(status)
-    val image = complaint.primaryComplaintImage()
+    val images = complaint.complaintImagesForDisplay()
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
@@ -342,15 +342,19 @@ private fun ResidentComplaintCard(complaint: ComplaintDto) {
                     ResidentComplaintStatusBadge(status)
                 }
                 Text(complaint.description ?: "-", color = Color(0xFF475467), style = MaterialTheme.typography.bodyLarge)
-                image?.let {
-                    AsyncImage(
-                        model = fullMediaUrl(it),
-                        contentDescription = "Complaint picture",
-                        modifier = Modifier
-                            .size(96.dp)
-                            .clip(RoundedCornerShape(10.dp)),
-                        contentScale = ContentScale.Crop
-                    )
+                if (images.isNotEmpty()) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        images.take(3).forEach { image ->
+                            AsyncImage(
+                                model = fullMediaUrl(image),
+                                contentDescription = "Complaint picture",
+                                modifier = Modifier
+                                    .size(96.dp)
+                                    .clip(RoundedCornerShape(10.dp)),
+                                contentScale = ContentScale.Crop
+                            )
+                        }
+                    }
                 }
                 complaint.reply?.takeIf { it.isNotBlank() }?.let { reply ->
                     ResidentAdminReply(reply = reply, resolved = status == "resolved", createdAt = complaint.createdAt)
@@ -575,18 +579,22 @@ private fun ComplaintCard(complaint: ComplaintDto, admin: Boolean, onReply: () -
     ManagementCard {
         Text(complaint.title ?: "Complaint", fontWeight = FontWeight.Bold)
         Text(complaint.description ?: "-", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        val complaintImage = complaint.primaryComplaintImage()
-        complaintImage?.let { image ->
-            AsyncImage(
-                model = fullMediaUrl(image),
-                contentDescription = "Complaint picture",
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(180.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .clickable { },
-                contentScale = ContentScale.Crop
-            )
+        val complaintImages = complaint.complaintImagesForDisplay()
+        if (complaintImages.isNotEmpty()) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                complaintImages.take(3).forEach { image ->
+                    AsyncImage(
+                        model = fullMediaUrl(image),
+                        contentDescription = "Complaint picture",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(180.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .clickable { },
+                        contentScale = ContentScale.Crop
+                    )
+                }
+            }
         }
         KeyValue("Status", (complaint.status ?: "pending").replace("_", " "))
         complaint.userName?.let { KeyValue("Resident", it) }
@@ -730,12 +738,14 @@ private fun ComplaintDto.matchesComplaint(query: String): Boolean {
 }
 
 private fun ComplaintDto.primaryComplaintImage(): String? {
-    return complaintImageUrls
-        ?.firstOrNull { it.isNotBlank() }
-        ?: listOfNotNull(
-            imageUrl?.takeIf { it.isNotBlank() },
-            complaintImages?.firstOrNull { it.isNotBlank() }
-        ).firstOrNull()
+    return complaintImagesForDisplay().firstOrNull()
+}
+
+private fun ComplaintDto.complaintImagesForDisplay(): List<String> {
+    return (complaintImageUrls.orEmpty() + listOfNotNull(imageUrl) + complaintImages.orEmpty())
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+        .distinct()
 }
 
 private data class ComplaintUiColors(

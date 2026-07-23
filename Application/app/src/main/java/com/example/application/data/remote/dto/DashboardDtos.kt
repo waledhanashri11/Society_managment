@@ -68,9 +68,9 @@ data class ComplaintDto(
     @SerializedName("resident_name") val residentName: String?,
     @SerializedName(value = "image_url", alternate = ["imageUrl", "attachment_url", "attachmentUrl", "photo_url", "photoUrl"])
     val imageUrl: String?,
-    @SerializedName(value = "complaint_image_urls", alternate = ["image_urls", "images"])
+    @SerializedName(value = "complaint_image_urls", alternate = ["complaintImageUrls", "image_urls", "imageUrls", "images"])
     val complaintImageUrls: List<String>? = null,
-    @SerializedName("complaint_images")
+    @SerializedName(value = "complaint_images", alternate = ["complaintImages"])
     val complaintImages: List<String>? = null,
     @SerializedName("created_at") val createdAt: String?
 )

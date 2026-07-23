@@ -194,7 +194,10 @@ const createMeeting = async (req, res) => {
         [title, meeting_type, meeting_date, start_time, end_time, venue, description || null, priority || 'Normal', notify_residents]
       );
 
-      const meetingId = result.insertId;
+      const meetingId = result.insertId || result.id;
+      if (!meetingId) {
+        throw new Error('Meeting was not created. Please retry.');
+      }
 
       // Handle document uploads
       for (const doc of documents) {
