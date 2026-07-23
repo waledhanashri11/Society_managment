@@ -444,6 +444,8 @@ const getMaintenanceById = async (req, res) => {
 
 const createWriteOff = async (req, res) => {
   const connection = await promisePool.getConnection();
+  let postCommitAudit = null;
+  let postCommitNotificationResidentId = null;
   try {
     const { billId } = req.params;
     const writeoffType = String(req.body.writeoffType || req.body.writeoff_type || '').trim().toUpperCase();
@@ -532,41 +534,41 @@ const createWriteOff = async (req, res) => {
       [newWriteOffTotal, finalDue, finalDue, finalDue, newStatus, bill.id]
     );
 
-    try {
-      await connection.query(
+    postCommitAudit = {
+      adminId,
+      writeOffId,
+      details: {
+        billId: bill.id,
+        residentId: bill.resident_id,
+        residentName: bill.resident_name,
+        flatNo: bill.flat_no,
+        previousDue,
+        writeOffAmount: requestedAmount,
+        finalDue,
+        reason,
+        remarks,
+        adminName,
+        dateTime: new Date().toISOString()
+      }
+    };
+    postCommitNotificationResidentId = bill.resident_id || null;
+    await connection.commit();
+
+    if (postCommitAudit) {
+      promisePool.query(
         `INSERT INTO maintenance_audit_logs (user_id, action, entity_type, entity_id, details)
          VALUES (?, 'CREATE_WRITEOFF', 'WRITEOFF', ?, ?)`,
-        [adminId, writeOffId, JSON.stringify({
-          billId: bill.id,
-          residentId: bill.resident_id,
-          residentName: bill.resident_name,
-          flatNo: bill.flat_no,
-          previousDue,
-          writeOffAmount: requestedAmount,
-          finalDue,
-          reason,
-          remarks,
-          adminName,
-          dateTime: new Date().toISOString()
-        })]
-      );
-    } catch (auditError) {
-      console.error('Write-off audit failed:', auditError);
+        [postCommitAudit.adminId, postCommitAudit.writeOffId, JSON.stringify(postCommitAudit.details)]
+      ).catch((auditError) => console.error('Write-off audit failed:', auditError));
+    }
+    if (postCommitNotificationResidentId) {
+      promisePool.query(
+        `INSERT INTO notifications (resident_id, title, message, type, is_read, created_at)
+         VALUES (?, 'Maintenance balance updated', 'Your maintenance balance has been updated.', 'maintenance', false, NOW())`,
+        [postCommitNotificationResidentId]
+      ).catch((notificationError) => console.error('Write-off notification failed:', notificationError));
     }
 
-    if (bill.resident_id) {
-      try {
-        await connection.query(
-          `INSERT INTO notifications (resident_id, title, message, type, is_read, created_at)
-           VALUES (?, 'Maintenance balance updated', 'Your maintenance balance has been updated.', 'maintenance', false, NOW())`,
-          [bill.resident_id]
-        );
-      } catch (notificationError) {
-        console.error('Write-off notification failed:', notificationError);
-      }
-    }
-
-    await connection.commit();
     return sendResponse(res, 201, 'Write-off completed successfully', {
       id: writeOffId,
       billId: bill.id,
@@ -1519,12 +1521,17 @@ const getPendingVerificationPayments = async (req, res) => {
   try {
     const [payments] = await promisePool.query(`
       SELECT p.*, p.transaction_id AS utr_number, p.screenshot_url AS screenshot,
-             CONCAT('BILL-', m.id) AS bill_number, m.title, m.month, m.year, m.due_date, m.total_amount,
-             u.name AS resident_name, f.flat_no
+             COALESCE(CONCAT('BILL-', m.id), CONCAT('PAY-', p.id)) AS bill_number,
+             m.title, m.month, m.year, m.due_date,
+             COALESCE(m.total_amount, p.amount) AS total_amount,
+             COALESCE(m.resident_id, p.resident_id) AS resident_id,
+             COALESCE(u.name, payer.name, 'Resident') AS resident_name,
+             f.flat_no
       FROM payments p
-      JOIN maintenance m ON p.bill_id = m.id
-      JOIN users u ON m.resident_id = u.id
-      JOIN flats f ON m.flat_id = f.id
+      LEFT JOIN maintenance m ON p.bill_id = m.id
+      LEFT JOIN users u ON m.resident_id = u.id
+      LEFT JOIN users payer ON p.resident_id = payer.id
+      LEFT JOIN flats f ON m.flat_id = f.id
       WHERE p.payment_status IN ('Pending Verification', 'Pending', 'Under Review', 'Needs Clarification')
       ORDER BY p.created_at DESC
     `);
