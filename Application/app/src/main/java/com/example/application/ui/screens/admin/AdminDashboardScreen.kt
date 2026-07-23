@@ -130,7 +130,8 @@ fun AdminDashboardScreen(
                         AdminHeader(
                             adminName = data?.adminName ?: "Admin",
                             onMenu = { scope.launch { drawerState.open() } },
-                            onNotifications = { onQuickAction("Notifications") }
+                            onNotifications = { onQuickAction("Notifications") },
+                            onLogout = { sessionViewModel.logout(onLogoutComplete) }
                         )
                     }
                     item {
@@ -149,7 +150,7 @@ fun AdminDashboardScreen(
 }
 
 @Composable
-private fun AdminHeader(adminName: String, onMenu: () -> Unit, onNotifications: () -> Unit) {
+private fun AdminHeader(adminName: String, onMenu: () -> Unit, onNotifications: () -> Unit, onLogout: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -165,11 +166,17 @@ private fun AdminHeader(adminName: String, onMenu: () -> Unit, onNotifications: 
             Text("Society Management", color = Color.White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             Text("System", color = Color.White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         }
-        Box(modifier = Modifier.align(Alignment.TopEnd)) {
+        Row(
+            modifier = Modifier.align(Alignment.TopEnd),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             IconButton(onClick = onNotifications) {
                 Icon(Icons.Filled.Notifications, contentDescription = "Notifications", tint = Color.White, modifier = Modifier.size(30.dp))
             }
-            Box(modifier = Modifier.align(Alignment.TopEnd).padding(top = 8.dp, end = 8.dp).size(9.dp).clip(CircleShape).background(Color(0xFFFF5252)))
+            IconButton(onClick = onLogout) {
+                Icon(Icons.Filled.Logout, contentDescription = "Logout", tint = Color.White, modifier = Modifier.size(28.dp))
+            }
         }
         Row(
             modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 28.dp),

@@ -210,19 +210,25 @@ const createMeeting = async (req, res) => {
         }
       }
 
-      // App Notifications if Notify Residents is enabled
+      // App notifications should never roll back the meeting itself. The
+      // website and Android both use this endpoint; if notification schema is
+      // temporarily behind, the meeting must still be created.
       if (notify_residents) {
-        const formattedDate = new Date(meeting_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-        const notifTitle = `New Meeting Scheduled: ${title}`;
-        const notifMessage = `${meeting_type} scheduled on ${formattedDate} at ${start_time} - ${end_time}. Venue: ${venue}.`;
+        try {
+          const formattedDate = new Date(meeting_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+          const notifTitle = `New Meeting Scheduled: ${title}`;
+          const notifMessage = `${meeting_type} scheduled on ${formattedDate} at ${start_time} - ${end_time}. Venue: ${venue}.`;
 
-        await connection.query(
-          `INSERT INTO notifications (resident_id, title, message, type, is_read)
-           SELECT id, ?, ?, 'meetings', false
-           FROM users
-           WHERE status = 'approved' AND role = 'resident'`,
-          [notifTitle, notifMessage]
-        );
+          await connection.query(
+            `INSERT INTO notifications (resident_id, title, message, type, is_read)
+             SELECT id, ?, ?, 'meetings', false
+             FROM users
+             WHERE status = 'approved' AND role = 'resident'`,
+            [notifTitle, notifMessage]
+          );
+        } catch (notificationError) {
+          console.error('Meeting notification creation failed:', notificationError);
+        }
       }
 
       await connection.commit();
@@ -437,7 +443,7 @@ const saveMeetingReport = async (req, res) => {
           `INSERT INTO meeting_reports (meeting_id, summary, discussion, decisions_taken, remarks) VALUES (?, ?, ?, ?, ?)`,
           [id, summary, discussion, decisions_taken, remarks]
         );
-        reportId = result.insertId;
+        reportId = result.insertId || result.id;
       }
 
       // Handle extra documents uploading for this report
@@ -482,7 +488,7 @@ const createAction = async (req, res) => {
       [meeting_id, action_text, assigned_to || null, due_date || null, priority || 'Normal', notes || null, completion_details || null]
     );
 
-    res.status(201).json({ id: result.insertId, message: 'Action item created successfully' });
+    res.status(201).json({ id: result.insertId || result.id, message: 'Action item created successfully' });
   } catch (error) {
     console.error('Create action error:', error);
     res.status(500).json({ message: 'Server error' });

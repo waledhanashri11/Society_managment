@@ -72,8 +72,9 @@ class MeetingsRepository @Inject constructor(private val api: MeetingsApiService
         403 -> AppError.Forbidden(parseMessage(body))
         404 -> AppError.Unknown(parseMessage(body) ?: "Meeting not found.")
         408 -> AppError.Timeout
-        500, 502, 503 -> AppError.Server("Meeting service unavailable.")
-        else -> AppError.Unknown("Request failed.")
+        500 -> AppError.Server(parseMessage(body) ?: "Meeting service unavailable.")
+        502, 503 -> AppError.Server(parseMessage(body) ?: "Railway meeting service unavailable.")
+        else -> AppError.Unknown(parseMessage(body) ?: "Request failed.")
     }
     private fun parseMessage(body: String?): String? = runCatching { gson.fromJson(body, ErrorResponse::class.java)?.message }.getOrNull()
 }
