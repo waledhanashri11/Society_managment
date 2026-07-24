@@ -309,7 +309,9 @@ data class WriteOffRequest(
     val writeoffType: String,
     val amount: String?,
     val reason: String,
-    val remarks: String? = null
+    val remarks: String? = null,
+    val maintenanceAmount: String? = null,
+    val penaltyAmount: String? = null
 )
 
 data class WriteOffResultDto(

@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.ContentValues
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.provider.MediaStore
 import android.util.Base64
@@ -11,7 +12,6 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -62,14 +62,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.example.application.BuildConfig
-import com.example.application.R
 import com.example.application.data.remote.dto.MaintenanceBillDto
 import com.example.application.data.remote.dto.PaymentSettingsDto
 import com.example.application.util.DashboardFormatters
@@ -106,6 +104,11 @@ fun ResidentPaymentScreen(
 
     LaunchedEffect(bill?.id, bill?.remainingDue, bill?.currentDue, bill?.remainingAmount, bill?.totalAmount) {
         if (bill != null) amount = bill.expectedPayableAmount().toPlainString()
+    }
+    LaunchedEffect(state.message) {
+        if (!state.message.isNullOrBlank()) {
+            Toast.makeText(context, "Your payment has been submitted and sent to the admin for approval. It will be marked as paid after verification.", Toast.LENGTH_LONG).show()
+        }
     }
 
     val proofPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
@@ -157,53 +160,60 @@ fun ResidentPaymentScreen(
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             item { PaymentSummaryCard(bill) }
-            item { PaymentNoticeCard() }
-            item {
-                UpiPaymentCard(
-                    paymentSettings = paymentSettings,
-                    onDownload = { saveQrToGallery(context) },
-                    onCopy = { copyText(context, "UPI ID", paymentSettings.displayUpiId()) }
-                )
-            }
-            item {
-                UploadPaymentCard(
-                    proofUri = proofUri,
-                    transactionId = transactionId,
-                    amount = amount,
-                    note = note,
-                    validationError = validationError,
-                    isSubmitting = state.submitting,
-                    onUploadClick = { proofPicker.launch("image/*") },
-                    onCameraClick = {
-                        createPaymentCameraUri(context)?.let { uri ->
-                            cameraUri = uri
-                            cameraLauncher.launch(uri)
+            state.message?.let { item { PaymentSubmittedCard() } }
+            if (bill.hasActivePaymentSubmission()) {
+                item { ExistingPaymentStatusCard(bill) }
+            } else {
+                item { PaymentNoticeCard() }
+                item {
+                    UpiPaymentCard(
+                        paymentSettings = paymentSettings,
+                        onDownload = { saveQrToGallery(context, paymentSettings?.paymentQrImage) },
+                        onCopy = {
+                            val upiId = paymentSettings.displayUpiId()
+                            if (upiId.isBlank()) Toast.makeText(context, "No UPI ID configured by admin.", Toast.LENGTH_LONG).show()
+                            else copyText(context, "UPI ID", upiId)
                         }
-                    },
-                    onTransactionChange = { transactionId = it },
-                    onNoteChange = { note = it },
-                    onSubmit = {
-                        validationError = validatePaymentProof(context, bill, bill.expectedPayableAmount(), amount, transactionId, proofUri)
-                        if (validationError == null) {
-                            val screenshotData = proofUri?.let { uri -> uriToBase64DataUrl(context, uri) }
-                            if (screenshotData == null) {
-                                validationError = "Unable to read selected screenshot. Please choose another image."
-                            } else {
-                                viewModel.submitPayment(
-                                    billId = bill.id.orEmpty(),
-                                    method = "UPI",
-                                    transactionId = transactionId.trim(),
-                                    amount = amount.trim(),
-                                    screenshotUrl = screenshotData,
-                                    paymentDate = null,
-                                    note = note.trim()
-                                )
-                                Toast.makeText(context, "Payment proof submitted for admin verification.", Toast.LENGTH_LONG).show()
-                                onBack()
+                    )
+                }
+                item {
+                    UploadPaymentCard(
+                        proofUri = proofUri,
+                        transactionId = transactionId,
+                        amount = amount,
+                        note = note,
+                        validationError = validationError ?: state.error,
+                        isSubmitting = state.submitting,
+                        onUploadClick = { proofPicker.launch("image/*") },
+                        onCameraClick = {
+                            createPaymentCameraUri(context)?.let { uri ->
+                                cameraUri = uri
+                                cameraLauncher.launch(uri)
+                            }
+                        },
+                        onTransactionChange = { transactionId = it },
+                        onNoteChange = { note = it },
+                        onSubmit = {
+                            validationError = validatePaymentProof(context, bill, bill.expectedPayableAmount(), amount, transactionId, proofUri)
+                            if (validationError == null) {
+                                val screenshotData = proofUri?.let { uri -> uriToBase64DataUrl(context, uri) }
+                                if (screenshotData == null) {
+                                    validationError = "Unable to read selected screenshot. Please choose another image."
+                                } else {
+                                    viewModel.submitPayment(
+                                        billId = bill.id.orEmpty(),
+                                        method = "UPI",
+                                        transactionId = transactionId.trim(),
+                                        amount = amount.trim(),
+                                        screenshotUrl = screenshotData,
+                                        paymentDate = null,
+                                        note = note.trim()
+                                    )
+                                }
                             }
                         }
-                    }
-                )
+                    )
+                }
             }
             item {
                 Button(
@@ -280,18 +290,9 @@ private fun UpiPaymentCard(paymentSettings: PaymentSettingsDto?, onDownload: () 
                             model = fullMediaUrl(qrImage),
                             contentDescription = "Society QR code",
                             modifier = Modifier.fillMaxSize().padding(10.dp),
-                            error = painterResource(R.drawable.my_payment_qr),
-                            placeholder = painterResource(R.drawable.my_payment_qr),
                             contentScale = ContentScale.Fit
                         )
-                    } else {
-                        Image(
-                            painter = painterResource(R.drawable.my_payment_qr),
-                            contentDescription = "Society QR code",
-                            modifier = Modifier.fillMaxSize().padding(10.dp),
-                            contentScale = ContentScale.Fit
-                        )
-                    }
+                    } else Text("No QR configured", color = Muted, fontWeight = FontWeight.Bold)
                 }
                 Column(
                     modifier = Modifier
@@ -430,6 +431,36 @@ private fun uriToBase64DataUrl(context: Context, uri: Uri): String? {
     return "data:image/jpeg;base64,${Base64.encodeToString(jpgBytes, Base64.NO_WRAP)}"
 }
 
+@Composable
+private fun PaymentSubmittedCard() {
+    Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), color = Color(0xFFFFF5D9)) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Verification Pending", color = Color(0xFFE58A00), fontWeight = FontWeight.Bold)
+            Text("Your payment has been submitted and sent to the admin for approval. It will be marked as paid after verification.", color = Ink)
+        }
+    }
+}
+
+@Composable
+private fun ExistingPaymentStatusCard(bill: MaintenanceBillDto) {
+    Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), color = Color(0xFFFFF5D9)) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Verification Pending", color = Color(0xFFE58A00), fontWeight = FontWeight.Bold)
+            Text("Your payment proof is already submitted. Admin approval is required before this bill is marked paid.", color = Ink)
+            bill.transactionId?.takeIf { it.isNotBlank() }?.let { Text("UTR / Reference: $it", color = Muted) }
+            bill.paymentDate?.takeIf { it.isNotBlank() }?.let { Text("Submitted date: ${DashboardFormatters.date(it)}", color = Muted) }
+            bill.screenshotUrl?.takeIf { it.isNotBlank() }?.let {
+                AsyncImage(
+                    model = fullMediaUrl(it),
+                    contentDescription = "Uploaded payment screenshot",
+                    modifier = Modifier.fillMaxWidth().height(180.dp).clip(RoundedCornerShape(10.dp)),
+                    contentScale = ContentScale.Crop
+                )
+            }
+        }
+    }
+}
+
 private fun createPaymentCameraUri(context: Context): Uri? = runCatching {
     val file = File.createTempFile("payment-camera-", ".jpg", context.cacheDir)
     FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
@@ -442,8 +473,28 @@ private fun copyText(context: Context, label: String, value: String) {
     Toast.makeText(context, "$label copied", Toast.LENGTH_SHORT).show()
 }
 
-private fun saveQrToGallery(context: Context) {
+private fun saveQrToGallery(context: Context, qrImage: String?) {
+    if (qrImage.isNullOrBlank()) {
+        Toast.makeText(context, "No QR code configured by admin.", Toast.LENGTH_LONG).show()
+        return
+    }
+    val resolved = fullMediaUrl(qrImage).orEmpty()
+    if (resolved.startsWith("http", ignoreCase = true)) {
+        runCatching {
+            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(resolved)))
+        }.onFailure {
+            Toast.makeText(context, "Unable to open QR image.", Toast.LENGTH_LONG).show()
+        }
+        return
+    }
+    if (!resolved.startsWith("data:image/", ignoreCase = true)) {
+        Toast.makeText(context, "QR image is not downloadable on this device.", Toast.LENGTH_LONG).show()
+        return
+    }
     runCatching {
+        val base64 = resolved.substringAfter("base64,", missingDelimiterValue = "")
+        if (base64.isBlank()) error("Invalid QR image")
+        val bytes = Base64.decode(base64, Base64.DEFAULT)
         val resolver = context.contentResolver
         val values = ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, "my_payment_qr.png")
@@ -453,7 +504,7 @@ private fun saveQrToGallery(context: Context) {
         }
         val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: error("Unable to create image file")
         resolver.openOutputStream(uri)?.use { output ->
-            context.resources.openRawResource(R.drawable.my_payment_qr).use { input -> input.copyTo(output) }
+            output.write(bytes)
         } ?: error("Unable to write QR image")
         values.clear()
         values.put(MediaStore.Images.Media.IS_PENDING, 0)
@@ -479,7 +530,12 @@ private fun String?.toMoneyDecimal(): BigDecimal {
 }
 
 private fun PaymentSettingsDto?.displayUpiId(): String {
-    return this?.paymentUpiId?.ifBlank { null } ?: "8999823244@upi"
+    return this?.paymentUpiId?.trim().orEmpty()
+}
+
+private fun MaintenanceBillDto.hasActivePaymentSubmission(): Boolean {
+    val normalized = (latestPaymentStatus ?: paymentStatus ?: status).orEmpty().trim().replace("_", " ").lowercase()
+    return normalized in setOf("pending verification", "under review", "payment proof submitted", "needs clarification")
 }
 
 private fun fullMediaUrl(path: String?): String? {

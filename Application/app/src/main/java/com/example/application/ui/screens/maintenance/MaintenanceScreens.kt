@@ -1,4 +1,4 @@
-﻿package com.example.application.ui.screens.maintenance
+package com.example.application.ui.screens.maintenance
 
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -79,7 +79,10 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
+import com.example.application.util.NetworkResult
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Alignment
@@ -1724,26 +1727,78 @@ private fun MaintenanceDialogHost(dialog: MaintenanceDialog?, onDismiss: () -> U
             val reasons = listOf("Billing Error", "Society Decision", "Financial Assistance", "Management Approval", "Other")
             val currentDue = (bill.remainingDue ?: bill.currentDue ?: bill.remainingAmount ?: bill.totalAmount).toMoneyDecimal()
             val originalAmount = (bill.originalAmount ?: bill.amount).toMoneyDecimal()
-            var type by remember { mutableStateOf("PARTIAL") }
-            var amount by remember { mutableStateOf("") }
+
+            val maintAmountTotal = bill.amount.toMoneyDecimal()
+            val penaltyAmountTotal = (bill.penaltyAmount ?: bill.lateFee).toMoneyDecimal()
+            val maintWriteOffSoFar = bill.maintenanceWriteOffAmount.toMoneyDecimal()
+            val penaltyWriteOffSoFar = bill.penaltyWriteOffAmount.toMoneyDecimal()
+
+            val maxMaintWriteOff = (maintAmountTotal - maintWriteOffSoFar).coerceAtLeast(BigDecimal.ZERO).coerceAtMost(currentDue)
+            val maxPenaltyWriteOff = (penaltyAmountTotal - penaltyWriteOffSoFar).coerceAtLeast(BigDecimal.ZERO).coerceAtMost(currentDue)
+
+            val scope = rememberCoroutineScope()
+            val context = LocalContext.current
+            var submitting by remember { mutableStateOf(false) }
+            var errorText by remember { mutableStateOf<String?>(null) }
+
+            var scopeLabel by remember { mutableStateOf("Full Due") }
+            val scopeType = when (scopeLabel) {
+                "Full Due" -> "FULL"
+                "Maintenance Only" -> "MAINTENANCE"
+                "Penalty Only" -> "PENALTY"
+                "Custom Split" -> "BOTH"
+                else -> "FULL"
+            }
+
+            var maintWriteOffInput by remember { mutableStateOf("") }
+            var penaltyWriteOffInput by remember { mutableStateOf("") }
             var reason by remember { mutableStateOf(reasons.first()) }
             var remarks by remember { mutableStateOf("") }
-            val writeOffAmount = if (type == "TOTAL") currentDue else amount.toMoneyDecimal()
-            val finalDue = (currentDue - writeOffAmount).coerceAtLeast(BigDecimal.ZERO)
+
+            val writeOffMaint = when (scopeType) {
+                "FULL" -> maxMaintWriteOff
+                "MAINTENANCE" -> maintWriteOffInput.toMoneyDecimal().coerceAtMost(maxMaintWriteOff)
+                "BOTH" -> maintWriteOffInput.toMoneyDecimal().coerceAtMost(maxMaintWriteOff)
+                else -> BigDecimal.ZERO
+            }
+
+            val writeOffPenalty = when (scopeType) {
+                "FULL" -> (currentDue - writeOffMaint).coerceAtLeast(BigDecimal.ZERO).coerceAtMost(maxPenaltyWriteOff)
+                "PENALTY" -> penaltyWriteOffInput.toMoneyDecimal().coerceAtMost(maxPenaltyWriteOff)
+                "BOTH" -> penaltyWriteOffInput.toMoneyDecimal().coerceAtMost(maxPenaltyWriteOff)
+                else -> BigDecimal.ZERO
+            }
+
+            val totalWriteOff = (writeOffMaint + writeOffPenalty).coerceAtMost(currentDue)
+            val finalDue = (currentDue - totalWriteOff).coerceAtLeast(BigDecimal.ZERO)
+
+            val validationError = when {
+                totalWriteOff <= BigDecimal.ZERO && scopeType != "FULL" -> "Write-off amount must be greater than zero"
+                totalWriteOff > currentDue -> "Total write-off exceeds the current due amount"
+                scopeType == "MAINTENANCE" && maintWriteOffInput.toMoneyDecimal() > maxMaintWriteOff -> "Maintenance write-off exceeds remaining maintenance balance of ${DashboardFormatters.money(maxMaintWriteOff)}"
+                scopeType == "PENALTY" && penaltyWriteOffInput.toMoneyDecimal() > maxPenaltyWriteOff -> "Penalty write-off exceeds remaining penalty balance of ${DashboardFormatters.money(maxPenaltyWriteOff)}"
+                scopeType == "BOTH" && maintWriteOffInput.toMoneyDecimal() > maxMaintWriteOff -> "Maintenance write-off exceeds remaining maintenance balance of ${DashboardFormatters.money(maxMaintWriteOff)}"
+                scopeType == "BOTH" && penaltyWriteOffInput.toMoneyDecimal() > maxPenaltyWriteOff -> "Penalty write-off exceeds remaining penalty balance of ${DashboardFormatters.money(maxPenaltyWriteOff)}"
+                else -> null
+            }
 
             Text("This keeps the bill record and creates an admin audit entry.", color = Color(0xFF475467))
             KeyValue("Resident", bill.residentName ?: "-")
             KeyValue("Flat", bill.flatNo ?: "-")
             KeyValue("Original Amount", DashboardFormatters.money(originalAmount))
-            KeyValue("Penalty", DashboardFormatters.money((bill.penaltyAmount ?: bill.lateFee).toMoneyDecimal()))
+            KeyValue("Penalty Balance", DashboardFormatters.money(maxPenaltyWriteOff))
             KeyValue("Paid", DashboardFormatters.money(bill.paidAmount.toMoneyDecimal()))
             KeyValue("Current Due", DashboardFormatters.money(currentDue))
 
             Text("Write-off type", fontWeight = FontWeight.SemiBold)
-            WriteOffChoiceChips(listOf("PARTIAL", "TOTAL"), type) { type = it }
+            WriteOffChoiceChips(listOf("Full Due", "Maintenance Only", "Penalty Only", "Custom Split"), scopeLabel) { scopeLabel = it }
 
-            if (type == "PARTIAL") {
-                BasicAppTextField(amount, { amount = it }, "Write-off amount")
+            if (scopeType == "MAINTENANCE" || scopeType == "BOTH") {
+                BasicAppTextField(maintWriteOffInput, { maintWriteOffInput = it }, "Maintenance amount (Max ${DashboardFormatters.money(maxMaintWriteOff)})")
+            }
+
+            if (scopeType == "PENALTY" || scopeType == "BOTH") {
+                BasicAppTextField(penaltyWriteOffInput, { penaltyWriteOffInput = it }, "Penalty amount (Max ${DashboardFormatters.money(maxPenaltyWriteOff)})")
             }
 
             Text("Reason", fontWeight = FontWeight.SemiBold)
@@ -1757,22 +1812,52 @@ private fun MaintenanceDialogHost(dialog: MaintenanceDialog?, onDismiss: () -> U
             ) {
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("Preview", fontWeight = FontWeight.Bold, color = Color(0xFF174EA6))
-                    KeyValue("Write-off", DashboardFormatters.money(writeOffAmount))
+                    KeyValue("Write-off", DashboardFormatters.money(totalWriteOff))
                     KeyValue("Final Due", DashboardFormatters.money(finalDue))
                     Text("Resident side will only show updated due/status, not admin reason or remarks.", color = Color(0xFF475467))
                 }
             }
 
+            if (errorText != null) {
+                Text(errorText!!, color = Color.Red, style = MaterialTheme.typography.bodySmall)
+            }
+            if (validationError != null) {
+                Text(validationError, color = Color(0xFFD9381E), style = MaterialTheme.typography.bodySmall)
+            }
+
             Button(
                 onClick = {
-                    bill.id?.let {
-                        viewModel.createWriteOff(it, type, if (type == "TOTAL") null else amount, reason, remarks)
+                    bill.id?.let { billId ->
+                        scope.launch {
+                            submitting = true
+                            errorText = null
+                            val res = viewModel.createWriteOffDirect(
+                                id = billId,
+                                type = scopeType,
+                                amount = if (scopeType == "FULL") null else totalWriteOff.toPlainString(),
+                                maintenanceAmount = if (scopeType == "MAINTENANCE" || scopeType == "BOTH") writeOffMaint.toPlainString() else null,
+                                penaltyAmount = if (scopeType == "PENALTY" || scopeType == "BOTH") writeOffPenalty.toPlainString() else null,
+                                reason = reason,
+                                remarks = remarks
+                            )
+                            submitting = false
+                            when (res) {
+                                is NetworkResult.Success -> {
+                                    Toast.makeText(context, "Write-off completed successfully", Toast.LENGTH_LONG).show()
+                                    viewModel.load(refresh = true)
+                                    onDismiss()
+                                }
+                                is NetworkResult.Error -> {
+                                    errorText = viewModel.userMessageFor(res.error)
+                                }
+                                NetworkResult.Loading -> Unit
+                            }
+                        }
                     }
-                    onDismiss()
                 },
-                enabled = bill.id != null && currentDue > BigDecimal.ZERO && writeOffAmount > BigDecimal.ZERO && writeOffAmount <= currentDue,
+                enabled = !submitting && bill.id != null && currentDue > BigDecimal.ZERO && totalWriteOff > BigDecimal.ZERO && validationError == null,
                 modifier = Modifier.fillMaxWidth()
-            ) { Text(if (type == "TOTAL") "Write-off Full Due" else "Apply Write-off") }
+            ) { Text(if (submitting) "Applying..." else "Apply Write-off") }
         }
         is MaintenanceDialog.CancelBill -> SimpleFormDialog("Cancel Bill", onDismiss) {
             var reason by remember { mutableStateOf("") }

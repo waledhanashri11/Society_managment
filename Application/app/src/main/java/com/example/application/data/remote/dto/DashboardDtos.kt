@@ -34,6 +34,8 @@ data class MaintenanceBillDto(
     @SerializedName("total_amount") val totalAmount: String?,
     @SerializedName("paid_amount") val paidAmount: String?,
     @SerializedName("write_off_amount") val writeOffAmount: String?,
+    @SerializedName("maintenance_write_off_amount") val maintenanceWriteOffAmount: String?,
+    @SerializedName("penalty_write_off_amount") val penaltyWriteOffAmount: String?,
     @SerializedName("original_amount") val originalAmount: String?,
     @SerializedName("remaining_due") val remainingDue: String?,
     @SerializedName("current_due") val currentDue: String?,

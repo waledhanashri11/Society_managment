@@ -178,9 +178,298 @@ const ensureMaintenanceRuntimeSchema = async () => {
 };
 
 const toMoney = (value, fallback = 0) => {
+  if (value === null || value === undefined || String(value).trim() === '') return fallback;
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
 };
+
+const processWriteOffTransaction = async (
+  billId,
+  writeoffType,
+  amount,
+  maintenanceAmount,
+  penaltyAmount,
+  reason,
+  remarks,
+  user,
+  ip,
+  device
+) => {
+  const connection = await promisePool.getConnection();
+  let postCommitAudit = null;
+  let postCommitNotificationResidentId = null;
+  try {
+    await connection.beginTransaction();
+
+    // Lock the bill row to prevent concurrent updates (PostgreSQL / MySQL safe)
+    await connection.query('SELECT id FROM maintenance WHERE id = ? FOR UPDATE', [billId]);
+
+    // Fetch the bill details with outer joins (no FOR UPDATE here to avoid outer join nullable-side locking issues on Postgres)
+    const [bills] = await connection.query(
+      `SELECT m.*, u.name AS resident_name, f.flat_no
+       FROM maintenance m
+       LEFT JOIN users u ON u.id = m.resident_id
+       LEFT JOIN flats f ON f.id = m.flat_id
+       WHERE m.id = ?`,
+      [billId]
+    );
+
+    if (!bills.length) {
+      await connection.rollback();
+      return { success: false, code: 404, message: 'Maintenance bill not found' };
+    }
+
+    const bill = bills[0];
+
+    if (['Paid', 'PAID', 'SETTLED', 'WRITTEN_OFF', 'Cancelled'].includes(bill.status)) {
+      await connection.rollback();
+      return { success: false, code: 400, message: 'This bill is already settled or cannot be written off' };
+    }
+
+    const total = toMoney(bill.total_amount || bill.amount);
+    const paid = toMoney(bill.paid_amount);
+    const currentMaintWriteOff = toMoney(bill.maintenance_write_off_amount || bill.maintenance_writeoff_amount);
+    const currentPenaltyWriteOff = toMoney(bill.penalty_write_off_amount || bill.penalty_writeoff_amount);
+    const existingWriteOff = toMoney(bill.write_off_amount);
+    const remaining = Math.max(0, total - paid - existingWriteOff);
+
+    if (remaining <= 0) {
+      await connection.rollback();
+      return { success: false, code: 400, message: 'Bill is already fully paid or written off' };
+    }
+
+    // Determine scopes and calculate maximum balances
+    const maxMaintWriteOff = Math.min(Math.max(0, toMoney(bill.amount) - currentMaintWriteOff), remaining);
+    const maxPenaltyWriteOff = Math.min(Math.max(0, toMoney(bill.penalty_amount || bill.late_fee) - currentPenaltyWriteOff), remaining);
+
+    let writeOffAmt = 0;
+    let maintWriteOffAmt = 0;
+    let penaltyWriteOffAmt = 0;
+    let detailedType = 'Full';
+
+    const normalizedType = String(writeoffType || '').trim().toUpperCase();
+
+    if (normalizedType === 'TOTAL' || normalizedType === 'FULL') {
+      writeOffAmt = remaining;
+      maintWriteOffAmt = maxMaintWriteOff;
+      penaltyWriteOffAmt = Math.max(0, remaining - maintWriteOffAmt);
+      detailedType = 'Full';
+    } else if (normalizedType === 'MAINTENANCE') {
+      writeOffAmt = toMoney(amount || maintenanceAmount);
+      if (writeOffAmt <= 0) {
+        await connection.rollback();
+        return { success: false, code: 400, message: 'Write-off amount must be greater than zero' };
+      }
+      if (writeOffAmt > maxMaintWriteOff) {
+        await connection.rollback();
+        return { success: false, code: 400, message: `Write-off amount exceeds remaining maintenance balance of ${maxMaintWriteOff}` };
+      }
+      if (writeOffAmt > remaining) {
+        await connection.rollback();
+        return { success: false, code: 400, message: `Write-off amount exceeds remaining bill balance of ${remaining}` };
+      }
+      maintWriteOffAmt = writeOffAmt;
+      penaltyWriteOffAmt = 0;
+      detailedType = 'Maintenance';
+    } else if (normalizedType === 'PENALTY') {
+      writeOffAmt = toMoney(amount || penaltyAmount);
+      if (writeOffAmt <= 0) {
+        await connection.rollback();
+        return { success: false, code: 400, message: 'Write-off amount must be greater than zero' };
+      }
+      if (writeOffAmt > maxPenaltyWriteOff) {
+        await connection.rollback();
+        return { success: false, code: 400, message: `Write-off amount exceeds remaining penalty balance of ${maxPenaltyWriteOff}` };
+      }
+      if (writeOffAmt > remaining) {
+        await connection.rollback();
+        return { success: false, code: 400, message: `Write-off amount exceeds remaining bill balance of ${remaining}` };
+      }
+      maintWriteOffAmt = 0;
+      penaltyWriteOffAmt = writeOffAmt;
+      detailedType = 'Penalty';
+    } else if (normalizedType === 'PARTIAL' || normalizedType === 'BOTH') {
+      const maintInput = toMoney(maintenanceAmount);
+      const penaltyInput = toMoney(penaltyAmount);
+      
+      if (maintInput > 0 || penaltyInput > 0) {
+        // Granular partial write-off
+        maintWriteOffAmt = maintInput;
+        penaltyWriteOffAmt = penaltyInput;
+        writeOffAmt = maintWriteOffAmt + penaltyWriteOffAmt;
+      } else {
+        // Legacy partial write-off
+        writeOffAmt = toMoney(amount);
+        maintWriteOffAmt = Math.min(maxMaintWriteOff, writeOffAmt);
+        penaltyWriteOffAmt = Math.max(0, writeOffAmt - maintWriteOffAmt);
+      }
+
+      if (writeOffAmt <= 0) {
+        await connection.rollback();
+        return { success: false, code: 400, message: 'Write-off amount must be greater than zero' };
+      }
+      if (maintWriteOffAmt > maxMaintWriteOff) {
+        await connection.rollback();
+        return { success: false, code: 400, message: `Maintenance write-off amount exceeds remaining maintenance balance of ${maxMaintWriteOff}` };
+      }
+      if (penaltyWriteOffAmt > maxPenaltyWriteOff) {
+        await connection.rollback();
+        return { success: false, code: 400, message: `Penalty write-off amount exceeds remaining penalty balance of ${maxPenaltyWriteOff}` };
+      }
+      if (writeOffAmt > remaining) {
+        await connection.rollback();
+        return { success: false, code: 400, message: `Total write-off cannot exceed bill remaining amount of ${remaining}` };
+      }
+
+      if (maintWriteOffAmt > 0 && penaltyWriteOffAmt === 0) {
+        detailedType = 'Maintenance';
+      } else if (penaltyWriteOffAmt > 0 && maintWriteOffAmt === 0) {
+        detailedType = 'Penalty';
+      } else {
+        detailedType = 'Full';
+      }
+    } else {
+      await connection.rollback();
+      return { success: false, code: 400, message: 'Write-off type must be PARTIAL, TOTAL, MAINTENANCE, PENALTY, or BOTH' };
+    }
+
+    const finalDue = Math.max(0, remaining - writeOffAmt);
+    const newWriteOffTotal = existingWriteOff + writeOffAmt;
+    const newMaintWriteOffTotal = currentMaintWriteOff + maintWriteOffAmt;
+    const newPenaltyWriteOffTotal = currentPenaltyWriteOff + penaltyWriteOffAmt;
+
+    let newStatus = 'Pending';
+    if (finalDue <= 0) {
+      newStatus = paid > 0 ? 'PAID' : 'WRITTEN_OFF';
+    } else {
+      newStatus = paid > 0 ? 'PARTIALLY_PAID' : 'PARTIAL_WRITE_OFF';
+    }
+
+    let writeOffStatus = 'Partially Written Off';
+    if (finalDue <= 0) {
+      writeOffStatus = 'Fully Written Off';
+    } else if (newMaintWriteOffTotal > 0 && newPenaltyWriteOffTotal === 0) {
+      writeOffStatus = 'Maintenance Written Off';
+    } else if (newPenaltyWriteOffTotal > 0 && newMaintWriteOffTotal === 0) {
+      writeOffStatus = 'Penalty Written Off';
+    }
+
+    const adminName = user?.name || user?.email || 'Admin';
+    const adminId = user?.id && Number.isInteger(Number(user.id)) ? Number(user.id) : null;
+
+    // Check duplicate logic for safety
+    const [duplicateRows] = await connection.query(
+      `SELECT id FROM maintenance_writeoffs
+       WHERE bill_id = ? AND writeoff_type = ? AND amount = ? AND reason = ?
+       LIMIT 1`,
+      [bill.id, normalizedType === 'TOTAL' || normalizedType === 'FULL' ? 'TOTAL' : 'PARTIAL', writeOffAmt, reason]
+    );
+    if (duplicateRows.length) {
+      await connection.rollback();
+      return { success: false, code: 409, message: 'Duplicate write-off request already exists for this bill' };
+    }
+
+    // Insert to legacy table
+    const legacyType = finalDue <= 0 ? 'TOTAL' : 'PARTIAL';
+    const [insertedLegacy] = await connection.query(
+      `INSERT INTO maintenance_writeoffs
+       (bill_id, resident_id, flat_id, admin_id, admin_name, writeoff_type, amount, previous_due, final_due, reason, remarks, ip_address, device_info)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [bill.id, bill.resident_id, bill.flat_id, adminId, adminName, legacyType, writeOffAmt, remaining, finalDue, reason, remarks, ip, device]
+    );
+    const writeOffId = insertedLegacy.insertId || insertedLegacy.id;
+
+    // Insert to new table
+    await connection.query(
+      `INSERT INTO write_offs (bill_id, type, amount, maintenance_write_off_amount, penalty_write_off_amount, reason, admin_id, admin_name)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [bill.id, detailedType, writeOffAmt, maintWriteOffAmt, penaltyWriteOffAmt, reason, adminId, adminName]
+    );
+
+    // Update maintenance bill
+    await connection.query(
+      `UPDATE maintenance
+       SET original_amount = COALESCE(original_amount, amount, total_amount, 0),
+           write_off_amount = ?,
+           maintenance_write_off_amount = ?,
+           penalty_write_off_amount = ?,
+           remaining_amount = ?,
+           remaining_due = ?,
+           current_due = ?,
+           status = ?,
+           write_off_status = ?,
+           updated_at = NOW()
+       WHERE id = ?`,
+      [newWriteOffTotal, newMaintWriteOffTotal, newPenaltyWriteOffTotal, finalDue, finalDue, finalDue, newStatus, writeOffStatus, bill.id]
+    );
+
+    postCommitAudit = {
+      adminId,
+      writeOffId,
+      details: {
+        writeOffId,
+        billId: bill.id,
+        residentId: bill.resident_id,
+        residentName: bill.resident_name,
+        flatNo: bill.flat_no,
+        type: detailedType,
+        amount: writeOffAmt,
+        maintenanceWriteOffAmount: maintWriteOffAmt,
+        penaltyWriteOffAmount: penaltyWriteOffAmt,
+        previousDue: remaining,
+        finalDue,
+        reason,
+        remarks,
+        adminName,
+        dateTime: new Date().toISOString()
+      }
+    };
+    postCommitNotificationResidentId = bill.resident_id || null;
+
+    await connection.commit();
+
+    if (postCommitAudit) {
+      promisePool.query(
+        `INSERT INTO maintenance_audit_logs (user_id, action, entity_type, entity_id, details)
+         VALUES (?, 'CREATE_WRITE_OFF', 'WRITE_OFF', ?, ?)`,
+        [postCommitAudit.adminId, postCommitAudit.writeOffId, JSON.stringify(postCommitAudit.details)]
+      ).catch((auditError) => console.error('Write-off audit failed:', auditError));
+    }
+
+    if (postCommitNotificationResidentId) {
+      promisePool.query(
+        `INSERT INTO notifications (resident_id, title, message, type, is_read, created_at)
+         VALUES (?, ?, ?, 'maintenance', false, NOW())`,
+        [
+          postCommitNotificationResidentId,
+          'Bill Status Updated',
+          `Your maintenance bill "${bill.title}" status has been updated to ${newStatus}.`,
+        ]
+      ).catch((notificationError) => console.error('Write-off notification failed:', notificationError));
+    }
+
+    return {
+      success: true,
+      code: 201,
+      data: {
+        id: writeOffId,
+        billId: bill.id,
+        writeoffType: legacyType,
+        amount: writeOffAmt,
+        previousDue: remaining,
+        finalDue,
+        status: newStatus
+      }
+    };
+
+  } catch (error) {
+    try { await connection.rollback(); } catch (_) {}
+    throw error;
+  } finally {
+    connection.release();
+  }
+};
+
 
 const writeOffSafeStatus = (bill, remainingDue) => {
   if (remainingDue <= 0) {
@@ -577,148 +866,48 @@ const getMaintenanceById = async (req, res) => {
 };
 
 const createLegacyWriteOff = async (req, res) => {
-  const connection = await promisePool.getConnection();
-  let postCommitAudit = null;
-  let postCommitNotificationResidentId = null;
+  const url = `${req.baseUrl || ''}${req.path}`;
+  const method = req.method;
+  console.log(`[WRITE-OFF DEBUG] Route: ${method} ${url}`);
+  console.log('[WRITE-OFF DEBUG] Request Body:', JSON.stringify(req.body));
+
   try {
-    await ensureMaintenanceRuntimeSchema();
     const { billId } = req.params;
     const writeoffType = String(req.body.writeoffType || req.body.writeoff_type || '').trim().toUpperCase();
     const rawReason = String(req.body.reason || '').trim();
     const reason = rawReason === 'Special Approval' ? 'Management Approval' : rawReason;
     const remarks = req.body.remarks ? String(req.body.remarks).trim() : null;
-    const allowedReasons = new Set(['Billing Error', 'Financial Assistance', 'Society Decision', 'Management Approval', 'Special Approval', 'Other']);
-    if (!['PARTIAL', 'TOTAL'].includes(writeoffType)) {
-      return sendResponse(res, 400, 'Write-off type must be PARTIAL or TOTAL');
-    }
-    if (!allowedReasons.has(reason)) {
-      return sendResponse(res, 400, 'Valid write-off reason is required');
-    }
+    
+    // Split values from request body
+    const amount = req.body.amount;
+    const maintenanceAmount = req.body.maintenanceAmount || req.body.maintenance_amount;
+    const penaltyAmount = req.body.penaltyAmount || req.body.penalty_amount;
 
-    await connection.beginTransaction();
-    const [bills] = await connection.query(
-      `SELECT m.*, u.name AS resident_name, f.flat_no
-       FROM maintenance m
-       LEFT JOIN users u ON u.id = m.resident_id
-       LEFT JOIN flats f ON f.id = m.flat_id
-       WHERE m.id = ? FOR UPDATE`,
-      [billId]
-    );
-    if (!bills.length) {
-      await connection.rollback();
-      return sendResponse(res, 404, 'Maintenance bill not found');
-    }
-    const bill = bills[0];
-    if (['Paid', 'PAID', 'SETTLED', 'WRITTEN_OFF', 'Cancelled', 'Cancelled'].includes(bill.status)) {
-      await connection.rollback();
-      return sendResponse(res, 400, 'This bill is already settled or cannot be written off');
-    }
-    const total = toMoney(bill.total_amount || bill.amount);
-    const paid = toMoney(bill.paid_amount);
-    const existingWriteOff = toMoney(bill.write_off_amount);
-    const previousDue = Math.max(0, toMoney(bill.remaining_due ?? bill.current_due ?? bill.remaining_amount, total - paid - existingWriteOff));
-    const requestedAmount = writeoffType === 'TOTAL' ? previousDue : toMoney(req.body.amount);
-    if (!Number.isFinite(requestedAmount) || requestedAmount <= 0) {
-      await connection.rollback();
-      return sendResponse(res, 400, 'Write-off amount must be greater than zero');
-    }
-    if (requestedAmount > previousDue) {
-      await connection.rollback();
-      return sendResponse(res, 400, 'Write-off cannot exceed pending balance');
-    }
-    if (existingWriteOff + requestedAmount > total) {
-      await connection.rollback();
-      return sendResponse(res, 400, 'Total write-off cannot exceed bill amount');
-    }
-
-    const finalDue = Math.max(0, previousDue - requestedAmount);
-    const newWriteOffTotal = existingWriteOff + requestedAmount;
-    const newStatus = writeOffSafeStatus(bill, finalDue);
-    const [duplicateRows] = await connection.query(
-      `SELECT id FROM maintenance_writeoffs
-       WHERE bill_id = ? AND writeoff_type = ? AND amount = ? AND reason = ?
-       LIMIT 1`,
-      [bill.id, writeoffType, requestedAmount, reason]
-    );
-    if (duplicateRows.length) {
-      await connection.rollback();
-      return sendResponse(res, 409, 'Duplicate write-off request already exists for this bill');
-    }
-    const adminName = req.user?.name || req.user?.email || 'Admin';
-    const adminId = Number.isInteger(Number(req.user?.id)) ? Number(req.user.id) : null;
-    const ip = req.ip || req.headers['x-forwarded-for'] || null;
-    const device = req.headers['user-agent'] || null;
-    const [inserted] = await connection.query(
-      `INSERT INTO maintenance_writeoffs
-       (bill_id, resident_id, flat_id, admin_id, admin_name, writeoff_type, amount, previous_due, final_due, reason, remarks, ip_address, device_info)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [bill.id, bill.resident_id, bill.flat_id, adminId, adminName, writeoffType, requestedAmount, previousDue, finalDue, reason, remarks, ip, device]
-    );
-    const writeOffId = inserted.insertId || inserted.id;
-
-    await connection.query(
-      `UPDATE maintenance
-       SET original_amount = COALESCE(original_amount, amount, total_amount, 0),
-           write_off_amount = ?,
-           remaining_amount = ?,
-           remaining_due = ?,
-           current_due = ?,
-           status = ?,
-           updated_at = NOW()
-       WHERE id = ?`,
-      [newWriteOffTotal, finalDue, finalDue, finalDue, newStatus, bill.id]
-    );
-
-    postCommitAudit = {
-      adminId,
-      writeOffId,
-      details: {
-        billId: bill.id,
-        residentId: bill.resident_id,
-        residentName: bill.resident_name,
-        flatNo: bill.flat_no,
-        previousDue,
-        writeOffAmount: requestedAmount,
-        finalDue,
-        reason,
-        remarks,
-        adminName,
-        dateTime: new Date().toISOString()
-      }
-    };
-    postCommitNotificationResidentId = bill.resident_id || null;
-    await connection.commit();
-
-    if (postCommitAudit) {
-      promisePool.query(
-        `INSERT INTO maintenance_audit_logs (user_id, action, entity_type, entity_id, details)
-         VALUES (?, 'CREATE_WRITEOFF', 'WRITEOFF', ?, ?)`,
-        [postCommitAudit.adminId, postCommitAudit.writeOffId, JSON.stringify(postCommitAudit.details)]
-      ).catch((auditError) => console.error('Write-off audit failed:', auditError));
-    }
-    if (postCommitNotificationResidentId) {
-      promisePool.query(
-        `INSERT INTO notifications (resident_id, title, message, type, is_read, created_at)
-         VALUES (?, 'Maintenance balance updated', 'Your maintenance balance has been updated.', 'maintenance', false, NOW())`,
-        [postCommitNotificationResidentId]
-      ).catch((notificationError) => console.error('Write-off notification failed:', notificationError));
-    }
-
-    return sendResponse(res, 201, 'Write-off completed successfully', {
-      id: writeOffId,
-      billId: bill.id,
+    const result = await processWriteOffTransaction(
+      billId,
       writeoffType,
-      amount: requestedAmount,
-      previousDue,
-      finalDue,
-      status: newStatus
-    });
+      amount,
+      maintenanceAmount,
+      penaltyAmount,
+      reason,
+      remarks,
+      req.user,
+      req.ip || req.headers['x-forwarded-for'] || null,
+      req.headers['user-agent'] || null
+    );
+
+    if (!result.success) {
+      console.log(`[WRITE-OFF DEBUG] Error Response: status=${result.code}, message=${result.message}`);
+      return sendResponse(res, result.code, result.message);
+    }
+
+    console.log('[WRITE-OFF DEBUG] Success Response:', JSON.stringify(result.data));
+    return sendResponse(res, 201, 'Write-off completed successfully', result.data);
+
   } catch (error) {
-    try { await connection.rollback(); } catch (_) {}
-    console.error('Create write-off error:', error);
-    return sendResponse(res, 500, 'Unable to complete write-off', null, ['Transaction failed']);
-  } finally {
-    connection.release();
+    console.error('[WRITE-OFF DEBUG] PostgreSQL / Transaction Error:', error);
+    console.error('[WRITE-OFF DEBUG] Error Code:', error.code, 'Error Message:', error.message);
+    return sendResponse(res, 500, error.message || 'Unable to complete write-off', null, [error.code || 'Transaction failed']);
   }
 };
 
@@ -1938,7 +2127,11 @@ const getReports = async (req, res) => {
 };
 
 const createDetailedWriteOff = async (req, res) => {
-  const connection = await promisePool.getConnection();
+  const url = `${req.baseUrl || ''}${req.path}`;
+  const method = req.method;
+  console.log(`[DETAILED WRITE-OFF DEBUG] Route: ${method} ${url}`);
+  console.log('[DETAILED WRITE-OFF DEBUG] Request Body:', JSON.stringify(req.body));
+
   try {
     const { id } = req.params;
     const { type, reason, amount } = req.body;
@@ -1947,134 +2140,31 @@ const createDetailedWriteOff = async (req, res) => {
       return sendResponse(res, 400, 'Type and reason are required');
     }
 
-    await connection.beginTransaction();
-
-    const [bills] = await connection.query('SELECT * FROM maintenance WHERE id = ?', [id]);
-    if (bills.length === 0) {
-      await connection.rollback();
-      return sendResponse(res, 404, 'Bill not found');
-    }
-    const bill = bills[0];
-    const remaining = Number(bill.remaining_amount || 0);
-
-    if (remaining <= 0) {
-      await connection.rollback();
-      return sendResponse(res, 400, 'Bill is already fully paid or written off');
-    }
-
-    let writeOffAmt = 0;
-    let maintWriteOffAmt = 0;
-    let penaltyWriteOffAmt = 0;
-
-    const currentMaintWriteOff = Number(bill.maintenance_write_off_amount || 0);
-    const currentPenaltyWriteOff = Number(bill.penalty_write_off_amount || 0);
-
-    if (type === 'Full') {
-      writeOffAmt = remaining;
-      maintWriteOffAmt = Math.max(0, Number(bill.amount) - currentMaintWriteOff);
-      penaltyWriteOffAmt = Math.max(0, Number(bill.penalty_amount) - currentPenaltyWriteOff);
-    } else if (type === 'Maintenance') {
-      writeOffAmt = Number(amount);
-      if (!writeOffAmt || writeOffAmt <= 0) {
-        await connection.rollback();
-        return sendResponse(res, 400, 'A valid write-off amount is required');
-      }
-      const maxMaintWriteOff = Math.max(0, Number(bill.amount) - currentMaintWriteOff);
-      if (writeOffAmt > maxMaintWriteOff) {
-        await connection.rollback();
-        return sendResponse(res, 400, `Write-off amount exceeds remaining maintenance balance of ${maxMaintWriteOff}`);
-      }
-      if (writeOffAmt > remaining) {
-        await connection.rollback();
-        return sendResponse(res, 400, `Write-off amount exceeds remaining bill balance of ${remaining}`);
-      }
-      maintWriteOffAmt = writeOffAmt;
-    } else if (type === 'Penalty') {
-      writeOffAmt = Number(amount);
-      if (!writeOffAmt || writeOffAmt <= 0) {
-        await connection.rollback();
-        return sendResponse(res, 400, 'A valid write-off amount is required');
-      }
-      const maxPenaltyWriteOff = Math.max(0, Number(bill.penalty_amount) - currentPenaltyWriteOff);
-      if (writeOffAmt > maxPenaltyWriteOff) {
-        await connection.rollback();
-        return sendResponse(res, 400, `Write-off amount exceeds remaining penalty balance of ${maxPenaltyWriteOff}`);
-      }
-      if (writeOffAmt > remaining) {
-        await connection.rollback();
-        return sendResponse(res, 400, `Write-off amount exceeds remaining bill balance of ${remaining}`);
-      }
-      penaltyWriteOffAmt = writeOffAmt;
-    }
-
-
-    const [adminRows] = await connection.query('SELECT name FROM users WHERE id = ?', [req.user.id]);
-    const adminName = adminRows[0]?.name || req.user.name || 'Admin';
-
-    const [writeOffResult] = await connection.query(
-      `INSERT INTO write_offs (bill_id, type, amount, maintenance_write_off_amount, penalty_write_off_amount, reason, admin_id, admin_name)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, type, writeOffAmt, maintWriteOffAmt, penaltyWriteOffAmt, reason.trim(), req.user.id, adminName]
-    );
-    const writeOffId = writeOffResult.insertId || writeOffResult.id;
-
-    const newMaintWriteOffTotal = currentMaintWriteOff + maintWriteOffAmt;
-    const newPenaltyWriteOffTotal = currentPenaltyWriteOff + penaltyWriteOffAmt;
-    const newWriteOffTotal = Number(bill.write_off_amount || 0) + writeOffAmt;
-    const newRemaining = Math.max(0, remaining - writeOffAmt);
-    const newStatus = newRemaining <= 0 ? 'Paid' : bill.status;
-
-    let writeOffStatus = 'Partially Written Off';
-    if (newRemaining <= 0) {
-      writeOffStatus = 'Fully Written Off';
-    } else if (newMaintWriteOffTotal > 0 && newPenaltyWriteOffTotal === 0) {
-      writeOffStatus = 'Maintenance Written Off';
-    } else if (newPenaltyWriteOffTotal > 0 && newMaintWriteOffTotal === 0) {
-      writeOffStatus = 'Penalty Written Off';
-    }
-
-    await connection.query(
-      `UPDATE maintenance
-       SET remaining_amount = ?, write_off_amount = ?, maintenance_write_off_amount = ?, penalty_write_off_amount = ?, status = ?, write_off_status = ?, updated_at = NOW()
-       WHERE id = ?`,
-      [newRemaining, newWriteOffTotal, newMaintWriteOffTotal, newPenaltyWriteOffTotal, newStatus, writeOffStatus, id]
-    );
-
-    // Audit log
-    const auditDetails = {
-      writeOffId,
-      billId: id,
+    const result = await processWriteOffTransaction(
+      id,
       type,
-      amount: writeOffAmt,
+      amount,
+      null, // maintenanceAmount
+      null, // penaltyAmount
       reason,
-      adminName,
-      dateTime: new Date().toISOString()
-    };
-    await connection.query(
-      `INSERT INTO maintenance_audit_logs (user_id, action, entity_type, entity_id, details)
-       VALUES (?, ?, ?, ?, ?)`,
-      [req.user.id, 'CREATE_WRITE_OFF', 'WRITE_OFF', writeOffId, JSON.stringify(auditDetails)]
+      null, // remarks
+      req.user,
+      req.ip || req.headers['x-forwarded-for'] || null,
+      req.headers['user-agent'] || null
     );
 
-    // Resident notification
-    await connection.query(
-      `INSERT INTO notifications (resident_id, title, message, type, is_read, created_at)
-       VALUES (?, ?, ?, 'maintenance', false, NOW())`,
-      [
-        bill.resident_id,
-        'Bill Status Updated',
-        `Your maintenance bill "${bill.title}" status has been updated to ${newStatus}.`,
-      ]
-    );
+    if (!result.success) {
+      console.log(`[DETAILED WRITE-OFF DEBUG] Error Response: status=${result.code}, message=${result.message}`);
+      return sendResponse(res, result.code, result.message);
+    }
 
-    await connection.commit();
-    return sendResponse(res, 201, 'Write-off recorded successfully', { writeOffId });
+    console.log('[DETAILED WRITE-OFF DEBUG] Success Response:', JSON.stringify(result.data));
+    return sendResponse(res, 201, 'Write-off recorded successfully', result.data);
+
   } catch (error) {
-    try { await connection.rollback(); } catch (e) {}
-    console.error('Create write-off error:', error);
-    return sendResponse(res, 500, 'Server error', null, ['Unable to record write-off']);
-  } finally {
-    connection.release();
+    console.error('[DETAILED WRITE-OFF DEBUG] PostgreSQL / Transaction Error:', error);
+    console.error('[DETAILED WRITE-OFF DEBUG] Error Code:', error.code, 'Error Message:', error.message);
+    return sendResponse(res, 500, error.message || 'Server error', null, [error.code || 'Unable to record write-off']);
   }
 };
 

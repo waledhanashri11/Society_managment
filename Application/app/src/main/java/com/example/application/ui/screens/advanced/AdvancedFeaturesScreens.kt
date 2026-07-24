@@ -68,7 +68,7 @@ private fun AdvancedFeaturesScaffold(title: String, onBack: () -> Unit, vm: Adva
         snackbarHost = { SnackbarHost(snackbars) }
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            if (admin) AdminTools(vm) else ResidentTools(vm)
+            if (admin) AdminTools(vm, state) else ResidentTools(vm)
             if (state.loading) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) { CircularProgressIndicator() }
             if (state.content.isNotBlank()) ResultCard(state.title, state.content)
             Spacer(Modifier.height(24.dp))
@@ -77,7 +77,7 @@ private fun AdvancedFeaturesScaffold(title: String, onBack: () -> Unit, vm: Adva
 }
 
 @Composable
-private fun AdminTools(vm: AdvancedFeaturesViewModel) {
+private fun AdminTools(vm: AdvancedFeaturesViewModel, state: com.example.application.viewmodel.AdvancedUiState) {
     var flatId by remember { mutableStateOf("") }
     var residentId by remember { mutableStateOf("") }
     var recordId by remember { mutableStateOf("") }
@@ -99,6 +99,21 @@ private fun AdminTools(vm: AdvancedFeaturesViewModel) {
         runCatching { paymentQrImage = uri.asDataUrl(context); paymentQrTouched = true }
             .onSuccess { Toast.makeText(context, "QR image selected", Toast.LENGTH_SHORT).show() }
             .onFailure { Toast.makeText(context, "Unable to read QR image", Toast.LENGTH_LONG).show() }
+    }
+    LaunchedEffect(state.title, state.content) {
+        if (state.title == "Society settings" && state.content.isNotBlank()) {
+            runCatching {
+                val json = org.json.JSONObject(state.content)
+                societyName = json.optString("societyName", societyName)
+                address = json.optString("address", address)
+                email = json.optString("email", email)
+                phone = json.optString("phone", phone)
+                paymentUpiId = json.optString("paymentUpiId", paymentUpiId)
+                paymentNote = json.optString("paymentNote", paymentNote)
+                paymentQrImage = json.optString("paymentQrImage", paymentQrImage)
+                paymentQrTouched = false
+            }
+        }
     }
 
     ToolSection("Society settings") {
@@ -142,14 +157,6 @@ private fun AdminTools(vm: AdvancedFeaturesViewModel) {
         Field(reason, { reason = it }, "Transfer reason")
         ActionRow("Current resident", { vm.currentResident(flatId) }, "Transfer flat", { vm.transferFlat(flatId, residentId, reason) })
         ActionRow("Ownership history", { vm.flatHistory(flatId) }, "Transfer history", { vm.flatTransfers(flatId) })
-        WideAction("Maintenance history") { vm.flatMaintenance(flatId) }
-    }
-    ToolSection("Payment verification") {
-        Field(recordId, { recordId = it }, "Payment ID")
-        Field(reason, { reason = it }, "Rejection reason")
-        ActionRow("Pending payments", vm::pendingPayments, "Payment history", vm::paymentHistory)
-        ActionRow("Approve", { vm.approvePayment(recordId) }, "Reject", { vm.rejectPayment(recordId, reason) })
-        WideAction("Download receipt") { vm.downloadReceipt(recordId) }
     }
     ToolSection("Notifications") {
         ActionRow("Refresh notifications", vm::adminNotifications, "Mark all read", vm::readAllAdminNotifications)
@@ -160,13 +167,6 @@ private fun AdminTools(vm: AdvancedFeaturesViewModel) {
         ActionRow("Summary", vm::nocSummary, "Types", vm::nocTypes)
         ActionRow("Request details", { vm.nocDetails(recordId) }, "Create share link", { vm.shareNoc(recordId) })
         WideAction("Create NOC type") { vm.createNocType(nocType, "Created from Android") }
-    }
-    ToolSection("Maintenance category assignments") {
-        Field(flatId, { flatId = it }, "Flat ID")
-        Field(flatIds, { flatIds = it }, "Flat IDs, comma separated")
-        Field(categoryIds, { categoryIds = it }, "Category IDs, comma separated")
-        ActionRow("All assignments", vm::residentCategories, "View flat", { vm.flatCategories(flatId) })
-        ActionRow("Save for flat", { vm.saveFlatCategories(flatId, categoryIds) }, "Bulk assign", { vm.bulkCategories(flatIds, categoryIds) })
     }
     ToolSection("Reports") { WideAction("Complaint report", vm::complaintReport) }
 }
@@ -191,11 +191,7 @@ private fun ResidentTools(vm: AdvancedFeaturesViewModel) {
         ActionRow("Summary", vm::nocSummary, "Available types", vm::nocTypes)
         WideAction("Request details") { vm.nocDetails(id) }
     }
-    ToolSection("Payments and reports") {
-        ActionRow("Payment history", vm::paymentHistory, "Complaint report", vm::complaintReport)
-        Field(id, { id = it }, "Payment ID")
-        WideAction("Download receipt") { vm.downloadReceipt(id) }
-    }
+    ToolSection("Reports") { WideAction("Complaint report", vm::complaintReport) }
 }
 
 @Composable private fun ToolSection(title: String, content: @Composable () -> Unit) = Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { Text(title, style = MaterialTheme.typography.titleMedium); content() } }
