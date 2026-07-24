@@ -576,7 +576,7 @@ const getMaintenanceById = async (req, res) => {
   }
 };
 
-const createWriteOff = async (req, res) => {
+const createLegacyWriteOff = async (req, res) => {
   const connection = await promisePool.getConnection();
   let postCommitAudit = null;
   let postCommitNotificationResidentId = null;
@@ -2596,7 +2596,7 @@ module.exports = {
   markBillPaid,
   sendPaymentReminder,
   getReports,
-  createWriteOff,
+  createLegacyWriteOff,
   getWriteOffs,
   getWriteOffDashboard,
   getWriteOffReport,
