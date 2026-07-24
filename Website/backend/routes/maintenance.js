@@ -30,7 +30,7 @@ const {
   getSettings,
   saveSettings,
   applyPenalty,
-  createWriteOff,
+  createDetailedWriteOff,
   getWriteOffHistory,
   getAGMReport,
   getWriteOffReceipt,
@@ -80,7 +80,7 @@ router.get('/writeoffs', auth, adminAuth, getWriteOffs);
 router.get('/dashboard/writeoffs', auth, adminAuth, getWriteOffDashboard);
 router.get('/reports/writeoffs', auth, adminAuth, getWriteOffReport);
 router.get('/user/my-maintenance', auth, getUserMaintenance);
-router.post('/bills/:id/write-off', auth, adminAuth, createWriteOff);
+router.post('/bills/:id/write-off', auth, adminAuth, createDetailedWriteOff);
 router.get('/write-offs', auth, adminAuth, getWriteOffHistory);
 router.get('/agm-report', auth, adminAuth, getAGMReport);
 router.get('/bills/:id/write-off-receipt', auth, getWriteOffReceipt);

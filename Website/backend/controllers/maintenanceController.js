@@ -1937,7 +1937,7 @@ const getReports = async (req, res) => {
   }
 };
 
-const createWriteOff = async (req, res) => {
+const createDetailedWriteOff = async (req, res) => {
   const connection = await promisePool.getConnection();
   try {
     const { id } = req.params;
@@ -2604,7 +2604,7 @@ module.exports = {
   getSettings,
   saveSettings,
   applyPenalty,
-  createWriteOff,
+  createDetailedWriteOff,
   getWriteOffHistory,
   getAGMReport,
   getWriteOffReceipt,
