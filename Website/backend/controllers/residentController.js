@@ -73,7 +73,15 @@ const getDashboard = async (req, res) => {
     const billSummary = billSummaryRows[0] || {};
 
     const [currentBillRows] = await promisePool.query(
-      `SELECT m.*, m.status AS payment_status, f.flat_no
+      `SELECT m.*, 
+              m.amount AS "maintenanceAmount", m.amount AS maintenance_amount,
+              m.penalty_amount AS "penaltyAmount", m.penalty_amount AS penalty_amount,
+              m.total_amount AS "originalAmount", m.total_amount AS original_amount,
+              m.maintenance_write_off_amount AS "maintenanceWrittenOff", m.maintenance_write_off_amount AS maintenance_written_off,
+              m.penalty_write_off_amount AS "penaltyWrittenOff", m.penalty_write_off_amount AS penalty_written_off,
+              m.write_off_amount AS "totalWrittenOff", m.write_off_amount AS total_written_off,
+              m.remaining_amount AS "remainingPayable", m.remaining_amount AS remaining_payable,
+              m.status AS payment_status, f.flat_no
        FROM maintenance m
        LEFT JOIN flats f ON m.flat_id = f.id
        WHERE m.resident_id = ? AND m.status != 'Paid'
@@ -148,7 +156,15 @@ const getMaintenance = async (req, res) => {
   try {
     const userId = req.user.id;
     const [maintenance] = await promisePool.query(
-      `SELECT m.*, m.status AS payment_status, f.flat_no
+      `SELECT m.*, 
+              m.amount AS "maintenanceAmount", m.amount AS maintenance_amount,
+              m.penalty_amount AS "penaltyAmount", m.penalty_amount AS penalty_amount,
+              m.total_amount AS "originalAmount", m.total_amount AS original_amount,
+              m.maintenance_write_off_amount AS "maintenanceWrittenOff", m.maintenance_write_off_amount AS maintenance_written_off,
+              m.penalty_write_off_amount AS "penaltyWrittenOff", m.penalty_write_off_amount AS penalty_written_off,
+              m.write_off_amount AS "totalWrittenOff", m.write_off_amount AS total_written_off,
+              m.remaining_amount AS "remainingPayable", m.remaining_amount AS remaining_payable,
+              m.status AS payment_status, f.flat_no
        FROM maintenance m
        LEFT JOIN flats f ON m.flat_id = f.id
        WHERE m.resident_id = ?
@@ -355,10 +371,14 @@ const getReportMaintenance = async (req, res) => {
               ${monthExpression} AS month,
               ${yearExpression} AS year,
               m.amount,
-              ${reportColumns.penalty === '0' ? '0' : `m.${reportColumns.penalty}`} AS penalty_amount,
-              ${reportColumns.total === 'amount' ? 'm.amount' : `m.${reportColumns.total}`} AS total_amount,
+              m.amount AS "maintenanceAmount", m.amount AS maintenance_amount,
+              ${reportColumns.penalty === '0' ? '0' : `m.${reportColumns.penalty}`} AS "penaltyAmount", ${reportColumns.penalty === '0' ? '0' : `m.${reportColumns.penalty}`} AS penalty_amount,
+              ${reportColumns.total === 'amount' ? 'm.amount' : `m.${reportColumns.total}`} AS "originalAmount", ${reportColumns.total === 'amount' ? 'm.amount' : `m.${reportColumns.total}`} AS total_amount,
+              m.maintenance_write_off_amount AS "maintenanceWrittenOff", m.maintenance_write_off_amount AS maintenance_written_off,
+              m.penalty_write_off_amount AS "penaltyWrittenOff", m.penalty_write_off_amount AS penalty_written_off,
+              m.write_off_amount AS "totalWrittenOff", m.write_off_amount AS total_written_off,
+              ${reportColumns.remaining.includes('CASE') ? reportColumns.remaining.replace(/\bstatus\b/g, 'm.status').replace(/\bamount\b/g, 'm.amount') : `m.${reportColumns.remaining}`} AS "remainingPayable", ${reportColumns.remaining.includes('CASE') ? reportColumns.remaining.replace(/\bstatus\b/g, 'm.status').replace(/\bamount\b/g, 'm.amount') : `m.${reportColumns.remaining}`} AS remaining_amount,
               ${reportColumns.paid.includes('CASE') ? reportColumns.paid.replace(/\bstatus\b/g, 'm.status').replace(/\bamount\b/g, 'm.amount') : `m.${reportColumns.paid}`} AS paid_amount,
-              ${reportColumns.remaining.includes('CASE') ? reportColumns.remaining.replace(/\bstatus\b/g, 'm.status').replace(/\bamount\b/g, 'm.amount') : `m.${reportColumns.remaining}`} AS remaining_amount,
               m.due_date,
               ${reportColumns.paymentDate === 'NULL' ? 'NULL' : `m.${reportColumns.paymentDate}`} AS payment_date,
               m.status, f.flat_no, f.wing, f.floor_no
@@ -581,6 +601,7 @@ const getAllMaintenanceReport = async (req, res) => {
               f.flat_no,
               f.wing,
               f.floor_no,
+              ft.name AS flat_type_name,
               ${titleExpression} AS title,
               ${monthExpression} AS month,
               ${yearExpression} AS year,
@@ -592,13 +613,16 @@ const getAllMaintenanceReport = async (req, res) => {
               m.due_date,
               ${reportColumns.paymentDate === 'NULL' ? 'NULL' : `m.${reportColumns.paymentDate}`} AS payment_date,
               m.status AS payment_status,
-              m.status
+              m.status,
+              m.write_off_amount,
+              m.write_off_status
        FROM maintenance m
        JOIN users u
          ON u.id = m.resident_id
         AND u.role = 'resident'
         AND COALESCE(u.status, 'approved') = 'approved'
        LEFT JOIN flats f ON f.id = m.flat_id
+       LEFT JOIN flat_types ft ON m.flat_type_id = ft.id
        WHERE ${where.join(' AND ')}
        ORDER BY year DESC, month DESC, f.wing, f.floor_no, f.flat_no, u.name`,
       params

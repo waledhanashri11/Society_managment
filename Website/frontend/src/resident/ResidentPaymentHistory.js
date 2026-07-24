@@ -2,9 +2,13 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Download, Printer, QrCode, ReceiptIndianRupee } from 'lucide-react';
 import { maintenanceAPI, settingsAPI } from '../services/api';
 import { CardSkeleton, TableSkeleton } from '../components/Skeletons';
-import { downloadPaymentReceiptPdf, printPaymentReceipt, receiptAvailable } from '../utils/paymentReceipt';
+import { downloadPaymentReceiptPdf, printPaymentReceipt, receiptAvailable, printWriteOffReceipt, downloadWriteOffReceiptPdf } from '../utils/paymentReceipt';
 
 const unwrap = (response) => response?.data?.data ?? response?.data ?? [];
+const hasWriteOff = (bill) => Number(bill.write_off_amount || 0) > 0 || Boolean(bill.write_off_status);
+const billDisplayAmount = (bill) => hasWriteOff(bill)
+  ? bill.total_amount
+  : (bill.remainingPayable !== undefined ? bill.remainingPayable : (bill.remaining_amount !== undefined ? bill.remaining_amount : bill.total_amount));
 const money = (value) => `₹ ${Number(value || 0).toLocaleString('en-IN')}`;
 const monthName = (month) => new Date(2026, Number(month || 1) - 1).toLocaleDateString('en-IN', { month: 'short' });
 const fullDate = (value) => value ? new Date(value).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
@@ -72,6 +76,26 @@ const ResidentPaymentHistory = () => {
       await downloadPaymentReceiptPdf(await getReceipt(bill), paymentSettings);
     } catch (error) {
       notify('Could not download the receipt PDF');
+    }
+  };
+
+  const handlePrintWriteOffReceipt = async (bill) => {
+    try {
+      const response = await maintenanceAPI.getWriteOffReceipt(bill.id);
+      const receiptData = response.data?.data || response.data || {};
+      printWriteOffReceipt(receiptData, paymentSettings);
+    } catch (error) {
+      notify(error.message === 'Popup blocked' ? 'Popup blocked. Allow popups to print.' : 'Could not print the write-off receipt');
+    }
+  };
+
+  const handleDownloadWriteOffReceipt = async (bill) => {
+    try {
+      const response = await maintenanceAPI.getWriteOffReceipt(bill.id);
+      const receiptData = response.data?.data || response.data || {};
+      await downloadWriteOffReceiptPdf(receiptData, paymentSettings);
+    } catch (error) {
+      notify('Could not download the write-off receipt PDF');
     }
   };
 
@@ -196,8 +220,23 @@ const ResidentPaymentHistory = () => {
                       {bills.map((bill) => (
                         <tr key={bill.id}>
                           <td><strong>{monthName(bill.month)} {bill.year}</strong><div className="portal-muted-text">{bill.bill_number || `BILL-${bill.id}`}</div></td>
-                          <td>{money(bill.total_amount)}</td>
-                          <td><span className={`portal-status ${String(bill.payment_status).toLowerCase().replace(/\s+/g, '_')}`}>{bill.payment_status}</span></td>
+                           <td><strong>{money(billDisplayAmount(bill))}</strong></td>
+                           <td>
+                             <span style={{ 
+                               borderRadius: '99px', 
+                               padding: '2px 6px', 
+                               fontSize: '9px', 
+                               fontWeight: '700',
+                               color: bill.payment_status === 'Paid' ? '#05783b' : (bill.payment_status === 'Overdue' ? '#b42318' : '#bd5b00'),
+                               background: bill.payment_status === 'Paid' ? '#e8f8ef' : (bill.payment_status === 'Overdue' ? '#fef3f2' : '#fff2e5'),
+                               display: 'inline-block',
+                               textTransform: 'uppercase',
+                               letterSpacing: '0.02em',
+                               verticalAlign: 'middle'
+                             }}>
+                               {bill.write_off_status || bill.payment_status}
+                             </span>
+                           </td>
                           <td>{fullDate(bill.due_date)}</td>
                           <td>
                             {bill.rejection_reason ? (
@@ -208,7 +247,12 @@ const ResidentPaymentHistory = () => {
                           </td>
                           <td>{bill.rejection_reason ? fullDate(bill.rejected_at) : <span className="portal-muted-text">-</span>}</td>
                           <td>
-                            {receiptAvailable(bill.payment_status) ? (
+                            {hasWriteOff(bill) ? (
+                              <div className="portal-row-actions">
+                                <button onClick={() => handlePrintWriteOffReceipt(bill)} title="Print Receipt"><Printer size={12} /> Print Receipt</button>
+                                <button onClick={() => handleDownloadWriteOffReceipt(bill)} title="Download PDF"><Download size={12} /> Download PDF</button>
+                              </div>
+                            ) : receiptAvailable(bill.payment_status) ? (
                               <div className="portal-row-actions">
                                 <button onClick={() => printReceipt(bill)} title="Print Receipt"><Printer size={12} /> Print Receipt</button>
                                 <button onClick={() => downloadReceipt(bill)} title="Download PDF"><Download size={12} /> Download PDF</button>

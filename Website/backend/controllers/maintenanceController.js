@@ -298,7 +298,7 @@ const applyPenaltyLogic = async () => {
 
         const newPenaltyAmount = penalty;
         const newTotalAmount = Number(bill.amount) + newPenaltyAmount + itemsSum;
-        const newRemainingAmount = Math.max(0, newTotalAmount - Number(bill.paid_amount || 0));
+        const newRemainingAmount = Math.max(0, newTotalAmount - Number(bill.paid_amount || 0) - Number(bill.write_off_amount || 0));
         let status = 'Overdue';
         if (newRemainingAmount <= 0) {
           status = 'Paid';
@@ -316,7 +316,7 @@ const applyPenaltyLogic = async () => {
         // Not past grace period, but check if past due date to mark as Overdue (without penalty yet)
         if (dueDate < today) {
           const totalAmt = Number(bill.amount) + Number(bill.penalty_amount) + itemsSum;
-          const remaining = Math.max(0, totalAmt - Number(bill.paid_amount || 0));
+          const remaining = Math.max(0, totalAmt - Number(bill.paid_amount || 0) - Number(bill.write_off_amount || 0));
           let status = 'Overdue';
           if (remaining <= 0) {
             status = 'Paid';
@@ -330,7 +330,7 @@ const applyPenaltyLogic = async () => {
         } else {
           // If not past due date, double check if it is Partial or Pending
           const totalAmt = Number(bill.amount) + Number(bill.penalty_amount) + itemsSum;
-          const remaining = Math.max(0, totalAmt - Number(bill.paid_amount || 0));
+          const remaining = Math.max(0, totalAmt - Number(bill.paid_amount || 0) - Number(bill.write_off_amount || 0));
           let status = remaining <= 0 ? 'Paid' : (Number(bill.paid_amount) > 0 ? 'Partial' : 'Pending');
           await promisePool.query(
             `UPDATE maintenance SET status = ?, total_amount = ?, remaining_amount = ? WHERE id = ?`,
@@ -1553,26 +1553,32 @@ const getReports = async (req, res) => {
 
     switch (type) {
       case 'monthly-collection':
-        query = `SELECT EXTRACT(MONTH FROM payment_date) AS month, EXTRACT(YEAR FROM payment_date) AS year, SUM(amount) AS amount
-                 FROM maintenance WHERE status = 'Paid' AND payment_date IS NOT NULL GROUP BY EXTRACT(YEAR FROM payment_date), EXTRACT(MONTH FROM payment_date) ORDER BY year DESC, month DESC`;
+        query = `SELECT EXTRACT(MONTH FROM payment_date) AS month, EXTRACT(YEAR FROM payment_date) AS year, SUM(COALESCE(paid_amount, 0)) AS amount
+                 FROM maintenance WHERE payment_date IS NOT NULL AND COALESCE(paid_amount, 0) > 0 GROUP BY EXTRACT(YEAR FROM payment_date), EXTRACT(MONTH FROM payment_date) ORDER BY year DESC, month DESC`;
         break;
       case 'yearly-collection':
-        query = `SELECT EXTRACT(YEAR FROM payment_date) AS year, SUM(amount) AS amount FROM maintenance WHERE status = 'Paid' AND payment_date IS NOT NULL GROUP BY EXTRACT(YEAR FROM payment_date) ORDER BY year DESC`;
+        query = `SELECT EXTRACT(YEAR FROM payment_date) AS year, SUM(COALESCE(paid_amount, 0)) AS amount FROM maintenance WHERE payment_date IS NOT NULL AND COALESCE(paid_amount, 0) > 0 GROUP BY EXTRACT(YEAR FROM payment_date) ORDER BY year DESC`;
         break;
       case 'pending-bills':
-        query = `SELECT m.*, m.status AS payment_status, m.total_amount AS total_amount, u.name AS resident_name, f.flat_no, ft.name AS flat_type_name FROM maintenance m JOIN users u ON m.resident_id = u.id JOIN flats f ON m.flat_id = f.id LEFT JOIN flat_types ft ON m.flat_type_id = ft.id WHERE m.status != 'Paid' ORDER BY m.due_date ASC`;
+        query = `SELECT m.*, m.status AS payment_status, m.total_amount AS total_amount, u.name AS resident_name, f.flat_no, ft.name AS flat_type_name FROM maintenance m JOIN users u ON m.resident_id = u.id JOIN flats f ON m.flat_id = f.id LEFT JOIN flat_types ft ON m.flat_type_id = ft.id WHERE COALESCE(m.remaining_amount, m.total_amount) > 0 ORDER BY m.due_date ASC`;
         break;
       case 'paid-bills':
-        query = `SELECT m.*, m.status AS payment_status, m.total_amount AS total_amount, u.name AS resident_name, f.flat_no, ft.name AS flat_type_name FROM maintenance m JOIN users u ON m.resident_id = u.id JOIN flats f ON m.flat_id = f.id LEFT JOIN flat_types ft ON m.flat_type_id = ft.id WHERE m.status = 'Paid' ORDER BY m.payment_date DESC`;
+        query = `SELECT m.*, m.status AS payment_status, m.total_amount AS total_amount, u.name AS resident_name, f.flat_no, ft.name AS flat_type_name FROM maintenance m JOIN users u ON m.resident_id = u.id JOIN flats f ON m.flat_id = f.id LEFT JOIN flat_types ft ON m.flat_type_id = ft.id WHERE COALESCE(m.remaining_amount, 0) <= 0 OR m.status = 'Paid' ORDER BY m.payment_date DESC`;
         break;
       case 'defaulters':
-        query = `SELECT m.*, m.status AS payment_status, m.total_amount AS total_amount, u.name AS resident_name, f.flat_no, ft.name AS flat_type_name FROM maintenance m JOIN users u ON m.resident_id = u.id JOIN flats f ON m.flat_id = f.id LEFT JOIN flat_types ft ON m.flat_type_id = ft.id WHERE m.status != 'Paid' AND m.due_date < CURRENT_DATE ORDER BY m.due_date ASC`;
+        query = `SELECT m.*, m.status AS payment_status, m.total_amount AS total_amount, u.name AS resident_name, f.flat_no, ft.name AS flat_type_name FROM maintenance m JOIN users u ON m.resident_id = u.id JOIN flats f ON m.flat_id = f.id LEFT JOIN flat_types ft ON m.flat_type_id = ft.id WHERE COALESCE(m.remaining_amount, m.total_amount) > 0 AND m.due_date < CURRENT_DATE ORDER BY m.due_date ASC`;
         break;
       case 'income-summary':
-        query = `SELECT SUM(total_amount) AS total_collection, SUM(CASE WHEN status = 'Paid' THEN paid_amount ELSE 0 END) AS paid_collection, SUM(CASE WHEN status != 'Paid' THEN remaining_amount ELSE 0 END) AS pending_collection FROM maintenance`;
+        query = `SELECT SUM(total_amount) AS total_bills_generated, SUM(COALESCE(paid_amount, 0)) AS total_collection, SUM(COALESCE(remaining_amount, 0)) AS pending_collection FROM maintenance`;
         break;
       default:
-        query = `SELECT COUNT(*) AS total_bills, SUM(CASE WHEN status = 'Paid' THEN 1 ELSE 0 END) AS paid_bills, SUM(CASE WHEN status != 'Paid' THEN 1 ELSE 0 END) AS pending_bills, SUM(CASE WHEN due_date < CURRENT_DATE AND status != 'Paid' THEN 1 ELSE 0 END) AS overdue_bills, SUM(CASE WHEN status = 'Paid' THEN paid_amount ELSE 0 END) AS total_collection, SUM(CASE WHEN status != 'Paid' THEN remaining_amount ELSE 0 END) AS pending_collection FROM maintenance`;
+        query = `SELECT COUNT(*) AS total_bills,
+                        SUM(CASE WHEN COALESCE(remaining_amount, 0) <= 0 OR status = 'Paid' THEN 1 ELSE 0 END) AS paid_bills,
+                        SUM(CASE WHEN COALESCE(remaining_amount, total_amount) > 0 AND (due_date >= CURRENT_DATE OR due_date IS NULL) THEN 1 ELSE 0 END) AS pending_bills,
+                        SUM(CASE WHEN due_date < CURRENT_DATE AND COALESCE(remaining_amount, total_amount) > 0 THEN 1 ELSE 0 END) AS overdue_bills,
+                        SUM(COALESCE(paid_amount, 0)) AS total_collection,
+                        SUM(COALESCE(remaining_amount, 0)) AS pending_collection
+                 FROM maintenance`;
     }
 
     const [rows] = await promisePool.query(query);
@@ -1580,6 +1586,644 @@ const getReports = async (req, res) => {
   } catch (error) {
     console.error('Get reports error:', error);
     return sendResponse(res, 500, 'Server error', null, ['Unable to fetch reports']);
+  }
+};
+
+const createWriteOff = async (req, res) => {
+  const connection = await promisePool.getConnection();
+  try {
+    const { id } = req.params;
+    const { type, reason, amount } = req.body;
+
+    if (!type || !reason || !['Maintenance', 'Penalty', 'Full'].includes(type)) {
+      return sendResponse(res, 400, 'Type and reason are required');
+    }
+
+    await connection.beginTransaction();
+
+    const [bills] = await connection.query('SELECT * FROM maintenance WHERE id = ?', [id]);
+    if (bills.length === 0) {
+      await connection.rollback();
+      return sendResponse(res, 404, 'Bill not found');
+    }
+    const bill = bills[0];
+    const remaining = Number(bill.remaining_amount || 0);
+
+    if (remaining <= 0) {
+      await connection.rollback();
+      return sendResponse(res, 400, 'Bill is already fully paid or written off');
+    }
+
+    let writeOffAmt = 0;
+    let maintWriteOffAmt = 0;
+    let penaltyWriteOffAmt = 0;
+
+    const currentMaintWriteOff = Number(bill.maintenance_write_off_amount || 0);
+    const currentPenaltyWriteOff = Number(bill.penalty_write_off_amount || 0);
+
+    if (type === 'Full') {
+      writeOffAmt = remaining;
+      maintWriteOffAmt = Math.max(0, Number(bill.amount) - currentMaintWriteOff);
+      penaltyWriteOffAmt = Math.max(0, Number(bill.penalty_amount) - currentPenaltyWriteOff);
+    } else if (type === 'Maintenance') {
+      writeOffAmt = Number(amount);
+      if (!writeOffAmt || writeOffAmt <= 0) {
+        await connection.rollback();
+        return sendResponse(res, 400, 'A valid write-off amount is required');
+      }
+      const maxMaintWriteOff = Math.max(0, Number(bill.amount) - currentMaintWriteOff);
+      if (writeOffAmt > maxMaintWriteOff) {
+        await connection.rollback();
+        return sendResponse(res, 400, `Write-off amount exceeds remaining maintenance balance of ${maxMaintWriteOff}`);
+      }
+      if (writeOffAmt > remaining) {
+        await connection.rollback();
+        return sendResponse(res, 400, `Write-off amount exceeds remaining bill balance of ${remaining}`);
+      }
+      maintWriteOffAmt = writeOffAmt;
+    } else if (type === 'Penalty') {
+      writeOffAmt = Number(amount);
+      if (!writeOffAmt || writeOffAmt <= 0) {
+        await connection.rollback();
+        return sendResponse(res, 400, 'A valid write-off amount is required');
+      }
+      const maxPenaltyWriteOff = Math.max(0, Number(bill.penalty_amount) - currentPenaltyWriteOff);
+      if (writeOffAmt > maxPenaltyWriteOff) {
+        await connection.rollback();
+        return sendResponse(res, 400, `Write-off amount exceeds remaining penalty balance of ${maxPenaltyWriteOff}`);
+      }
+      if (writeOffAmt > remaining) {
+        await connection.rollback();
+        return sendResponse(res, 400, `Write-off amount exceeds remaining bill balance of ${remaining}`);
+      }
+      penaltyWriteOffAmt = writeOffAmt;
+    }
+
+
+    const [adminRows] = await connection.query('SELECT name FROM users WHERE id = ?', [req.user.id]);
+    const adminName = adminRows[0]?.name || req.user.name || 'Admin';
+
+    const [writeOffResult] = await connection.query(
+      `INSERT INTO write_offs (bill_id, type, amount, maintenance_write_off_amount, penalty_write_off_amount, reason, admin_id, admin_name)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, type, writeOffAmt, maintWriteOffAmt, penaltyWriteOffAmt, reason.trim(), req.user.id, adminName]
+    );
+    const writeOffId = writeOffResult.insertId || writeOffResult.id;
+
+    const newMaintWriteOffTotal = currentMaintWriteOff + maintWriteOffAmt;
+    const newPenaltyWriteOffTotal = currentPenaltyWriteOff + penaltyWriteOffAmt;
+    const newWriteOffTotal = Number(bill.write_off_amount || 0) + writeOffAmt;
+    const newRemaining = Math.max(0, remaining - writeOffAmt);
+    const newStatus = newRemaining <= 0 ? 'Paid' : bill.status;
+
+    let writeOffStatus = 'Partially Written Off';
+    if (newRemaining <= 0) {
+      writeOffStatus = 'Fully Written Off';
+    } else if (newMaintWriteOffTotal > 0 && newPenaltyWriteOffTotal === 0) {
+      writeOffStatus = 'Maintenance Written Off';
+    } else if (newPenaltyWriteOffTotal > 0 && newMaintWriteOffTotal === 0) {
+      writeOffStatus = 'Penalty Written Off';
+    }
+
+    await connection.query(
+      `UPDATE maintenance
+       SET remaining_amount = ?, write_off_amount = ?, maintenance_write_off_amount = ?, penalty_write_off_amount = ?, status = ?, write_off_status = ?, updated_at = NOW()
+       WHERE id = ?`,
+      [newRemaining, newWriteOffTotal, newMaintWriteOffTotal, newPenaltyWriteOffTotal, newStatus, writeOffStatus, id]
+    );
+
+    // Audit log
+    const auditDetails = {
+      writeOffId,
+      billId: id,
+      type,
+      amount: writeOffAmt,
+      reason,
+      adminName,
+      dateTime: new Date().toISOString()
+    };
+    await connection.query(
+      `INSERT INTO maintenance_audit_logs (user_id, action, entity_type, entity_id, details)
+       VALUES (?, ?, ?, ?, ?)`,
+      [req.user.id, 'CREATE_WRITE_OFF', 'WRITE_OFF', writeOffId, JSON.stringify(auditDetails)]
+    );
+
+    // Resident notification
+    await connection.query(
+      `INSERT INTO notifications (resident_id, title, message, type, is_read, created_at)
+       VALUES (?, ?, ?, 'maintenance', false, NOW())`,
+      [
+        bill.resident_id,
+        'Bill Status Updated',
+        `Your maintenance bill "${bill.title}" status has been updated to ${newStatus}.`,
+      ]
+    );
+
+    await connection.commit();
+    return sendResponse(res, 201, 'Write-off recorded successfully', { writeOffId });
+  } catch (error) {
+    try { await connection.rollback(); } catch (e) {}
+    console.error('Create write-off error:', error);
+    return sendResponse(res, 500, 'Server error', null, ['Unable to record write-off']);
+  } finally {
+    connection.release();
+  }
+};
+
+const getWriteOffHistory = async (req, res) => {
+  try {
+    const { resident, flat, wing, month, startDate, endDate, type } = req.query;
+    let query = `
+      SELECT w.*, m.month, m.year, m.title AS bill_title, m.amount AS bill_amount, m.penalty_amount AS bill_penalty, m.total_amount AS bill_total, m.remaining_amount AS bill_remaining,
+             u.name AS resident_name, f.flat_no, f.wing
+      FROM write_offs w
+      JOIN maintenance m ON w.bill_id = m.id
+      JOIN users u ON m.resident_id = u.id
+      JOIN flats f ON m.flat_id = f.id
+      WHERE 1 = 1
+    `;
+    const params = [];
+
+    if (resident) {
+      query += ` AND (u.name ILIKE ? OR u.id = ?)`;
+      params.push(`%${resident}%`, Number(resident) || -1);
+    }
+    if (flat) {
+      query += ` AND f.flat_no = ?`;
+      params.push(flat);
+    }
+    if (wing) {
+      query += ` AND f.wing = ?`;
+      params.push(wing);
+    }
+    if (month) {
+      query += ` AND m.month = ?`;
+      params.push(Number(month));
+    }
+    if (type) {
+      query += ` AND w.type = ?`;
+      params.push(type);
+    }
+    if (startDate) {
+      query += ` AND w.created_at >= ?`;
+      params.push(new Date(startDate));
+    }
+    if (endDate) {
+      query += ` AND w.created_at <= ?`;
+      params.push(new Date(endDate));
+    }
+
+    query += ` ORDER BY w.created_at DESC`;
+
+    const [rows] = await promisePool.query(query, params);
+    return sendResponse(res, 200, 'Write-off history fetched successfully', rows);
+  } catch (error) {
+    console.error('Get write-off history error:', error);
+    return sendResponse(res, 500, 'Server error', null, ['Unable to fetch write-off history']);
+  }
+};
+
+const getAGMReport = async (req, res) => {
+  try {
+    const { financialYear, startDate, endDate, resident, flat, wing, month, type } = req.query;
+    
+    let whereClause = 'WHERE 1=1';
+    const params = [];
+    
+    if (financialYear) {
+      const parts = financialYear.split('-');
+      if (parts.length === 2) {
+        const startY = Number(parts[0]);
+        const endY = Number(parts[1]);
+        whereClause += ` AND ((m.year = ? AND m.month >= 4) OR (m.year = ? AND m.month <= 3))`;
+        params.push(startY, endY);
+      } else {
+        whereClause += ` AND m.year = ?`;
+        params.push(Number(financialYear));
+      }
+    }
+    
+    if (startDate) {
+      whereClause += ` AND m.created_at >= ?`;
+      params.push(new Date(startDate));
+    }
+    if (endDate) {
+      whereClause += ` AND m.created_at <= ?`;
+      params.push(new Date(endDate));
+    }
+    if (resident) {
+      whereClause += ` AND (u.name ILIKE ? OR u.id = ?)`;
+      params.push(`%${resident}%`, Number(resident) || -1);
+    }
+    if (flat) {
+      whereClause += ` AND f.flat_no = ?`;
+      params.push(flat);
+    }
+    if (wing) {
+      whereClause += ` AND f.wing = ?`;
+      params.push(wing);
+    }
+    if (month) {
+      whereClause += ` AND m.month = ?`;
+      params.push(Number(month));
+    }
+
+    // 1. Financial Summary:
+    const [[financialSummary]] = await promisePool.query(`
+      SELECT 
+        COALESCE(SUM(m.total_amount), 0) AS total_bills_generated,
+        COALESCE(SUM(m.paid_amount), 0) AS total_amount_collected,
+        COALESCE(SUM(m.remaining_amount), 0) AS outstanding_amount
+      FROM maintenance m
+      JOIN users u ON m.resident_id = u.id
+      JOIN flats f ON m.flat_id = f.id
+      ${whereClause}
+    `, params);
+
+    // 2. Write-Off Summary & Counts calculated directly from write_offs table:
+    let writeOffsWhere = 'WHERE 1=1';
+    const writeOffsParams = [];
+    if (financialYear && financialYear !== 'All') {
+      const parts = financialYear.split('-');
+      if (parts.length === 2) {
+        const startY = Number(parts[0]);
+        const endY = Number(parts[1]);
+        writeOffsWhere += ` AND ((m.year = ? AND m.month >= 4) OR (m.year = ? AND m.month <= 3))`;
+        writeOffsParams.push(startY, endY);
+      } else {
+        writeOffsWhere += ` AND m.year = ?`;
+        writeOffsParams.push(Number(financialYear));
+      }
+    }
+    if (startDate) {
+      writeOffsWhere += ` AND w.created_at >= ?`;
+      writeOffsParams.push(new Date(startDate));
+    }
+    if (endDate) {
+      writeOffsWhere += ` AND w.created_at <= ?`;
+      writeOffsParams.push(new Date(endDate));
+    }
+    if (resident) {
+      writeOffsWhere += ` AND (u.name ILIKE ? OR u.id = ?)`;
+      writeOffsParams.push(`%${resident}%`, Number(resident) || -1);
+    }
+    if (flat) {
+      writeOffsWhere += ` AND f.flat_no = ?`;
+      writeOffsParams.push(flat);
+    }
+    if (wing) {
+      writeOffsWhere += ` AND f.wing = ?`;
+      writeOffsParams.push(wing);
+    }
+    if (month) {
+      writeOffsWhere += ` AND m.month = ?`;
+      writeOffsParams.push(Number(month));
+    }
+    if (type) {
+      writeOffsWhere += ` AND w.type = ?`;
+      writeOffsParams.push(type);
+    }
+
+    const [[writeOffSummary]] = await promisePool.query(`
+      SELECT 
+        COALESCE(SUM(w.maintenance_write_off_amount), 0) AS total_maintenance_write_off,
+        COALESCE(SUM(w.penalty_write_off_amount), 0) AS total_penalty_write_off,
+        COALESCE(SUM(w.amount), 0) AS total_write_off,
+        COUNT(w.id) AS total_write_off_count,
+        COUNT(CASE WHEN w.type = 'Full' THEN 1 END) AS number_fully_written_off,
+        COUNT(CASE WHEN w.maintenance_write_off_amount > 0 THEN 1 END) AS number_maint_write_offs,
+        COUNT(CASE WHEN w.penalty_write_off_amount > 0 THEN 1 END) AS number_penalty_write_offs
+      FROM write_offs w
+      JOIN maintenance m ON w.bill_id = m.id
+      JOIN users u ON m.resident_id = u.id
+      JOIN flats f ON m.flat_id = f.id
+      ${writeOffsWhere}
+    `, writeOffsParams);
+
+    // Detailed write-off table with exact amount collected (paid_amount)
+    const [detailedTable] = await promisePool.query(`
+      SELECT w.*, m.month, m.year, m.title AS bill_title, m.amount AS bill_amount, m.penalty_amount AS bill_penalty, m.total_amount AS bill_total, m.paid_amount AS bill_paid, m.remaining_amount AS bill_remaining,
+             u.name AS resident_name, f.flat_no, f.wing
+      FROM write_offs w
+      JOIN maintenance m ON w.bill_id = m.id
+      JOIN users u ON m.resident_id = u.id
+      JOIN flats f ON m.flat_id = f.id
+      ${writeOffsWhere}
+      ORDER BY w.created_at DESC
+    `, writeOffsParams);
+
+    let expenseWhere = 'WHERE 1=1';
+    const expenseParams = [];
+    if (financialYear && financialYear !== 'All') {
+      const parts = financialYear.split('-');
+      if (parts.length === 2) {
+        expenseWhere += ` AND expense_date >= ? AND expense_date <= ?`;
+        expenseParams.push(`${parts[0]}-04-01`, `${parts[1]}-03-31`);
+      } else {
+        expenseWhere += ` AND EXTRACT(YEAR FROM expense_date) = ?`;
+        expenseParams.push(Number(financialYear));
+      }
+    }
+    if (startDate) {
+      expenseWhere += ` AND expense_date >= ?`;
+      expenseParams.push(new Date(startDate));
+    }
+    if (endDate) {
+      expenseWhere += ` AND expense_date <= ?`;
+      expenseParams.push(new Date(endDate));
+    }
+
+    const [[expenseRow]] = await promisePool.query(`
+      SELECT COALESCE(SUM(amount), 0) AS total_expenses 
+      FROM maintenance_expenses
+      ${expenseWhere}
+    `, expenseParams);
+    const totalExpenses = Number(expenseRow?.total_expenses || 0);
+    const totalCollection = Number(financialSummary.total_amount_collected || 0);
+
+    return sendResponse(res, 200, 'AGM report fetched successfully', {
+      financialSummary: {
+        totalBillsGenerated: Number(financialSummary.total_bills_generated),
+        totalAmountCollected: totalCollection,
+        outstandingAmount: Number(financialSummary.outstanding_amount),
+        totalExpenses: totalExpenses,
+        netBalance: totalCollection - totalExpenses
+      },
+      writeOffSummary: {
+        totalMaintenanceWriteOff: Number(writeOffSummary.total_maintenance_write_off),
+        totalPenaltyWriteOff: Number(writeOffSummary.total_penalty_write_off),
+        totalWriteOff: Number(writeOffSummary.total_write_off),
+        numberMaintenanceWriteOffs: Number(writeOffSummary.number_maint_write_offs),
+        numberPenaltyWriteOffs: Number(writeOffSummary.number_penalty_write_offs),
+        numberFullyWrittenOff: Number(writeOffSummary.number_fully_written_off),
+        numberWriteOffs: Number(writeOffSummary.total_write_off_count)
+      },
+      detailedTable
+    });
+  } catch (error) {
+    console.error('Get AGM report error:', error);
+    return sendResponse(res, 500, 'Server error', null, ['Unable to fetch AGM report']);
+  }
+};
+
+const getWriteOffReceipt = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const [bills] = await promisePool.query(`
+      SELECT m.*, u.name AS resident_name, f.flat_no, ft.name AS flat_type_name
+      FROM maintenance m
+      JOIN users u ON m.resident_id = u.id
+      JOIN flats f ON m.flat_id = f.id
+      LEFT JOIN flat_types ft ON m.flat_type_id = ft.id
+      WHERE m.id = ?
+    `, [id]);
+
+    if (bills.length === 0) {
+      return sendResponse(res, 404, 'Bill not found');
+    }
+    const bill = bills[0];
+
+    if (req.user.role !== 'admin' && req.user.role !== 'super_admin' && bill.resident_id !== req.user.id) {
+      return sendResponse(res, 403, 'Access denied. You can only view your own bills.');
+    }
+
+    if (Number(bill.write_off_amount) <= 0) {
+      return sendResponse(res, 400, 'No write-off details exist for this bill');
+    }
+
+    const [writeOffs] = await promisePool.query(`
+      SELECT * FROM write_offs WHERE bill_id = ? ORDER BY created_at DESC LIMIT 1
+    `, [id]);
+
+    const receipt = {
+      id: bill.id,
+      bill_id: bill.id,
+      bill_number: bill.bill_number || `BILL-${bill.id}`,
+      resident_name: bill.resident_name,
+      flat_no: bill.flat_no,
+      flat_type_name: bill.flat_type_name,
+      month: bill.month,
+      year: bill.year,
+      due_date: bill.due_date,
+      base_maintenance_charge: Number(bill.amount),
+      late_fee: Number(bill.penalty_amount),
+      total_amount: Number(bill.total_amount),
+      write_off_amount: Number(bill.write_off_amount),
+      remaining_amount: Number(bill.remaining_amount),
+      paid_amount: 0,
+      reason: writeOffs[0]?.reason || 'Approved write-off',
+      approved_by: writeOffs[0]?.admin_name || 'Admin',
+      approval_date: writeOffs[0]?.created_at || bill.updated_at
+    };
+
+    return sendResponse(res, 200, 'Write-off receipt fetched successfully', receipt);
+  } catch (error) {
+    console.error('Get write-off receipt error:', error);
+    return sendResponse(res, 500, 'Server error', null, ['Unable to fetch write-off receipt']);
+  }
+};
+
+const reverseWriteOff = async (req, res) => {
+  const connection = await promisePool.getConnection();
+  try {
+    const { id } = req.params;
+    await connection.beginTransaction();
+
+    const [writeOffs] = await connection.query('SELECT * FROM write_offs WHERE id = ?', [id]);
+    if (writeOffs.length === 0) {
+      await connection.rollback();
+      return sendResponse(res, 404, 'Write-off record not found');
+    }
+    const writeOff = writeOffs[0];
+
+    const [bills] = await connection.query('SELECT * FROM maintenance WHERE id = ?', [writeOff.bill_id]);
+    if (bills.length === 0) {
+      await connection.rollback();
+      return sendResponse(res, 404, 'Associated bill not found');
+    }
+    const bill = bills[0];
+
+    const newMaintWriteOffTotal = Math.max(0, Number(bill.maintenance_write_off_amount || 0) - Number(writeOff.maintenance_write_off_amount));
+    const newPenaltyWriteOffTotal = Math.max(0, Number(bill.penalty_write_off_amount || 0) - Number(writeOff.penalty_write_off_amount));
+    const newWriteOffTotal = Math.max(0, Number(bill.write_off_amount || 0) - Number(writeOff.amount));
+    const newRemaining = Number(bill.remaining_amount || 0) + Number(writeOff.amount);
+    
+    let newStatus = 'Pending';
+    if (bill.due_date && new Date(bill.due_date) < new Date()) {
+      newStatus = 'Overdue';
+    }
+
+    let writeOffStatus = null;
+    if (newWriteOffTotal > 0) {
+      if (newRemaining <= 0) {
+        writeOffStatus = 'Fully Written Off';
+      } else if (newMaintWriteOffTotal > 0 && newPenaltyWriteOffTotal === 0) {
+        writeOffStatus = 'Maintenance Written Off';
+      } else if (newPenaltyWriteOffTotal > 0 && newMaintWriteOffTotal === 0) {
+        writeOffStatus = 'Penalty Written Off';
+      } else {
+        writeOffStatus = 'Partially Written Off';
+      }
+    }
+
+    await connection.query(
+      `UPDATE maintenance
+       SET remaining_amount = ?, write_off_amount = ?, maintenance_write_off_amount = ?, penalty_write_off_amount = ?, status = ?, write_off_status = ?, updated_at = NOW()
+       WHERE id = ?`,
+      [newRemaining, newWriteOffTotal, newMaintWriteOffTotal, newPenaltyWriteOffTotal, newStatus, writeOffStatus, writeOff.bill_id]
+    );
+
+    await connection.query('DELETE FROM write_offs WHERE id = ?', [id]);
+
+    const auditDetails = {
+      writeOffId: id,
+      billId: writeOff.bill_id,
+      reversedAmount: writeOff.amount,
+      adminName: req.user.name || 'Super Admin',
+      dateTime: new Date().toISOString()
+    };
+    await connection.query(
+      `INSERT INTO maintenance_audit_logs (user_id, action, entity_type, entity_id, details)
+       VALUES (?, ?, ?, ?, ?)`,
+      [req.user.id, 'REVERSE_WRITE_OFF', 'WRITE_OFF', id, JSON.stringify(auditDetails)]
+    );
+
+    await connection.query(
+      `INSERT INTO notifications (resident_id, title, message, type, is_read, created_at)
+       VALUES (?, ?, ?, 'maintenance', false, NOW())`,
+      [
+        bill.resident_id,
+        'Write-Off Reversed',
+        `A write-off of ₹${Number(writeOff.amount).toLocaleString('en-IN')} has been reversed for your bill: ${bill.title}.`,
+      ]
+    );
+
+    await connection.commit();
+    return sendResponse(res, 200, 'Write-off reversed successfully');
+  } catch (error) {
+    try { await connection.rollback(); } catch (e) {}
+    console.error('Reverse write-off error:', error);
+    return sendResponse(res, 500, 'Server error', null, ['Unable to reverse write-off']);
+  } finally {
+    connection.release();
+  }
+};
+
+const editWriteOff = async (req, res) => {
+  const connection = await promisePool.getConnection();
+  try {
+    const { id } = req.params;
+    const { reason, amount } = req.body;
+
+    if (!reason || amount === undefined || Number(amount) <= 0) {
+      return sendResponse(res, 400, 'Reason and valid amount are required');
+    }
+
+    await connection.beginTransaction();
+
+    const [writeOffs] = await connection.query('SELECT * FROM write_offs WHERE id = ?', [id]);
+    if (writeOffs.length === 0) {
+      await connection.rollback();
+      return sendResponse(res, 404, 'Write-off record not found');
+    }
+    const writeOff = writeOffs[0];
+
+    const [bills] = await connection.query('SELECT * FROM maintenance WHERE id = ?', [writeOff.bill_id]);
+    if (bills.length === 0) {
+      await connection.rollback();
+      return sendResponse(res, 404, 'Associated bill not found');
+    }
+    const bill = bills[0];
+
+    const oldAmount = Number(writeOff.amount);
+    const newAmount = Number(amount);
+    const diff = newAmount - oldAmount;
+
+    const remaining = Number(bill.remaining_amount || 0);
+    if (diff > remaining) {
+      await connection.rollback();
+      return sendResponse(res, 400, `Cannot increase write-off by ${diff} because bill remaining payable is only ${remaining}`);
+    }
+
+    let newMaintWriteOff = Number(writeOff.maintenance_write_off_amount);
+    let newPenaltyWriteOff = Number(writeOff.penalty_write_off_amount);
+
+    if (writeOff.type === 'Maintenance') {
+      newMaintWriteOff = newAmount;
+      const maxMaintWriteOff = Math.max(0, Number(bill.amount) - Number(bill.maintenance_write_off_amount || 0) + oldAmount);
+      if (newMaintWriteOff > maxMaintWriteOff) {
+        await connection.rollback();
+        return sendResponse(res, 400, `Write-off exceeds maximum maintenance capacity of ${maxMaintWriteOff}`);
+      }
+    } else if (writeOff.type === 'Penalty') {
+      newPenaltyWriteOff = newAmount;
+      const maxPenaltyWriteOff = Math.max(0, Number(bill.penalty_amount) - Number(bill.penalty_write_off_amount || 0) + oldAmount);
+      if (newPenaltyWriteOff > maxPenaltyWriteOff) {
+        await connection.rollback();
+        return sendResponse(res, 400, `Write-off exceeds maximum penalty capacity of ${maxPenaltyWriteOff}`);
+      }
+    } else if (writeOff.type === 'Full') {
+      const capacity = Number(bill.amount) + Number(bill.penalty_amount);
+      if (newAmount > capacity) {
+        await connection.rollback();
+        return sendResponse(res, 400, `Full write-off cannot exceed bill capacity of ${capacity}`);
+      }
+      newMaintWriteOff = Math.min(newAmount, Number(bill.amount));
+      newPenaltyWriteOff = Math.max(0, newAmount - newMaintWriteOff);
+    }
+
+    await connection.query(
+      `UPDATE write_offs
+       SET amount = ?, maintenance_write_off_amount = ?, penalty_write_off_amount = ?, reason = ?
+       WHERE id = ?`,
+      [newAmount, newMaintWriteOff, newPenaltyWriteOff, reason.trim(), id]
+    );
+
+    const newBillMaintWriteOff = Math.max(0, Number(bill.maintenance_write_off_amount || 0) - Number(writeOff.maintenance_write_off_amount) + newMaintWriteOff);
+    const newBillPenaltyWriteOff = Math.max(0, Number(bill.penalty_write_off_amount || 0) - Number(writeOff.penalty_write_off_amount) + newPenaltyWriteOff);
+    const newBillWriteOff = Math.max(0, Number(bill.write_off_amount || 0) - oldAmount + newAmount);
+    const newRemaining = Math.max(0, remaining - diff);
+    const newStatus = newRemaining <= 0 ? 'Paid' : (bill.status === 'Paid' ? 'Pending' : bill.status);
+
+    let writeOffStatus = 'Partially Written Off';
+    if (newRemaining <= 0) {
+      writeOffStatus = 'Fully Written Off';
+    } else if (newBillMaintWriteOff > 0 && newBillPenaltyWriteOff === 0) {
+      writeOffStatus = 'Maintenance Written Off';
+    } else if (newBillPenaltyWriteOff > 0 && newBillMaintWriteOff === 0) {
+      writeOffStatus = 'Penalty Written Off';
+    }
+
+    await connection.query(
+      `UPDATE maintenance
+       SET remaining_amount = ?, write_off_amount = ?, maintenance_write_off_amount = ?, penalty_write_off_amount = ?, status = ?, write_off_status = ?, updated_at = NOW()
+       WHERE id = ?`,
+      [newRemaining, newBillWriteOff, newBillMaintWriteOff, newBillPenaltyWriteOff, newStatus, writeOffStatus, writeOff.bill_id]
+    );
+
+    const auditDetails = {
+      writeOffId: id,
+      billId: writeOff.bill_id,
+      oldAmount,
+      newAmount,
+      reason,
+      adminName: req.user.name || 'Super Admin',
+      dateTime: new Date().toISOString()
+    };
+    await connection.query(
+      `INSERT INTO maintenance_audit_logs (user_id, action, entity_type, entity_id, details)
+       VALUES (?, ?, ?, ?, ?)`,
+      [req.user.id, 'EDIT_WRITE_OFF', 'WRITE_OFF', id, JSON.stringify(auditDetails)]
+    );
+
+    await connection.commit();
+    return sendResponse(res, 200, 'Write-off updated successfully');
+  } catch (error) {
+    try { await connection.rollback(); } catch (e) {}
+    console.error('Edit write-off error:', error);
+    return sendResponse(res, 500, 'Server error', null, ['Unable to update write-off']);
+  } finally {
+    connection.release();
   }
 };
 
@@ -1607,5 +2251,11 @@ module.exports = {
   payMaintenanceBill,
   getSettings,
   saveSettings,
-  applyPenalty
+  applyPenalty,
+  createWriteOff,
+  getWriteOffHistory,
+  getAGMReport,
+  getWriteOffReceipt,
+  reverseWriteOff,
+  editWriteOff
 };

@@ -1,11 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Bell, Building2, CheckCircle2, Clock, CreditCard,
-  LockKeyhole, Mail, Phone, QrCode, Save, ShieldCheck, Upload, UserCog, X,
+  LockKeyhole, Mail, Moon, Phone, QrCode, Save, ShieldCheck, Sun, Upload, UserCog, X,
   SlidersHorizontal, Users
 } from 'lucide-react';
 import { getUser } from '../utils/auth';
+import { useTheme } from '../utils/theme';
 import { authAPI, settingsAPI, maintenanceAPI } from '../services/api';
+import { useTranslation } from 'react-i18next';
+import LanguageSelector from '../components/LanguageSelector';
 import './maintenance.css';
 
 const SETTINGS_KEY = 'adminSettings';
@@ -53,7 +56,9 @@ function SettingsModal({ title, subtitle, onClose, children }) {
 }
 
 const AdminSettings = () => {
+  const { t } = useTranslation();
   const user = getUser();
+  const { mode: themeMode, resolvedTheme, setThemeMode } = useTheme();
   const [tab, setTab] = useState('general');
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -174,6 +179,34 @@ const AdminSettings = () => {
 
   const removeQrImage = () => {
     setSettings((current) => ({ ...current, paymentQrImage: '' }));
+    setSaved(false);
+  };
+
+  const handleProfilePicUpload = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setError('Please upload an image file.');
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      setError('Please upload a smaller image under 2 MB.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      setSettings((current) => ({ ...current, profilePicture: reader.result }));
+      setSaved(false);
+      setError('');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const removeProfilePicture = () => {
+    setSettings((current) => ({ ...current, profilePicture: '' }));
     setSaved(false);
   };
 
@@ -347,7 +380,63 @@ const AdminSettings = () => {
       ) : tab === 'general' ? (
         <form onSubmit={handleSubmit} className="settings-grid">
           <section className="portal-panel settings-profile-card">
-            <div className="settings-admin-avatar">{adminInitials}</div>
+            <div className="settings-avatar-container" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+              <div className="settings-admin-avatar" style={{ position: 'relative', overflow: 'hidden' }}>
+                {settings.profilePicture ? (
+                  <img src={settings.profilePicture} alt="Admin" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+                ) : (
+                  adminInitials
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+                <button
+                  type="button"
+                  className="settings-photo-btn"
+                  onClick={() => document.getElementById('admin-profile-pic-input').click()}
+                  style={{
+                    padding: '4px 10px',
+                    fontSize: '12px',
+                    borderRadius: '6px',
+                    border: '1px solid #cbd5e1',
+                    background: 'white',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                >
+                  <Upload size={12} /> Upload
+                </button>
+                {settings.profilePicture && (
+                  <button
+                    type="button"
+                    className="settings-photo-btn"
+                    onClick={removeProfilePicture}
+                    style={{
+                      padding: '4px 10px',
+                      fontSize: '12px',
+                      borderRadius: '6px',
+                      border: '1px solid #fee2e2',
+                      background: '#fef2f2',
+                      color: '#ef4444',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                  >
+                    <X size={12} /> Remove
+                  </button>
+                )}
+              </div>
+              <input
+                id="admin-profile-pic-input"
+                type="file"
+                accept="image/*"
+                style={{ display: 'none' }}
+                onChange={handleProfilePicUpload}
+              />
+            </div>
             <h2>{user?.name || 'Admin'}</h2>
             <p>Administrator</p>
             <div className="settings-profile-meta">
@@ -355,7 +444,7 @@ const AdminSettings = () => {
               {user?.phone && <span><Phone size={14} /> {user.phone}</span>}
             </div>
             <button type="button" className="settings-secondary-btn" onClick={() => setShowPasswordForm((current) => !current)}>
-              <LockKeyhole size={15} /> Change Password
+              <LockKeyhole size={15} /> {t('profile.changePassword')}
             </button>
             {showPasswordForm && (
               <div className="settings-password-box">
@@ -364,50 +453,79 @@ const AdminSettings = () => {
                 <input
                   name="currentPassword"
                   type="password"
-                  placeholder="Current password"
+                  placeholder={t('profile.currentPassword')}
                   value={passwordForm.currentPassword}
                   onChange={handlePasswordChange}
                 />
                 <input
                   name="newPassword"
                   type="password"
-                  placeholder="New password"
+                  placeholder={t('profile.newPassword')}
                   value={passwordForm.newPassword}
                   onChange={handlePasswordChange}
                 />
                 <input
                   name="confirmPassword"
                   type="password"
-                  placeholder="Confirm new password"
+                  placeholder={t('profile.confirmPassword')}
                   value={passwordForm.confirmPassword}
                   onChange={handlePasswordChange}
                 />
                 <button type="button" className="settings-password-save" disabled={changingPassword} onClick={handleChangePassword}>
-                  {changingPassword ? 'Updating...' : 'Update Password'}
+                  {changingPassword ? t('common.updating') : t('profile.updatePassword')}
                 </button>
               </div>
             )}
+            <div className="appearance-card">
+              <div className="appearance-head">
+                <strong>{t('theme.appearance')}</strong>
+                <small>{t('theme.currentTheme', { theme: themeMode === 'system' ? resolvedTheme : themeMode })}</small>
+              </div>
+              <div className="appearance-options" role="group" aria-label={t('theme.appearance')}>
+                {[
+                  ['light', t('theme.lightMode'), Sun],
+                  ['dark', t('theme.darkMode'), Moon]
+                ].map(([mode, label, Icon]) => (
+                  <button
+                    type="button"
+                    key={mode}
+                    className={themeMode === mode ? 'active' : ''}
+                    onClick={() => setThemeMode(mode)}
+                  >
+                    <Icon size={15} />
+                    <span>{label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="appearance-card">
+              <div className="appearance-head">
+                <strong>{t('profile.languagePreferences')}</strong>
+                <small>{t('profile.languagePreferencesNote')}</small>
+              </div>
+              <LanguageSelector />
+            </div>
           </section>
 
           <section className="portal-panel settings-card settings-wide">
             <div className="portal-panel-head">
               <div>
-                <h2>Society Information</h2>
-                <p>Shown across admin and resident screens.</p>
+                <h2>{t('profile.societyInformation')}</h2>
+                <p>{t('profile.shownAcrossScreens')}</p>
               </div>
               <Building2 size={20} />
             </div>
             <div className="settings-form">
               <label>
-                Society Name
+                {t('profile.societyName')}
                 <input name="societyName" value={settings.societyName} onChange={handleChange} required />
               </label>
               <label>
-                Address
+                {t('profile.address')}
                 <input name="address" value={settings.address} onChange={handleChange} required />
               </label>
               <label>
-                Phone
+                {t('common.phone')}
                 <input name="phone" value={settings.phone} onChange={handleChange} required />
               </label>
             </div>
@@ -416,8 +534,8 @@ const AdminSettings = () => {
           <section className="portal-panel settings-card settings-wide">
             <div className="portal-panel-head">
               <div>
-                <h2>Payment Scanner</h2>
-                <p>Resident Pay Now screen will show this QR for manual payment.</p>
+                <h2>{t('profile.paymentScanner')}</h2>
+                <p>{t('profile.paymentScannerNote')}</p>
               </div>
               <QrCode size={20} />
             </div>

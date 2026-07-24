@@ -108,6 +108,10 @@ const Maintenance = () => {
   const [editingBill, setEditingBill] = useState(null);
   const [editBillForm, setEditBillForm] = useState({ amount: '', reason: '' });
 
+  // Write-off states
+  const [writeOffBill, setWriteOffBill] = useState(null);
+  const [writeOffForm, setWriteOffForm] = useState({ type: 'Maintenance', amount: '', reason: '' });
+
   // Payment Verification States
   const [rejectionType, setRejectionType] = useState('Invalid Screenshot');
   const [customRejectionReason, setCustomRejectionReason] = useState('');
@@ -116,28 +120,9 @@ const Maintenance = () => {
   const [zoomScale, setZoomScale] = useState(1);
   const [loadingScreenshot, setLoadingScreenshot] = useState(true);
 
-  // Payments Filters States
-  const [payFilterResident, setPayFilterResident] = useState('');
-  const [payFilterBillNo, setPayFilterBillNo] = useState('');
-  const [payFilterUTR, setPayFilterUTR] = useState('');
-  const [payFilterStatus, setPayFilterStatus] = useState('All');
-  const [payFilterMonth, setPayFilterMonth] = useState('All');
-  const [payFilterDate, setPayFilterDate] = useState('');
-  const [payFilterFlat, setPayFilterFlat] = useState('');
-
   // Payments Pagination States
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(10);
-
-  const resetPaymentsFilters = () => {
-    setPayFilterResident('');
-    setPayFilterBillNo('');
-    setPayFilterUTR('');
-    setPayFilterStatus('All');
-    setPayFilterMonth('All');
-    setPayFilterDate('');
-    setPayFilterFlat('');
-  };
   const current = new Date();
   
   const [cycleForm, setCycleForm] = useState({ month: current.getMonth() + 1, year: current.getFullYear() });
@@ -179,7 +164,7 @@ const Maintenance = () => {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [payFilterResident, payFilterBillNo, payFilterUTR, payFilterStatus, payFilterMonth, payFilterDate, payFilterFlat, rowsPerPage]);
+  }, [rowsPerPage]);
 
   useEffect(() => {
     if (tab !== 'payments') return;
@@ -351,59 +336,6 @@ const Maintenance = () => {
   const filteredPayments = useMemo(() => {
     let list = [...paymentRows];
 
-    // Filter by Resident Name
-    if (payFilterResident.trim()) {
-      const q = payFilterResident.toLowerCase();
-      list = list.filter(p => (p.resident_name || '').toLowerCase().includes(q));
-    }
-
-    // Filter by Bill Number
-    if (payFilterBillNo.trim()) {
-      const q = payFilterBillNo.toLowerCase();
-      list = list.filter(p => (p.bill_number || '').toLowerCase().includes(q));
-    }
-
-    // Filter by UTR Number
-    if (payFilterUTR.trim()) {
-      const q = payFilterUTR.toLowerCase();
-      list = list.filter(p => (p.utr_number || p.transaction_id || '').toLowerCase().includes(q));
-    }
-
-    // Filter by Status (Pending, Approved, Rejected)
-    if (payFilterStatus !== 'All') {
-      list = list.filter(p => {
-        const status = p.original_payment_status || p.payment_status;
-        if (payFilterStatus === 'Pending') {
-          return ['Pending', 'Pending Verification', 'Under Review'].includes(status);
-        } else if (payFilterStatus === 'Approved') {
-          return ['Approved', 'Paid'].includes(status);
-        } else if (payFilterStatus === 'Rejected') {
-          return status === 'Rejected';
-        }
-        return true;
-      });
-    }
-
-    // Filter by Bill Month
-    if (payFilterMonth !== 'All') {
-      list = list.filter(p => Number(p.month) === Number(payFilterMonth));
-    }
-
-    // Filter by Payment Date (YYYY-MM-DD matches paid_at)
-    if (payFilterDate) {
-      list = list.filter(p => {
-        if (!p.paid_at) return false;
-        const pDate = new Date(p.paid_at).toISOString().split('T')[0];
-        return pDate === payFilterDate;
-      });
-    }
-
-    // Filter by Flat Number
-    if (payFilterFlat.trim()) {
-      const q = payFilterFlat.toLowerCase();
-      list = list.filter(p => (p.flat_no || '').toLowerCase().includes(q));
-    }
-
     // Sort: Pending payments should always appear at the top of the table by default.
     list.sort((a, b) => {
       const statusA = a.original_payment_status || a.payment_status;
@@ -420,7 +352,7 @@ const Maintenance = () => {
     });
 
     return list;
-  }, [paymentRows, payFilterResident, payFilterBillNo, payFilterUTR, payFilterStatus, payFilterMonth, payFilterDate, payFilterFlat]);
+  }, [paymentRows]);
 
   const paymentsStats = useMemo(() => {
     const totalRequests = payments.length;
@@ -1001,6 +933,50 @@ const Maintenance = () => {
     }
   };
 
+  const handleWriteOffClick = (bill) => {
+    setWriteOffBill(bill);
+    setWriteOffForm({
+      type: 'Maintenance',
+      amount: String(bill.remaining_amount || 0),
+      reason: ''
+    });
+    setModal('write_off');
+  };
+
+  const submitWriteOff = async (e) => {
+    e.preventDefault();
+    if (!writeOffForm.reason.trim()) {
+      notify('A reason is mandatory for performing a write-off');
+      return;
+    }
+    
+    if (writeOffForm.type !== 'Full' && (!writeOffForm.amount || Number(writeOffForm.amount) <= 0)) {
+      notify('Please enter a valid write-off amount');
+      return;
+    }
+
+    if (!window.confirm(`Are you sure you want to approve this write-off (${writeOffForm.type}) of amount ₹${writeOffForm.type === 'Full' ? writeOffBill.remaining_amount : writeOffForm.amount}?`)) {
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await maintenanceAPI.createWriteOff(writeOffBill.id, {
+        type: writeOffForm.type,
+        reason: writeOffForm.reason,
+        amount: writeOffForm.type === 'Full' ? Number(writeOffBill.remaining_amount) : Number(writeOffForm.amount)
+      });
+      notify('Write-off applied successfully');
+      setModal(null);
+      setWriteOffBill(null);
+      await load();
+    } catch (err) {
+      notify(err.response?.data?.message || 'Could not record write-off');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const applyExpenseRemovalToDashboard = (expense) => {
     const expenseAmount = Number(expense?.amount || 0);
     const expenseDate = expense?.expense_date ? new Date(expense.expense_date) : null;
@@ -1136,7 +1112,7 @@ const Maintenance = () => {
                   <div className="mm-list-row" key={bill.id}>
                     <div className="mm-avatar">{(bill.resident_name || 'R').slice(0, 1)}</div>
                     <div className="mm-list-main"><strong>{bill.resident_name || 'Resident'}</strong><span>Flat {bill.flat_no || '—'} · {bill.title}</span></div>
-                    <div className="mm-list-amount"><strong>{money(bill.total_amount)}</strong><span className={statusClass(bill.payment_status || bill.status)}>{bill.payment_status || bill.status}</span></div>
+                    <div className="mm-list-amount"><strong>{money(bill.total_amount)}</strong><span className={statusClass(bill.write_off_status || bill.payment_status || bill.status)}>{bill.write_off_status || bill.payment_status || bill.status}</span></div>
                   </div>
                 ))}
               </div> : <Empty title="No maintenance bills generated yet" copy="Generate your first monthly billing cycle." />}
@@ -1184,7 +1160,7 @@ const Maintenance = () => {
                   </tr>
                 </thead>
                 <tbody>{filteredBills.map((bill) => {
-                  const currentStatus = bill.payment_status || bill.status;
+                  const currentStatus = bill.write_off_status || bill.payment_status || bill.status;
                   return (
                     <tr key={bill.id}>
                       <td><strong>{bill.resident_name || 'Resident'}</strong></td>
@@ -1237,6 +1213,23 @@ const Maintenance = () => {
                           >
                             Edit
                           </button>
+                          {Number(bill.remaining_amount) > 0 && (
+                            <button
+                              className="mm-mini-action"
+                              style={{ 
+                                padding: '2px 8px', 
+                                fontSize: '11px', 
+                                backgroundColor: '#fee2e2', 
+                                color: '#b91c1c',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: 'pointer'
+                              }}
+                              onClick={() => handleWriteOffClick(bill)}
+                            >
+                              Write-Off
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1343,69 +1336,6 @@ const Maintenance = () => {
                 <button className="mm-button mm-button-light" onClick={exportPaymentsExcel}><Download size={17} /> Export Excel</button>
                 <button className="mm-button mm-button-light" onClick={exportPaymentsCsv}><Download size={17} /> Export CSV</button>
               </div>
-            </div>
-
-            <div className="mm-payments-toolbar">
-              <label className="mm-search">
-                <Search size={17} />
-                <input 
-                  value={payFilterResident} 
-                  onChange={(e) => setPayFilterResident(e.target.value)} 
-                  placeholder="Search Resident Name..." 
-                />
-              </label>
-              <div className="mm-filter">
-                <input 
-                  value={payFilterBillNo} 
-                  onChange={(e) => setPayFilterBillNo(e.target.value)} 
-                  placeholder="Bill Number (e.g. BILL-1)..." 
-                />
-              </div>
-              <div className="mm-filter">
-                <input 
-                  value={payFilterUTR} 
-                  onChange={(e) => setPayFilterUTR(e.target.value)} 
-                  placeholder="UTR / Transaction ID..." 
-                />
-              </div>
-              <div className="mm-filter">
-                <input 
-                  value={payFilterFlat} 
-                  onChange={(e) => setPayFilterFlat(e.target.value)} 
-                  placeholder="Flat No..." 
-                />
-              </div>
-              <div className="mm-filter">
-                <select value={payFilterStatus} onChange={(e) => setPayFilterStatus(e.target.value)}>
-                  <option value="All">All Statuses</option>
-                  <option value="Pending">Pending</option>
-                  <option value="Approved">Approved</option>
-                  <option value="Rejected">Rejected</option>
-                </select>
-              </div>
-              <div className="mm-filter">
-                <select value={payFilterMonth} onChange={(e) => setPayFilterMonth(e.target.value)}>
-                  <option value="All">All Bill Months</option>
-                  {months.map((m, idx) => (
-                    <option key={m} value={idx + 1}>{m}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="mm-filter">
-                <input 
-                  type="date"
-                  value={payFilterDate} 
-                  onChange={(e) => setPayFilterDate(e.target.value)} 
-                  title="Payment Date"
-                />
-              </div>
-              <button 
-                className="mm-button mm-button-light" 
-                onClick={resetPaymentsFilters}
-                style={{ padding: '8px 12px' }}
-              >
-                Reset Filters
-              </button>
             </div>
 
             <div className="mm-table-wrap">
@@ -1761,6 +1691,74 @@ const Maintenance = () => {
               <button type="button" className="mm-button mm-button-light" onClick={() => { setModal(null); setEditingBill(null); }} style={{ padding: '8px 16px', border: '1px solid #d1d5db', background: '#fff', borderRadius: '6px', cursor: 'pointer' }}>Cancel</button>
               <button type="submit" className="mm-button mm-button-primary" disabled={saving} style={{ padding: '8px 16px', background: '#4f46e5', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>
                 {saving ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {modal === 'write_off' && writeOffBill && (
+        <Modal
+          title="Apply Maintenance Write-Off"
+          subtitle={`${writeOffBill.resident_name || 'Resident'} · Flat ${writeOffBill.flat_no || ''}`}
+          onClose={() => { setModal(null); setWriteOffBill(null); }}
+        >
+          <form onSubmit={submitWriteOff} className="mm-form p-4">
+            <div className="rounded-lg p-4 mb-4 border text-sm" style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0', borderRadius: '8px', padding: '16px', marginBottom: '16px' }}>
+              <div style={{ marginBottom: '8px' }}><strong>Billing Period:</strong> {months[(Number(writeOffBill.month) || 1) - 1]} {writeOffBill.year}</div>
+              <div style={{ marginBottom: '8px' }}><strong>Original Total:</strong> {money(writeOffBill.total_amount)}</div>
+              <div style={{ marginBottom: '8px' }}><strong>Remaining Payable:</strong> {money(writeOffBill.remaining_amount)}</div>
+            </div>
+
+            <label className="mm-field mm-field-full" style={{ marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <span style={{ fontSize: '13px', fontWeight: '600', color: '#374151' }}>Write-Off Type</span>
+              <select
+                value={writeOffForm.type}
+                onChange={(e) => setWriteOffForm({ ...writeOffForm, type: e.target.value, amount: e.target.value === 'Full' ? String(writeOffBill.remaining_amount) : '' })}
+                style={{ padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '6px' }}
+              >
+                <option value="Maintenance">Maintenance Write-Off</option>
+                <option value="Penalty">Penalty Write-Off</option>
+                <option value="Full">Full Write-Off</option>
+              </select>
+            </label>
+
+            {writeOffForm.type !== 'Full' ? (
+              <label className="mm-field mm-field-full" style={{ marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <span style={{ fontSize: '13px', fontWeight: '600', color: '#374151' }}>Write-Off Amount (₹)</span>
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  required
+                  value={writeOffForm.amount}
+                  onChange={(e) => setWriteOffForm({ ...writeOffForm, amount: e.target.value })}
+                  placeholder="e.g. 500"
+                  style={{ padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '6px' }}
+                />
+              </label>
+            ) : (
+              <div className="p-3 mb-3 border rounded text-slate-600 bg-slate-50 text-xs font-semibold" style={{ marginBottom: '16px' }}>
+                Will write off the entire remaining payable amount of {money(writeOffBill.remaining_amount)}.
+              </div>
+            )}
+
+            <label className="mm-field mm-field-full" style={{ marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <span style={{ fontSize: '13px', fontWeight: '600', color: '#374151' }}>Write-Off Reason (Mandatory)</span>
+              <textarea
+                rows="3"
+                required
+                value={writeOffForm.reason}
+                onChange={(e) => setWriteOffForm({ ...writeOffForm, reason: e.target.value })}
+                placeholder="Specify the reason for this write-off (e.g., Committee approval, late fee waiver, resident dispute resolved)."
+                style={{ padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '6px' }}
+              />
+            </label>
+
+            <div className="mm-form-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px' }}>
+              <button type="button" className="mm-button mm-button-light" onClick={() => { setModal(null); setWriteOffBill(null); }} style={{ padding: '8px 16px', border: '1px solid #d1d5db', background: '#fff', borderRadius: '6px', cursor: 'pointer' }}>Cancel</button>
+              <button type="submit" className="mm-button mm-button-primary" disabled={saving} style={{ padding: '8px 16px', background: '#dc2626', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>
+                {saving ? 'Approving...' : 'Confirm Write-Off'}
               </button>
             </div>
           </form>

@@ -15,7 +15,8 @@ const DEFAULT_SETTINGS = {
   visitorAlerts: false,
   paymentQrImage: '',
   paymentUpiId: '',
-  paymentNote: ''
+  paymentNote: '',
+  profilePicture: ''
 };
 
 const parseSettingValue = (value) => {
@@ -36,7 +37,7 @@ const getSettings = async (req, res) => {
     );
 
     const [users] = await promisePool.query(
-      'SELECT id, name, email, role FROM users WHERE id = ?',
+      'SELECT id, name, email, role, profile_picture FROM users WHERE id = ?',
       [req.user.id]
     );
 
@@ -47,7 +48,8 @@ const getSettings = async (req, res) => {
       ...DEFAULT_SETTINGS,
       ...savedSettings,
       adminName: currentUser.name || DEFAULT_SETTINGS.adminName,
-      email: currentUser.email || DEFAULT_SETTINGS.email
+      email: currentUser.email || DEFAULT_SETTINGS.email,
+      profilePicture: currentUser.profile_picture || ''
     });
   } catch (error) {
     console.error('Get settings error:', error);
@@ -67,9 +69,10 @@ const updateSettings = async (req, res) => {
       visitorAlerts: Boolean(req.body.visitorAlerts)
     };
 
-    const { adminName, email } = incomingSettings;
+    const { adminName, email, profilePicture } = incomingSettings;
     delete incomingSettings.adminName;
     delete incomingSettings.email;
+    delete incomingSettings.profilePicture;
 
     await connection.beginTransaction();
 
@@ -83,8 +86,8 @@ const updateSettings = async (req, res) => {
 
     if (adminName && email) {
       await connection.query(
-        'UPDATE users SET name = ?, email = ? WHERE id = ? AND role = ?',
-        [adminName, email, req.user.id, 'admin']
+        'UPDATE users SET name = ?, email = ?, profile_picture = ? WHERE id = ? AND role = ?',
+        [adminName, email, profilePicture || null, req.user.id, 'admin']
       );
     }
 
@@ -92,7 +95,8 @@ const updateSettings = async (req, res) => {
     res.json({
       ...incomingSettings,
       adminName,
-      email
+      email,
+      profilePicture: profilePicture || ''
     });
   } catch (error) {
     await connection.rollback();

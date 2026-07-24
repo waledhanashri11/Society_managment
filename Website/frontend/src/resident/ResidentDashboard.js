@@ -6,8 +6,10 @@ import {
 } from 'lucide-react';
 import { complaintAPI, maintenanceAPI, noticeAPI, residentAPI, settingsAPI, flatAPI, nocAPI } from '../services/api';
 import { getUser } from '../utils/auth';
-import { downloadPaymentReceiptPdf, printPaymentReceipt, receiptAvailable } from '../utils/paymentReceipt';
+import { downloadPaymentReceiptPdf, printPaymentReceipt, receiptAvailable, printWriteOffReceipt, downloadWriteOffReceiptPdf } from '../utils/paymentReceipt';
 import { CardSkeleton, TableSkeleton } from '../components/Skeletons';
+import { useTranslation } from 'react-i18next';
+import { useLocalizedFormatters } from '../utils/formatters';
 
 const unwrap = (response) => response?.data?.data ?? response?.data ?? [];
 const money = (value) => `₹ ${Number(value || 0).toLocaleString('en-IN')}`;
@@ -18,6 +20,8 @@ const getProfilePhotoKey = (user) => `residentProfilePhoto:${user?.id || user?.e
 
 
 const ResidentDashboard = () => {
+  const { t } = useTranslation();
+  const formatters = useLocalizedFormatters();
   const navigate = useNavigate();
   const user = getUser();
   const profilePhotoKey = getProfilePhotoKey(user);
@@ -105,7 +109,10 @@ const ResidentDashboard = () => {
   const summary = useMemo(() => {
     const paid = bills.filter((bill) => bill.payment_status === 'Paid');
     return {
-      due: pendingBills.reduce((sum, bill) => sum + Number(bill.remaining_amount || bill.total_amount || 0), 0),
+      due: pendingBills.reduce((sum, bill) => {
+        const remaining = bill.remainingPayable !== undefined ? bill.remainingPayable : (bill.remaining_amount !== undefined ? bill.remaining_amount : bill.total_amount);
+        return sum + Number(remaining || 0);
+      }, 0),
       paid: paid.reduce((sum, bill) => sum + Number(bill.paid_amount || bill.total_amount || 0), 0),
       nextDue: pendingBills[0]?.due_date,
       underReview: bills.filter((bill) => ['Under Review', 'Pending Verification'].includes(bill.payment_status)).length
@@ -189,20 +196,40 @@ const ResidentDashboard = () => {
     }
   };
 
+  const handlePrintWriteOffReceipt = async (bill) => {
+    try {
+      const response = await maintenanceAPI.getWriteOffReceipt(bill.id);
+      const receiptData = response.data?.data || response.data || {};
+      printWriteOffReceipt(receiptData, paymentSettings);
+    } catch (error) {
+      notify(error.message === 'Popup blocked' ? 'Popup blocked. Allow popups to print.' : 'Could not print the write-off receipt');
+    }
+  };
+
+  const handleDownloadWriteOffReceipt = async (bill) => {
+    try {
+      const response = await maintenanceAPI.getWriteOffReceipt(bill.id);
+      const receiptData = response.data?.data || response.data || {};
+      await downloadWriteOffReceiptPdf(receiptData, paymentSettings);
+    } catch (error) {
+      notify('Could not download the write-off receipt PDF');
+    }
+  };
+
 
 
   const quickActions = [
-    { label: 'Complaints', icon: MessageSquarePlus, action: () => navigate('/resident/complaints') },
-    { label: 'Notices', icon: Bell, action: () => navigate('/resident/notices') },
-    { label: 'NOC Requests', icon: FileCheck2, action: () => navigate('/resident/noc-requests') },
-    { label: 'My Vehicles', icon: Car, action: () => navigate('/resident/profile') }
+    { label: t('nav.complaints'), icon: MessageSquarePlus, action: () => navigate('/resident/complaints') },
+    { label: t('nav.notices'), icon: Bell, action: () => navigate('/resident/notices') },
+    { label: t('dashboard.nocRequests'), icon: FileCheck2, action: () => navigate('/resident/noc-requests') },
+    { label: t('dashboard.myVehicles'), icon: Car, action: () => navigate('/resident/profile') }
   ];
 
   return (
     <div>
       {toast && <div className="resident-toast">{toast}</div>}
       <div className="portal-page-title">
-        <div><h1>Dashboard</h1><p>Your home, payments and society updates at a glance.</p></div>
+        <div><h1>{t('dashboard.title')}</h1><p>{t('dashboard.residentSubtitle')}</p></div>
       </div>
 
       <section className="resident-welcome">
@@ -215,9 +242,9 @@ const ResidentDashboard = () => {
                 {profilePhoto ? <img src={profilePhoto} alt="Resident profile" loading="lazy" decoding="async" /> : (user?.name || 'R').charAt(0)}
               </span>
               <div>
-                <small className="block opacity-85 text-[10px]">Welcome back,</small>
-                <strong className="block text-base font-black leading-tight mt-0.5">{user?.name || 'Resident'}</strong>
-                <span className="block opacity-75 text-[9px] mt-1">Resident account</span>
+                <small className="block opacity-85 text-[10px]">{t('dashboard.welcomeBack')}</small>
+                <strong className="block text-base font-black leading-tight mt-0.5">{user?.name || t('common.resident')}</strong>
+                <span className="block opacity-75 text-[9px] mt-1">{t('dashboard.residentAccount')}</span>
               </div>
             </div>
 
@@ -225,18 +252,18 @@ const ResidentDashboard = () => {
               className="resident-balance cursor-pointer hover:bg-slate-50/50 hover:shadow-sm transition-all duration-200 flex flex-col justify-center min-h-[92px]" 
               onClick={() => navigate('/resident/maintenance')}
             >
-              <span className="text-[10px] font-extrabold uppercase tracking-wide text-slate-500">Outstanding Due</span>
-              <strong className="text-xl font-black text-slate-950 mt-1">{money(summary.due)}</strong>
+              <span className="text-[10px] font-extrabold uppercase tracking-wide text-slate-500">{t('dashboard.outstandingDue')}</span>
+              <strong className="text-xl font-black text-slate-950 mt-1">{formatters.currency(summary.due)}</strong>
               <small className="text-[10px] text-slate-500 font-semibold mt-1">
-                {summary.nextDue ? `Due on ${fullDate(summary.nextDue)}` : 'Nothing due right now'}
+                {summary.nextDue ? t('dashboard.dueOn', { date: formatters.date(summary.nextDue) }) : t('dashboard.nothingDue')}
               </small>
             </div>
 
             <div className="resident-balance flex flex-col justify-center min-h-[92px]">
-              <span className="text-[10px] font-extrabold uppercase tracking-wide text-slate-500">Total Paid</span>
-              <strong className="text-xl font-black text-slate-950 mt-1">{money(summary.paid)}</strong>
+              <span className="text-[10px] font-extrabold uppercase tracking-wide text-slate-500">{t('dashboard.totalPaid')}</span>
+              <strong className="text-xl font-black text-slate-950 mt-1">{formatters.currency(summary.paid)}</strong>
               <small className="text-[10px] text-slate-500 font-semibold mt-1">
-                {summary.underReview} payment under review
+                {t('dashboard.paymentUnderReview', { count: summary.underReview })}
               </small>
             </div>
           </>
@@ -247,14 +274,14 @@ const ResidentDashboard = () => {
         <section className="portal-panel mb-4">
           <div className="portal-panel-head">
             <div>
-              <h2>Upcoming / Pending Bills</h2>
-              <p>Grouped maintenance dues ready for one payment.</p>
+              <h2>{t('dashboard.upcomingBills')}</h2>
+              <p>{t('dashboard.upcomingBillsNote')}</p>
             </div>
-            <button className="resident-pay" onClick={() => navigate('/resident/maintenance')}>Pay Now</button>
+            <button className="resident-pay" onClick={() => navigate('/resident/maintenance')}>{t('dashboard.payNow')}</button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-4 p-4">
             <div className="rounded-xl bg-slate-50 border border-slate-100 p-4">
-              <span className="block text-[10px] font-extrabold uppercase tracking-wide text-slate-500 mb-2">Pending Bills</span>
+              <span className="block text-[10px] font-extrabold uppercase tracking-wide text-slate-500 mb-2">{t('dashboard.pendingBills')}</span>
               <div className="grid gap-2">
                 {pendingBills.slice(0, 5).map((bill) => (
                   <div key={bill.id} className="flex items-center justify-between text-sm">
@@ -265,9 +292,9 @@ const ResidentDashboard = () => {
               </div>
             </div>
             <div className="rounded-xl bg-emerald-50/70 border border-emerald-100 p-4 min-w-[180px]">
-              <span className="block text-[10px] font-extrabold uppercase tracking-wide text-emerald-700">Outstanding Due</span>
-              <strong className="block mt-2 text-2xl font-black text-emerald-950">{money(summary.due)}</strong>
-              <button className="resident-pay mt-3 w-full" onClick={() => navigate('/resident/maintenance')}>Pay Now</button>
+              <span className="block text-[10px] font-extrabold uppercase tracking-wide text-emerald-700">{t('dashboard.outstandingDue')}</span>
+              <strong className="block mt-2 text-2xl font-black text-emerald-950">{formatters.currency(summary.due)}</strong>
+              <button className="resident-pay mt-3 w-full" onClick={() => navigate('/resident/maintenance')}>{t('dashboard.payNow')}</button>
             </div>
           </div>
         </section>
@@ -277,8 +304,8 @@ const ResidentDashboard = () => {
         <section className="portal-panel flex flex-col justify-between">
           <div className="portal-panel-head">
             <div>
-              <h2>Quick Actions</h2>
-              <p>Everything you use most often</p>
+              <h2>{t('dashboard.quickActions')}</h2>
+              <p>{t('dashboard.quickActionsNote')}</p>
             </div>
           </div>
           <div className="grid grid-cols-4 gap-4 p-5 my-auto">
@@ -300,8 +327,8 @@ const ResidentDashboard = () => {
         <section className="portal-panel flex flex-col justify-between">
           <div className="portal-panel-head">
             <div>
-              <h2>My Flat</h2>
-              <p>Your assigned residence details.</p>
+              <h2>{t('dashboard.myFlat')}</h2>
+              <p>{t('dashboard.assignedResidence')}</p>
             </div>
             <Building2 size={17} className="text-slate-400" />
           </div>
@@ -310,20 +337,20 @@ const ResidentDashboard = () => {
           ) : (
             <div className="grid grid-cols-2 gap-3 p-5 my-auto">
               <div className="rounded-xl bg-slate-50 border border-slate-100 p-3">
-                <span className="block text-[9px] font-extrabold uppercase tracking-wide text-slate-500">Flat</span>
+                <span className="block text-[9px] font-extrabold uppercase tracking-wide text-slate-500">{t('common.flat')}</span>
                 <strong className="mt-1 block text-sm font-black text-slate-950">Flat {flatDetails?.flat_no || 'N/A'}</strong>
               </div>
               <div className="rounded-xl bg-slate-50 border border-slate-100 p-3">
-                <span className="block text-[9px] font-extrabold uppercase tracking-wide text-slate-500">Wing</span>
+                <span className="block text-[9px] font-extrabold uppercase tracking-wide text-slate-500">{t('dashboard.wing')}</span>
                 <strong className="mt-1 block text-sm font-black text-slate-950">{flatDetails?.wing || '-'}</strong>
               </div>
               <div className="rounded-xl bg-slate-50 border border-slate-100 p-3">
-                <span className="block text-[9px] font-extrabold uppercase tracking-wide text-slate-500">Floor</span>
+                <span className="block text-[9px] font-extrabold uppercase tracking-wide text-slate-500">{t('common.floor')}</span>
                 <strong className="mt-1 block text-sm font-black text-slate-950">{flatDetails?.floor_no ?? '-'}</strong>
               </div>
               <div className="rounded-xl bg-emerald-50/70 border border-emerald-100 p-3">
-                <span className="block text-[9px] font-extrabold uppercase tracking-wide text-emerald-700">Status</span>
-                <strong className="mt-1 block text-sm font-black text-emerald-900">{flatDetails?.flat_status || 'Assigned'}</strong>
+                <span className="block text-[9px] font-extrabold uppercase tracking-wide text-emerald-700">{t('common.status')}</span>
+                <strong className="mt-1 block text-sm font-black text-emerald-900">{flatDetails?.flat_status || t('dashboard.assigned')}</strong>
               </div>
             </div>
           )}
@@ -333,33 +360,33 @@ const ResidentDashboard = () => {
       <section className="portal-panel resident-summary-panel">
         <div className="portal-panel-head">
           <div>
-            <h2>Resident Summary</h2>
-            <p>Quick counts with full pages in the sidebar.</p>
+            <h2>{t('dashboard.residentSummary')}</h2>
+            <p>{t('dashboard.residentSummaryNote')}</p>
           </div>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 p-4">
           <div className="p-3 rounded-xl bg-slate-50 border border-slate-100/80 text-center">
-            <span className="block text-[10px] font-extrabold uppercase tracking-wide text-slate-500">Complaints</span>
+            <span className="block text-[10px] font-extrabold uppercase tracking-wide text-slate-500">{t('nav.complaints')}</span>
             <strong className="block mt-1.5 text-xl font-black text-slate-950">{complaints.length}</strong>
           </div>
           <div className="p-3 rounded-xl bg-slate-50 border border-slate-100/80 text-center">
-            <span className="block text-[10px] font-extrabold uppercase tracking-wide text-slate-500">Notices</span>
+            <span className="block text-[10px] font-extrabold uppercase tracking-wide text-slate-500">{t('nav.notices')}</span>
             <strong className="block mt-1.5 text-xl font-black text-slate-950">{notices.length}</strong>
           </div>
           <div className="p-3 rounded-xl bg-slate-50 border border-slate-100/80 text-center">
-            <span className="block text-[10px] font-extrabold uppercase tracking-wide text-slate-500">Pending Bills</span>
+            <span className="block text-[10px] font-extrabold uppercase tracking-wide text-slate-500">{t('dashboard.pendingBills')}</span>
             <strong className="block mt-1.5 text-xl font-black text-slate-950">{pendingBills.length}</strong>
           </div>
           <div className="p-3 rounded-xl bg-slate-50 border border-slate-100/80 text-center">
-            <span className="block text-[10px] font-extrabold uppercase tracking-wide text-slate-500">Pending Requests</span>
+            <span className="block text-[10px] font-extrabold uppercase tracking-wide text-slate-500">{t('dashboard.pendingRequests')}</span>
             <strong className="block mt-1.5 text-xl font-black text-slate-950">{Number(nocSummary.pending || 0) + Number(nocSummary.under_review || 0)}</strong>
           </div>
           <div className="p-3 rounded-xl bg-slate-50 border border-slate-100/80 text-center">
-            <span className="block text-[10px] font-extrabold uppercase tracking-wide text-slate-500">Approved NOCs</span>
+            <span className="block text-[10px] font-extrabold uppercase tracking-wide text-slate-500">{t('dashboard.approvedNocs')}</span>
             <strong className="block mt-1.5 text-xl font-black text-slate-950">{Number(nocSummary.approved || 0)}</strong>
           </div>
           <div className="p-3 rounded-xl bg-slate-50 border border-slate-100/80 text-center">
-            <span className="block text-[10px] font-extrabold uppercase tracking-wide text-slate-500">Rejected Requests</span>
+            <span className="block text-[10px] font-extrabold uppercase tracking-wide text-slate-500">{t('dashboard.rejectedRequests')}</span>
             <strong className="block mt-1.5 text-xl font-black text-slate-950">{Number(nocSummary.rejected || 0)}</strong>
           </div>
         </div>
@@ -367,19 +394,39 @@ const ResidentDashboard = () => {
 
       <section className="portal-panel resident-maintenance-panel" id="maintenance">
           <div className="portal-panel-head">
-            <div><h2>Maintenance Preview</h2><p>Latest bills shown here, full page in sidebar.</p></div>
-            <button className="resident-pay" onClick={() => navigate('/resident/maintenance')}>View All</button>
+            <div><h2>{t('dashboard.maintenancePreview')}</h2><p>{t('dashboard.maintenancePreviewNote')}</p></div>
+            <button className="resident-pay" onClick={() => navigate('/resident/maintenance')}>{t('dashboard.viewAll')}</button>
           </div>
           {loading ? (
             <TableSkeleton rows={3} columns={4} />
           ) : bills.length ? (
             <div style={{ overflowX: 'auto' }}><table className="resident-payments">
-              <thead><tr><th>Month</th><th>Amount</th><th>Status</th><th>Actions</th></tr></thead>
+              <thead><tr><th>{t('dashboard.month')}</th><th>{t('common.amount')}</th><th>{t('common.status')}</th><th>{t('common.actions')}</th></tr></thead>
               <tbody>{bills.slice(0, 3).map((bill) => (
                 <tr key={bill.id}>
                   <td><strong>{monthName(bill.month)} {bill.year}</strong><small>{bill.bill_number || `BILL-${bill.id}`}</small></td>
-                  <td>{money(bill.total_amount)}</td>
-                  <td><span className={`portal-status ${String(bill.payment_status).toLowerCase().replace(' ', '_')}`}>{bill.payment_status}</span></td>
+                  <td>
+                    <strong>{money(bill.remainingPayable !== undefined ? bill.remainingPayable : (bill.remaining_amount !== undefined ? bill.remaining_amount : bill.total_amount))}</strong>
+                    {Number(bill.write_off_amount || 0) > 0 && (
+                      <div style={{ fontSize: '10px', color: '#b91c1c', fontWeight: '500' }}>Original: {money(bill.total_amount)}</div>
+                    )}
+                  </td>
+                  <td>
+                    <span style={{ 
+                      borderRadius: '99px', 
+                      padding: '2px 6px', 
+                      fontSize: '9px', 
+                      fontWeight: '700',
+                      color: bill.payment_status === 'Paid' ? '#05783b' : (bill.payment_status === 'Overdue' ? '#b42318' : '#bd5b00'),
+                      background: bill.payment_status === 'Paid' ? '#e8f8ef' : (bill.payment_status === 'Overdue' ? '#fef3f2' : '#fff2e5'),
+                      display: 'inline-block',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.02em',
+                      verticalAlign: 'middle'
+                    }}>
+                      {bill.write_off_status || bill.payment_status}
+                    </span>
+                  </td>
                   <td>
                     <div className="resident-bill-actions">
                       {bill.payment_status === 'Paid' ? (
@@ -391,9 +438,23 @@ const ResidentDashboard = () => {
                               <button className="blue-btn" onClick={() => handleDownloadReceipt(bill)}><Download size={11} /> Download PDF</button>
                             </>
                           )}
+                          {Number(bill.write_off_amount) > 0 && (
+                            <>
+                              <button onClick={() => handlePrintWriteOffReceipt(bill)}><Printer size={11} /> Print W/O</button>
+                              <button className="blue-btn" onClick={() => handleDownloadWriteOffReceipt(bill)}><Download size={11} /> W/O PDF</button>
+                            </>
+                          )}
                         </>
                       ) : (
-                        <button onClick={() => navigate('/resident/maintenance')}><Eye size={11} /> View</button>
+                        <>
+                          <button onClick={() => navigate('/resident/maintenance')}><Eye size={11} /> View</button>
+                          {Number(bill.write_off_amount) > 0 && (
+                            <>
+                              <button onClick={() => handlePrintWriteOffReceipt(bill)}><Printer size={11} /> Print W/O</button>
+                              <button className="blue-btn" onClick={() => handleDownloadWriteOffReceipt(bill)}><Download size={11} /> W/O PDF</button>
+                            </>
+                          )}
+                        </>
                       )}
                     </div>
                   </td>

@@ -8,6 +8,9 @@ const app = express();
 
 const allowedOrigins = [
   'http://localhost:3000',
+  'http://localhost:3001',
+  'http://localhost:3002',
+  'http://localhost:3003',
   ...(process.env.FRONTEND_URL || '').split(',').map((origin) => origin.trim()).filter(Boolean)
 ];
 
@@ -52,6 +55,7 @@ const staffRoutes = require('./routes/staff');
 const settingsRoutes = require('./routes/settings');
 const notificationRoutes = require('./routes/notifications');
 const nocRoutes = require('./routes/noc');
+const rulesRoutes = require('./routes/rules');
 const nocController = require('./controllers/nocController');
 
 app.use('/api/auth', authRoutes);
@@ -67,6 +71,7 @@ app.use('/api/residents', residentMgmtRoutes);
 app.use('/api/staff', staffRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/rules', rulesRoutes);
 app.get('/share/noc/:token', nocController.getSharedPdf);
 app.use('/api/noc', nocRoutes);
 

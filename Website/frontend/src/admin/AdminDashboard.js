@@ -6,11 +6,15 @@ import {
 } from 'lucide-react';
 import { complaintAPI, flatAPI, maintenanceAPI, nocAPI, noticeAPI, userAPI } from '../services/api';
 import { CardSkeleton, TableSkeleton } from '../components/Skeletons';
+import { useTranslation } from 'react-i18next';
+import { useLocalizedFormatters } from '../utils/formatters';
 
 const unwrap = (response) => response?.data?.data ?? response?.data ?? [];
 const money = (value) => `₹ ${Number(value || 0).toLocaleString('en-IN')}`;
 
 const AdminDashboard = () => {
+  const { t } = useTranslation();
+  const formatters = useLocalizedFormatters();
   const navigate = useNavigate();
   const [data, setData] = useState({ users: [], flats: [], bills: [], complaints: [], notices: [], expenses: [], nocSummary: {} });
   const [loading, setLoading] = useState(true);
@@ -38,18 +42,27 @@ const AdminDashboard = () => {
 
   const stats = useMemo(() => {
     const residents = data.users.filter((user) => user.role === 'resident').length;
-    const collected = data.bills.filter((bill) => (bill.payment_status || bill.status) === 'Paid').reduce((sum, bill) => sum + Number(bill.total_amount || 0), 0);
-    const pending = data.bills.filter((bill) => (bill.payment_status || bill.status) !== 'Paid').reduce((sum, bill) => sum + Number(bill.remaining_amount || bill.total_amount || 0), 0);
+    const collected = data.bills
+      .filter((bill) => (bill.payment_status || bill.status) === 'Paid')
+      .reduce((sum, bill) => {
+        const paidVal = bill.paid_amount !== null && bill.paid_amount !== undefined 
+          ? Number(bill.paid_amount) 
+          : (bill.write_off_status === 'Fully Written Off' ? 0 : Number(bill.total_amount || 0));
+        return sum + paidVal;
+      }, 0);
+    const pending = data.bills
+      .filter((bill) => (bill.payment_status || bill.status) !== 'Paid')
+      .reduce((sum, bill) => sum + Number(bill.remaining_amount !== null && bill.remaining_amount !== undefined ? bill.remaining_amount : bill.total_amount || 0), 0);
     return { residents, collected, pending };
   }, [data]);
 
   const kpis = [
-    { label: 'Total Residents', value: stats.residents, note: 'Approved resident accounts', icon: Users, tone: '' },
-    { label: 'Total Flats', value: data.flats.length, note: `${data.flats.filter((flat) => flat.owner_id).length} occupied`, icon: Building2, tone: 'green' },
-    { label: 'Maintenance Collected', value: money(stats.collected), note: `From all maintenance bills`, icon: IndianRupee, tone: 'green' },
-    { label: 'Pending Payments', value: money(stats.pending), note: `${data.bills.filter((bill) => (bill.payment_status || bill.status) !== 'Paid').length} bills pending`, icon: AlertTriangle, tone: 'red' },
-    { label: 'Pending NOCs', value: Number(data.nocSummary.pending || 0), note: `${Number(data.nocSummary.total || 0)} total requests`, icon: FileCheck2, tone: '' },
-    { label: 'Approved NOCs', value: Number(data.nocSummary.approved || 0), note: `${Number(data.nocSummary.rejected || 0)} rejected requests`, icon: FileCheck2, tone: 'green' }
+    { label: t('adminDashboard.totalResidents'), value: stats.residents, note: t('adminDashboard.approvedResidentAccounts'), icon: Users, tone: '' },
+    { label: t('adminDashboard.totalFlats'), value: data.flats.length, note: t('adminDashboard.occupiedFlats', { count: data.flats.filter((flat) => flat.owner_id).length }), icon: Building2, tone: 'green' },
+    { label: t('adminDashboard.maintenanceCollected'), value: formatters.currency(stats.collected), note: t('adminDashboard.fromAllMaintenanceBills'), icon: IndianRupee, tone: 'green' },
+    { label: t('adminDashboard.pendingPayments'), value: formatters.currency(stats.pending), note: t('adminDashboard.billsPending', { count: data.bills.filter((bill) => (bill.payment_status || bill.status) !== 'Paid').length }), icon: AlertTriangle, tone: 'red' },
+    { label: t('adminDashboard.pendingNocs'), value: Number(data.nocSummary.pending || 0), note: t('adminDashboard.totalRequests', { count: Number(data.nocSummary.total || 0) }), icon: FileCheck2, tone: '' },
+    { label: t('adminDashboard.approvedNocs'), value: Number(data.nocSummary.approved || 0), note: t('adminDashboard.rejectedRequests', { count: Number(data.nocSummary.rejected || 0) }), icon: FileCheck2, tone: 'green' }
   ];
 
   const trendData = useMemo(() => {
@@ -120,8 +133,8 @@ const AdminDashboard = () => {
   return (
     <div>
       <div className="portal-page-title">
-        <div><h1>Dashboard</h1><p>A quick view of your society's operations and finances.</p></div>
-        <div className="portal-date-chip"><CalendarDays size={14} /> {new Date().toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}</div>
+        <div><h1>{t('dashboard.title')}</h1><p>{t('adminDashboard.subtitle')}</p></div>
+        <div className="portal-date-chip"><CalendarDays size={14} /> {formatters.date(new Date(), { day: undefined, month: 'long', year: 'numeric' })}</div>
       </div>
 
       {loading ? (
@@ -140,12 +153,12 @@ const AdminDashboard = () => {
       <div className="portal-dashboard-grid">
         <section className="portal-panel">
           <div className="portal-panel-head">
-            <div><h2>Monthly Collection</h2><p>Collection vs expenses</p></div>
-            <div className="portal-chart-legend"><span><i />Collection</span><span><i style={{ backgroundColor: '#1473e6' }} />Expenses</span></div>
+            <div><h2>{t('adminDashboard.monthlyCollection')}</h2><p>{t('adminDashboard.collectionVsExpenses')}</p></div>
+            <div className="portal-chart-legend"><span><i />{t('adminDashboard.collection')}</span><span><i style={{ backgroundColor: '#1473e6' }} />{t('adminDashboard.expenses')}</span></div>
           </div>
           {loading ? <TableSkeleton rows={4} columns={3} /> : <div className="portal-line-chart">
             <div className="portal-chart-grid" />
-            <svg viewBox="0 0 600 150" preserveAspectRatio="none" aria-label="Monthly collection graph">
+            <svg viewBox="0 0 600 150" preserveAspectRatio="none" aria-label={t('adminDashboard.monthlyCollectionGraph')}>
               <defs>
                 <linearGradient id="collectionFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#079447" stopOpacity=".18" /><stop offset="1" stopColor="#079447" stopOpacity="0" /></linearGradient>
               </defs>
@@ -161,7 +174,7 @@ const AdminDashboard = () => {
         </section>
 
         <section className="portal-panel">
-          <div className="portal-panel-head"><div><h2>Maintenance Overview</h2><p>Current collection status</p></div></div>
+          <div className="portal-panel-head"><div><h2>{t('adminDashboard.maintenanceOverview')}</h2><p>{t('adminDashboard.currentCollectionStatus')}</p></div></div>
           {loading ? <CardSkeleton count={1} /> : <div className="portal-donut-wrap">
             <div 
               className="portal-donut" 
@@ -170,9 +183,9 @@ const AdminDashboard = () => {
               }}
             />
             <div className="portal-donut-labels">
-              <span><i />Paid<strong>{donutPercentages.paid}</strong></span>
-              <span><i />Pending<strong>{donutPercentages.pending}</strong></span>
-              <span><i />Overdue<strong>{donutPercentages.overdue}</strong></span>
+              <span><i />{t('adminDashboard.paid')}<strong>{donutPercentages.paid}</strong></span>
+              <span><i />{t('adminDashboard.pending')}<strong>{donutPercentages.pending}</strong></span>
+              <span><i />{t('adminDashboard.overdue')}<strong>{donutPercentages.overdue}</strong></span>
             </div>
           </div>}
         </section>
@@ -180,16 +193,16 @@ const AdminDashboard = () => {
 
       <div className="portal-lists-grid">
         <section className="portal-panel">
-          <div className="portal-panel-head"><div><h2>Recent Complaints</h2><p>Latest resident requests</p></div><button className="portal-link-button" onClick={() => navigate('/admin/complaints')}>View all</button></div>
+          <div className="portal-panel-head"><div><h2>{t('adminDashboard.recentComplaints')}</h2><p>{t('adminDashboard.latestResidentRequests')}</p></div><button className="portal-link-button" onClick={() => navigate('/admin/complaints')}>{t('common.viewAll')}</button></div>
           <div className="portal-feed">
             {loading ? <TableSkeleton rows={4} columns={3} /> : (
               !data.complaints.length ? (
-                <div className="portal-empty" style={{ padding: '24px 10px', textAlign: 'center', color: '#64748b' }}>No complaints found.</div>
+                <div className="portal-empty" style={{ padding: '24px 10px', textAlign: 'center', color: '#64748b' }}>{t('adminDashboard.noComplaints')}</div>
               ) : (
                 data.complaints.slice(0, 4).map((item) => (
                   <div className="portal-feed-item" key={item.id}>
                     <span className="portal-feed-icon"><MessageSquareWarning size={14} /></span>
-                    <div className="portal-feed-main"><strong>{item.title}</strong><span>{item.user_name || item.resident_name || 'Resident request'}</span></div>
+                    <div className="portal-feed-main"><strong>{item.title}</strong><span>{item.user_name || item.resident_name || t('adminDashboard.residentRequest')}</span></div>
                     <span className={`portal-status ${item.status}`}>{String(item.status).replace('_', ' ')}</span>
                   </div>
                 ))
@@ -199,17 +212,17 @@ const AdminDashboard = () => {
         </section>
 
         <section className="portal-panel">
-          <div className="portal-panel-head"><div><h2>Recent Notices</h2><p>Society announcements</p></div><button className="portal-link-button" onClick={() => navigate('/admin/notices')}>View all</button></div>
+          <div className="portal-panel-head"><div><h2>{t('adminDashboard.recentNotices')}</h2><p>{t('adminDashboard.societyAnnouncements')}</p></div><button className="portal-link-button" onClick={() => navigate('/admin/notices')}>{t('common.viewAll')}</button></div>
           <div className="portal-feed">
             {loading ? <TableSkeleton rows={4} columns={2} /> : (
               !data.notices.length ? (
-                <div className="portal-empty" style={{ padding: '24px 10px', textAlign: 'center', color: '#64748b' }}>No notices available.</div>
+                <div className="portal-empty" style={{ padding: '24px 10px', textAlign: 'center', color: '#64748b' }}>{t('adminDashboard.noNotices')}</div>
               ) : (
                 data.notices.slice(0, 4).map((item) => (
                   <div className="portal-feed-item" key={item.id}>
                     <span className="portal-feed-icon"><Megaphone size={14} /></span>
-                    <div className="portal-feed-main"><strong>{item.title}</strong><span>{item.description || 'Important society update'}</span></div>
-                    <span className="portal-feed-time">{new Date(item.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</span>
+                    <div className="portal-feed-main"><strong>{item.title}</strong><span>{item.description || t('adminDashboard.importantSocietyUpdate')}</span></div>
+                    <span className="portal-feed-time">{formatters.date(item.created_at, { day: '2-digit', month: 'short' })}</span>
                   </div>
                 ))
               )

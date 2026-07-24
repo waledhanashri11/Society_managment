@@ -1454,26 +1454,32 @@ const getReports = async (req, res) => {
 
     switch (type) {
       case 'monthly-collection':
-        query = `SELECT EXTRACT(MONTH FROM payment_date) AS month, EXTRACT(YEAR FROM payment_date) AS year, SUM(amount) AS amount
-                 FROM maintenance WHERE status = 'Paid' AND payment_date IS NOT NULL GROUP BY EXTRACT(YEAR FROM payment_date), EXTRACT(MONTH FROM payment_date) ORDER BY year DESC, month DESC`;
+        query = `SELECT EXTRACT(MONTH FROM payment_date) AS month, EXTRACT(YEAR FROM payment_date) AS year, SUM(COALESCE(paid_amount, 0)) AS amount
+                 FROM maintenance WHERE payment_date IS NOT NULL AND COALESCE(paid_amount, 0) > 0 GROUP BY EXTRACT(YEAR FROM payment_date), EXTRACT(MONTH FROM payment_date) ORDER BY year DESC, month DESC`;
         break;
       case 'yearly-collection':
-        query = `SELECT EXTRACT(YEAR FROM payment_date) AS year, SUM(amount) AS amount FROM maintenance WHERE status = 'Paid' AND payment_date IS NOT NULL GROUP BY EXTRACT(YEAR FROM payment_date) ORDER BY year DESC`;
+        query = `SELECT EXTRACT(YEAR FROM payment_date) AS year, SUM(COALESCE(paid_amount, 0)) AS amount FROM maintenance WHERE payment_date IS NOT NULL AND COALESCE(paid_amount, 0) > 0 GROUP BY EXTRACT(YEAR FROM payment_date) ORDER BY year DESC`;
         break;
       case 'pending-bills':
-        query = `SELECT m.*, m.status AS payment_status, m.total_amount AS total_amount, u.name AS resident_name, f.flat_no FROM maintenance m JOIN users u ON m.resident_id = u.id JOIN flats f ON m.flat_id = f.id WHERE m.status != 'Paid' ORDER BY m.due_date ASC`;
+        query = `SELECT m.*, m.status AS payment_status, m.total_amount AS total_amount, u.name AS resident_name, f.flat_no FROM maintenance m JOIN users u ON m.resident_id = u.id JOIN flats f ON m.flat_id = f.id WHERE COALESCE(m.remaining_amount, m.total_amount) > 0 ORDER BY m.due_date ASC`;
         break;
       case 'paid-bills':
-        query = `SELECT m.*, m.status AS payment_status, m.total_amount AS total_amount, u.name AS resident_name, f.flat_no FROM maintenance m JOIN users u ON m.resident_id = u.id JOIN flats f ON m.flat_id = f.id WHERE m.status = 'Paid' ORDER BY m.payment_date DESC`;
+        query = `SELECT m.*, m.status AS payment_status, m.total_amount AS total_amount, u.name AS resident_name, f.flat_no FROM maintenance m JOIN users u ON m.resident_id = u.id JOIN flats f ON m.flat_id = f.id WHERE COALESCE(m.remaining_amount, 0) <= 0 OR m.status = 'Paid' ORDER BY m.payment_date DESC`;
         break;
       case 'defaulters':
-        query = `SELECT m.*, m.status AS payment_status, m.total_amount AS total_amount, u.name AS resident_name, f.flat_no FROM maintenance m JOIN users u ON m.resident_id = u.id JOIN flats f ON m.flat_id = f.id WHERE m.status != 'Paid' AND m.due_date < CURRENT_DATE ORDER BY m.due_date ASC`;
+        query = `SELECT m.*, m.status AS payment_status, m.total_amount AS total_amount, u.name AS resident_name, f.flat_no FROM maintenance m JOIN users u ON m.resident_id = u.id JOIN flats f ON m.flat_id = f.id WHERE COALESCE(m.remaining_amount, m.total_amount) > 0 AND m.due_date < CURRENT_DATE ORDER BY m.due_date ASC`;
         break;
       case 'income-summary':
-        query = `SELECT SUM(total_amount) AS total_collection, SUM(CASE WHEN status = 'Paid' THEN paid_amount ELSE 0 END) AS paid_collection, SUM(CASE WHEN status != 'Paid' THEN remaining_amount ELSE 0 END) AS pending_collection FROM maintenance`;
+        query = `SELECT SUM(total_amount) AS total_bills_generated, SUM(COALESCE(paid_amount, 0)) AS total_collection, SUM(COALESCE(remaining_amount, 0)) AS pending_collection FROM maintenance`;
         break;
       default:
-        query = `SELECT COUNT(*) AS total_bills, SUM(CASE WHEN status = 'Paid' THEN 1 ELSE 0 END) AS paid_bills, SUM(CASE WHEN status != 'Paid' THEN 1 ELSE 0 END) AS pending_bills, SUM(CASE WHEN due_date < CURRENT_DATE AND status != 'Paid' THEN 1 ELSE 0 END) AS overdue_bills, SUM(CASE WHEN status = 'Paid' THEN paid_amount ELSE 0 END) AS total_collection, SUM(CASE WHEN status != 'Paid' THEN remaining_amount ELSE 0 END) AS pending_collection FROM maintenance`;
+        query = `SELECT COUNT(*) AS total_bills,
+                        SUM(CASE WHEN COALESCE(remaining_amount, 0) <= 0 OR status = 'Paid' THEN 1 ELSE 0 END) AS paid_bills,
+                        SUM(CASE WHEN COALESCE(remaining_amount, total_amount) > 0 AND (due_date >= CURRENT_DATE OR due_date IS NULL) THEN 1 ELSE 0 END) AS pending_bills,
+                        SUM(CASE WHEN due_date < CURRENT_DATE AND COALESCE(remaining_amount, total_amount) > 0 THEN 1 ELSE 0 END) AS overdue_bills,
+                        SUM(COALESCE(paid_amount, 0)) AS total_collection,
+                        SUM(COALESCE(remaining_amount, 0)) AS pending_collection
+                 FROM maintenance`;
     }
 
     const [rows] = await promisePool.query(query);

@@ -23,7 +23,7 @@ const saveBase64File = (base64Data, originalFileName) => {
 // GET /api/meetings
 const getAllMeetings = async (req, res) => {
   try {
-    const { meeting_type, status, priority, date, title } = req.query;
+    const { meeting_type, status, priority, date, title, is_compulsory } = req.query;
     let query = `
       SELECT m.*, 
              COALESCE(att.present_count, 0) AS present_count,
@@ -33,7 +33,7 @@ const getAllMeetings = async (req, res) => {
       FROM meetings m
       LEFT JOIN (
         SELECT meeting_id, 
-               SUM(CASE WHEN status = 'Present' THEN 1 ELSE 0 END) AS present_count,
+               SUM(CASE WHEN status IN ('Present', 'Late') THEN 1 ELSE 0 END) AS present_count,
                COUNT(*) AS total_count
         FROM meeting_attendance
         GROUP BY meeting_id
@@ -56,6 +56,10 @@ const getAllMeetings = async (req, res) => {
       query += ` AND m.priority = ?`;
       params.push(priority);
     }
+    if (is_compulsory !== undefined && is_compulsory !== '') {
+      query += ` AND m.is_compulsory = ?`;
+      params.push(is_compulsory === 'true' || is_compulsory === true);
+    }
     if (date) {
       query += ` AND m.meeting_date = ?`;
       params.push(date);
@@ -68,7 +72,29 @@ const getAllMeetings = async (req, res) => {
     query += ` ORDER BY m.meeting_date DESC, m.start_time DESC`;
 
     const [rows] = await promisePool.query(query, params);
-    res.json(rows);
+
+    // Calculate status dynamically if needed
+    const todayStr = new Date().toISOString().split('T')[0];
+    const nowTimeStr = new Date().toTimeString().split(' ')[0];
+
+    const enhancedRows = rows.map(m => {
+      let computedStatus = m.status;
+      if (m.status !== 'Cancelled' && m.status !== 'Completed') {
+        const mDateStr = new Date(m.meeting_date).toISOString().split('T')[0];
+        if (mDateStr === todayStr) {
+          if (nowTimeStr >= m.start_time && nowTimeStr <= m.end_time) {
+            computedStatus = 'Ongoing';
+          } else if (nowTimeStr < m.start_time) {
+            computedStatus = 'Upcoming';
+          }
+        } else if (mDateStr > todayStr) {
+          computedStatus = 'Upcoming';
+        }
+      }
+      return { ...m, computed_status: computedStatus };
+    });
+
+    res.json(enhancedRows);
   } catch (error) {
     console.error('Get meetings error:', error);
     res.status(500).json({ message: 'Server error' });
@@ -88,7 +114,7 @@ const getMeetingById = async (req, res) => {
 
     // Fetch agendas
     const [agendas] = await promisePool.query(
-      'SELECT * FROM meeting_agendas WHERE meeting_id = ? ORDER BY order_index ASC',
+      'SELECT * FROM meeting_agendas WHERE meeting_id = ? ORDER BY order_index ASC, id ASC',
       [id]
     );
 
@@ -114,6 +140,7 @@ const getMeetingById = async (req, res) => {
 
     let hasVoted = false;
     let myChoice = null;
+    let voters = [];
     if (vote) {
       const [voted] = await promisePool.query(
         'SELECT choice FROM meeting_resident_votes WHERE vote_id = ? AND resident_id = ?',
@@ -123,6 +150,17 @@ const getMeetingById = async (req, res) => {
         hasVoted = true;
         myChoice = voted[0].choice;
       }
+
+      const [votersList] = await promisePool.query(
+        `SELECT mrv.choice, u.name as resident_name, f.flat_no, f.wing
+         FROM meeting_resident_votes mrv
+         JOIN users u ON mrv.resident_id = u.id
+         LEFT JOIN flats f ON u.flat_id = f.id
+         WHERE mrv.vote_id = ?
+         ORDER BY u.name ASC`,
+        [vote.id]
+      );
+      voters = votersList;
     }
 
     // Fetch resident attendance status
@@ -132,14 +170,21 @@ const getMeetingById = async (req, res) => {
     );
     const myAttendance = att[0]?.status || null;
 
+    // Fetch fine for this resident if compulsory
+    const [fines] = await promisePool.query(
+      'SELECT * FROM meeting_fines WHERE meeting_id = ? AND resident_id = ?',
+      [id, req.user.id]
+    );
+
     res.json({
       ...meeting,
       agendas,
       report,
       actions,
       documents,
-      vote: vote ? { ...vote, has_voted: hasVoted, my_choice: myChoice } : null,
-      my_attendance: myAttendance
+      vote: vote ? { ...vote, has_voted: hasVoted, my_choice: myChoice, voters } : null,
+      my_attendance: myAttendance,
+      my_fine: fines[0] || null
     });
   } catch (error) {
     console.error('Get meeting error:', error);
@@ -150,7 +195,11 @@ const getMeetingById = async (req, res) => {
 // POST /api/meetings
 const createMeeting = async (req, res) => {
   try {
-    const { title, meeting_type, meeting_date, start_time, end_time, venue, description, priority, notify_residents = false, documents = [] } = req.body;
+    const {
+      title, meeting_type, meeting_date, start_time, end_time, venue, description,
+      priority, notify_residents = false, is_compulsory = false, fine_amount = 0, fine_due_days = 7,
+      agendas = [], documents = []
+    } = req.body;
 
     if (!title || !meeting_type || !meeting_date || !start_time || !end_time || !venue) {
       return res.status(400).json({ message: 'Meeting Title, Type, Date, Start Time, End Time and Venue are required' });
@@ -160,7 +209,7 @@ const createMeeting = async (req, res) => {
       return res.status(400).json({ message: 'Meeting End Time must be after Start Time' });
     }
 
-    // Duplicate venue booking overlap validation
+    // Check venue overlap
     const [overlap] = await promisePool.query(
       `SELECT id, title FROM meetings 
        WHERE venue = ? AND meeting_date = ? AND status != 'Cancelled'
@@ -174,19 +223,38 @@ const createMeeting = async (req, res) => {
       });
     }
 
+    const qrToken = `MEET-${Date.now()}-${Math.floor(Math.random()*10000)}`;
+
     const connection = await promisePool.getConnection();
     try {
       await connection.beginTransaction();
 
       const [result] = await connection.query(
-        `INSERT INTO meetings (title, meeting_type, meeting_date, start_time, end_time, venue, description, priority, notify_residents, status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Scheduled')`,
-        [title, meeting_type, meeting_date, start_time, end_time, venue, description || null, priority || 'Normal', notify_residents]
+        `INSERT INTO meetings (title, meeting_type, meeting_date, start_time, end_time, venue, description, priority, notify_residents, is_compulsory, fine_amount, fine_due_days, qr_code_token, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Scheduled')`,
+        [
+          title, meeting_type, meeting_date, start_time, end_time, venue,
+          description || null, priority || 'Normal', notify_residents, is_compulsory,
+          fine_amount || 0, fine_due_days || 7, qrToken
+        ]
       );
 
       const meetingId = result.insertId;
 
-      // Handle document uploads
+      // Handle Agendas
+      if (Array.isArray(agendas)) {
+        for (let i = 0; i < agendas.length; i++) {
+          const itemText = typeof agendas[i] === 'string' ? agendas[i] : agendas[i].item_text;
+          if (itemText && itemText.trim()) {
+            await connection.query(
+              'INSERT INTO meeting_agendas (meeting_id, item_text, order_index) VALUES (?, ?, ?)',
+              [meetingId, itemText.trim(), i]
+            );
+          }
+        }
+      }
+
+      // Handle documents
       for (const doc of documents) {
         if (doc.data && doc.name) {
           const fileInfo = saveBase64File(doc.data, doc.name);
@@ -197,11 +265,11 @@ const createMeeting = async (req, res) => {
         }
       }
 
-      // App Notifications if Notify Residents is enabled
+      // Send notifications to all residents
       if (notify_residents) {
         const formattedDate = new Date(meeting_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
         const notifTitle = `New Meeting Scheduled: ${title}`;
-        const notifMessage = `${meeting_type} scheduled on ${formattedDate} at ${start_time} - ${end_time}. Venue: ${venue}.`;
+        const notifMessage = `${meeting_type} scheduled on ${formattedDate} at ${start_time} - ${end_time}. Venue: ${venue}.${is_compulsory ? ' (COMPULSORY ATTENDANCE)' : ''}`;
 
         await connection.query(
           `INSERT INTO notifications (resident_id, title, message, type, is_read)
@@ -230,7 +298,10 @@ const createMeeting = async (req, res) => {
 const updateMeeting = async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, meeting_type, meeting_date, start_time, end_time, venue, description, priority, status } = req.body;
+    const {
+      title, meeting_type, meeting_date, start_time, end_time, venue, description,
+      priority, status, notify_residents = false, is_compulsory = false, fine_amount = 0, fine_due_days = 7
+    } = req.body;
 
     if (!title || !meeting_type || !meeting_date || !start_time || !end_time || !venue) {
       return res.status(400).json({ message: 'All standard fields are required' });
@@ -240,7 +311,6 @@ const updateMeeting = async (req, res) => {
       return res.status(400).json({ message: 'Meeting End Time must be after Start Time' });
     }
 
-    // Duplicate venue booking overlap validation excluding current ID
     const [overlap] = await promisePool.query(
       `SELECT id, title FROM meetings 
        WHERE venue = ? AND meeting_date = ? AND id != ? AND status != 'Cancelled'
@@ -254,14 +324,54 @@ const updateMeeting = async (req, res) => {
       });
     }
 
-    await promisePool.query(
-      `UPDATE meetings 
-       SET title = ?, meeting_type = ?, meeting_date = ?, start_time = ?, end_time = ?, venue = ?, description = ?, priority = ?, status = ?, updated_at = NOW()
-       WHERE id = ?`,
-      [title, meeting_type, meeting_date, start_time, end_time, venue, description || null, priority || 'Normal', status || 'Scheduled', id]
-    );
+    const connection = await promisePool.getConnection();
+    try {
+      await connection.beginTransaction();
 
-    res.json({ message: 'Meeting details updated successfully' });
+      await connection.query(
+        `UPDATE meetings 
+         SET title = ?, meeting_type = ?, meeting_date = ?, start_time = ?, end_time = ?, venue = ?,
+             description = ?, priority = ?, status = ?, notify_residents = ?, is_compulsory = ?,
+             fine_amount = ?, fine_due_days = ?, updated_at = NOW()
+         WHERE id = ?`,
+        [
+          title, meeting_type, meeting_date, start_time, end_time, venue,
+          description || null, priority || 'Normal', status || 'Scheduled', notify_residents,
+          is_compulsory, fine_amount || 0, fine_due_days || 7, id
+        ]
+      );
+
+      if (status === 'Cancelled') {
+        const notifTitle = `Meeting Cancelled: ${title}`;
+        const notifMessage = `The meeting "${title}" scheduled for ${meeting_date} has been cancelled by administration.`;
+        await connection.query(
+          `INSERT INTO notifications (resident_id, title, message, type, is_read)
+           SELECT id, ?, ?, 'meetings', false
+           FROM users WHERE status = 'approved' AND role = 'resident'`,
+          [notifTitle, notifMessage]
+        );
+      } else if (notify_residents) {
+        const formattedDate = new Date(meeting_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+        const notifTitle = `Meeting Details Updated: ${title}`;
+        const notifMessage = `${meeting_type} updated. Scheduled on ${formattedDate} at ${start_time} - ${end_time}. Venue: ${venue}.`;
+
+        await connection.query(
+          `INSERT INTO notifications (resident_id, title, message, type, is_read)
+           SELECT id, ?, ?, 'meetings', false
+           FROM users
+           WHERE status = 'approved' AND role = 'resident'`,
+          [notifTitle, notifMessage]
+        );
+      }
+
+      await connection.commit();
+      res.json({ message: 'Meeting details updated successfully' });
+    } catch (err) {
+      await connection.rollback();
+      throw err;
+    } finally {
+      connection.release();
+    }
   } catch (error) {
     console.error('Update meeting error:', error);
     res.status(500).json({ message: error.message || 'Server error' });
@@ -280,6 +390,56 @@ const deleteMeeting = async (req, res) => {
   }
 };
 
+// POST /api/meetings/:id/duplicate
+const duplicateMeeting = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const [meetings] = await promisePool.query('SELECT * FROM meetings WHERE id = ?', [id]);
+    if (meetings.length === 0) return res.status(404).json({ message: 'Meeting not found' });
+
+    const original = meetings[0];
+    const newTitle = `Copy of ${original.title}`;
+    const qrToken = `MEET-${Date.now()}-${Math.floor(Math.random()*10000)}`;
+
+    const connection = await promisePool.getConnection();
+    try {
+      await connection.beginTransaction();
+
+      const [result] = await connection.query(
+        `INSERT INTO meetings (title, meeting_type, meeting_date, start_time, end_time, venue, description, priority, notify_residents, is_compulsory, fine_amount, fine_due_days, qr_code_token, status)
+         VALUES (?, ?, CURRENT_DATE + INTERVAL '1 day', ?, ?, ?, ?, ?, FALSE, ?, ?, ?, ?, 'Scheduled')`,
+        [
+          newTitle, original.meeting_type, original.start_time, original.end_time,
+          original.venue, original.description, original.priority, original.is_compulsory,
+          original.fine_amount, original.fine_due_days, qrToken
+        ]
+      );
+
+      const newId = result.insertId;
+
+      // Copy agendas
+      const [agendas] = await connection.query('SELECT * FROM meeting_agendas WHERE meeting_id = ?', [id]);
+      for (const ag of agendas) {
+        await connection.query(
+          'INSERT INTO meeting_agendas (meeting_id, item_text, order_index) VALUES (?, ?, ?)',
+          [newId, ag.item_text, ag.order_index]
+        );
+      }
+
+      await connection.commit();
+      res.status(201).json({ id: newId, message: 'Meeting duplicated successfully' });
+    } catch (err) {
+      await connection.rollback();
+      throw err;
+    } finally {
+      connection.release();
+    }
+  } catch (error) {
+    console.error('Duplicate meeting error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
 // PUT /api/meetings/:id/agenda
 const updateAgendas = async (req, res) => {
   try {
@@ -289,16 +449,16 @@ const updateAgendas = async (req, res) => {
     const connection = await promisePool.getConnection();
     try {
       await connection.beginTransaction();
-
-      // Delete existing
       await connection.query('DELETE FROM meeting_agendas WHERE meeting_id = ?', [id]);
 
-      // Re-insert
-      for (const item of items) {
-        await connection.query(
-          'INSERT INTO meeting_agendas (meeting_id, item_text, order_index) VALUES (?, ?, ?)',
-          [id, item.item_text, item.order_index || 0]
-        );
+      for (let i = 0; i < items.length; i++) {
+        const text = typeof items[i] === 'string' ? items[i] : items[i].item_text;
+        if (text && text.trim()) {
+          await connection.query(
+            'INSERT INTO meeting_agendas (meeting_id, item_text, order_index) VALUES (?, ?, ?)',
+            [id, text.trim(), i]
+          );
+        }
       }
 
       await connection.commit();
@@ -320,13 +480,14 @@ const getAttendance = async (req, res) => {
   try {
     const { id } = req.params;
     const [rows] = await promisePool.query(`
-      SELECT u.id as resident_id, u.name as resident_name, f.flat_no, f.wing,
-             COALESCE(ma.status, 'Absent') AS status
+      SELECT u.id as resident_id, u.name as resident_name, u.email, f.flat_no, f.wing,
+             COALESCE(ma.status, 'Absent') AS status,
+             ma.marked_at
       FROM users u
-      JOIN flats f ON u.flat_id = f.id
+      LEFT JOIN flats f ON u.flat_id = f.id
       LEFT JOIN meeting_attendance ma ON ma.resident_id = u.id AND ma.meeting_id = ?
       WHERE u.role = 'resident' AND u.status = 'approved'
-      ORDER BY f.wing, f.floor_no, f.flat_no
+      ORDER BY f.wing ASC NULLS LAST, f.flat_no ASC NULLS LAST, u.name ASC
     `, [id]);
     res.json(rows);
   } catch (error) {
@@ -341,32 +502,11 @@ const saveAttendance = async (req, res) => {
     const { id } = req.params;
     const { attendance = [] } = req.body;
 
-    // Enforce Validation: Cannot take attendance before meeting starts
-    const [meetings] = await promisePool.query('SELECT meeting_date, start_time FROM meetings WHERE id = ?', [id]);
-    if (meetings.length === 0) {
-      return res.status(404).json({ message: 'Meeting not found' });
-    }
-
-    const meeting = meetings[0];
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const mDate = new Date(meeting.meeting_date);
-    mDate.setHours(0, 0, 0, 0);
-
-    if (mDate > today) {
-      return res.status(400).json({ message: 'Cannot mark attendance for a future meeting date.' });
-    }
-
-    const nowTime = new Date().toTimeString().split(' ')[0];
-    if (mDate.getTime() === today.getTime() && nowTime < meeting.start_time) {
-      return res.status(400).json({ message: 'Cannot mark attendance before the meeting start time.' });
-    }
-
     const connection = await promisePool.getConnection();
     try {
       await connection.beginTransaction();
 
+      // Upsert attendance records
       for (const att of attendance) {
         await connection.query(
           `INSERT INTO meeting_attendance (meeting_id, resident_id, status, marked_at)
@@ -376,8 +516,47 @@ const saveAttendance = async (req, res) => {
         );
       }
 
+      // Check if compulsory meeting & process fines immediately upon saving attendance
+      const [meetings] = await connection.query('SELECT * FROM meetings WHERE id = ?', [id]);
+      if (meetings.length > 0) {
+        const meeting = meetings[0];
+        if (meeting.is_compulsory && parseFloat(meeting.fine_amount) > 0) {
+          const dueDate = new Date();
+          dueDate.setDate(dueDate.getDate() + (meeting.fine_due_days || 7));
+          const dueDateStr = dueDate.toISOString().split('T')[0];
+
+          for (const att of attendance) {
+            if (att.status === 'Absent') {
+              // Issue fine if absent and no fine recorded yet
+              await connection.query(`
+                INSERT INTO meeting_fines (meeting_id, resident_id, amount, reason, due_date, status)
+                VALUES (?, ?, ?, ?, ?, 'Pending')
+                ON CONFLICT (meeting_id, resident_id) DO NOTHING
+              `, [id, att.resident_id, meeting.fine_amount, `Absence fine for compulsory meeting: ${meeting.title}`, dueDateStr]);
+
+              // Send fine notification
+              await connection.query(`
+                INSERT INTO notifications (resident_id, title, message, type, is_read)
+                VALUES (?, ?, ?, 'meetings', false)
+              `, [
+                att.resident_id,
+                `Compulsory Meeting Absence Fine Issued`,
+                `A fine of ₹${meeting.fine_amount} has been issued for missing compulsory meeting "${meeting.title}". Due date: ${dueDateStr}.`
+              ]);
+            } else if (['Present', 'Late', 'Excused'].includes(att.status)) {
+              // If status updated to Present/Late/Excused, automatically clear/waive any pending absence fine
+              await connection.query(`
+                UPDATE meeting_fines 
+                SET status = 'Waived', waived_reason = 'Attendance status updated to ' || ?, updated_at = NOW()
+                WHERE meeting_id = ? AND resident_id = ? AND status = 'Pending'
+              `, [att.status, id, att.resident_id]);
+            }
+          }
+        }
+      }
+
       await connection.commit();
-      res.json({ message: 'Attendance records updated successfully' });
+      res.json({ message: 'Attendance records saved & compulsory absence fines updated!' });
     } catch (err) {
       await connection.rollback();
       throw err;
@@ -390,49 +569,218 @@ const saveAttendance = async (req, res) => {
   }
 };
 
-// POST /api/meetings/:id/report
+// POST /api/meetings/:id/attendance/mark-all-present
+const markAllPresent = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const connection = await promisePool.getConnection();
+    try {
+      await connection.beginTransaction();
+
+      await connection.query(`
+        INSERT INTO meeting_attendance (meeting_id, resident_id, status, marked_at)
+        SELECT ?, id, 'Present', NOW()
+        FROM users
+        WHERE role = 'resident' AND status = 'approved'
+        ON CONFLICT (meeting_id, resident_id) DO UPDATE SET status = 'Present', marked_at = NOW()
+      `, [id]);
+
+      await connection.commit();
+      res.json({ message: 'All active residents marked as Present' });
+    } catch (err) {
+      await connection.rollback();
+      throw err;
+    } finally {
+      connection.release();
+    }
+  } catch (error) {
+    console.error('Mark all present error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// POST /api/meetings/:id/attendance/self (Resident QR / Self attendance)
+const selfMarkAttendance = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { qr_code_token } = req.body;
+    const residentId = req.user.id;
+
+    const [meetings] = await promisePool.query('SELECT * FROM meetings WHERE id = ?', [id]);
+    if (meetings.length === 0) return res.status(404).json({ message: 'Meeting not found' });
+
+    const meeting = meetings[0];
+    if (qr_code_token && meeting.qr_code_token !== qr_code_token) {
+      return res.status(400).json({ message: 'Invalid QR Code token' });
+    }
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const mDateStr = new Date(meeting.meeting_date).toISOString().split('T')[0];
+    const nowTime = new Date().toTimeString().split(' ')[0];
+
+    // Validation: Only allow self marking during meeting date & time
+    if (mDateStr !== todayStr) {
+      return res.status(400).json({ message: `Self attendance can only be marked on the meeting date (${mDateStr})` });
+    }
+
+    if (nowTime < meeting.start_time || nowTime > meeting.end_time) {
+      return res.status(400).json({ message: `Attendance window is open between ${meeting.start_time} and ${meeting.end_time}` });
+    }
+
+    await promisePool.query(
+      `INSERT INTO meeting_attendance (meeting_id, resident_id, status, marked_at)
+       VALUES (?, ?, 'Present', NOW())
+       ON CONFLICT (meeting_id, resident_id) DO UPDATE SET status = 'Present', marked_at = NOW()`,
+      [id, residentId]
+    );
+
+    res.json({ message: 'Attendance marked successfully as Present' });
+  } catch (error) {
+    console.error('Self attendance error:', error);
+    res.status(500).json({ message: error.message || 'Server error' });
+  }
+};
+
+// POST /api/meetings/:id/report (Meeting Report & MoM Publishing)
 const saveMeetingReport = async (req, res) => {
   try {
     const { id } = req.params;
-    const { summary, discussion, decisions_taken, remarks, documents = [] } = req.body;
+    const {
+      summary,
+      discussion,
+      decisions_taken,
+      remarks,
+      is_published = false,
+      prepared_by,
+      action_items = [],
+      documents = []
+    } = req.body;
 
     const connection = await promisePool.getConnection();
     try {
       await connection.beginTransaction();
 
+      const [adminRows] = await connection.query('SELECT name FROM users WHERE id = ?', [req.user.id]);
+      const authorName = prepared_by || adminRows[0]?.name || req.user.name || 'Admin';
+
       // Upsert report
-      const [existing] = await connection.query('SELECT id FROM meeting_reports WHERE meeting_id = ?', [id]);
+      const [existing] = await connection.query('SELECT id, is_published FROM meeting_reports WHERE meeting_id = ?', [id]);
       let reportId;
+
       if (existing.length > 0) {
+        if (existing[0].is_published && req.user.role !== 'super_admin' && req.user.role !== 'admin') {
+          await connection.rollback();
+          return res.status(403).json({ message: 'Published meeting reports cannot be modified.' });
+        }
         await connection.query(
-          `UPDATE meeting_reports SET summary = ?, discussion = ?, decisions_taken = ?, remarks = ?, updated_at = NOW() WHERE meeting_id = ?`,
-          [summary, discussion, decisions_taken, remarks, id]
+          `UPDATE meeting_reports
+           SET summary = ?, discussion = ?, decisions_taken = ?, remarks = ?, is_published = ?, prepared_by = ?, updated_at = NOW()
+           WHERE meeting_id = ?`,
+          [summary, discussion, decisions_taken, remarks, is_published, authorName, id]
         );
         reportId = existing[0].id;
       } else {
         const [result] = await connection.query(
-          `INSERT INTO meeting_reports (meeting_id, summary, discussion, decisions_taken, remarks) VALUES (?, ?, ?, ?, ?)`,
-          [id, summary, discussion, decisions_taken, remarks]
+          `INSERT INTO meeting_reports (meeting_id, summary, discussion, decisions_taken, remarks, is_published, prepared_by)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [id, summary, discussion, decisions_taken, remarks, is_published, authorName]
         );
         reportId = result.insertId;
       }
 
-      // Handle extra documents uploading for this report
-      for (const doc of documents) {
-        if (doc.data && doc.name) {
-          const fileInfo = saveBase64File(doc.data, doc.name);
-          await connection.query(
-            `INSERT INTO meeting_documents (meeting_id, report_id, file_path, file_name, file_type) VALUES (?, ?, ?, ?, ?)`,
-            [id, reportId, fileInfo.filePath, fileInfo.fileName, fileInfo.fileType]
-          );
+      // Process Action Items
+      if (Array.isArray(action_items) && action_items.length > 0) {
+        // Clear existing pending actions if editing draft report
+        await connection.query('DELETE FROM meeting_actions WHERE meeting_id = ?', [id]);
+        for (const item of action_items) {
+          if (item.action_text) {
+            await connection.query(
+              `INSERT INTO meeting_actions (meeting_id, action_text, responsible_person, assigned_to, due_date, priority, status)
+               VALUES (?, ?, ?, ?, ?, ?, ?)`,
+              [
+                id,
+                item.action_text,
+                item.responsible_person || item.assigned_person || null,
+                item.assigned_to || null,
+                item.due_date || null,
+                item.priority || 'Normal',
+                item.status || 'Pending'
+              ]
+            );
+          }
         }
       }
 
-      // Automatically update status to Completed
-      await connection.query("UPDATE meetings SET status = 'Completed', updated_at = NOW() WHERE id = ?", [id]);
+      // Attach Documents / Attachments
+      if (Array.isArray(documents) && documents.length > 0) {
+        for (const doc of documents) {
+          if (doc.data && doc.name) {
+            const fileInfo = saveBase64File(doc.data, doc.name);
+            await connection.query(
+              `INSERT INTO meeting_documents (meeting_id, report_id, file_path, file_name, file_type) VALUES (?, ?, ?, ?, ?)`,
+              [id, reportId, fileInfo.filePath, fileInfo.fileName, fileInfo.fileType]
+            );
+          }
+        }
+      }
+
+      // Update status to Completed if publishing
+      if (is_published) {
+        await connection.query("UPDATE meetings SET status = 'Completed', updated_at = NOW() WHERE id = ?", [id]);
+      }
+
+      // Check if Compulsory meeting & automatic fine calculation for absent residents upon publishing
+      const [meetings] = await connection.query('SELECT * FROM meetings WHERE id = ?', [id]);
+      const meeting = meetings[0];
+
+      if (is_published && meeting && meeting.is_compulsory && parseFloat(meeting.fine_amount) > 0) {
+        const dueDate = new Date();
+        dueDate.setDate(dueDate.getDate() + (meeting.fine_due_days || 7));
+        const dueDateStr = dueDate.toISOString().split('T')[0];
+
+        // Find absent or non-marked residents
+        const [absentResidents] = await connection.query(`
+          SELECT u.id
+          FROM users u
+          LEFT JOIN meeting_attendance ma ON ma.resident_id = u.id AND ma.meeting_id = ?
+          WHERE u.role = 'resident' AND u.status = 'approved'
+            AND (ma.status IS NULL OR ma.status = 'Absent')
+        `, [id]);
+
+        for (const r of absentResidents) {
+          await connection.query(`
+            INSERT INTO meeting_fines (meeting_id, resident_id, amount, reason, due_date, status)
+            VALUES (?, ?, ?, ?, ?, 'Pending')
+            ON CONFLICT (meeting_id, resident_id) DO NOTHING
+          `, [id, r.id, meeting.fine_amount, `Absence fine for compulsory meeting: ${meeting.title}`, dueDateStr]);
+
+          // Send fine notification
+          await connection.query(`
+            INSERT INTO notifications (resident_id, title, message, type, is_read)
+            VALUES (?, ?, ?, 'meetings', false)
+          `, [
+            r.id,
+            `Compulsory Meeting Absence Fine Issued`,
+            `A fine of ₹${meeting.fine_amount} has been issued for missing compulsory meeting "${meeting.title}". Due date: ${dueDateStr}.`
+          ]);
+        }
+      }
+
+      if (is_published) {
+        // Send Report Published notification to residents
+        const notifTitle = `Meeting Report Published: ${meeting.title}`;
+        const notifMessage = `Minutes of Meeting (MoM) report & decisions taken have been published.`;
+        await connection.query(
+          `INSERT INTO notifications (resident_id, title, message, type, is_read)
+           SELECT id, ?, ?, 'meetings', false FROM users WHERE role = 'resident' AND status = 'approved'`,
+          [notifTitle, notifMessage]
+        );
+      }
 
       await connection.commit();
-      res.json({ message: 'Meeting minutes (MoM) report recorded successfully' });
+      res.json({
+        message: is_published ? 'Meeting report published successfully!' : 'Meeting report saved as draft.'
+      });
     } catch (err) {
       await connection.rollback();
       throw err;
@@ -445,18 +793,170 @@ const saveMeetingReport = async (req, res) => {
   }
 };
 
+// GET /api/meetings/fines/list
+const getFines = async (req, res) => {
+  try {
+    let query = `
+      SELECT mf.*, m.title as meeting_title, m.meeting_date, u.name as resident_name, u.email, f.flat_no, f.wing
+      FROM meeting_fines mf
+      JOIN meetings m ON mf.meeting_id = m.id
+      JOIN users u ON mf.resident_id = u.id
+      LEFT JOIN flats f ON u.flat_id = f.id
+      WHERE 1=1
+    `;
+    const params = [];
+
+    if (req.user.role === 'resident') {
+      query += ` AND mf.resident_id = ?`;
+      params.push(req.user.id);
+    }
+
+    query += ` ORDER BY mf.created_at DESC`;
+    const [rows] = await promisePool.query(query, params);
+    res.json(rows);
+  } catch (error) {
+    console.error('Get fines error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// POST /api/meetings/fines/:id/pay
+const payFine = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const [fines] = await promisePool.query('SELECT * FROM meeting_fines WHERE id = ?', [id]);
+    if (fines.length === 0) return res.status(404).json({ message: 'Fine record not found' });
+
+    await promisePool.query(
+      `UPDATE meeting_fines SET status = 'Paid', paid_at = NOW(), updated_at = NOW() WHERE id = ?`,
+      [id]
+    );
+
+    res.json({ message: 'Meeting absence fine paid successfully' });
+  } catch (error) {
+    console.error('Pay fine error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// PUT /api/meetings/fines/:id/waive
+const waiveFine = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { waived_reason } = req.body;
+
+    await promisePool.query(
+      `UPDATE meeting_fines SET status = 'Waived', waived_reason = ?, updated_at = NOW() WHERE id = ?`,
+      [waived_reason || 'Waived by society committee', id]
+    );
+
+    res.json({ message: 'Meeting fine waived successfully' });
+  } catch (error) {
+    console.error('Waive fine error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// COMMENTS & Q&A
+const getComments = async (req, res) => {
+  try {
+    const { id: meeting_id } = req.params;
+    const [rows] = await promisePool.query(`
+      SELECT mc.*, u.name as user_name, u.role as user_role, f.flat_no, f.wing
+      FROM meeting_comments mc
+      JOIN users u ON mc.user_id = u.id
+      LEFT JOIN flats f ON u.flat_id = f.id
+      WHERE mc.meeting_id = ?
+      ORDER BY mc.created_at ASC
+    `, [meeting_id]);
+
+    res.json(rows);
+  } catch (error) {
+    console.error('Get comments error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+const addComment = async (req, res) => {
+  try {
+    const { id: meeting_id } = req.params;
+    const { comment_text } = req.body;
+    const userId = req.user.id;
+
+    if (!comment_text || !comment_text.trim()) {
+      return res.status(400).json({ message: 'Comment text cannot be empty' });
+    }
+
+    const [result] = await promisePool.query(
+      'INSERT INTO meeting_comments (meeting_id, user_id, comment_text) VALUES (?, ?, ?)',
+      [meeting_id, userId, comment_text.trim()]
+    );
+
+    res.status(201).json({ id: result.insertId, message: 'Comment posted successfully' });
+  } catch (error) {
+    console.error('Add comment error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// ANALYTICS & REPORTS
+const getMeetingAnalytics = async (req, res) => {
+  try {
+    const [tot] = await promisePool.query('SELECT COUNT(*) as count FROM meetings');
+    const [comp] = await promisePool.query("SELECT COUNT(*) as count FROM meetings WHERE status = 'Completed'");
+    const [upc] = await promisePool.query("SELECT COUNT(*) as count FROM meetings WHERE status = 'Scheduled' AND meeting_date >= CURRENT_DATE");
+
+    const [attStats] = await promisePool.query(`
+      SELECT 
+        COUNT(*) as total_records,
+        SUM(CASE WHEN status IN ('Present', 'Late') THEN 1 ELSE 0 END) as present_records
+      FROM meeting_attendance
+    `);
+
+    const totalRecords = parseInt(attStats[0]?.total_records || 0, 10);
+    const presentRecords = parseInt(attStats[0]?.present_records || 0, 10);
+    const attPercentage = totalRecords > 0 ? Math.round((presentRecords / totalRecords) * 100) : 0;
+
+    const [fineStats] = await promisePool.query(`
+      SELECT 
+        COALESCE(SUM(amount), 0) as total_fines,
+        COALESCE(SUM(CASE WHEN status = 'Paid' THEN amount ELSE 0 END), 0) as collected_fines,
+        COALESCE(SUM(CASE WHEN status = 'Pending' THEN amount ELSE 0 END), 0) as pending_fines
+      FROM meeting_fines
+    `);
+
+    const [typeDist] = await promisePool.query(`
+      SELECT meeting_type, COUNT(*) as count
+      FROM meetings
+      GROUP BY meeting_type
+    `);
+
+    res.json({
+      totalMeetings: parseInt(tot[0]?.count || 0, 10),
+      completedMeetings: parseInt(comp[0]?.count || 0, 10),
+      upcomingMeetings: parseInt(upc[0]?.count || 0, 10),
+      attendancePercentage: attPercentage,
+      fines: fineStats[0],
+      meetingTypes: typeDist
+    });
+  } catch (error) {
+    console.error('Analytics error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
 // ACTIONS TRACKER (CRUD)
 const createAction = async (req, res) => {
   try {
-    const { meeting_id, action_text, assigned_to, due_date, priority } = req.body;
+    const { meeting_id, action_text, responsible_person, assigned_to, due_date, priority } = req.body;
     if (!meeting_id || !action_text) {
       return res.status(400).json({ message: 'Meeting ID and action text are required' });
     }
 
     const [result] = await promisePool.query(
-      `INSERT INTO meeting_actions (meeting_id, action_text, assigned_to, due_date, priority, status)
-       VALUES (?, ?, ?, ?, ?, 'Pending')`,
-      [meeting_id, action_text, assigned_to || null, due_date || null, priority || 'Normal']
+      `INSERT INTO meeting_actions (meeting_id, action_text, responsible_person, assigned_to, due_date, priority, status)
+       VALUES (?, ?, ?, ?, ?, ?, 'Pending')`,
+      [meeting_id, action_text, responsible_person || null, assigned_to || null, due_date || null, priority || 'Normal']
     );
 
     res.status(201).json({ id: result.insertId, message: 'Action item created successfully' });
@@ -469,13 +969,13 @@ const createAction = async (req, res) => {
 const updateAction = async (req, res) => {
   try {
     const { id } = req.params;
-    const { action_text, assigned_to, due_date, priority, status } = req.body;
+    const { action_text, responsible_person, assigned_to, due_date, priority, status } = req.body;
 
     await promisePool.query(
       `UPDATE meeting_actions 
-       SET action_text = ?, assigned_to = ?, due_date = ?, priority = ?, status = ?, updated_at = NOW()
+       SET action_text = ?, responsible_person = ?, assigned_to = ?, due_date = ?, priority = ?, status = ?, updated_at = NOW()
        WHERE id = ?`,
-      [action_text, assigned_to || null, due_date || null, priority || 'Normal', status || 'Pending', id]
+      [action_text, responsible_person || null, assigned_to || null, due_date || null, priority || 'Normal', status || 'Pending', id]
     );
 
     res.json({ message: 'Action item updated' });
@@ -504,7 +1004,7 @@ const createVote = async (req, res) => {
       return res.status(400).json({ message: 'Meeting ID and question are required' });
     }
 
-    const [result] = await promisePool.query(
+    await promisePool.query(
       `INSERT INTO meeting_votes (meeting_id, question, yes_count, no_count, abstain_count)
        VALUES (?, ?, 0, 0, 0)
        ON CONFLICT (meeting_id) DO UPDATE SET question = EXCLUDED.question`,
@@ -521,7 +1021,7 @@ const createVote = async (req, res) => {
 const castVote = async (req, res) => {
   try {
     const { id: meeting_id } = req.params;
-    const { choice } = req.body; // YES, NO, ABSTAIN
+    const { choice } = req.body;
     const resident_id = req.user.id;
 
     if (!choice || !['YES', 'NO', 'ABSTAIN'].includes(choice)) {
@@ -534,12 +1034,10 @@ const castVote = async (req, res) => {
     }
 
     const voteId = votes[0].id;
-
     const connection = await promisePool.getConnection();
     try {
       await connection.beginTransaction();
 
-      // Check single vote constraint
       const [existing] = await connection.query(
         'SELECT id FROM meeting_resident_votes WHERE vote_id = ? AND resident_id = ?',
         [voteId, resident_id]
@@ -549,13 +1047,11 @@ const castVote = async (req, res) => {
         return res.status(409).json({ message: 'You have already cast your vote for this meeting poll.' });
       }
 
-      // Record resident vote
       await connection.query(
         'INSERT INTO meeting_resident_votes (vote_id, resident_id, choice) VALUES (?, ?, ?)',
         [voteId, resident_id, choice]
       );
 
-      // Increment counters
       if (choice === 'YES') {
         await connection.query('UPDATE meeting_votes SET yes_count = yes_count + 1 WHERE id = ?', [voteId]);
       } else if (choice === 'NO') {
@@ -584,10 +1080,19 @@ module.exports = {
   createMeeting,
   updateMeeting,
   deleteMeeting,
+  duplicateMeeting,
   updateAgendas,
   getAttendance,
   saveAttendance,
+  markAllPresent,
+  selfMarkAttendance,
   saveMeetingReport,
+  getFines,
+  payFine,
+  waiveFine,
+  getComments,
+  addComment,
+  getMeetingAnalytics,
   createAction,
   updateAction,
   deleteAction,

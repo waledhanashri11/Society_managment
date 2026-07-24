@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   CreditCard, Download, FileText, MessageSquareWarning, QrCode,
-  ReceiptIndianRupee, Send
+  ReceiptIndianRupee, Send, Printer
 } from 'lucide-react';
 import { maintenanceAPI, settingsAPI } from '../services/api';
 import { getUser } from '../utils/auth';
+import { printWriteOffReceipt } from '../utils/paymentReceipt';
 import { TableSkeleton } from '../components/Skeletons';
 
 const unwrap = (response) => response?.data?.data ?? response?.data ?? [];
@@ -12,14 +13,47 @@ const money = (value) => `Rs. ${Number(value || 0).toLocaleString('en-IN')}`;
 const monthName = (month) => new Date(2026, Number(month || 1) - 1).toLocaleDateString('en-IN', { month: 'short' });
 const fullDate = (value) => value ? new Date(value).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '-';
 const today = () => new Date().toISOString().slice(0, 10);
-const statusClass = (status) => String(status || 'Pending').toLowerCase().replace(/\s+/g, '_');
 
 const SUPPORT_PARTIAL_PAYMENTS = true; // Set to false to disable partial payments
+
+const statusBadge = (bill) => {
+  let label = bill.payment_status || 'Pending';
+  let color = '#bd5b00';
+  let bg = '#fff2e5';
+
+  if (label === 'Paid') {
+    color = '#05783b';
+    bg = '#e8f8ef';
+  } else if (label === 'Overdue') {
+    color = '#b42318';
+    bg = '#fef3f2';
+  }
+
+  return (
+    <span 
+      style={{ 
+        borderRadius: '99px', 
+        padding: '3px 7px', 
+        fontSize: '9px', 
+        fontWeight: '700',
+        color: color,
+        background: bg,
+        display: 'inline-block',
+        textTransform: 'uppercase',
+        letterSpacing: '0.02em',
+        verticalAlign: 'middle'
+      }}
+    >
+      {label}
+    </span>
+  );
+};
 
 const ResidentMaintenance = () => {
   const user = getUser();
   const [bills, setBills] = useState([]);
   const [paymentSettings, setPaymentSettings] = useState({});
+  const [societySettings, setSocietySettings] = useState({});
   const [loading, setLoading] = useState(true);
   const [loadingBill, setLoadingBill] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -43,10 +77,12 @@ const ResidentMaintenance = () => {
   const load = useCallback(async () => {
     const results = await Promise.allSettled([
       maintenanceAPI.getUserMaintenance(),
-      settingsAPI.getPayment()
+      settingsAPI.getPayment(),
+      settingsAPI.get()
     ]);
     if (results[0].status === 'fulfilled') setBills(unwrap(results[0].value));
     if (results[1].status === 'fulfilled') setPaymentSettings(results[1].value.data || {});
+    if (results[2].status === 'fulfilled') setSocietySettings(unwrap(results[2].value));
     setLoading(false);
   }, []);
 
@@ -57,7 +93,10 @@ const ResidentMaintenance = () => {
   const pendingBills = useMemo(() => bills.filter((bill) => bill.payment_status !== 'Paid'), [bills]);
   const paidBills = useMemo(() => bills.filter((bill) => bill.payment_status === 'Paid'), [bills]);
   const summary = useMemo(() => ({
-    due: pendingBills.reduce((sum, bill) => sum + Number(bill.remaining_amount || bill.total_amount || 0), 0),
+    due: pendingBills.reduce((sum, bill) => {
+      const remaining = bill.remainingPayable !== undefined ? bill.remainingPayable : (bill.remaining_amount !== undefined ? bill.remaining_amount : bill.total_amount);
+      return sum + Number(remaining || 0);
+    }, 0),
     paid: paidBills.reduce((sum, bill) => sum + Number(bill.paid_amount || bill.total_amount || 0), 0),
     underReview: bills.filter((bill) => ['Under Review', 'Pending Verification'].includes(bill.payment_status)).length
   }), [bills, paidBills, pendingBills]);
@@ -70,7 +109,8 @@ const ResidentMaintenance = () => {
       const fullBill = response.data?.data?.bill || response.data?.bill || bill;
       setSelectedBill(fullBill);
       
-      const totalDue = Number(fullBill.remaining_amount || fullBill.total_amount || 0) + Number(fullBill.previous_outstanding || 0);
+      const remaining = fullBill.remainingPayable !== undefined ? fullBill.remainingPayable : (fullBill.remaining_amount !== undefined ? fullBill.remaining_amount : fullBill.total_amount);
+      const totalDue = Number(remaining || 0) + Number(fullBill.previous_outstanding || 0);
 
       setPayment({
         paymentMethod: 'UPI',
@@ -176,12 +216,16 @@ const ResidentMaintenance = () => {
       <tr><th>Flat Type</th><td>${bill.flat_type_name || 'Not Assigned'}</td></tr>
       <tr><th>Period</th><td>${monthName(bill.month)} ${bill.year || ''}</td></tr>
       <tr><th>Due Date</th><td>${fullDate(bill.due_date)}</td></tr>
-      <tr><th>Status</th><td>${bill.payment_status}</td></tr>
+      <tr><th>Status</th><td>${bill.write_off_status || bill.payment_status}</td></tr>
       <tr><th>Base Maintenance Charge</th><td>${money(bill.amount)}</td></tr>
       ${itemsHtml}
-      <tr><th>Late Fee</th><td>${money(bill.late_fee || bill.penalty_amount)}</td></tr>
+      <tr><th>Original Late Fee</th><td>${money(bill.late_fee || bill.penalty_amount)}</td></tr>
+      <tr><th>Original Total Bill</th><td>${money(bill.total_amount)}</td></tr>
+      ${Number(bill.maintenance_write_off_amount || 0) > 0 ? `<tr><th style="color:#b91c1c;">Maintenance Written Off</th><td style="color:#b91c1c;">-${money(bill.maintenance_write_off_amount)}</td></tr>` : ''}
+      ${Number(bill.penalty_write_off_amount || 0) > 0 ? `<tr><th style="color:#b91c1c;">Penalty Written Off</th><td style="color:#b91c1c;">-${money(bill.penalty_write_off_amount)}</td></tr>` : ''}
+      ${Number(bill.paid_amount || 0) > 0 ? `<tr><th>Amount Paid</th><td>${money(bill.paid_amount)}</td></tr>` : ''}
       ${prevOutstandingHtml}
-      <tr><th class="total">Total Payable</th><td class="total">${money(Number(bill.total_amount || 0) + Number(bill.previous_outstanding || 0))}</td></tr>
+      <tr><th class="total">Remaining Payable</th><td class="total">${money(Number(bill.remainingPayable !== undefined ? bill.remainingPayable : bill.remaining_amount) + Number(bill.previous_outstanding || 0))}</td></tr>
       </table><p class="muted right">Generated on ${new Date().toLocaleString('en-IN')}</p>
       </div><script>window.print();</script></body></html>`;
     const docWindow = window.open('', '_blank', 'width=900,height=700');
@@ -197,6 +241,16 @@ const ResidentMaintenance = () => {
       printDocument(type, fullBill);
     } catch (err) {
       notify('Failed to load bill details for printing');
+    }
+  };
+
+  const handlePrintWriteOffReceipt = async (bill) => {
+    try {
+      const response = await maintenanceAPI.getWriteOffReceipt(bill.id);
+      const receiptData = response.data?.data || response.data || {};
+      printWriteOffReceipt(receiptData, societySettings);
+    } catch (err) {
+      notify('Failed to load write-off receipt for printing');
     }
   };
 
@@ -244,17 +298,22 @@ const ResidentMaintenance = () => {
         {bills.length ? (
           <div className="portal-table-wrap">
             <table className="resident-payments">
-              <thead><tr><th>Month</th><th>Amount</th><th>Status</th><th>Actions</th></tr></thead>
+              <thead><tr><th>Month</th><th>Bill Amount</th><th>Status</th><th>Actions</th></tr></thead>
               <tbody>{bills.map((bill) => (
                 <tr key={bill.id}>
                   <td><strong>{monthName(bill.month)} {bill.year}</strong><small>{bill.bill_number || `BILL-${bill.id}`}</small></td>
-                  <td>{money(bill.total_amount)}</td>
-                  <td><span className={`portal-status ${statusClass(bill.payment_status)}`}>{bill.payment_status || 'Pending'}</span></td>
+                  <td>
+                    <strong>{money(bill.total_amount)}</strong>
+                  </td>
+                  <td>
+                    {statusBadge(bill)}
+                  </td>
                   <td>
                     <div className="resident-bill-actions">
                       {bill.payment_status !== 'Paid' && <button onClick={() => openPayment(bill)}><CreditCard size={11} /> Pay via UPI</button>}
                       <button onClick={() => handlePrint('Maintenance Invoice', bill)}><FileText size={11} /> Invoice</button>
                       {bill.payment_status === 'Paid' && <button onClick={() => handlePrint('Payment Receipt', bill)}><Download size={11} /> Receipt</button>}
+                      {Number(bill.write_off_amount || 0) > 0 && <button onClick={() => handlePrintWriteOffReceipt(bill)}><Printer size={11} /> Print W/O</button>}
                       {bill.payment_status !== 'Paid' && <button onClick={() => raiseBillDispute(bill)}><MessageSquareWarning size={11} /> Dispute</button>}
                     </div>
                   </td>
@@ -359,29 +418,34 @@ const ResidentMaintenance = () => {
                         </div>
                       ))}
                       {Number(selectedBill.penalty_amount || 0) > 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#b42318' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                           <span>Late Fee Penalty:</span>
                           <strong>{money(selectedBill.penalty_amount)}</strong>
                         </div>
                       )}
-                      {Number(selectedBill.previous_outstanding || 0) > 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#b42318' }}>
-                          <span>Previous Outstanding Balance:</span>
-                          <strong>{money(selectedBill.previous_outstanding)}</strong>
-                        </div>
-                      )}
+                      
                       <hr style={{ margin: '6px 0', border: 0, borderTop: '1px solid #e2e8f0' }} />
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, color: '#0f172a' }}>
-                        <span>Total Payable Amount:</span>
-                        <strong>{money(Number(selectedBill.total_amount || 0) + Number(selectedBill.previous_outstanding || 0))}</strong>
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}>
+                        <span>Original Bill:</span>
+                        <strong>{money(selectedBill.total_amount)}</strong>
                       </div>
+
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span>Amount Already Paid:</span>
                         <strong>{money(selectedBill.paid_amount)}</strong>
                       </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, color: '#059669' }}>
-                        <span>Remaining Balance Due:</span>
-                        <strong>{money(Number(selectedBill.remaining_amount || 0) + Number(selectedBill.previous_outstanding || 0))}</strong>
+
+                      {Number(selectedBill.previous_outstanding || 0) > 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#b42318' }}>
+                          <span>Previous Outstanding:</span>
+                          <strong>{money(selectedBill.previous_outstanding)}</strong>
+                        </div>
+                      )}
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, color: '#1e3a8a', fontSize: '0.8rem', borderTop: '1px dashed #cbd5e1', paddingTop: '4px', marginTop: '2px' }}>
+                        <span>Remaining Payable:</span>
+                        <strong>{money(Number(selectedBill.remainingPayable !== undefined ? selectedBill.remainingPayable : selectedBill.remaining_amount) + Number(selectedBill.previous_outstanding || 0))}</strong>
                       </div>
                     </div>
                   </div>

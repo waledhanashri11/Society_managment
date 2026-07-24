@@ -2,28 +2,34 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
   Bell, Building2, CalendarDays, ChevronDown, ClipboardList, CreditCard, FileBarChart, FileCheck2, Home, LogOut,
-  Menu, MessageSquareWarning, ReceiptIndianRupee, User, Users, X
+  Menu, MessageSquareWarning, Moon, ReceiptIndianRupee, Sun, User, Users, X
 } from 'lucide-react';
 import { getUser, logout } from '../utils/auth';
+import { useTheme } from '../utils/theme';
 import { notificationAPI } from '../services/api';
+import SocietyRulesAcceptance from './SocietyRulesAcceptance';
+import { useTranslation } from 'react-i18next';
+import LanguageSelector from '../components/LanguageSelector';
 import '../portal.css';
 
 const residentLinks = [
-  { to: '/resident/dashboard', label: 'Dashboard', icon: Home },
-  { to: '/resident/maintenance', label: 'Maintenance', icon: CreditCard },
-  { to: '/resident/meetings', label: 'Meetings', icon: CalendarDays },
-  { to: '/resident/complaints', label: 'Complaints', icon: MessageSquareWarning },
-  { to: '/resident/notices', label: 'Notices', icon: Bell },
-  { to: '/resident/members', label: 'Members', icon: Users },
-  { to: '/resident/reports', label: 'Reports', icon: FileBarChart },
-  { to: '/resident/my-nocs', label: 'My NOCs', icon: FileCheck2 },
-  { to: '/resident/profile', label: 'My Profile', icon: User },
-  { to: '/resident/payments', label: 'Payments', icon: ClipboardList }
+  { to: '/resident/dashboard', labelKey: 'nav.dashboard', icon: Home },
+  { to: '/resident/maintenance', labelKey: 'nav.maintenance', icon: CreditCard },
+  { to: '/resident/meetings', labelKey: 'nav.meetings', icon: CalendarDays },
+  { to: '/resident/complaints', labelKey: 'nav.complaints', icon: MessageSquareWarning },
+  { to: '/resident/notices', labelKey: 'nav.notices', icon: Bell },
+  { to: '/resident/society-rules', labelKey: 'nav.societyRules', icon: ClipboardList },
+  { to: '/resident/members', labelKey: 'nav.members', icon: Users },
+  { to: '/resident/my-nocs', labelKey: 'nav.myNocs', icon: FileCheck2 },
+  { to: '/resident/profile', labelKey: 'nav.myProfile', icon: User },
+  { to: '/resident/payments', labelKey: 'nav.payments', icon: ClipboardList },
+  { to: '/resident/reports', labelKey: 'nav.reports', icon: FileBarChart }
 ];
 
 const getProfilePhotoKey = (user) => `residentProfilePhoto:${user?.id || user?.email || 'current'}`;
 
 const ResidentLayout = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const user = getUser();
   const profilePhotoKey = getProfilePhotoKey(user);
@@ -32,6 +38,7 @@ const ResidentLayout = () => {
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [notificationsLoaded, setNotificationsLoaded] = useState(false);
+  const { resolvedTheme, cycleTheme } = useTheme();
   const [profilePhoto, setProfilePhoto] = useState(() => localStorage.getItem(profilePhotoKey) || '');
   const handleLogout = () => { logout(); navigate('/login'); };
   const closeMenus = () => setActiveMenu('');
@@ -99,28 +106,40 @@ const ResidentLayout = () => {
       <aside className={`portal-sidebar ${open ? 'is-open' : ''}`}>
         <div className="portal-brand">
           <span className="portal-brand-mark"><Building2 size={21} /></span>
-          <span><strong>SocietyHub</strong><small>Resident Portal</small></span>
+          <span><strong>{t('common.appName')}</strong><small>{t('common.residentPortal')}</small></span>
           <button className="portal-mobile-close" onClick={() => setOpen(false)}><X size={19} /></button>
         </div>
-        <div className="portal-nav-label">My society</div>
+        <div className="portal-nav-label">{t('nav.mySociety')}</div>
         <nav className="portal-nav">
-          {residentLinks.map(({ to, label, icon: Icon, end }) => (
-            <NavLink key={label} to={to} end={end} onClick={() => setOpen(false)}
+          {residentLinks.map(({ to, labelKey, icon: Icon, end }) => (
+            <NavLink key={to} to={to} end={end} onClick={() => setOpen(false)}
               className={({ isActive }) => `portal-nav-link ${isActive ? 'active' : ''}`}>
-              <Icon size={17} /><span>{label}</span>
+              <Icon size={17} /><span>{t(labelKey)}</span>
             </NavLink>
           ))}
         </nav>
         <div className="portal-sidebar-foot">
-          <button className="portal-nav-link" onClick={handleLogout}><LogOut size={17} /><span>Logout</span></button>
+          <button className="portal-nav-link" onClick={handleLogout}><LogOut size={17} /><span>{t('nav.logout')}</span></button>
         </div>
       </aside>
 
       <div className="portal-main">
         <header className="portal-topbar">
           <button className="portal-menu-button" onClick={() => setOpen(true)}><Menu size={21} /></button>
-          <div className="portal-breadcrumb"><span>Resident Portal</span><small>Welcome home</small></div>
+          <div className="portal-breadcrumb"><span>{t('common.residentPortal')}</span><small>{t('common.welcomeHome')}</small></div>
           <div className="portal-top-actions">
+            <LanguageSelector compact />
+            <button
+              type="button"
+              className="portal-theme-toggle"
+              onClick={cycleTheme}
+              aria-label={t('theme.toggle')}
+              aria-pressed={resolvedTheme === 'dark'}
+              title={t('theme.toggle')}
+            >
+              {resolvedTheme === 'dark' ? <Moon size={16} /> : <Sun size={16} />}
+              <span>{resolvedTheme === 'dark' ? t('theme.dark') : t('theme.light')}</span>
+            </button>
             <div className="portal-action-menu" onClick={(event) => event.stopPropagation()}>
               <button
                 className="portal-notification"
@@ -134,11 +153,11 @@ const ResidentLayout = () => {
               {activeMenu === 'notifications' && (
                 <div className="portal-dropdown portal-notification-panel">
                   <div className="portal-dropdown-head">
-                    <strong>Notifications</strong>
-                    <span>{unreadCount > 0 ? `${unreadCount} new` : 'Read'}</span>
+                    <strong>{t('notifications.title')}</strong>
+                    <span>{unreadCount > 0 ? t('notifications.new', { count: unreadCount }) : t('notifications.read')}</span>
                   </div>
                   {notifications.length === 0 ? (
-                    <div className="portal-dropdown-empty">No notifications available</div>
+                    <div className="portal-dropdown-empty">{t('notifications.noneAvailable')}</div>
                   ) : notifications.map((item) => {
                     const Icon = item.type === 'payment' ? ReceiptIndianRupee : Bell;
                     return (
@@ -194,7 +213,11 @@ const ResidentLayout = () => {
             </div>
           </div>
         </header>
-        <main className="portal-content"><Outlet /></main>
+        <main className="portal-content">
+          <SocietyRulesAcceptance>
+            <Outlet />
+          </SocietyRulesAcceptance>
+        </main>
       </div>
     </div>
   );

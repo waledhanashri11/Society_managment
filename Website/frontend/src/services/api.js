@@ -45,7 +45,7 @@ export const clearApiCache = (matcher = '') => {
 
 const cachedGet = async (url, config = {}, options = {}) => {
   const ttl = options.ttl ?? CACHE_TTL_MS;
-  const force = options.force === true;
+  const force = options.force === true || config.force === true;
   const key = getCacheKey(url, config);
 
   if (!force) {
@@ -126,8 +126,8 @@ export const authAPI = {
 };
 
 export const userAPI = {
-  getAll: (config = {}) => cachedGet('/users', config),
-  getById: (id, config = {}) => cachedGet(`/users/${id}`, config),
+  getAll: (config = {}) => cachedGet('/users', config, { force: true }),
+  getById: (id, config = {}) => cachedGet(`/users/${id}`, config, { force: true }),
   create: (data) => mutate(api.post('/users', data), ['/users', '/flats']),
   update: (id, data) => mutate(api.put(`/users/${id}`, data), ['/users', '/flats']),
   updateStatus: (id, status) => mutate(api.put(`/users/${id}/status`, { status }), ['/users', '/flats']),
@@ -135,9 +135,9 @@ export const userAPI = {
 };
 
 export const flatAPI = {
-  getAll: (config = {}) => cachedGet('/flats', config),
-  getAvailable: (config = {}) => cachedGet('/flats/available', config),
-  getById: (id, config = {}) => cachedGet(`/flats/${id}`, config),
+  getAll: (config = {}) => cachedGet('/flats', config, { force: true }),
+  getAvailable: (config = {}) => cachedGet('/flats/available', config, { force: true }),
+  getById: (id, config = {}) => cachedGet(`/flats/${id}`, config, { force: true }),
   create: (data) => mutate(api.post('/flats', data), ['/flats', '/users']),
   update: (id, data) => mutate(api.put(`/flats/${id}`, data), ['/flats', '/users']),
   delete: (id) => mutate(api.delete(`/flats/${id}`), ['/flats', '/users']),
@@ -161,10 +161,19 @@ export const meetingAPI = {
   create: (data) => mutate(api.post('/meetings', data), '/meetings'),
   update: (id, data) => mutate(api.put(`/meetings/${id}`, data), ['/meetings', `/meetings/${id}`]),
   delete: (id) => mutate(api.delete(`/meetings/${id}`), '/meetings'),
+  duplicate: (id) => mutate(api.post(`/meetings/${id}/duplicate`), '/meetings'),
   updateAgenda: (id, data) => mutate(api.put(`/meetings/${id}/agenda`, data), [`/meetings/${id}`, '/meetings']),
   getAttendance: (id, config = {}) => cachedGet(`/meetings/${id}/attendance`, config),
   saveAttendance: (id, data) => mutate(api.post(`/meetings/${id}/attendance`, data), [`/meetings/${id}`, '/meetings']),
+  markAllPresent: (id) => mutate(api.post(`/meetings/${id}/attendance/mark-all-present`), [`/meetings/${id}`, '/meetings']),
+  selfMarkAttendance: (id, data = {}) => mutate(api.post(`/meetings/${id}/attendance/self`, data), [`/meetings/${id}`, '/meetings']),
   saveReport: (id, data) => mutate(api.post(`/meetings/${id}/report`, data), [`/meetings/${id}`, '/meetings']),
+  getFines: (config = {}) => cachedGet('/meetings/fines/list', config),
+  payFine: (id) => mutate(api.post(`/meetings/fines/${id}/pay`), '/meetings'),
+  waiveFine: (id, data) => mutate(api.put(`/meetings/fines/${id}/waive`, data), '/meetings'),
+  getComments: (id, config = {}) => cachedGet(`/meetings/${id}/comments`, config),
+  addComment: (id, data) => mutate(api.post(`/meetings/${id}/comments`, data), `/meetings/${id}/comments`),
+  getAnalytics: (config = {}) => cachedGet('/meetings/analytics/overview', config),
   createAction: (data) => mutate(api.post('/meetings/actions', data), '/meetings'),
   updateAction: (id, data) => mutate(api.put(`/meetings/actions/${id}`, data), '/meetings'),
   deleteAction: (id) => mutate(api.delete(`/meetings/actions/${id}`), '/meetings'),
@@ -219,6 +228,12 @@ export const maintenanceAPI = {
   waiveLateFee: (id) => mutate(api.put(`/maintenance/bills/${id}/waive-late-fee`), '/maintenance'),
   createDispute: (data) => mutate(api.post('/maintenance/disputes', data), '/maintenance'),
   getDisputes: (config = {}) => cachedGet('/maintenance/disputes', config),
+  createWriteOff: (id, data) => mutate(api.post(`/maintenance/bills/${id}/write-off`, data), '/maintenance'),
+  getWriteOffHistory: (params = {}, config = {}) => cachedGet('/maintenance/write-offs', { ...config, params }),
+  getAGMReport: (params = {}, config = {}) => cachedGet('/maintenance/agm-report', { ...config, params }),
+  getWriteOffReceipt: (id, config = {}) => cachedGet(`/maintenance/bills/${id}/write-off-receipt`, config),
+  reverseWriteOff: (id) => mutate(api.delete(`/maintenance/write-offs/${id}`), '/maintenance'),
+  editWriteOff: (id, data) => mutate(api.put(`/maintenance/write-offs/${id}`, data), '/maintenance'),
 };
 
 export const complaintAPI = {
@@ -234,9 +249,17 @@ export const complaintAPI = {
 
 export const noticeAPI = {
   getAll: (config = {}) => cachedGet('/notices', config),
+  getStats: (config = {}) => cachedGet('/notices/stats/overview', config),
   getLatest: (config = {}) => cachedGet('/notices/latest', config),
   getById: (id, config = {}) => cachedGet(`/notices/${id}`, config),
   create: (data) => mutate(api.post('/notices', data), '/notices'),
+  update: (id, data) => mutate(api.put(`/notices/${id}`, data), ['/notices', `/notices/${id}`]),
+  publish: (id) => mutate(api.put(`/notices/${id}/publish`), ['/notices', `/notices/${id}`]),
+  closePoll: (id) => mutate(api.put(`/notices/${id}/poll/close`), ['/notices', `/notices/${id}`]),
+  vote: (id, payload) => mutate(
+    api.post(`/notices/${id}/vote`, Array.isArray(payload) ? { option_ids: payload } : payload),
+    ['/notices', `/notices/${id}`]
+  ),
   delete: (id) => mutate(api.delete(`/notices/${id}`), '/notices'),
 };
 
@@ -254,6 +277,17 @@ export const settingsAPI = {
   update: (data) => mutate(api.put('/settings', data), '/settings'),
 };
 
+export const rulesAPI = {
+  getMeta: (config = {}) => cachedGet('/rules/meta', config),
+  getAll: (config = {}) => cachedGet('/rules', config),
+  create: (data) => mutate(api.post('/rules', data), '/rules'),
+  update: (id, data) => mutate(api.put(`/rules/${id}`, data), '/rules'),
+  delete: (id) => mutate(api.delete(`/rules/${id}`), '/rules'),
+  reorder: (ids) => mutate(api.put('/rules/reorder', { ids }), '/rules'),
+  accept: () => mutate(api.post('/rules/accept'), ['/rules', '/resident']),
+  getAcceptanceReport: (params = {}, config = {}) => cachedGet('/rules/acceptance-report', { ...config, params })
+};
+
 export const notificationAPI = {
   getAdmin: (config = {}) => cachedGet('/notifications/admin', config, { ttl: 60 * 1000 }),
   markAdminRead: () => mutate(api.put('/notifications/admin/read'), '/notifications'),
@@ -266,9 +300,13 @@ export const nocAPI = {
   getAll: (config = {}) => cachedGet('/noc', config),
   getById: (id, config = {}) => cachedGet(`/noc/${id}`, config),
   getSummary: (config = {}) => cachedGet('/noc/summary', config),
+  getReportsData: (params = {}, config = {}) => cachedGet('/noc/reports', { ...config, params }),
   markReview: (id, data = {}) => mutate(api.put(`/noc/${id}/review`, data), ['/noc', '/notifications']),
+  requestInfo: (id, data = {}) => mutate(api.put(`/noc/${id}/request-info`, data), ['/noc', '/notifications']),
+  uploadInfo: (id, data = {}) => mutate(api.put(`/noc/${id}/upload-info`, data), ['/noc', '/notifications']),
   approve: (id, data = {}) => mutate(api.put(`/noc/${id}/approve`, data), ['/noc', '/notifications']),
   reject: (id, data = {}) => mutate(api.put(`/noc/${id}/reject`, data), ['/noc', '/notifications']),
+  complete: (id, data = {}) => mutate(api.put(`/noc/${id}/complete`, data), ['/noc', '/notifications']),
   getTypes: (config = {}) => cachedGet('/noc/types', config),
   createType: (data) => mutate(api.post('/noc/types', data), '/noc/types'),
   getPdf: (id) => api.get(`/noc/${id}/pdf`, { responseType: 'blob' }),

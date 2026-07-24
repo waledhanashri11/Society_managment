@@ -2,6 +2,7 @@ import React, { lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { DashboardSkeleton } from './components/Skeletons';
 import { getUser } from './utils/auth';
+import I18nDomLocalizer from './components/I18nDomLocalizer';
 
 const Landing = lazy(() => import('./pages/Landing'));
 const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'));
@@ -23,7 +24,10 @@ const Notices = lazy(() => import('./admin/Notices'));
 const Reports = lazy(() => import('./admin/Reports'));
 const NOCManagement = lazy(() => import('./admin/NOCManagement'));
 const AdminSettings = lazy(() => import('./admin/AdminSettings'));
-const AdminMeetings = lazy(() => import('./admin/Meetings'));
+const AdminMeetings = lazy(() => import('./admin/MeetingsModule'));
+const WriteOffHistory = lazy(() => import('./admin/WriteOffHistory'));
+const AGMReport = lazy(() => import('./admin/AGMReport'));
+const SocietyRules = lazy(() => import('./admin/SocietyRules'));
 
 const ResidentLayout = lazy(() => import('./resident/ResidentLayout'));
 const ResidentDashboard = lazy(() => import('./resident/ResidentDashboard'));
@@ -33,9 +37,10 @@ const ResidentNotices = lazy(() => import('./resident/ResidentNotices'));
 const ResidentProfile = lazy(() => import('./resident/ResidentProfile'));
 const ResidentPaymentHistory = lazy(() => import('./resident/ResidentPaymentHistory'));
 const ResidentMembers = lazy(() => import('./resident/ResidentMembers'));
-const ResidentReports = lazy(() => import('./resident/ResidentReports'));
 const ResidentNOCRequests = lazy(() => import('./resident/ResidentNOCRequests'));
-const ResidentMeetings = lazy(() => import('./resident/Meetings'));
+const ResidentMeetings = lazy(() => import('./resident/MeetingsModule'));
+const ResidentReports = lazy(() => import('./resident/ResidentReports'));
+const ResidentSocietyRules = lazy(() => import('./resident/ResidentSocietyRules'));
 
 const RouteLoader = () => <DashboardSkeleton />;
 
@@ -46,8 +51,12 @@ const PrivateRoute = ({ children, role }) => {
     return <Navigate to="/login" replace />;
   }
 
-  if (role && user.role !== role) {
-    return <Navigate to={user.role === 'admin' ? '/admin/dashboard' : '/resident/dashboard'} replace />;
+  if (role) {
+    const isAllowedAdmin = role === 'admin' && (user.role === 'admin' || user.role === 'super_admin');
+    const isAllowedResident = role === 'resident' && user.role === 'resident';
+    if (!isAllowedAdmin && !isAllowedResident && user.role !== role) {
+      return <Navigate to={(user.role === 'admin' || user.role === 'super_admin') ? '/admin/dashboard' : '/resident/dashboard'} replace />;
+    }
   }
 
   return children;
@@ -56,6 +65,7 @@ const PrivateRoute = ({ children, role }) => {
 function App() {
   return (
     <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <I18nDomLocalizer />
       <Suspense fallback={<RouteLoader />}>
         <Routes>
           <Route path="/" element={<Landing />} />
@@ -84,7 +94,10 @@ function App() {
             <Route path="maintenance" element={<Maintenance />} />
             <Route path="complaints" element={<Complaints />} />
             <Route path="notices" element={<Notices />} />
+            <Route path="society-rules" element={<SocietyRules />} />
             <Route path="reports" element={<Reports />} />
+            <Route path="write-off-history" element={<WriteOffHistory />} />
+            <Route path="agm-report" element={<AGMReport />} />
             <Route path="noc-management" element={<NOCManagement />} />
             <Route path="settings" element={<AdminSettings />} />
           </Route>
@@ -103,13 +116,14 @@ function App() {
             <Route path="meetings" element={<ResidentMeetings />} />
             <Route path="complaints" element={<ResidentComplaints />} />
             <Route path="notices" element={<ResidentNotices />} />
+            <Route path="society-rules" element={<ResidentSocietyRules />} />
             <Route path="profile" element={<ResidentProfile />} />
             <Route path="members" element={<ResidentMembers />} />
-            <Route path="reports" element={<ResidentReports />} />
             <Route path="my-nocs" element={<ResidentNOCRequests />} />
             <Route path="noc-requests" element={<ResidentNOCRequests />} />
             <Route path="payments" element={<ResidentPaymentHistory />} />
             <Route path="payment-history" element={<ResidentPaymentHistory />} />
+            <Route path="reports" element={<ResidentReports />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

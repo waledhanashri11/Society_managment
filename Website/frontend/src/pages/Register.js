@@ -42,7 +42,7 @@ const Register = () => {
       setUser(response.data.user);
       setSuccess('Registration successful. Opening your dashboard...');
       
-      if (response.data.user.role === 'admin') {
+      if (response.data.user.role === 'admin' || response.data.user.role === 'super_admin') {
         navigate('/admin/dashboard');
       } else {
         navigate('/resident/dashboard');

@@ -7,12 +7,11 @@ import {
   FileBarChart,
   FileSpreadsheet,
   IndianRupee,
-  MessageSquareWarning,
   RefreshCw,
   WalletCards
 } from 'lucide-react';
 
-import { complaintAPI, maintenanceAPI, flatTypeAPI } from '../services/api';
+import { maintenanceAPI, flatTypeAPI } from '../services/api';
 import { CardSkeleton, TableSkeleton } from '../components/Skeletons';
 
 const unwrap = (response) => response?.data?.data ?? response?.data ?? [];
@@ -33,9 +32,18 @@ const monthName = (month) =>
     : '-';
 
 const csvEscape = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
-const statusKey = (status) => String(status || '').toLowerCase();
-const isPaid = (status) => statusKey(status) === 'paid';
-const isOpen = (status) => !isPaid(status) && statusKey(status) !== 'no bill';
+const statusKey = (status) => String(status || '').toLowerCase().trim();
+
+const getOperationalStatus = (bill) => {
+  const remaining = Number(
+    bill.remaining_amount !== null && bill.remaining_amount !== undefined
+      ? bill.remaining_amount
+      : bill.total_amount || 0
+  );
+  if (remaining <= 0) return 'Paid';
+  const isOverdue = bill.due_date && new Date(bill.due_date) < new Date();
+  return isOverdue ? 'Overdue' : 'Pending';
+};
 
 const Reports = () => {
   const currentYear = new Date().getFullYear();
@@ -49,7 +57,6 @@ const Reports = () => {
   const [flatTypes, setFlatTypes] = useState([]);
 
   const [bills, setBills] = useState([]);
-  const [complaints, setComplaints] = useState([]);
   const [expenses, setExpenses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -59,15 +66,13 @@ const Reports = () => {
     setError('');
 
     try {
-      const [billsRes, complaintsRes, expensesRes, flatTypesRes] = await Promise.all([
+      const [billsRes, expensesRes, flatTypesRes] = await Promise.all([
         maintenanceAPI.getBills({ force: true }),
-        complaintAPI.getAll({ force: true }),
         maintenanceAPI.getExpenses({ force: true }),
         flatTypeAPI.getAll({ force: true })
       ]);
 
       setBills(unwrap(billsRes));
-      setComplaints(unwrap(complaintsRes));
       setExpenses(unwrap(expensesRes));
       setFlatTypes(unwrap(flatTypesRes));
     } catch (err) {
@@ -125,8 +130,7 @@ const Reports = () => {
 
       if (
         filters.status &&
-        statusKey(bill.payment_status || bill.status) !==
-          statusKey(filters.status)
+        statusKey(getOperationalStatus(bill)) !== statusKey(filters.status)
       ) {
         return false;
       }
@@ -142,12 +146,6 @@ const Reports = () => {
     });
   }, [bills, filters.status, filters.flat_type, matchesMonthYear]);
 
-  const filteredComplaints = useMemo(() => {
-    return complaints.filter((complaint) =>
-      matchesMonthYear(complaint.created_at)
-    );
-  }, [complaints, matchesMonthYear]);
-
   const filteredExpenses = useMemo(() => {
     return expenses.filter((expense) =>
       matchesMonthYear(expense.expense_date || expense.date)
@@ -155,26 +153,30 @@ const Reports = () => {
   }, [expenses, matchesMonthYear]);
 
   const reports = useMemo(() => {
-
-    const totalCollection = filteredBills
-      .filter((bill) => isPaid(bill.payment_status || bill.status))
-      .reduce(
-        (sum, bill) =>
-          sum + Number(bill.paid_amount || bill.total_amount || bill.amount || 0),
-        0
-      );
-
-    const pendingDues = filteredBills
-      .filter((bill) => isOpen(bill.payment_status || bill.status))
-      .reduce(
-        (sum, bill) =>
-          sum +
-          Number(bill.remaining_amount || bill.total_amount || bill.amount || 0),
-        0
-      );
-
     const totalBillable = filteredBills.reduce(
       (sum, bill) => sum + Number(bill.total_amount || bill.amount || 0),
+      0
+    );
+
+    // Total Collection = Amount Paid + Approved Write-Off Amount (matching resident summary)
+    const totalCollection = filteredBills.reduce(
+      (sum, bill) => sum + Number(bill.paid_amount || 0) + Number(bill.write_off_amount || 0),
+      0
+    );
+
+    const actualAmountCollected = filteredBills.reduce(
+      (sum, bill) => sum + Number(bill.paid_amount || 0),
+      0
+    );
+
+    const pendingDues = filteredBills.reduce(
+      (sum, bill) =>
+        sum +
+        Number(
+          bill.remaining_amount !== null && bill.remaining_amount !== undefined
+            ? bill.remaining_amount
+            : bill.total_amount || 0
+        ),
       0
     );
 
@@ -183,51 +185,44 @@ const Reports = () => {
       0
     );
 
-    const resolvedComplaints = filteredComplaints.filter(
-      (item) => item.status === 'resolved'
+    const paidBills = filteredBills.filter(
+      (bill) => getOperationalStatus(bill) === 'Paid'
     ).length;
 
-    const pendingComplaints = filteredComplaints.filter(
-      (item) => item.status === 'pending'
+    const pendingBills = filteredBills.filter(
+      (bill) => getOperationalStatus(bill) === 'Pending'
     ).length;
 
-    const inProgressComplaints = filteredComplaints.filter(
-      (item) => item.status === 'in_progress'
+    const overdueBills = filteredBills.filter(
+      (bill) => getOperationalStatus(bill) === 'Overdue'
     ).length;
+
+    const totalWriteOff = filteredBills.reduce(
+      (sum, bill) => sum + Number(bill.write_off_amount || 0),
+      0
+    );
 
     return {
       totalCollection,
+      actualAmountCollected,
       pendingDues,
       totalExpenses,
+      totalWriteOff,
       netBalance: totalCollection - totalExpenses,
       collectionRate:
         totalBillable > 0
           ? Math.round((totalCollection / totalBillable) * 100)
           : 0,
-      totalComplaints: filteredComplaints.length,
-      resolvedComplaints,
-      pendingComplaints,
-      inProgressComplaints,
       totalBills: filteredBills.length,
-
-      paidBills: filteredBills.filter((bill) =>
-        isPaid(bill.payment_status || bill.status)
-      ).length,
-      pendingBills: filteredBills.filter((bill) =>
-        isOpen(bill.payment_status || bill.status)
-      ).length,
-      overdueBills: filteredBills.filter(
-        (bill) =>
-          isOpen(bill.payment_status || bill.status) &&
-          bill.due_date &&
-          new Date(bill.due_date) < new Date()
-      ).length
+      paidBills,
+      pendingBills,
+      overdueBills
     };
-  }, [filteredBills, filteredComplaints, filteredExpenses]);
+  }, [filteredBills, filteredExpenses]);
 
   const downloadCsv = () => {
     const rows = [
-      ['Admin Reports'],
+      ['Admin Operational Financial Reports'],
       ['Total Collection', reports.totalCollection],
       ['Pending Dues', reports.pendingDues],
       ['Total Expenses', reports.totalExpenses],
@@ -264,7 +259,7 @@ const Reports = () => {
         bill.remaining_amount,
         fullDate(bill.due_date),
         fullDate(bill.payment_date),
-        bill.payment_status || bill.status
+        getOperationalStatus(bill)
       ]),
       [],
       ['Expenses'],
@@ -275,15 +270,6 @@ const Reports = () => {
         expense.amount,
         fullDate(expense.expense_date || expense.date),
         expense.description
-      ]),
-      [],
-      ['Complaints'],
-      ['Resident', 'Title', 'Status', 'Date'],
-      ...filteredComplaints.map((complaint) => [
-        complaint.user_name || complaint.resident_name,
-        complaint.title,
-        complaint.status,
-        fullDate(complaint.created_at)
       ])
     ];
 
@@ -302,37 +288,17 @@ const Reports = () => {
     const html = `
       <html>
         <head>
-          <title>Admin Reports</title>
+          <title>Admin Operational Financial Reports</title>
           <style>
             body{font-family:Arial,sans-serif;padding:28px;color:#172033}
             h1{margin:0 0 12px}
             table{width:100%;border-collapse:collapse;margin:18px 0 28px;font-size:11px}
             th,td{border:1px solid #dfe5ee;padding:7px;text-align:left}
             th{background:#f3f6fa}
-            .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:16px 0}
-            .card{border:1px solid #dfe5ee;border-radius:8px;padding:10px}
-            .card span{display:block;color:#667085;font-size:11px}
-            .card strong{font-size:16px}
           </style>
         </head>
         <body>
-          <h1>Admin Reports</h1>
-
-          <div class="cards">
-            <div class="card"><span>Total Collection</span><strong>${money(
-              reports.totalCollection
-            )}</strong></div>
-            <div class="card"><span>Pending Dues</span><strong>${money(
-              reports.pendingDues
-            )}</strong></div>
-            <div class="card"><span>Expenses</span><strong>${money(
-              reports.totalExpenses
-            )}</strong></div>
-            <div class="card"><span>Net Balance</span><strong>${money(
-              reports.netBalance
-            )}</strong></div>
-          </div>
-
+          <h1>Admin Operational Financial Reports</h1>
           <h2>Maintenance Bills</h2>
           <table>
             <thead>
@@ -359,7 +325,7 @@ const Reports = () => {
                       <td>${money(bill.total_amount)}</td>
                       <td>${money(bill.paid_amount)}</td>
                       <td>${money(bill.remaining_amount)}</td>
-                      <td>${bill.payment_status || bill.status || ''}</td>
+                      <td>${getOperationalStatus(bill)}</td>
                     </tr>
                   `
                 )
@@ -412,7 +378,7 @@ const Reports = () => {
         <div className="portal-page-title">
           <div>
             <h1>Reports & Analytics</h1>
-            <p>Admin-wide financial, expense and complaint reports.</p>
+            <p>Admin-wide operational financial reports.</p>
           </div>
         </div>
 
@@ -430,7 +396,7 @@ const Reports = () => {
       <div className="portal-page-title">
         <div>
           <h1>Reports & Analytics</h1>
-          <p>Admin-wide financial, expense and complaint reports.</p>
+          <p>Admin-wide operational financial reports.</p>
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -487,11 +453,9 @@ const Reports = () => {
             className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-normal normal-case text-slate-900"
           >
             <option value="">All</option>
-            <option>Pending</option>
-            <option>Under Review</option>
             <option>Paid</option>
+            <option>Pending</option>
             <option>Overdue</option>
-            <option>Partial</option>
           </select>
         </label>
 
@@ -518,11 +482,11 @@ const Reports = () => {
         </button>
       </div>
 
-      <div className="portal-kpis">
+      <div className="portal-kpis" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px', marginBottom: '20px' }}>
         <div className="portal-kpi green">
           <span>Total Collection</span>
           <strong>{money(reports.totalCollection)}</strong>
-          <small>{reports.paidBills} paid bills</small>
+          <small>Revenue collected</small>
           <div className="portal-kpi-icon">
             <IndianRupee size={18} />
           </div>
@@ -531,7 +495,7 @@ const Reports = () => {
         <div className="portal-kpi orange">
           <span>Pending Dues</span>
           <strong>{money(reports.pendingDues)}</strong>
-          <small>{reports.pendingBills} bills awaiting payment</small>
+          <small>Outstanding balance</small>
           <div className="portal-kpi-icon">
             <WalletCards size={18} />
           </div>
@@ -540,7 +504,16 @@ const Reports = () => {
         <div className="portal-kpi red">
           <span>Total Expenses</span>
           <strong>{money(reports.totalExpenses)}</strong>
-          <small>Society spending</small>
+          <small>Society expenditures</small>
+          <div className="portal-kpi-icon">
+            <AlertTriangle size={18} />
+          </div>
+        </div>
+
+        <div className="portal-kpi red">
+          <span>Total Write-Offs</span>
+          <strong>{money(reports.totalWriteOff)}</strong>
+          <small>Approved write-off total</small>
           <div className="portal-kpi-icon">
             <AlertTriangle size={18} />
           </div>
@@ -549,27 +522,45 @@ const Reports = () => {
         <div className="portal-kpi green">
           <span>Net Balance</span>
           <strong>{money(reports.netBalance)}</strong>
-          <small>{reports.collectionRate}% collection rate</small>
+          <small>Collection vs expenses</small>
           <div className="portal-kpi-icon">
             <CheckCircle2 size={18} />
           </div>
         </div>
 
         <div className="portal-kpi">
-          <span>Total Complaints</span>
-          <strong>{reports.totalComplaints}</strong>
-          <small>All resident requests</small>
+          <span>Collection Rate</span>
+          <strong>{reports.collectionRate}%</strong>
+          <small>Billed vs collected ratio</small>
           <div className="portal-kpi-icon">
-            <MessageSquareWarning size={18} />
+            <CheckCircle2 size={18} />
           </div>
         </div>
 
         <div className="portal-kpi green">
-          <span>Resolved</span>
-          <strong>{reports.resolvedComplaints}</strong>
-          <small>Completed complaints</small>
+          <span>Paid Bills</span>
+          <strong>{reports.paidBills}</strong>
+          <small>Completed payments</small>
           <div className="portal-kpi-icon">
             <CheckCircle2 size={18} />
+          </div>
+        </div>
+
+        <div className="portal-kpi orange">
+          <span>Pending Bills</span>
+          <strong>{reports.pendingBills}</strong>
+          <small>Awaiting transaction</small>
+          <div className="portal-kpi-icon">
+            <WalletCards size={18} />
+          </div>
+        </div>
+
+        <div className="portal-kpi red">
+          <span>Overdue Bills</span>
+          <strong>{reports.overdueBills}</strong>
+          <small>Past due date</small>
+          <div className="portal-kpi-icon">
+            <AlertTriangle size={18} />
           </div>
         </div>
       </div>
@@ -577,8 +568,8 @@ const Reports = () => {
       <section className="portal-panel mb-4">
         <div className="portal-panel-head">
           <div>
-            <h2>Society Annual Report</h2>
-            <p>Collection, expenses and bill status summary.</p>
+            <h2>Society Annual Financial Summary</h2>
+            <p>Collection, expenses, write-offs and bill status summary.</p>
           </div>
           <FileBarChart size={16} />
         </div>
@@ -587,6 +578,14 @@ const Reports = () => {
           <div>
             <span>Total Society Collection</span>
             <strong>{money(reports.totalCollection)}</strong>
+          </div>
+          <div>
+            <span>Amount Collected (Cash)</span>
+            <strong style={{ color: '#15803d' }}>{money(reports.actualAmountCollected)}</strong>
+          </div>
+          <div>
+            <span>Write-Off Amount</span>
+            <strong style={{ color: '#b91c1c' }}>{money(reports.totalWriteOff)}</strong>
           </div>
           <div>
             <span>Total Society Expenses</span>
@@ -633,10 +632,9 @@ const Reports = () => {
                 <th>Month</th>
                 <th>Year</th>
                 <th>Title</th>
-                <th>Base Amount</th>
-                <th>Penalty</th>
-                <th>Total</th>
-                <th>Paid</th>
+                <th>Original Bill</th>
+                <th>Paid Amount</th>
+                <th>Write-Off</th>
                 <th>Remaining</th>
                 <th>Due Date</th>
                 <th>Payment Date</th>
@@ -645,38 +643,40 @@ const Reports = () => {
             </thead>
 
             <tbody>
-              {filteredBills.map((bill) => (
-                <tr key={bill.id}>
-                  <td>
-                    <strong>{bill.resident_name || '-'}</strong>
-                  </td>
-                  <td>{bill.flat_no || '-'}</td>
-                  <td>
-                    <span style={{ fontWeight: '500', color: bill.flat_type_name ? '#1e293b' : '#94a3b8' }}>
-                      {bill.flat_type_name || 'Not Assigned'}
-                    </span>
-                  </td>
-                  <td>{monthName(bill.month)}</td>
-                  <td>{bill.year || '-'}</td>
-                  <td>{bill.title || 'Maintenance Bill'}</td>
-                  <td>{money(bill.amount)}</td>
-                  <td>{money(bill.penalty_amount)}</td>
-                  <td>{money(bill.total_amount)}</td>
-                  <td>{money(bill.paid_amount)}</td>
-                  <td>{money(bill.remaining_amount)}</td>
-                  <td>{fullDate(bill.due_date)}</td>
-                  <td>{fullDate(bill.payment_date)}</td>
-                  <td>
-                    <span
-                      className={`portal-status ${statusKey(
-                        bill.payment_status || bill.status
-                      ).replace(' ', '_')}`}
-                    >
-                      {bill.payment_status || bill.status || '-'}
-                    </span>
-                  </td>
-                </tr>
-              ))}
+              {filteredBills.map((bill) => {
+                const opStatus = getOperationalStatus(bill);
+                return (
+                  <tr key={bill.id}>
+                    <td>
+                      <strong>{bill.resident_name || '-'}</strong>
+                    </td>
+                    <td>{bill.flat_no || '-'}</td>
+                    <td>
+                      <span style={{ fontWeight: '500', color: bill.flat_type_name ? '#1e293b' : '#94a3b8' }}>
+                        {bill.flat_type_name || 'Not Assigned'}
+                      </span>
+                    </td>
+                    <td>{monthName(bill.month)}</td>
+                    <td>{bill.year || '-'}</td>
+                    <td>{bill.title || 'Maintenance Bill'}</td>
+                    <td>{money(bill.total_amount)}</td>
+                    <td>{money(bill.paid_amount)}</td>
+                    <td style={{ color: Number(bill.write_off_amount) > 0 ? '#b91c1c' : 'inherit', fontWeight: Number(bill.write_off_amount) > 0 ? '700' : 'normal' }}>
+                      {money(bill.write_off_amount)}
+                    </td>
+                    <td>{money(bill.remaining_amount)}</td>
+                    <td>{fullDate(bill.due_date)}</td>
+                    <td>{fullDate(bill.payment_date)}</td>
+                    <td>
+                      <span
+                        className={`portal-status ${statusKey(opStatus)}`}
+                      >
+                        {opStatus}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
 
@@ -686,81 +686,55 @@ const Reports = () => {
         </div>
       </section>
 
-      <div className="portal-dashboard-grid">
-        <section className="portal-panel portal-table-card">
-          <div className="portal-panel-head">
-            <div>
-              <h2>Expenses Report</h2>
-              <p>Society expense records.</p>
-            </div>
+      <section className="portal-panel portal-table-card mt-4">
+        <div className="portal-panel-head">
+          <div>
+            <h2>Expenses Report</h2>
+            <p>Society expense records.</p>
           </div>
+        </div>
 
-          <div className="portal-table-wrap">
-            <table className="portal-data-table">
-              <thead>
-                <tr>
-                  <th>Expense Title</th>
-                  <th>Category</th>
-                  <th>Amount</th>
-                  <th>Date</th>
-                  <th>Description</th>
+        <div className="portal-table-wrap">
+          <table className="portal-data-table">
+            <thead>
+              <tr>
+                <th>Expense Title</th>
+                <th>Category</th>
+                <th>Amount</th>
+                <th>Date</th>
+                <th>Description</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {filteredExpenses.map((expense) => (
+                <tr key={expense.id}>
+                  <td>
+                    <strong>
+                      {expense.vendor ||
+                        expense.expense_title ||
+                        expense.expense_number ||
+                        '-'}
+                    </strong>
+                  </td>
+                  <td>{expense.category || '-'}</td>
+                  <td>{money(expense.amount)}</td>
+                  <td>{fullDate(expense.expense_date || expense.date)}</td>
+                  <td>
+                    {expense.description || (
+                      <span className="portal-muted-text">No description</span>
+                    )}
+                  </td>
                 </tr>
-              </thead>
+              ))}
+            </tbody>
+          </table>
 
-              <tbody>
-                {filteredExpenses.map((expense) => (
-                  <tr key={expense.id}>
-                    <td>
-                      <strong>
-                        {expense.vendor ||
-                          expense.expense_title ||
-                          expense.expense_number ||
-                          '-'}
-                      </strong>
-                    </td>
-                    <td>{expense.category || '-'}</td>
-                    <td>{money(expense.amount)}</td>
-                    <td>{fullDate(expense.expense_date || expense.date)}</td>
-                    <td>
-                      {expense.description || (
-                        <span className="portal-muted-text">No description</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            {!filteredExpenses.length && (
-              <div className="portal-empty">No report data found.</div>
-            )}
-          </div>
-        </section>
-
-        <section className="portal-panel">
-          <div className="portal-panel-head">
-            <div>
-              <h2>Complaint Statistics</h2>
-              <p>Status split for all complaints.</p>
-            </div>
-          </div>
-
-          <div className="portal-status-summary">
-            <div>
-              <span>Pending</span>
-              <strong>{reports.pendingComplaints}</strong>
-            </div>
-            <div>
-              <span>In Progress</span>
-              <strong>{reports.inProgressComplaints}</strong>
-            </div>
-            <div>
-              <span>Resolved</span>
-              <strong>{reports.resolvedComplaints}</strong>
-            </div>
-          </div>
-        </section>
-      </div>
+          {!filteredExpenses.length && (
+            <div className="portal-empty">No report data found.</div>
+          )}
+        </div>
+      </section>
     </div>
   );
 };

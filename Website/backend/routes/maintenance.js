@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { auth, adminAuth } = require('../middleware/auth');
+const { auth, adminAuth, superAdminAuth } = require('../middleware/auth');
 const {
   getAllMaintenance,
   getMaintenanceById,
@@ -25,7 +25,13 @@ const {
   payMaintenanceBill,
   getSettings,
   saveSettings,
-  applyPenalty
+  applyPenalty,
+  createWriteOff,
+  getWriteOffHistory,
+  getAGMReport,
+  getWriteOffReceipt,
+  reverseWriteOff,
+  editWriteOff
 } = require('../controllers/maintenanceController');
 const moduleController = require('../controllers/maintenanceModuleController');
 
@@ -66,6 +72,12 @@ router.put('/payments/:id', auth, adminAuth, updatePayment);
 router.get('/payments', auth, adminAuth, getPayments);
 router.get('/reports', auth, adminAuth, getReports);
 router.get('/user/my-maintenance', auth, getUserMaintenance);
+router.post('/bills/:id/write-off', auth, adminAuth, createWriteOff);
+router.get('/write-offs', auth, adminAuth, getWriteOffHistory);
+router.get('/agm-report', auth, adminAuth, getAGMReport);
+router.get('/bills/:id/write-off-receipt', auth, getWriteOffReceipt);
+router.delete('/write-offs/:id', auth, adminAuth, reverseWriteOff);
+router.put('/write-offs/:id', auth, adminAuth, editWriteOff);
 router.get('/:id', auth, adminAuth, getMaintenanceById);
 router.put('/:id/pay', auth, adminAuth, payMaintenanceBill);
 router.put('/:id', auth, adminAuth, updateMaintenance);

@@ -18,11 +18,20 @@ const auth = (req, res, next) => {
 
 const adminAuth = (req, res, next) => {
   auth(req, res, () => {
-    if (req.user.role !== 'admin') {
+    if (req.user.role !== 'admin' && req.user.role !== 'super_admin') {
       return res.status(403).json({ message: 'Access denied. Admin only.' });
     }
     next();
   });
 };
 
-module.exports = { auth, adminAuth };
+const superAdminAuth = (req, res, next) => {
+  auth(req, res, () => {
+    if (req.user.role !== 'super_admin') {
+      return res.status(403).json({ message: 'Access denied. Super Admin only.' });
+    }
+    next();
+  });
+};
+
+module.exports = { auth, adminAuth, superAdminAuth };
