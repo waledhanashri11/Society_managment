@@ -112,13 +112,6 @@ const Maintenance = () => {
   // Custom bill editing states
   const [editingBill, setEditingBill] = useState(null);
   const [editBillForm, setEditBillForm] = useState({ amount: '', reason: '' });
-  const [writeOffBill, setWriteOffBill] = useState(null);
-  const [writeOffForm, setWriteOffForm] = useState({
-    writeoffType: 'PARTIAL',
-    amount: '',
-    reason: 'Billing Error',
-    remarks: ''
-  });
 
   // Write-off states
   const [writeOffBill, setWriteOffBill] = useState(null);
@@ -929,44 +922,6 @@ const Maintenance = () => {
     setModal('edit_bill');
   };
 
-  const openWriteOff = (bill) => {
-    setWriteOffBill(bill);
-    setWriteOffForm({
-      writeoffType: 'PARTIAL',
-      amount: '',
-      reason: 'Billing Error',
-      remarks: ''
-    });
-    setModal('writeoff');
-  };
-
-  const submitWriteOff = async (e) => {
-    e.preventDefault();
-    if (!writeOffBill?.id) return;
-    const currentDue = Number(writeOffBill.remaining_due ?? writeOffBill.current_due ?? writeOffBill.remaining_amount ?? writeOffBill.total_amount ?? 0);
-    const writeOffAmount = writeOffForm.writeoffType === 'TOTAL' ? currentDue : Number(writeOffForm.amount || 0);
-    if (writeOffAmount <= 0 || writeOffAmount > currentDue) {
-      notify('Write-off amount must be greater than 0 and not more than current due');
-      return;
-    }
-    setSaving(true);
-    try {
-      await maintenanceAPI.createWriteOff(writeOffBill.id, {
-        writeoffType: writeOffForm.writeoffType,
-        amount: writeOffForm.writeoffType === 'TOTAL' ? undefined : writeOffAmount,
-        reason: writeOffForm.reason,
-        remarks: writeOffForm.remarks
-      });
-      notify('Maintenance write-off saved');
-      setModal(null);
-      setWriteOffBill(null);
-      await load();
-    } catch (err) {
-      notify(err.response?.data?.message || 'Could not save write-off');
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const submitEditBill = async (e) => {
     e.preventDefault();
