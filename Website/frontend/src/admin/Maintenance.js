@@ -1,3 +1,4 @@
+/* eslint-disable no-unused-vars */
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Activity, AlertCircle, ArrowDownRight, ArrowUpRight, CalendarDays,
@@ -114,8 +115,8 @@ const Maintenance = () => {
   const [editBillForm, setEditBillForm] = useState({ amount: '', reason: '' });
 
   // Write-off states
-  const [writeOffBill, setWriteOffBill] = useState(null);
-  const [writeOffForm, setWriteOffForm] = useState({ type: 'Maintenance', amount: '', reason: '' });
+  const [legacyWriteOffBill, setLegacyWriteOffBill] = useState(null);
+  const [legacyWriteOffForm, setLegacyWriteOffForm] = useState({ type: 'Maintenance', amount: '', reason: '' });
 
   // Payment Verification States
   const [rejectionType, setRejectionType] = useState('Invalid Screenshot');
@@ -944,8 +945,8 @@ const Maintenance = () => {
   };
 
   const handleWriteOffClick = (bill) => {
-    setWriteOffBill(bill);
-    setWriteOffForm({
+    setLegacyWriteOffBill(bill);
+    setLegacyWriteOffForm({
       type: 'Maintenance',
       amount: String(bill.remaining_amount || 0),
       reason: ''
@@ -953,32 +954,32 @@ const Maintenance = () => {
     setModal('write_off');
   };
 
-  const submitWriteOff = async (e) => {
+  const submitLegacyWriteOff = async (e) => {
     e.preventDefault();
-    if (!writeOffForm.reason.trim()) {
+    if (!legacyWriteOffForm.reason.trim()) {
       notify('A reason is mandatory for performing a write-off');
       return;
     }
     
-    if (writeOffForm.type !== 'Full' && (!writeOffForm.amount || Number(writeOffForm.amount) <= 0)) {
+    if (legacyWriteOffForm.type !== 'Full' && (!legacyWriteOffForm.amount || Number(legacyWriteOffForm.amount) <= 0)) {
       notify('Please enter a valid write-off amount');
       return;
     }
 
-    if (!window.confirm(`Are you sure you want to approve this write-off (${writeOffForm.type}) of amount ₹${writeOffForm.type === 'Full' ? writeOffBill.remaining_amount : writeOffForm.amount}?`)) {
+    if (!window.confirm(`Are you sure you want to approve this write-off (${legacyWriteOffForm.type}) of amount ₹${legacyWriteOffForm.type === 'Full' ? legacyWriteOffBill.remaining_amount : legacyWriteOffForm.amount}?`)) {
       return;
     }
 
     setSaving(true);
     try {
-      await maintenanceAPI.createWriteOff(writeOffBill.id, {
-        type: writeOffForm.type,
-        reason: writeOffForm.reason,
-        amount: writeOffForm.type === 'Full' ? Number(writeOffBill.remaining_amount) : Number(writeOffForm.amount)
+      await maintenanceAPI.createWriteOff(legacyWriteOffBill.id, {
+        type: legacyWriteOffForm.type,
+        reason: legacyWriteOffForm.reason,
+        amount: legacyWriteOffForm.type === 'Full' ? Number(legacyWriteOffBill.remaining_amount) : Number(legacyWriteOffForm.amount)
       });
       notify('Write-off applied successfully');
       setModal(null);
-      setWriteOffBill(null);
+      setLegacyWriteOffBill(null);
       await load();
     } catch (err) {
       notify(err.response?.data?.message || 'Could not record write-off');

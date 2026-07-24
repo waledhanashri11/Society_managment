@@ -201,7 +201,10 @@ export const maintenanceAPI = {
   getBillById: (id, config = {}) => cachedGet(`/maintenance/bills/${id}`, config),
   pay: (id, data) => mutate(api.put(`/maintenance/${id}/pay`, data), ['/maintenance', '/resident']),
   markBillPaid: (id, data) => mutate(api.put(`/maintenance/bills/${id}/mark-paid`, data), ['/maintenance', '/resident']),
-  createWriteOff: (id, data) => mutate(api.post(`/maintenance/${id}/writeoff`, data), ['/maintenance', '/resident']),
+  createWriteOff: (id, data) => {
+    const endpoint = data?.writeoffType ? `/maintenance/${id}/writeoff` : `/maintenance/bills/${id}/write-off`;
+    return mutate(api.post(endpoint, data), ['/maintenance', '/resident']);
+  },
   getWriteOffs: (config = {}) => cachedGet('/maintenance/writeoffs', config),
   getWriteOffDashboard: (config = {}) => cachedGet('/maintenance/dashboard/writeoffs', config),
   getWriteOffReport: (config = {}) => cachedGet('/maintenance/reports/writeoffs', config),
@@ -232,7 +235,6 @@ export const maintenanceAPI = {
   waiveLateFee: (id) => mutate(api.put(`/maintenance/bills/${id}/waive-late-fee`), '/maintenance'),
   createDispute: (data) => mutate(api.post('/maintenance/disputes', data), '/maintenance'),
   getDisputes: (config = {}) => cachedGet('/maintenance/disputes', config),
-  createWriteOff: (id, data) => mutate(api.post(`/maintenance/bills/${id}/write-off`, data), '/maintenance'),
   getWriteOffHistory: (params = {}, config = {}) => cachedGet('/maintenance/write-offs', { ...config, params }),
   getAGMReport: (params = {}, config = {}) => cachedGet('/maintenance/agm-report', { ...config, params }),
   getWriteOffReceipt: (id, config = {}) => cachedGet(`/maintenance/bills/${id}/write-off-receipt`, config),
