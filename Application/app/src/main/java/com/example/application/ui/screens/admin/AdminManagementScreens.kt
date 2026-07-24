@@ -16,12 +16,16 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -43,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.application.data.remote.dto.FlatDto
+import com.example.application.data.remote.dto.FlatTypeDto
 import com.example.application.data.remote.dto.StaffDto
 import com.example.application.data.remote.dto.UserSummaryDto
 import com.example.application.ui.components.BasicAppTextField
@@ -55,6 +60,8 @@ import com.example.application.ui.screens.dashboard.SectionCard
 import com.example.application.util.DashboardFormatters
 import com.example.application.viewmodel.FlatDetailsViewModel
 import com.example.application.viewmodel.FlatFormViewModel
+import com.example.application.viewmodel.FlatTypeFormState
+import com.example.application.viewmodel.FlatTypesViewModel
 import com.example.application.viewmodel.FlatsViewModel
 import com.example.application.viewmodel.ResidentDetailsViewModel
 import com.example.application.viewmodel.ResidentFormViewModel
@@ -245,9 +252,11 @@ fun FlatsListScreen(
     onAdd: () -> Unit,
     onOpen: (String) -> Unit,
     onEdit: (String) -> Unit,
-    viewModel: FlatsViewModel = hiltViewModel()
+    viewModel: FlatsViewModel = hiltViewModel(),
+    flatTypesViewModel: FlatTypesViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val typeState by flatTypesViewModel.state.collectAsStateWithLifecycle()
     val filtered by remember(state.items, state.query, state.filter) {
         derivedStateOf {
             state.items.filter { it.matchesFlatQuery(state.query) }.filter {
@@ -260,21 +269,64 @@ fun FlatsListScreen(
         }
     }
     var confirmDelete by remember { mutableStateOf<FlatDto?>(null) }
+    var flatTypeForm by remember { mutableStateOf<FlatTypeFormState?>(null) }
+    var confirmTypeDelete by remember { mutableStateOf<FlatTypeDto?>(null) }
     ManagementListScaffold(
         "Flats", "Society flats and resident assignments", onBack, onAdd,
         state.isRefreshing, { viewModel.load(refresh = true) },
         state.query, viewModel::setQuery, state.filter, viewModel::setFilter,
         listOf("all" to "All", "occupied" to "Occupied", "available" to "Available"),
-        state.isLoading, state.error, state.message, { viewModel.load(refresh = true) }, filtered.isEmpty()
+        state.isLoading, state.error, state.message, { viewModel.load(refresh = true) }, false
     ) {
+        item {
+            FlatTypesSection(
+                items = typeState.items.filter { it.matchesFlatTypeQuery(typeState.query) },
+                query = typeState.query,
+                onQuery = flatTypesViewModel::setQuery,
+                message = typeState.message,
+                error = typeState.error,
+                busyId = typeState.actionId,
+                onAdd = { flatTypeForm = FlatTypeFormState() },
+                onEdit = { type ->
+                    flatTypeForm = FlatTypeFormState(
+                        id = type.id,
+                        name = type.name.orEmpty(),
+                        defaultMaintenanceAmount = type.defaultMaintenanceAmount.orEmpty(),
+                        description = type.description.orEmpty(),
+                        status = type.status ?: "Active"
+                    )
+                },
+                onToggle = flatTypesViewModel::toggleStatus,
+                onDelete = { confirmTypeDelete = it }
+            )
+        }
         items(filtered, key = { it.id ?: it.flatNo.orEmpty() }) { flat ->
             FlatCard(flat, state.actionId == flat.id, { flat.id?.let(onOpen) }, { flat.id?.let(onEdit) }, { confirmDelete = flat })
+        }
+        if (filtered.isEmpty()) {
+            item { EmptyState("No flats found", "Create a flat or clear filters to see all flats.") }
         }
     }
     confirmDelete?.let { flat ->
         ConfirmDialog("Delete flat?", "Assigned resident will be unassigned if backend allows deletion.", "Delete", true, { confirmDelete = null }) {
             flat.id?.let { viewModel.delete(it) }
             confirmDelete = null
+        }
+    }
+    flatTypeForm?.let { form ->
+        FlatTypeEditorDialog(
+            initial = form,
+            onDismiss = { flatTypeForm = null },
+            onSave = {
+                flatTypesViewModel.save(it)
+                flatTypeForm = null
+            }
+        )
+    }
+    confirmTypeDelete?.let { type ->
+        ConfirmDialog("Delete flat type?", "This can be deleted only if no flat uses it.", "Delete", true, { confirmTypeDelete = null }) {
+            type.id?.let { flatTypesViewModel.delete(it) }
+            confirmTypeDelete = null
         }
     }
 }
@@ -329,6 +381,14 @@ fun FlatFormScreen(
         BasicAppTextField(state.flatNo, viewModel::updateFlatNo, "Flat number")
         BasicAppTextField(state.wing, viewModel::updateWing, "Wing / Block")
         BasicAppTextField(state.floorNo, viewModel::updateFloor, "Floor number")
+        SelectChips(
+            label = "Flat type profile",
+            options = listOf("" to "No profile") + state.flatTypes.mapNotNull { type ->
+                type.id?.let { it to "${type.name ?: "Type"} (${DashboardFormatters.money((type.defaultMaintenanceAmount?.toBigDecimalOrNull() ?: 0.toBigDecimal()))})" }
+            },
+            selected = state.flatTypeId,
+            onSelected = viewModel::updateFlatType
+        )
         BasicAppTextField(state.maintenanceCharge, viewModel::updateMaintenance, "Maintenance charge")
         SelectChips(
             label = "Assigned resident",
@@ -448,7 +508,7 @@ private fun ManagementListScaffold(
         topBar = {
             TopAppBar(
                 title = { Text(title) },
-                navigationIcon = { TextButton(onClick = onBack) { Text("Back") } },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, contentDescription = "Back") } },
                 actions = { TextButton(onClick = onAdd) { Text("Add") } }
             )
         }
@@ -494,7 +554,7 @@ private fun ManagementDetailScaffold(
     onRetry: () -> Unit,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    Scaffold(topBar = { TopAppBar(title = { Text(title) }, navigationIcon = { TextButton(onClick = onBack) { Text("Back") } }) }) { padding ->
+    Scaffold(topBar = { TopAppBar(title = { Text(title) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, contentDescription = "Back") } }) }) { padding ->
         LazyColumn(modifier = Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             when {
                 loading -> item { DashboardSkeleton() }
@@ -514,7 +574,7 @@ private fun ManagementFormScaffold(
     error: String?,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    Scaffold(topBar = { TopAppBar(title = { Text(title) }, navigationIcon = { TextButton(onClick = onBack) { Text("Back") } }) }) { padding ->
+    Scaffold(topBar = { TopAppBar(title = { Text(title) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, contentDescription = "Back") } }) }) { padding ->
         LazyColumn(modifier = Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             when {
                 loading -> item { DashboardSkeleton() }
@@ -550,6 +610,7 @@ private fun FlatCard(flat: FlatDto, busy: Boolean, onOpen: () -> Unit, onEdit: (
     ManagementCard(onOpen) {
         Text("Flat ${flat.flatNo ?: "-"}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         Text("Wing ${flat.wing ?: "A"} • Floor ${flat.floorNo ?: "-"}")
+        flat.flatTypeName?.takeIf { it.isNotBlank() }?.let { Text("Type: $it") }
         Text("Resident: ${flat.assignedResidentName ?: flat.ownerName ?: "Unassigned"}")
         Text("Status: ${flat.status ?: if (flat.ownerId.isNullOrBlank()) "Available" else "Occupied"}")
         ManagementActions {
@@ -558,6 +619,74 @@ private fun FlatCard(flat: FlatDto, busy: Boolean, onOpen: () -> Unit, onEdit: (
             TextButton(onClick = onDelete, enabled = !busy) { Text("Delete") }
         }
     }
+}
+
+@Composable
+private fun FlatTypesSection(
+    items: List<FlatTypeDto>,
+    query: String,
+    onQuery: (String) -> Unit,
+    message: String?,
+    error: String?,
+    busyId: String?,
+    onAdd: () -> Unit,
+    onEdit: (FlatTypeDto) -> Unit,
+    onToggle: (FlatTypeDto) -> Unit,
+    onDelete: (FlatTypeDto) -> Unit
+) {
+    SectionCard("Flat Types Config") {
+        Text("Property profiles used for default maintenance billing.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        OutlinedTextField(
+            value = query,
+            onValueChange = onQuery,
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Search flat types") },
+            singleLine = true
+        )
+        Button(onClick = onAdd) { Text("Add Flat Type") }
+        message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
+        error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        if (items.isEmpty()) {
+            Text("No flat types configured yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            items.forEach { type ->
+                ManagementCard({ onEdit(type) }) {
+                    Text(type.name ?: "Flat Type", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text("Default: ${DashboardFormatters.money((type.defaultMaintenanceAmount?.toBigDecimalOrNull() ?: 0.toBigDecimal()))}")
+                    Text(type.description ?: "No description", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Status: ${type.status ?: "Active"}")
+                    ManagementActions {
+                        TextButton(onClick = { onEdit(type) }, enabled = busyId != type.id) { Text("Edit") }
+                        TextButton(onClick = { onToggle(type) }, enabled = busyId != type.id) { Text(if (type.status.equals("Active", true)) "Deactivate" else "Activate") }
+                        TextButton(onClick = { onDelete(type) }, enabled = busyId != type.id) { Text("Delete") }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FlatTypeEditorDialog(
+    initial: FlatTypeFormState,
+    onDismiss: () -> Unit,
+    onSave: (FlatTypeFormState) -> Unit
+) {
+    var form by remember(initial) { mutableStateOf(initial) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (initial.id == null) "Configure Flat Type Profile" else "Edit Flat Type Profile") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                BasicAppTextField(form.name, { form = form.copy(name = it) }, "Profile name, e.g. 2BHK")
+                BasicAppTextField(form.defaultMaintenanceAmount, { form = form.copy(defaultMaintenanceAmount = it) }, "Default maintenance amount")
+                BasicAppTextField(form.description, { form = form.copy(description = it) }, "Description")
+                SelectTextChips("Status", listOf("Active", "Inactive"), form.status, { form = form.copy(status = it) })
+            }
+        },
+        confirmButton = { Button(onClick = { onSave(form) }) { Text("Save") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }
 
 @Composable
@@ -644,4 +773,10 @@ private fun StaffDto.matchesStaffQuery(query: String): Boolean {
     if (query.isBlank()) return true
     val q = query.trim().lowercase()
     return listOf(name, role, phone).any { it?.lowercase()?.contains(q) == true }
+}
+
+private fun FlatTypeDto.matchesFlatTypeQuery(query: String): Boolean {
+    if (query.isBlank()) return true
+    val q = query.trim().lowercase()
+    return listOf(name, description, status).any { it?.lowercase()?.contains(q) == true }
 }

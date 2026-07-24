@@ -18,8 +18,11 @@ const dashboard = async (req, res) => {
         COALESCE(SUM(paid_amount), 0) AS collected,
         COALESCE(SUM(remaining_amount), 0) AS pending,
         COALESCE(SUM(CASE WHEN status = 'Overdue' OR (status != 'Paid' AND due_date < CURRENT_DATE) THEN remaining_amount ELSE 0 END), 0) AS overdue,
+        COALESCE(SUM(write_off_amount), 0) AS totalWriteOffAmount,
         COUNT(*) AS total_bills,
-        COALESCE(SUM(CASE WHEN status = 'Paid' THEN 1 ELSE 0 END), 0) AS paid_bills
+        COALESCE(SUM(CASE WHEN status = 'Paid' THEN 1 ELSE 0 END), 0) AS paid_bills,
+        COALESCE(SUM(CASE WHEN status = 'PARTIAL_WRITE_OFF' THEN 1 ELSE 0 END), 0) AS partialWriteOffs,
+        COALESCE(SUM(CASE WHEN status = 'WRITTEN_OFF' THEN 1 ELSE 0 END), 0) AS totalWriteOffs
       FROM maintenance
     `);
 
@@ -76,7 +79,10 @@ const dashboard = async (req, res) => {
         residents: Number(residents.total),
         monthIncome: Number(monthIncome.total),
         monthExpense: Number(expense.total),
-        outstanding: Number(summary.pending)
+        outstanding: Number(summary.pending),
+        totalWriteOffAmount: Number(summary.totalwriteoffamount || summary.totalWriteOffAmount || 0),
+        partialWriteOffs: Number(summary.partialwriteoffs || summary.partialWriteOffs || 0),
+        totalWriteOffs: Number(summary.totalwriteoffs || summary.totalWriteOffs || 0)
       },
       trend,
       expenseDistribution,
@@ -238,14 +244,14 @@ const deleteExpense = async (req, res) => {
 };
 
 const getLateFeeRule = async (req, res) => {
-  const [rows] = await promisePool.query('SELECT * FROM late_fee_rules WHERE active = 1 ORDER BY id DESC LIMIT 1');
+    const [rows] = await promisePool.query('SELECT * FROM late_fee_rules WHERE active = TRUE ORDER BY id DESC LIMIT 1');
   return respond(res, 200, 'Late fee rule fetched', rows[0] || null);
 };
 
 const saveLateFeeRule = async (req, res) => {
   try {
     const { gracePeriod = 0, penaltyType = 'DAILY', penaltyAmount = 0, maximumLateFee = 0, active = true } = req.body;
-    await promisePool.query('UPDATE late_fee_rules SET active = 0');
+    await promisePool.query('UPDATE late_fee_rules SET active = FALSE');
     const [result] = await promisePool.query(
       `INSERT INTO late_fee_rules (grace_period, penalty_type, penalty_amount, maximum_late_fee, active)
        VALUES (?, ?, ?, ?, ?)`,

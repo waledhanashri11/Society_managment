@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Menu
@@ -151,7 +152,11 @@ fun ResidentDashboardScreen(
                                 flat = data.profile.flatNo ?: "Not assigned",
                                 amount = DashboardFormatters.money(data.totalDue),
                                 dueDate = DashboardFormatters.date(data.currentBill?.dueDate ?: data.currentBill?.maintenanceDueDate),
-                                onPayNow = { onQuickAction("Maintenance") }
+                                billId = data.currentBill?.id,
+                                onPayNow = { billId ->
+                                    if (!billId.isNullOrBlank()) onQuickAction("ResidentPayment:$billId")
+                                    else onQuickAction("Maintenance")
+                                }
                             )
                         }
                         item {
@@ -229,7 +234,7 @@ private fun ResidentDashboardTopBar(
                 Icon(
                     imageVector = Icons.Filled.Menu,
                     contentDescription = "Open menu",
-                    tint = Color(0xFF5E3FD1)
+                    tint = Color(0xFF0B5FFF)
                 )
             }
         },
@@ -244,14 +249,14 @@ private fun ResidentDashboardTopBar(
                 Icon(
                     imageVector = Icons.Filled.Notifications,
                     contentDescription = "Notifications",
-                    tint = Color(0xFF5E3FD1)
+                    tint = Color(0xFF0B5FFF)
                 )
             }
             IconButton(onClick = onProfileClick) {
                 Surface(
                     modifier = Modifier.size(38.dp),
                     shape = CircleShape,
-                    color = Color(0xFFEDE7FF)
+                    color = Color(0xFFEAF3FF)
                 ) {
                     Row(
                         modifier = Modifier
@@ -263,7 +268,7 @@ private fun ResidentDashboardTopBar(
                         Text(
                             text = residentName?.trim()?.firstOrNull()?.uppercaseChar()?.toString() ?: "R",
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFF5E3FD1)
+                            color = Color(0xFF0B5FFF)
                         )
                     }
                 }
@@ -278,7 +283,8 @@ private fun ResidentHeroCard(
     flat: String,
     amount: String,
     dueDate: String,
-    onPayNow: () -> Unit
+    billId: String?,
+    onPayNow: (String?) -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -289,13 +295,13 @@ private fun ResidentHeroCard(
             modifier = Modifier
                 .background(
                     Brush.linearGradient(
-                        colors = listOf(Color(0xFF7650E8), Color(0xFF3C258F))
+                        colors = listOf(Color(0xFF0B6BFF), Color(0xFF083B92))
                     )
                 )
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Text("Good Morning,", color = Color.White.copy(alpha = 0.82f))
+            Text("Welcome back", color = Color.White.copy(alpha = 0.82f))
             Text(residentName, style = MaterialTheme.typography.titleLarge, color = Color.White, fontWeight = FontWeight.Bold)
             Text("Flat: $flat", color = Color.White.copy(alpha = 0.82f))
             Card(
@@ -316,16 +322,18 @@ private fun ResidentHeroCard(
                         Text("Due Date: $dueDate", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Surface(
-                        onClick = onPayNow,
-                        color = Color(0xFF5E3FD1),
+                        onClick = { onPayNow(billId) },
+                        color = Color(0xFF0B5FFF),
                         shape = RoundedCornerShape(14.dp)
                     ) {
-                        Text(
-                            text = "Pay Now",
+                        Row(
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold
-                        )
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Filled.Payments, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                            Text("Pay Now", color = Color.White, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
@@ -333,13 +341,20 @@ private fun ResidentHeroCard(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ResidentQuickActions(onQuickAction: (String) -> Unit) {
     SectionCard("Quick Actions") {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(18.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
             ResidentAction("Maintenance", Icons.Filled.Payments) { onQuickAction("Maintenance") }
             ResidentAction("Complaints", Icons.Filled.ReportProblem) { onQuickAction("My Complaints") }
             ResidentAction("Notices", Icons.Filled.Campaign) { onQuickAction("Notices") }
+            ResidentAction("Rules", Icons.Filled.TaskAlt) { onQuickAction("Society Rules") }
+            ResidentAction("Meetings", Icons.Filled.Event) { onQuickAction("Meeting Management") }
             ResidentAction("NOC", Icons.Filled.Description) { onQuickAction("NOC Requests") }
         }
     }
@@ -352,14 +367,14 @@ private fun ResidentAction(label: String, icon: ImageVector, onClick: () -> Unit
             onClick = onClick,
             modifier = Modifier.size(54.dp),
             shape = RoundedCornerShape(16.dp),
-            color = Color(0xFFF1ECFF)
+            color = Color(0xFFEAF3FF)
         ) {
             Row(
                 modifier = Modifier.fillMaxSize(),
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(icon, contentDescription = label, tint = Color(0xFF5E3FD1))
+                Icon(icon, contentDescription = label, tint = Color(0xFF0B5FFF))
             }
         }
         Text(label, style = MaterialTheme.typography.labelSmall)
@@ -374,7 +389,7 @@ private fun ResidentDrawer(
 ) {
     ModalDrawerSheet {
         Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Surface(modifier = Modifier.size(58.dp), shape = CircleShape, color = Color(0xFF5E3FD1)) {
+            Surface(modifier = Modifier.size(58.dp), shape = CircleShape, color = Color(0xFF0B5FFF)) {
                 Row(modifier = Modifier.fillMaxSize(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
                     Text(residentName?.trim()?.firstOrNull()?.uppercaseChar()?.toString() ?: "R", color = Color.White, fontWeight = FontWeight.Bold)
                 }
@@ -417,7 +432,7 @@ private fun ResidentBottomNavigation(
                         imageVector = navIcon(item),
                         contentDescription = item,
                         modifier = Modifier.size(21.dp),
-                        tint = if (selected == item) Color(0xFF5E3FD1) else MaterialTheme.colorScheme.onSurfaceVariant
+                        tint = if (selected == item) Color(0xFF0B5FFF) else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 },
                 label = { Text(item, style = MaterialTheme.typography.labelSmall) }

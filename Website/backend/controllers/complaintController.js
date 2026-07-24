@@ -1,10 +1,11 @@
 const fs = require('fs');
 const path = require('path');
 const { promisePool } = require('../config/database');
+const { buildPublicFileUrl, uploadFileExists } = require('../utils/fileUrl');
 
 const MAX_COMPLAINT_IMAGES = 3;
 const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
-const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/jpg', 'image/png']);
+const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp']);
 
 const parseImages = (value) => {
   if (!value) return [];
@@ -17,21 +18,28 @@ const parseImages = (value) => {
   }
 };
 
-const complaintImageUrl = (req, imagePath) => {
-  if (!imagePath) return '';
-  const cleanPath = String(imagePath);
-  if (/^https?:\/\//i.test(cleanPath)) return cleanPath;
-  const host = `${req.protocol}://${req.get('host')}`;
-  return `${host}${cleanPath.startsWith('/') ? cleanPath : `/${cleanPath}`}`;
+const complaintImageExists = (imagePath) => {
+  return uploadFileExists(imagePath, path.resolve(__dirname, '..'));
 };
 
 const withComplaintImageUrls = (req, complaint) => {
   const complaintImages = parseImages(complaint.complaint_images);
+  const complaintImageData = parseImages(complaint.complaint_image_data);
+  const imageUrls = complaintImages.map((item, index) => {
+    if (complaintImageExists(item)) return buildPublicFileUrl(req, item);
+    return complaintImageData[index] || buildPublicFileUrl(req, item);
+  }).filter(Boolean);
   return {
     ...complaint,
     complaint_images: complaintImages,
-    complaint_image_urls: complaintImages.map((item) => complaintImageUrl(req, item))
+    complaint_image_data: complaintImageData,
+    complaint_image_urls: imageUrls
   };
+};
+
+const getTableColumns = async (tableName) => {
+  const [columns] = await promisePool.query(`SHOW COLUMNS FROM ${tableName}`);
+  return new Set(columns.map((column) => column.Field || column.field || column.column_name));
 };
 
 const saveComplaintImages = (images = []) => {
@@ -52,9 +60,9 @@ const saveComplaintImages = (images = []) => {
 
   return images.map((image, index) => {
     const data = typeof image === 'string' ? image : image?.data || image?.preview || '';
-    const match = String(data).match(/^data:(image\/(?:png|jpeg|jpg));base64,(.+)$/i);
+    const match = String(data).match(/^data:(image\/(?:png|jpeg|jpg|webp));base64,(.+)$/i);
     if (!match || !ALLOWED_IMAGE_TYPES.has(match[1].toLowerCase())) {
-      const error = new Error(`Image ${index + 1} must be JPG, JPEG, or PNG`);
+      const error = new Error(`Image ${index + 1} must be JPG, JPEG, PNG, or WebP`);
       error.statusCode = 400;
       throw error;
     }
@@ -66,7 +74,7 @@ const saveComplaintImages = (images = []) => {
       throw error;
     }
 
-    const extension = match[1].toLowerCase().includes('png') ? 'png' : 'jpg';
+    const extension = match[1].toLowerCase().includes('png') ? 'png' : match[1].toLowerCase().includes('webp') ? 'webp' : 'jpg';
     const fileName = `complaint-${Date.now()}-${index}-${Math.round(Math.random() * 1e9)}.${extension}`;
     fs.writeFileSync(path.join(uploadDir, fileName), buffer);
     return `/uploads/complaints/${fileName}`;
@@ -112,11 +120,19 @@ const createComplaint = async (req, res) => {
     const { title, description, images = [] } = req.body;
     const userId = req.user.id;
     const complaintImages = saveComplaintImages(images);
+    const imageData = Array.isArray(images) ? images.filter((item) => typeof item === 'string' && item.startsWith('data:image/')).slice(0, MAX_COMPLAINT_IMAGES) : [];
+    const complaintColumns = await getTableColumns('complaints').catch(() => new Set());
+    const hasImageDataColumn = complaintColumns.has('complaint_image_data');
 
-    const [result] = await promisePool.query(
-      'INSERT INTO complaints (user_id, title, description, complaint_images) VALUES (?, ?, ?, ?)',
-      [userId, title, description, JSON.stringify(complaintImages)]
-    );
+    const [result] = hasImageDataColumn
+      ? await promisePool.query(
+        'INSERT INTO complaints (user_id, title, description, complaint_images, complaint_image_data) VALUES (?, ?, ?, ?, ?)',
+        [userId, title, description, JSON.stringify(complaintImages), JSON.stringify(imageData)]
+      )
+      : await promisePool.query(
+        'INSERT INTO complaints (user_id, title, description, complaint_images) VALUES (?, ?, ?, ?)',
+        [userId, title, description, JSON.stringify(complaintImages)]
+      );
 
     try {
       await promisePool.query(
@@ -136,7 +152,8 @@ const createComplaint = async (req, res) => {
       title,
       description,
       complaint_images: complaintImages,
-      complaint_image_urls: complaintImages.map((item) => complaintImageUrl(req, item)),
+      complaint_image_data: imageData,
+      complaint_image_urls: complaintImages.map((item, index) => buildPublicFileUrl(req, item) || imageData[index]).filter(Boolean),
       status: 'pending'
     });
   } catch (error) {

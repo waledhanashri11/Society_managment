@@ -18,6 +18,8 @@ const getAdminNotifications = async (req, res) => {
       if (item.type === 'complaints') path = '/admin/complaints';
       else if (item.type === 'maintenance') path = '/admin/maintenance';
       else if (item.type === 'notice' || item.type === 'notices') path = '/admin/notices';
+      else if (item.type === 'rule' || item.type === 'rule_reminder') path = '/admin/rules';
+      else if (item.type === 'meetings' || item.type === 'meeting') path = '/admin/meetings';
       else if (item.type === 'noc') path = '/admin/noc-management';
 
       return {
@@ -68,6 +70,8 @@ const getResidentNotifications = async (req, res) => {
       if (item.type === 'noc') path = '/resident/noc-requests';
       else if (item.type === 'complaints') path = '/resident/complaints';
       else if (item.type === 'notice') path = '/resident/notices';
+      else if (item.type === 'rule' || item.type === 'rule_reminder') path = '/resident/rules';
+      else if (item.type === 'meetings' || item.type === 'meeting') path = '/resident/meetings';
       else if (item.type === 'maintenance' || item.type === 'payment') path = '/resident/maintenance';
       return { ...item, path };
     });
@@ -100,9 +104,26 @@ const markResidentNotificationRead = async (req, res) => {
   }
 };
 
+const markResidentNotificationsRead = async (req, res) => {
+  try {
+    const residentId = req.user.id;
+
+    await promisePool.query(
+      'UPDATE notifications SET is_read = true WHERE resident_id = ?',
+      [residentId]
+    );
+
+    res.json({ message: 'Notifications marked as read', unreadCount: 0 });
+  } catch (error) {
+    console.error('Mark resident notifications read error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
 module.exports = {
   getAdminNotifications,
   markAdminNotificationsRead,
   getResidentNotifications,
+  markResidentNotificationsRead,
   markResidentNotificationRead
 };

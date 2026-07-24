@@ -13,6 +13,7 @@ router.get('/public/:token', nocController.getPublicCertificate);
 router.get('/s/:token', nocController.getSharedPdf);
 router.get('/share/:token', nocController.getSharedPdf);
 router.get('/:id', auth, nocController.getRequestById);
+router.put('/:id/cancel', auth, nocController.cancelRequest);
 router.put('/:id/review', auth, adminAuth, nocController.markUnderReview);
 router.put('/:id/request-info', auth, adminAuth, nocController.requestMoreInfo);
 router.put('/:id/upload-info', auth, nocController.uploadAdditionalInfo);

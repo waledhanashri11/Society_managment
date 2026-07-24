@@ -8,6 +8,8 @@ data class FlatDto(
     val wing: String?,
     @SerializedName("floor_no") val floorNo: String?,
     @SerializedName("maintenance_charge") val maintenanceCharge: Double?,
+    @SerializedName("flat_type_id") val flatTypeId: String? = null,
+    @SerializedName("flat_type_name") val flatTypeName: String? = null,
     val status: String?,
     @SerializedName("owner_id") val ownerId: String? = null,
     @SerializedName("owner_name") val ownerName: String? = null,

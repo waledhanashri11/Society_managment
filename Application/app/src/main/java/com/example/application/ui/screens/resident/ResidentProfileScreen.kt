@@ -1,5 +1,8 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package com.example.application.ui.screens.resident
 
+import android.app.Activity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -25,6 +28,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -36,10 +41,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.example.application.ui.components.ErrorMessageCard
+import com.example.application.util.LocaleHelper
 import com.example.application.viewmodel.ProfileViewModel
 import com.example.application.viewmodel.SessionViewModel
 
@@ -159,6 +166,10 @@ fun ResidentProfileScreen(
         }
 
         Spacer(Modifier.height(12.dp))
+
+        LanguageSettingsCard()
+
+        Spacer(Modifier.height(12.dp))
         OutlinedButton(
             onClick = { sessionViewModel.logout(onLogoutComplete) },
             modifier = Modifier.fillMaxWidth(),
@@ -169,6 +180,35 @@ fun ResidentProfileScreen(
         Spacer(Modifier.height(8.dp))
         TextButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
             Text("Back to Dashboard")
+        }
+    }
+}
+
+@Composable
+private fun LanguageSettingsCard() {
+    val context = LocalContext.current
+    var selected by rememberSaveable { mutableStateOf(LocaleHelper.selectedLanguage(context)) }
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Language", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text("Choose app language. The app will refresh after selection.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(
+                    LocaleHelper.ENGLISH to "English",
+                    LocaleHelper.HINDI to "हिन्दी",
+                    LocaleHelper.MARATHI to "मराठी"
+                ).forEach { (code, label) ->
+                    FilterChip(
+                        selected = selected == code,
+                        onClick = {
+                            selected = code
+                            LocaleHelper.saveLanguage(context, code)
+                            (context as? Activity)?.recreate()
+                        },
+                        label = { Text(label) }
+                    )
+                }
+            }
         }
     }
 }

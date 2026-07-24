@@ -1,28 +1,58 @@
 package com.example.application.ui.screens.reports
 
+import android.content.Context
+import android.content.Intent
+import android.graphics.Paint
+import android.graphics.pdf.PdfDocument
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountBalanceWallet
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.ReceiptLong
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.RestartAlt
+import androidx.compose.material.icons.filled.Report
+import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -32,11 +62,16 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.core.content.FileProvider
 import com.example.application.data.remote.dto.ComplaintDto
 import com.example.application.data.remote.dto.ExpenseDto
 import com.example.application.data.remote.dto.MaintenanceBillDto
@@ -53,6 +88,7 @@ import com.example.application.util.DashboardFormatters
 import com.example.application.viewmodel.AdminReportsViewModel
 import com.example.application.viewmodel.ResidentReportsViewModel
 import java.math.BigDecimal
+import java.io.File
 import java.time.LocalDate
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -62,12 +98,45 @@ fun AdminReportsScreen(
     viewModel: AdminReportsViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    var pendingCsv by remember { mutableStateOf<String?>(null) }
+    val csvLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val csv = pendingCsv.orEmpty()
+        runCatching {
+            context.contentResolver.openOutputStream(uri)?.use { output ->
+                output.write(csv.toByteArray(Charsets.UTF_8))
+            } ?: error("Unable to open selected file.")
+        }.onSuccess {
+            Toast.makeText(context, "Admin report CSV saved successfully", Toast.LENGTH_SHORT).show()
+        }.onFailure {
+            Toast.makeText(context, "CSV export failed: ${it.message}", Toast.LENGTH_LONG).show()
+        }
+    }
     ReportScaffold(
         title = "Admin Reports",
         subtitle = "Financial, expense and complaint reports",
         onBack = onBack,
         isRefreshing = state.isRefreshing,
-        onRefresh = { viewModel.load(refresh = true) }
+        onRefresh = { viewModel.load(refresh = true) },
+        action = {
+            Row {
+                TextButton(onClick = {
+                    val csv = state.data?.let { buildAdminReportCsv(it, state.filter) }.orEmpty()
+                    if (csv.isBlank()) Toast.makeText(context, "No report data available", Toast.LENGTH_SHORT).show()
+                    else {
+                        pendingCsv = csv
+                        csvLauncher.launch("admin_report.csv")
+                    }
+                }) { Text("CSV") }
+                TextButton(onClick = {
+                    val csv = state.data?.let { buildAdminReportCsv(it, state.filter) }.orEmpty()
+                    if (csv.isBlank()) Toast.makeText(context, "No report data available", Toast.LENGTH_SHORT).show()
+                    else shareReportPdf(context, "Admin Reports", csv)
+                }) { Text("PDF") }
+            }
+        },
+        showRefresh = false
     ) {
         item {
             ReportFilters(
@@ -90,7 +159,22 @@ fun AdminReportsScreen(
         when {
             state.isLoading -> item { LoadingReportSkeleton() }
             state.data == null -> item { EmptyState("No reports", "Report data is not available yet.", modifier = Modifier.padding(16.dp)) }
-            else -> adminReportsContent(state.data!!, viewModel::noteCsvExport)
+            else -> adminReportsContent(
+                data = state.data!!,
+                onExportCsv = {
+                    val csv = buildAdminReportCsv(state.data!!, state.filter)
+                    if (csv.isBlank()) Toast.makeText(context, "No report data available", Toast.LENGTH_SHORT).show()
+                    else {
+                        pendingCsv = csv
+                        csvLauncher.launch("admin_report.csv")
+                    }
+                },
+                onExportPdf = {
+                    val csv = buildAdminReportCsv(state.data!!, state.filter)
+                    if (csv.isBlank()) Toast.makeText(context, "No report data available", Toast.LENGTH_SHORT).show()
+                    else shareReportPdf(context, "Admin Reports", csv)
+                }
+            )
         }
     }
 }
@@ -118,28 +202,29 @@ fun ResidentReportsScreen(
         }
     }
     ReportScaffold(
-        title = "Resident Reports",
-        subtitle = "Read-only society reports",
+        title = "Reports & Analytics",
+        subtitle = "",
         onBack = onBack,
         isRefreshing = state.isRefreshing,
-        onRefresh = { viewModel.load(refresh = true) }
-    ) {
-        item {
-            ReportFilters(
-                filter = state.filter,
-                onMonth = viewModel::updateMonth,
-                onYear = viewModel::updateYear,
-                onStatus = viewModel::updateStatus,
-                onReset = viewModel::resetFilters
-            )
+        showRefresh = false,
+        onRefresh = { viewModel.load(refresh = true) },
+        action = {
+            Row {
+                TextButton(onClick = {
+                    val csv = state.data?.let { buildResidentReportCsv(it, state.filter) }.orEmpty()
+                    if (csv.isBlank()) Toast.makeText(context, "No report data available", Toast.LENGTH_SHORT).show()
+                    else { pendingCsv = csv; csvLauncher.launch("resident_report.csv") }
+                }) { Text("CSV") }
+                TextButton(onClick = {
+                    val csv = state.data?.let { buildResidentReportCsv(it, state.filter) }.orEmpty()
+                    if (csv.isBlank()) Toast.makeText(context, "No report data available", Toast.LENGTH_SHORT).show()
+                    else shareReportPdf(context, "Resident Reports", csv)
+                }) { Text("PDF") }
+            }
         }
-
+    ) {
         state.error?.let { error ->
             item { RetryState(message = error, onRetry = { viewModel.load(refresh = true) }, modifier = Modifier.padding(16.dp)) }
-        }
-
-        state.exportMessage?.let { message ->
-            item { InfoCard(message = message) }
         }
 
         when {
@@ -147,18 +232,7 @@ fun ResidentReportsScreen(
             state.data == null -> item { EmptyState("No reports", "Report data is not available yet.", modifier = Modifier.padding(16.dp)) }
             else -> residentReportsContent(
                 data = state.data!!,
-                filter = state.filter,
-                onExportInfo = {
-                    val csv = buildResidentReportCsv(state.data!!, state.filter)
-                    if (csv.isBlank()) {
-                        Toast.makeText(context, "No report data available to export", Toast.LENGTH_SHORT).show()
-                    } else {
-                        pendingCsv = csv
-                        val month = state.filter.month.ifBlank { "%02d".format(LocalDate.now().monthValue) }.padStart(2, '0')
-                        val year = state.filter.year.ifBlank { LocalDate.now().year.toString() }
-                        csvLauncher.launch("society_report_${year}_${month}.csv")
-                    }
-                }
+                filter = state.filter
             )
         }
     }
@@ -166,7 +240,8 @@ fun ResidentReportsScreen(
 
 private fun androidx.compose.foundation.lazy.LazyListScope.adminReportsContent(
     data: AdminReportsData,
-    onExportInfo: () -> Unit
+    onExportCsv: () -> Unit,
+    onExportPdf: () -> Unit
 ) {
     val paid = data.bills.filter { (it.paymentStatus ?: it.status).equals("Paid", true) }
     val pending = data.bills.filterNot { (it.paymentStatus ?: it.status).equals("Paid", true) }
@@ -177,16 +252,15 @@ private fun androidx.compose.foundation.lazy.LazyListScope.adminReportsContent(
     item {
         SummaryGrid(
             cards = listOf(
-                "Collected" to DashboardFormatters.money(totalCollection),
-                "Pending" to DashboardFormatters.money(pendingAmount),
+                "Collection" to DashboardFormatters.money(totalCollection + pendingAmount),
+                "Paid" to DashboardFormatters.money(totalCollection),
                 "Expenses" to DashboardFormatters.money(totalExpenses),
                 "Net Balance" to DashboardFormatters.money(totalCollection - totalExpenses),
-                "Bills" to data.bills.size.toString(),
                 "Complaints" to data.complaints.size.toString()
             )
         )
     }
-    item { ExportCard(onExportInfo) }
+    item { ExportCard(onExportCsv, onExportPdf) }
     data.warnings.forEach { item { InfoCard(it) } }
     item { SectionTitle("Maintenance Report") }
     if (data.bills.isEmpty()) item { EmptyState("No maintenance data", "No bills match these filters.", modifier = Modifier.padding(16.dp)) }
@@ -203,42 +277,130 @@ private fun androidx.compose.foundation.lazy.LazyListScope.adminReportsContent(
 
 private fun androidx.compose.foundation.lazy.LazyListScope.residentReportsContent(
     data: ResidentReportsData,
-    filter: ReportFilterState,
-    onExportInfo: () -> Unit
+    filter: ReportFilterState
 ) {
     val summary = data.societySummary
+    val billed = data.myMaintenance.sumOf { (it.totalAmount ?: it.amount).toMoneyDecimal() }
+    val paid = data.myMaintenance.sumOf { it.paidAmount.toMoneyDecimal() }
+    val pending = data.myMaintenance.sumOf { it.remainingAmount.toMoneyDecimal() }
     item {
-        FinancialOverviewCard(data, filter)
-    }
-    item {
-        SummaryGrid(
-            cards = listOf(
-                "Society Collection" to DashboardFormatters.money(summary?.totalSocietyCollection.toMoneyDecimal()),
-                "My Pending" to DashboardFormatters.money(data.summary?.totalPendingAmount.toMoneyDecimal()),
-                "Society Expenses" to DashboardFormatters.money(summary?.totalSocietyExpenses.toMoneyDecimal()),
-                "Net Balance" to DashboardFormatters.money(summary?.netBalance.toMoneyDecimal()),
-                "Collection Rate" to DashboardFormatters.percent(summary?.collectionRate ?: 0),
-                "My Bills" to (data.summary?.totalBills ?: data.myMaintenance.size).toString()
+        ResidentMetricGrid(
+            metrics = listOf(
+                "Total Maintenance" to DashboardFormatters.money(billed),
+                "Paid Amount" to DashboardFormatters.money(paid),
+                "Pending Amount" to DashboardFormatters.money(pending),
+                "Complaints" to data.complaints.size.toString()
             )
         )
     }
-    item { ExportCard(onExportInfo) }
-    data.warnings.forEach { item { InfoCard(it) } }
-    item { SectionTitle("My Annual Maintenance") }
-    if (data.myMaintenance.isEmpty()) item { EmptyState("No maintenance data", "No bills match these filters.", modifier = Modifier.padding(16.dp)) }
-    else items(data.myMaintenance.take(30), key = { "my-${it.id}-${it.status}" }) { bill -> ResidentBillCard(bill) }
+    item { MonthlyCollectionCard(data.myMaintenance) }
+    item { PaymentOverviewCard(total = billed, paid = paid, pending = pending) }
+    item { RecentComplaintsCard(data.complaints) }
+    if (data.myMaintenance.isEmpty() && data.complaints.isEmpty()) {
+        item { EmptyState("No report data", "Your maintenance and complaint activity will appear here.", modifier = Modifier.padding(16.dp)) }
+    }
+}
 
-    item { SectionTitle("Members Payment Status") }
-    if (data.membersMaintenance.isEmpty()) item { EmptyState("No member status", "No member payment status is available.", modifier = Modifier.padding(16.dp)) }
-    else items(data.membersMaintenance.take(40), key = { "member-${it.id}-${it.maintenanceStatus}" }) { item -> MemberStatusCard(item) }
+private val ReportBlue = Color(0xFF1769E0)
+private val ReportGreen = Color(0xFF179653)
+private val ReportAmber = Color(0xFFF59E0B)
 
-    item { SectionTitle("Society Expenses") }
-    if (data.expenses.isEmpty()) item { EmptyState("No expenses", "No expenses match these filters.", modifier = Modifier.padding(16.dp)) }
-    else items(data.expenses.take(20), key = { "resident-expense-${it.id}-${it.date}" }) { expense -> ResidentExpenseCard(expense) }
+@Composable
+private fun ResidentMetricGrid(metrics: List<Pair<String, String>>) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        metrics.chunked(2).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                row.forEachIndexed { index, (label, value) ->
+                    Card(modifier = Modifier.weight(1f), colors = CardDefaults.cardColors(containerColor = when (index) {
+                        0 -> Color(0xFFF1F6FF); 1 -> Color(0xFFF0FBF4); else -> Color.White
+                    })) {
+                        Column(Modifier.padding(14.dp)) {
+                            Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = when (label) {
+                                "Paid Amount" -> ReportGreen
+                                "Pending Amount" -> ReportAmber
+                                else -> MaterialTheme.colorScheme.onSurface
+                            })
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
-    item { SectionTitle("My Complaint Summary") }
-    if (data.complaints.isEmpty()) item { EmptyState("No complaints", "You have not created complaints yet.", modifier = Modifier.padding(16.dp)) }
-    else items(data.complaints.take(20), key = { "my-complaint-${it.id}-${it.status}" }) { complaint -> ComplaintReportCard(complaint) }
+@Composable
+private fun MonthlyCollectionCard(bills: List<ResidentMaintenanceReportDto>) {
+    val months = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun")
+    val values = months.mapIndexed { index, _ ->
+        bills.filter { bill ->
+            val month = bill.month?.trim().orEmpty()
+            month == (index + 1).toString() || month.startsWith(months[index], true)
+        }.sumOf { it.paidAmount.toMoneyDecimal() }
+    }
+    val max = values.maxOrNull()?.takeIf { it > BigDecimal.ZERO } ?: BigDecimal.ONE
+    Card {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Text("Monthly Maintenance Collection", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Row(modifier = Modifier.fillMaxWidth().height(170.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.Bottom) {
+                values.forEachIndexed { index, value ->
+                    val fraction = value.divide(max, 3, java.math.RoundingMode.HALF_UP).toFloat().coerceIn(0.04f, 1f)
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.weight(1f)) {
+                        Text(DashboardFormatters.money(value), style = MaterialTheme.typography.labelSmall)
+                        Box(Modifier.fillMaxWidth(0.55f).height((120 * fraction).dp).background(ReportBlue, RoundedCornerShape(6.dp)))
+                        Text(months[index], style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
+            Text("Collected (₹)", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+@Composable
+private fun PaymentOverviewCard(total: BigDecimal, paid: BigDecimal, pending: BigDecimal) {
+    val paidFraction = if (total > BigDecimal.ZERO) paid.divide(total, 3, java.math.RoundingMode.HALF_UP).toFloat().coerceIn(0f, 1f) else 0f
+    val pendingFraction = if (total > BigDecimal.ZERO) pending.divide(total, 3, java.math.RoundingMode.HALF_UP).toFloat().coerceIn(0f, 1f) else 0f
+    Card {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Payment Overview", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text("Total ${DashboardFormatters.money(total)}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            PaymentProgressRow("Paid", paid, paidFraction, ReportGreen)
+            PaymentProgressRow("Pending", pending, pendingFraction, ReportAmber)
+            PaymentProgressRow("Overdue", BigDecimal.ZERO, 0f, Color(0xFFE5484D))
+        }
+    }
+}
+
+@Composable
+private fun PaymentProgressRow(label: String, amount: BigDecimal, fraction: Float, color: Color) {
+    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(label, fontWeight = FontWeight.SemiBold)
+            Text(DashboardFormatters.money(amount), color = color, fontWeight = FontWeight.Bold)
+        }
+        LinearProgressIndicator(progress = { fraction }, modifier = Modifier.fillMaxWidth().height(8.dp), color = color, trackColor = color.copy(alpha = 0.14f))
+    }
+}
+
+@Composable
+private fun RecentComplaintsCard(complaints: List<ComplaintDto>) {
+    Card {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Recent Complaints", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            complaints.take(3).forEach { complaint ->
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(complaint.title ?: "Complaint", fontWeight = FontWeight.SemiBold)
+                        Text(DashboardFormatters.statusLabel(complaint.status), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    AssistChip(onClick = {}, label = { Text(DashboardFormatters.statusLabel(complaint.status)) })
+                }
+                if (complaint != complaints.take(3).last()) Divider()
+            }
+            if (complaints.isEmpty()) Text("No complaints submitted yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -249,6 +411,8 @@ private fun ReportScaffold(
     onBack: () -> Unit,
     isRefreshing: Boolean,
     onRefresh: () -> Unit,
+    action: @Composable () -> Unit = {},
+    showRefresh: Boolean = true,
     content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit
 ) {
     Scaffold(
@@ -257,17 +421,21 @@ private fun ReportScaffold(
                 title = {
                     Column {
                         Text(title, fontWeight = FontWeight.Bold)
-                        Text(subtitle, style = MaterialTheme.typography.bodySmall)
+                        if (subtitle.isNotBlank()) Text(subtitle, style = MaterialTheme.typography.bodySmall)
                     }
                 },
-                navigationIcon = { TextButton(onClick = onBack) { Text("Back") } },
-                actions = { TextButton(onClick = onRefresh) { Text(if (isRefreshing) "Refreshing" else "Refresh") } }
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, contentDescription = "Back") } },
+                actions = {
+                    action()
+                    if (showRefresh) IconButton(onClick = onRefresh) { Icon(Icons.Filled.Refresh, contentDescription = if (isRefreshing) "Refreshing" else "Refresh") }
+                }
             )
         }
     ) { padding ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
+                .background(Color(0xFFF7F9FC))
                 .padding(padding)
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -284,12 +452,51 @@ private fun ReportFilters(
     onStatus: (String) -> Unit,
     onReset: () -> Unit
 ) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                OutlinedTextField(value = filter.month, onValueChange = onMonth, label = { Text("Month") }, modifier = Modifier.weight(1f), singleLine = true)
-                OutlinedTextField(value = filter.year, onValueChange = onYear, label = { Text("Year") }, modifier = Modifier.weight(1f), singleLine = true)
+    Card(
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFF4F8FF)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Column(
+            Modifier
+                .border(1.dp, Color(0xFFCFE0FF), RoundedCornerShape(18.dp))
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Icon(Icons.Filled.FilterList, contentDescription = null, tint = ReportBlue)
+                Text("Filters", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Color(0xFF101828))
             }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                ReportFilterField(
+                    label = "Month",
+                    value = filter.month.ifBlank { "All" },
+                    icon = Icons.Filled.CalendarMonth,
+                    modifier = Modifier.weight(1f)
+                )
+                ReportFilterField(
+                    label = "Year",
+                    value = filter.year.ifBlank { "All" },
+                    icon = Icons.Filled.CalendarMonth,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            OutlinedTextField(
+                value = filter.month,
+                onValueChange = onMonth,
+                label = { Text("Month") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                shape = RoundedCornerShape(12.dp)
+            )
+            OutlinedTextField(
+                value = filter.year,
+                onValueChange = onYear,
+                label = { Text("Year") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                shape = RoundedCornerShape(12.dp)
+            )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 listOf("", "Paid", "Pending", "Partial", "Overdue").forEach { status ->
                     FilterChip(
@@ -299,10 +506,40 @@ private fun ReportFilters(
                     )
                 }
             }
-            Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                AssistChip(onClick = {}, label = { Text("${filter.activeCount} filters") })
-                OutlinedButton(onClick = onReset) { Text("Reset filters") }
+            Row(horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                ReportFilterField(
+                    label = "Status",
+                    value = filter.status.ifBlank { "All" },
+                    icon = Icons.Filled.FilterList,
+                    modifier = Modifier.weight(1f)
+                )
+                TextButton(onClick = onReset) {
+                    Icon(Icons.Filled.RestartAlt, contentDescription = null, tint = ReportBlue)
+                    Spacer(Modifier.width(6.dp))
+                    Text("Reset", color = ReportBlue, fontWeight = FontWeight.SemiBold)
+                }
             }
+        }
+    }
+}
+
+@Composable
+private fun ReportFilterField(label: String, value: String, icon: ImageVector, modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(12.dp),
+        color = Color.White,
+        tonalElevation = 0.dp
+    ) {
+        Row(
+            modifier = Modifier
+                .border(1.dp, Color(0xFFCFE0FF), RoundedCornerShape(12.dp))
+                .padding(horizontal = 12.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(icon, contentDescription = null, tint = ReportBlue, modifier = Modifier.size(20.dp))
+            Text("$label: $value", color = Color(0xFF344054), style = MaterialTheme.typography.bodyMedium)
         }
     }
 }
@@ -321,11 +558,44 @@ private fun SummaryGrid(cards: List<Pair<String, String>>) {
 
 @Composable
 private fun SummaryCard(title: String, value: String, modifier: Modifier = Modifier) {
-    Card(modifier = modifier) {
-        Column(Modifier.padding(14.dp)) {
-            Text(title, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+    val visual = reportSummaryVisual(title)
+    Card(
+        modifier = modifier.height(110.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .border(1.dp, Color(0xFFE4E7EC), RoundedCornerShape(16.dp))
+                .padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Surface(modifier = Modifier.size(44.dp), shape = CircleShape, color = visual.container) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(visual.icon, contentDescription = null, tint = visual.tint, modifier = Modifier.size(25.dp))
+                }
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(title, style = MaterialTheme.typography.bodyMedium, color = Color(0xFF667085))
+                Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = visual.tint)
+            }
         }
+    }
+}
+
+private data class ReportSummaryVisual(val icon: ImageVector, val tint: Color, val container: Color)
+
+private fun reportSummaryVisual(title: String): ReportSummaryVisual {
+    return when (title) {
+        "Collection" -> ReportSummaryVisual(Icons.Filled.AccountBalanceWallet, ReportGreen, Color(0xFFE8F7EE))
+        "Paid" -> ReportSummaryVisual(Icons.Filled.CheckCircle, ReportGreen, Color(0xFFE8F7EE))
+        "Expenses" -> ReportSummaryVisual(Icons.Filled.ReceiptLong, Color(0xFFFF7A00), Color(0xFFFFF1E6))
+        "Net Balance" -> ReportSummaryVisual(Icons.Filled.TrendingUp, ReportBlue, Color(0xFFEAF2FF))
+        "Complaints" -> ReportSummaryVisual(Icons.Filled.Report, Color(0xFFE31B23), Color(0xFFFFECEF))
+        else -> ReportSummaryVisual(Icons.Filled.ReceiptLong, ReportBlue, Color(0xFFEAF2FF))
     }
 }
 
@@ -350,12 +620,45 @@ private fun InfoCard(message: String) {
 }
 
 @Composable
-private fun ExportCard(onClick: () -> Unit) {
-    Card {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Exports", fontWeight = FontWeight.Bold)
-            Text("Save the selected report period as a CSV file for Excel or Google Sheets.")
-            Button(onClick = onClick, modifier = Modifier.fillMaxWidth()) { Text("Export CSV") }
+private fun ExportCard(onCsv: () -> Unit, onPdf: () -> Unit) {
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFF7FAFF)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, Color(0xFFCFE0FF), RoundedCornerShape(16.dp))
+                .padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Surface(modifier = Modifier.size(48.dp), shape = RoundedCornerShape(12.dp), color = Color.White) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(Icons.Filled.Download, contentDescription = null, tint = ReportBlue, modifier = Modifier.size(28.dp))
+                }
+            }
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text("Exports", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, color = Color(0xFF101828))
+                Text("Download filtered report data", color = Color(0xFF667085), style = MaterialTheme.typography.bodyMedium)
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = onCsv,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = ReportBlue)
+                ) {
+                    Icon(Icons.Filled.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("CSV")
+                }
+                OutlinedButton(onClick = onPdf, shape = RoundedCornerShape(12.dp)) {
+                    Icon(Icons.Filled.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("PDF")
+                }
+            }
         }
     }
 }
@@ -454,28 +757,121 @@ private fun ComplaintReportCard(complaint: ComplaintDto) {
 
 @Composable
 private fun ReportItemCard(title: String, status: String?, content: @Composable ColumnScope.() -> Unit) {
-    Card {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                Text(title, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                AssistChip(onClick = {}, label = { Text(DashboardFormatters.statusLabel(status)) })
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(
+            Modifier
+                .border(1.dp, Color(0xFFE4E7EC), RoundedCornerShape(16.dp))
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    title,
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = Color(0xFF101828),
+                    modifier = Modifier.weight(1f)
+                )
+                ReportStatusPill(status)
             }
-            Divider()
+            Divider(color = Color(0xFFE4E7EC))
             content()
         }
     }
 }
 
 @Composable
+private fun ReportStatusPill(status: String?) {
+    val label = DashboardFormatters.statusLabel(status)
+    val normalized = label.lowercase()
+    val fg = when {
+        "paid" in normalized || "resolved" in normalized || "closed" in normalized -> ReportGreen
+        "pending" in normalized || "open" in normalized -> ReportAmber
+        "overdue" in normalized || "reject" in normalized -> Color(0xFFE31B23)
+        else -> ReportBlue
+    }
+    val bg = when (fg) {
+        ReportGreen -> Color(0xFFDDF8E7)
+        ReportAmber -> Color(0xFFFFE8C7)
+        Color(0xFFE31B23) -> Color(0xFFFFE4E6)
+        else -> Color(0xFFEAF2FF)
+    }
+    Text(
+        label,
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(bg)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        color = fg,
+        style = MaterialTheme.typography.labelLarge,
+        fontWeight = FontWeight.SemiBold
+    )
+}
+
+@Composable
 private fun KeyValue(label: String, value: String) {
     Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-        Text(value, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+        Text(label, color = Color(0xFF667085), modifier = Modifier.weight(1f))
+        Text(value, fontWeight = FontWeight.SemiBold, color = Color(0xFF101828), modifier = Modifier.weight(1f))
     }
 }
 
 private fun List<MaintenanceBillDto>.totalOf(selector: (MaintenanceBillDto) -> String?): BigDecimal =
     fold(BigDecimal.ZERO) { sum, item -> sum + selector(item).toMoneyDecimal() }
+
+private fun buildAdminReportCsv(data: AdminReportsData, filter: ReportFilterState): String {
+    if (data.bills.isEmpty() && data.expenses.isEmpty() && data.complaints.isEmpty()) return ""
+    val rows = mutableListOf<List<String>>()
+    rows += listOf("Admin report")
+    rows += listOf("Month", filter.month.ifBlank { "All" }, "Year", filter.year.ifBlank { "All" }, "Status", filter.status.ifBlank { "All" })
+    rows.add(emptyList())
+    rows += listOf("Maintenance Report")
+    rows += listOf("Title", "Resident", "Flat", "Amount", "Paid", "Remaining", "Due", "Status")
+    data.bills.forEach { bill ->
+        rows += listOf(
+            bill.title ?: "Maintenance Bill",
+            bill.residentName ?: "-",
+            bill.flatNo ?: "-",
+            DashboardFormatters.money((bill.totalAmount ?: bill.amount).toMoneyDecimal()),
+            DashboardFormatters.money(bill.paidAmount.toMoneyDecimal()),
+            DashboardFormatters.money(bill.remainingAmount.toMoneyDecimal()),
+            DashboardFormatters.date(bill.dueDate),
+            DashboardFormatters.statusLabel(bill.paymentStatus ?: bill.status)
+        )
+    }
+    rows.add(emptyList())
+    rows += listOf("Expense Report")
+    rows += listOf("Vendor", "Category", "Amount", "Date", "Status", "Description")
+    data.expenses.forEach { expense ->
+        rows += listOf(
+            expense.vendor ?: expense.expenseNumber ?: "Expense",
+            expense.category ?: "-",
+            DashboardFormatters.money(expense.amount.toMoneyDecimal()),
+            DashboardFormatters.date(expense.expenseDate),
+            expense.status ?: "-",
+            expense.description ?: "-"
+        )
+    }
+    rows.add(emptyList())
+    rows += listOf("Complaint Report")
+    rows += listOf("Title", "Resident", "Date", "Status", "Description", "Reply")
+    data.complaints.forEach { complaint ->
+        rows += listOf(
+            complaint.title ?: "Complaint",
+            complaint.residentName ?: complaint.userName ?: "-",
+            DashboardFormatters.date(complaint.createdAt),
+            DashboardFormatters.statusLabel(complaint.status),
+            complaint.description ?: "-",
+            complaint.reply ?: "-"
+        )
+    }
+    return rows.joinToString("\n") { row -> row.joinToString(",") { csvEscape(it) } }
+}
 
 private fun buildResidentReportCsv(data: ResidentReportsData, filter: ReportFilterState): String {
     if (data.myMaintenance.isEmpty()) return ""
@@ -521,6 +917,59 @@ private fun csvEscape(value: String): String {
     val escaped = normalized.replace("\"", "\"\"")
     return if (escaped.any { it == ',' || it == '"' || it == '\n' }) "\"$escaped\"" else escaped
 }
+
+private fun shareReportPdf(context: Context, title: String, csvContent: String) {
+    val file = createReportPdf(context, title, csvContent)
+    if (file == null) {
+        Toast.makeText(context, "PDF export failed", Toast.LENGTH_LONG).show()
+        return
+    }
+    val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+    val viewIntent = Intent(Intent.ACTION_VIEW)
+        .setDataAndType(uri, "application/pdf")
+        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    val shareIntent = Intent(Intent.ACTION_SEND)
+        .setType("application/pdf")
+        .putExtra(Intent.EXTRA_STREAM, uri)
+        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    val chooser = Intent.createChooser(viewIntent, "Open report PDF")
+    chooser.putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(shareIntent))
+    runCatching { context.startActivity(chooser) }
+        .onFailure { Toast.makeText(context, "Report PDF saved: ${file.name}", Toast.LENGTH_LONG).show() }
+}
+
+private fun createReportPdf(context: Context, title: String, csvContent: String): File? = runCatching {
+    val file = File(context.cacheDir, "${title.lowercase().replace(" ", "-")}-${System.currentTimeMillis()}.pdf")
+    val document = PdfDocument()
+    val pageInfo = PdfDocument.PageInfo.Builder(595, 842, 1).create()
+    val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 18f; isFakeBoldText = true }
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 10.5f }
+    var page = document.startPage(pageInfo)
+    var canvas = page.canvas
+    var y = 40f
+    fun newPage() {
+        document.finishPage(page)
+        page = document.startPage(pageInfo)
+        canvas = page.canvas
+        y = 40f
+    }
+    canvas.drawText(title, 36f, y, titlePaint)
+    y += 28f
+    canvas.drawText("Generated by Society Management Android App", 36f, y, paint)
+    y += 24f
+    csvContent.lines().forEach { rawLine ->
+        val printable = rawLine.replace(",", "  |  ").ifBlank { " " }
+        printable.chunked(92).forEach { part ->
+            if (y > 805f) newPage()
+            canvas.drawText(part, 36f, y, paint)
+            y += 15f
+        }
+    }
+    document.finishPage(page)
+    file.outputStream().use { document.writeTo(it) }
+    document.close()
+    file
+}.getOrNull()
 
 private fun String?.toMoneyDecimal(): BigDecimal {
     return try {

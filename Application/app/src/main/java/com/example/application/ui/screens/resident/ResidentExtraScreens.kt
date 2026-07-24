@@ -11,6 +11,8 @@ import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -18,14 +20,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Payments
+import androidx.compose.material.icons.filled.ReceiptLong
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -34,6 +40,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -200,6 +207,7 @@ private fun ResidentSimpleScaffold(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PaymentHistoryCard(bill: MaintenanceBillDto, onViewReceipt: () -> Unit) {
     val context = LocalContext.current
@@ -223,10 +231,26 @@ private fun PaymentHistoryCard(bill: MaintenanceBillDto, onViewReceipt: () -> Un
             InfoRow("Reference ID", bill.transactionId ?: "-")
             bill.rejectionReason?.takeIf { it.isNotBlank() }?.let { InfoRow("Reject reason", it) }
             if (approved) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(onClick = onViewReceipt) { Text("View Receipt") }
-                    TextButton(onClick = { saveResidentReceiptPdf(context, bill) }) { Text("Download") }
-                    TextButton(onClick = { shareResidentReceiptPdf(context, bill) }) { Text("Share") }
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(onClick = onViewReceipt, shape = RoundedCornerShape(12.dp)) {
+                        Icon(Icons.Filled.ReceiptLong, contentDescription = null)
+                        Spacer(Modifier.width(6.dp))
+                        Text("Receipt")
+                    }
+                    OutlinedButton(onClick = { saveResidentReceiptPdf(context, bill) }, shape = RoundedCornerShape(12.dp)) {
+                        Icon(Icons.Filled.Download, contentDescription = null)
+                        Spacer(Modifier.width(6.dp))
+                        Text("Download")
+                    }
+                    OutlinedButton(onClick = { shareResidentReceiptPdf(context, bill) }, shape = RoundedCornerShape(12.dp)) {
+                        Icon(Icons.Filled.Share, contentDescription = null)
+                        Spacer(Modifier.width(6.dp))
+                        Text("Share")
+                    }
                 }
             } else {
                 Text(
@@ -244,7 +268,7 @@ private fun ResidentReceiptDialog(bill: MaintenanceBillDto, onDismiss: () -> Uni
     val context = LocalContext.current
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Payment Receipt") },
+        title = { Text("Generated Receipt") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 InfoRow("Receipt No.", bill.receiptNumber ?: "-")
@@ -271,11 +295,11 @@ private fun MemberDirectoryCard(member: MembersMaintenanceReportDto) {
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Surface(modifier = Modifier.clip(CircleShape), shape = CircleShape, color = Color(0xFFEDE7FF)) {
+            Surface(modifier = Modifier.clip(CircleShape), shape = CircleShape, color = Color(0xFFEAF3FF)) {
                 Text(
                     text = member.name?.firstOrNull()?.uppercaseChar()?.toString() ?: "R",
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                    color = Color(0xFF5E3FD1),
+                    color = Color(0xFF0B5FFF),
                     fontWeight = FontWeight.Bold
                 )
             }
@@ -293,7 +317,7 @@ private fun SummaryStrip(label: String, value: String, note: String) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF5E3FD1))
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF0B5FFF))
     ) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(label, color = Color.White.copy(alpha = 0.82f))
@@ -307,7 +331,7 @@ private fun SummaryStrip(label: String, value: String, note: String) {
 private fun EmptyResidentCard(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, message: String) {
     Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp)) {
         Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Icon(icon, contentDescription = null, tint = Color(0xFF5E3FD1), modifier = Modifier.background(Color(0xFFEDE7FF), CircleShape).padding(12.dp))
+            Icon(icon, contentDescription = null, tint = Color(0xFF0B5FFF), modifier = Modifier.background(Color(0xFFEAF3FF), CircleShape).padding(12.dp))
             Text(title, fontWeight = FontWeight.Bold)
             Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -402,7 +426,7 @@ private fun createResidentReceiptPdfFile(context: Context, bill: MaintenanceBill
     return file
 }
 
-private fun saveResidentReceiptPdf(context: Context, bill: MaintenanceBillDto) {
+internal fun saveResidentReceiptPdf(context: Context, bill: MaintenanceBillDto) {
     runCatching {
         val source = createResidentReceiptPdfFile(context, bill)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -424,7 +448,7 @@ private fun saveResidentReceiptPdf(context: Context, bill: MaintenanceBillDto) {
     }
 }
 
-private fun shareResidentReceiptPdf(context: Context, bill: MaintenanceBillDto) {
+internal fun shareResidentReceiptPdf(context: Context, bill: MaintenanceBillDto) {
     runCatching {
         val file = createResidentReceiptPdfFile(context, bill)
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)

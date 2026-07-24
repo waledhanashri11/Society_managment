@@ -5,6 +5,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.application.data.remote.dto.FlatDto
 import com.example.application.data.remote.dto.FlatSaveRequest
+import com.example.application.data.remote.dto.FlatTypeDto
+import com.example.application.data.remote.dto.FlatTypeSaveRequest
 import com.example.application.data.remote.dto.StaffDto
 import com.example.application.data.remote.dto.StaffSaveRequest
 import com.example.application.data.remote.dto.UserSaveRequest
@@ -64,10 +66,20 @@ data class FlatFormState(
     val floorNo: String = "",
     val ownerId: String = "",
     val maintenanceCharge: String = "",
+    val flatTypeId: String = "",
+    val flatTypes: List<FlatTypeDto> = emptyList(),
     val residents: List<UserSummaryDto> = emptyList(),
     val error: String? = null,
     val message: String? = null,
     val done: Boolean = false
+)
+
+data class FlatTypeFormState(
+    val id: String? = null,
+    val name: String = "",
+    val defaultMaintenanceAmount: String = "",
+    val description: String = "",
+    val status: String = "Active"
 )
 
 data class StaffFormState(
@@ -297,6 +309,75 @@ class FlatsViewModel @Inject constructor(
 }
 
 @HiltViewModel
+class FlatTypesViewModel @Inject constructor(
+    private val repository: AdminManagementRepository
+) : ViewModel() {
+    private val _state = MutableStateFlow(AdminListState<FlatTypeDto>())
+    val state: StateFlow<AdminListState<FlatTypeDto>> = _state.asStateFlow()
+    init { load() }
+
+    fun load(refresh: Boolean = false) {
+        viewModelScope.launch {
+            _state.update { it.copy(isLoading = it.items.isEmpty(), isRefreshing = refresh, error = null, message = null) }
+            when (val result = repository.getFlatTypes(refresh)) {
+                is NetworkResult.Success -> _state.update { it.copy(isLoading = false, isRefreshing = false, items = result.data) }
+                is NetworkResult.Error -> _state.update { it.copy(isLoading = false, isRefreshing = false, error = repository.userMessageFor(result.error)) }
+                NetworkResult.Loading -> Unit
+            }
+        }
+    }
+
+    fun setQuery(value: String) = _state.update { it.copy(query = value) }
+    fun setFilter(value: String) = _state.update { it.copy(filter = value) }
+
+    fun save(form: FlatTypeFormState) {
+        val amount = form.defaultMaintenanceAmount.toBigDecimalOrNull()
+        when {
+            form.name.isBlank() -> _state.update { it.copy(error = "Flat type name is required.") }
+            amount == null || amount.signum() < 0 -> _state.update { it.copy(error = "Default amount must be valid and non-negative.") }
+            else -> viewModelScope.launch {
+                _state.update { it.copy(actionId = form.id ?: "new", error = null, message = null) }
+                val request = FlatTypeSaveRequest(
+                    name = form.name.trim(),
+                    defaultMaintenanceAmount = form.defaultMaintenanceAmount.trim(),
+                    description = form.description.trim().ifBlank { null },
+                    status = form.status
+                )
+                when (val result = repository.saveFlatType(form.id, request)) {
+                    is NetworkResult.Success -> { _state.update { it.copy(actionId = null, message = result.data) }; load(refresh = true) }
+                    is NetworkResult.Error -> _state.update { it.copy(actionId = null, error = repository.userMessageFor(result.error)) }
+                    NetworkResult.Loading -> Unit
+                }
+            }
+        }
+    }
+
+    fun toggleStatus(item: FlatTypeDto) {
+        val id = item.id ?: return
+        val next = if (item.status.equals("Active", true)) "Inactive" else "Active"
+        viewModelScope.launch {
+            _state.update { it.copy(actionId = id, error = null, message = null) }
+            when (val result = repository.updateFlatTypeStatus(id, next)) {
+                is NetworkResult.Success -> { _state.update { it.copy(actionId = null, message = result.data) }; load(refresh = true) }
+                is NetworkResult.Error -> _state.update { it.copy(actionId = null, error = repository.userMessageFor(result.error)) }
+                NetworkResult.Loading -> Unit
+            }
+        }
+    }
+
+    fun delete(id: String) {
+        viewModelScope.launch {
+            _state.update { it.copy(actionId = id, error = null, message = null) }
+            when (val result = repository.deleteFlatType(id)) {
+                is NetworkResult.Success -> { _state.update { it.copy(actionId = null, message = result.data) }; load(refresh = true) }
+                is NetworkResult.Error -> _state.update { it.copy(actionId = null, error = repository.userMessageFor(result.error)) }
+                NetworkResult.Loading -> Unit
+            }
+        }
+    }
+}
+
+@HiltViewModel
 class FlatDetailsViewModel @Inject constructor(
     private val repository: AdminManagementRepository,
     savedStateHandle: SavedStateHandle
@@ -340,8 +421,9 @@ class FlatFormViewModel @Inject constructor(
         viewModelScope.launch {
             _state.update { it.copy(isLoading = true) }
             val residents = (repository.getResidents(refresh = true) as? NetworkResult.Success)?.data.orEmpty()
+            val flatTypes = (repository.getFlatTypes(refresh = true) as? NetworkResult.Success)?.data.orEmpty()
             if (id == null) {
-                _state.update { it.copy(isLoading = false, residents = residents.filter { user -> user.flatId.isNullOrBlank() }) }
+                _state.update { it.copy(isLoading = false, residents = residents.filter { user -> user.flatId.isNullOrBlank() }, flatTypes = flatTypes) }
                 return@launch
             }
             when (val result = repository.getFlat(id)) {
@@ -355,11 +437,13 @@ class FlatFormViewModel @Inject constructor(
                             floorNo = flat.floorNo.orEmpty(),
                             ownerId = flat.ownerId.orEmpty(),
                             maintenanceCharge = flat.maintenanceCharge?.toString().orEmpty(),
+                            flatTypeId = flat.flatTypeId.orEmpty(),
+                            flatTypes = flatTypes,
                             residents = residents.filter { user -> user.flatId.isNullOrBlank() || user.id == flat.ownerId }
                         )
                     }
                 }
-                is NetworkResult.Error -> _state.update { it.copy(isLoading = false, error = repository.userMessageFor(result.error), residents = residents) }
+                is NetworkResult.Error -> _state.update { it.copy(isLoading = false, error = repository.userMessageFor(result.error), residents = residents, flatTypes = flatTypes) }
                 NetworkResult.Loading -> Unit
             }
         }
@@ -369,6 +453,13 @@ class FlatFormViewModel @Inject constructor(
     fun updateFloor(value: String) = _state.update { it.copy(floorNo = value) }
     fun updateOwner(value: String) = _state.update { it.copy(ownerId = value) }
     fun updateMaintenance(value: String) = _state.update { it.copy(maintenanceCharge = value) }
+    fun updateFlatType(value: String) = _state.update { state ->
+        val selected = state.flatTypes.firstOrNull { it.id == value }
+        state.copy(
+            flatTypeId = value,
+            maintenanceCharge = selected?.defaultMaintenanceAmount?.takeIf { it.isNotBlank() } ?: state.maintenanceCharge
+        )
+    }
     fun submit() {
         val current = _state.value
         val validation = validateFlat(current)
@@ -380,7 +471,8 @@ class FlatFormViewModel @Inject constructor(
                 wing = current.wing.trim().ifBlank { "A" },
                 floorNo = current.floorNo.trim(),
                 ownerId = current.ownerId.ifBlank { null },
-                maintenanceCharge = current.maintenanceCharge.trim().ifBlank { "0" }
+                maintenanceCharge = current.maintenanceCharge.trim().ifBlank { "0" },
+                flatTypeId = current.flatTypeId.ifBlank { null }
             )
             when (val result = repository.saveFlat(current.id, request)) {
                 is NetworkResult.Success -> _state.update { it.copy(isSubmitting = false, message = result.data, done = true) }

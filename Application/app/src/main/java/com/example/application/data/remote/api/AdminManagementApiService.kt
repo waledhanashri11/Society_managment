@@ -2,6 +2,8 @@ package com.example.application.data.remote.api
 
 import com.example.application.data.remote.dto.FlatDto
 import com.example.application.data.remote.dto.FlatSaveRequest
+import com.example.application.data.remote.dto.FlatTypeDto
+import com.example.application.data.remote.dto.FlatTypeSaveRequest
 import com.example.application.data.remote.dto.MessageResponse
 import com.example.application.data.remote.dto.StaffDto
 import com.example.application.data.remote.dto.StaffSaveRequest
@@ -52,6 +54,21 @@ interface AdminManagementApiService {
 
     @DELETE("api/flats/{id}")
     suspend fun deleteFlat(@Path("id") id: String): Response<MessageResponse>
+
+    @GET("api/flat-types")
+    suspend fun getFlatTypes(): Response<List<FlatTypeDto>>
+
+    @POST("api/flat-types")
+    suspend fun createFlatType(@Body request: FlatTypeSaveRequest): Response<FlatTypeDto>
+
+    @PUT("api/flat-types/{id}")
+    suspend fun updateFlatType(@Path("id") id: String, @Body request: FlatTypeSaveRequest): Response<MessageResponse>
+
+    @PUT("api/flat-types/{id}/status")
+    suspend fun updateFlatTypeStatus(@Path("id") id: String, @Body request: Map<String, String>): Response<MessageResponse>
+
+    @DELETE("api/flat-types/{id}")
+    suspend fun deleteFlatType(@Path("id") id: String): Response<MessageResponse>
 
     @GET("api/staff")
     suspend fun getStaff(): Response<List<StaffDto>>

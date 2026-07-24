@@ -79,13 +79,7 @@ class RegistrationViewModel @Inject constructor(
             state.password != state.confirmPassword -> "Password and confirm password do not match."
             else -> null
         }
-        val flatError = if (state.flatId.isBlank()) {
-            if (state.availableFlats.isEmpty()) {
-                "No available flats found. Ask admin to add a flat with Available status first."
-            } else {
-                "Please select an available flat."
-            }
-        } else null
+        val flatError = null
 
         if (listOf(nameError, emailError, phoneError, passwordError, confirmError, flatError).any { it != null }) {
             _uiState.update {
@@ -112,7 +106,7 @@ class RegistrationViewModel @Inject constructor(
                 phone = phone.ifBlank { null },
                 password = state.password,
                 role = "resident",
-                flatId = state.flatId
+                flatId = state.flatId.takeIf { it.isNotBlank() }
             )
 
             when (val result = authRepository.register(request)) {

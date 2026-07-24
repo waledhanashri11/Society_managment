@@ -79,7 +79,7 @@ fun RegisterScreen(
             enabled = !state.isSubmitting && !state.flatsLoading
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            TextButton(onClick = { expanded = true }, enabled = !state.isSubmitting && state.availableFlats.isNotEmpty()) { Text("Select Flat") }
+            TextButton(onClick = { expanded = true }, enabled = !state.isSubmitting && state.availableFlats.isNotEmpty()) { Text("Select Flat (optional)") }
             TextButton(onClick = viewModel::loadAvailableFlats, enabled = !state.isSubmitting) { Text("Refresh Flats") }
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
@@ -95,15 +95,15 @@ fun RegisterScreen(
         }
         if (!state.flatsLoading && state.availableFlats.isEmpty()) {
             Text(
-                "No flats are available for registration right now. Admin must add a flat or mark one as Available.",
-                color = MaterialTheme.colorScheme.error
+                "No flats are available right now. You can register and ask the admin to assign a flat later.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
 
         Spacer(Modifier.height(16.dp))
         Button(
             onClick = viewModel::submit,
-            enabled = !state.isSubmitting && !state.flatsLoading && state.availableFlats.isNotEmpty(),
+            enabled = !state.isSubmitting && !state.flatsLoading,
             modifier = Modifier.fillMaxWidth()
         ) {
             Text(if (state.isSubmitting) "Submitting..." else "Register")

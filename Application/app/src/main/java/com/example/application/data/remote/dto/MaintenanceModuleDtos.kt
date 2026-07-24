@@ -31,6 +31,33 @@ data class MaintenanceSummaryDto(
     val outstanding: String?
 )
 
+data class AdminMaintenanceSummaryDto(
+    @SerializedName("total_generated") val totalGenerated: String?,
+    @SerializedName("total_collected") val totalCollected: String?,
+    @SerializedName("total_outstanding") val totalOutstanding: String?,
+    @SerializedName("collection_percentage") val collectionPercentage: Int?,
+    @SerializedName("pending_bills") val pendingBills: Int?,
+    @SerializedName("overdue_bills") val overdueBills: Int?,
+    @SerializedName("verification_pending") val verificationPending: Int?,
+    @SerializedName("approved_payments") val approvedPayments: Int?,
+    @SerializedName("rejected_payments") val rejectedPayments: Int?,
+    @SerializedName("total_penalty_collected") val totalPenaltyCollected: String?,
+    @SerializedName("total_waived_amount") val totalWaivedAmount: String?,
+    @SerializedName("current_month_collection") val currentMonthCollection: String?,
+    @SerializedName("previous_month_collection") val previousMonthCollection: String?,
+    @SerializedName("recent_payments") val recentPayments: List<MaintenancePaymentDto>?,
+    @SerializedName("top_outstanding_flats") val topOutstandingFlats: List<MaintenanceBillDto>?,
+    @SerializedName("overdue_residents") val overdueResidents: List<MaintenanceBillDto>?,
+    @SerializedName("monthly_collection_trend") val monthlyCollectionTrend: List<MaintenanceTrendDto>?,
+    @SerializedName("payment_method_breakdown") val paymentMethodBreakdown: List<PaymentMethodBreakdownDto>?
+)
+
+data class PaymentMethodBreakdownDto(
+    val method: String?,
+    val count: String?,
+    val amount: String?
+)
+
 data class MaintenanceTrendDto(
     val month: String?,
     val collected: String?,
@@ -69,11 +96,37 @@ data class MaintenanceSettingsRequest(
 
 data class GenerateBillsRequest(
     val month: Int,
-    val year: Int
+    val year: Int,
+    val amount: String? = null,
+    val dueDate: String? = null,
+    val title: String? = null,
+    val notes: String? = null,
+    val residentId: String? = null,
+    val residentIds: List<String>? = null,
+    val flatId: String? = null,
+    val flatIds: List<String>? = null,
+    val wing: String? = null,
+    val building: String? = null,
+    val floor: String? = null,
+    val flatTypeId: String? = null,
+    val penaltyType: String? = null,
+    val penaltyValue: String? = null,
+    val penaltyGraceDays: String? = null
 )
 
 data class GenerateBillsResultDto(
-    val billsGenerated: Int?
+    @SerializedName(value = "generatedCount", alternate = ["billsGenerated"])
+    val generatedCount: Int?,
+    val skippedCount: Int? = null,
+    val duplicateCount: Int? = null,
+    val failedCount: Int? = null,
+    val failureReasons: List<GenerateBillFailureDto>? = null
+)
+
+data class GenerateBillFailureDto(
+    val residentId: String? = null,
+    val flatId: String? = null,
+    val reason: String? = null
 )
 
 data class MaintenanceCreateRequest(
@@ -113,6 +166,7 @@ data class SubmitPaymentRequest(
     val transactionId: String,
     val amount: String,
     val screenshotUrl: String?,
+    @SerializedName("screenshot") val screenshot: String? = screenshotUrl,
     val paymentDate: String? = null,
     val note: String? = null
 )
@@ -127,11 +181,12 @@ data class MaintenancePaymentDto(
     val id: String?,
     @SerializedName("bill_id") val billId: String?,
     @SerializedName("payment_method") val paymentMethod: String?,
-    @SerializedName("transaction_id") val transactionId: String?,
+    @SerializedName(value = "transaction_id", alternate = ["utr_number", "utrNumber"]) val transactionId: String?,
     val amount: String?,
     @SerializedName("payment_status") val paymentStatus: String?,
     @SerializedName("paid_at") val paidAt: String?,
-    @SerializedName("screenshot_url") val screenshotUrl: String?,
+    @SerializedName(value = "screenshot_url", alternate = ["screenshot", "payment_proof", "screenshot_path", "payment_screenshot", "proofUrl"]) val screenshotUrl: String?,
+    @SerializedName(value = "screenshot_path", alternate = ["payment_proof", "payment_screenshot"]) val screenshotPath: String?,
     @SerializedName("created_at") val createdAt: String?,
     @SerializedName("resident_name") val residentName: String?,
     @SerializedName("flat_no") val flatNo: String?,
@@ -220,6 +275,56 @@ data class MaintenanceDisputeDto(
     @SerializedName("flat_no") val flatNo: String?,
     @SerializedName("bill_number") val billNumber: String?,
     @SerializedName("created_at") val createdAt: String?
+)
+
+data class MaintenanceWaiverDto(
+    val id: String?,
+    @SerializedName("bill_id") val billId: String?,
+    @SerializedName("resident_id") val residentId: String?,
+    @SerializedName("flat_id") val flatId: String?,
+    @SerializedName(value = "waiver_type", alternate = ["writeoff_type", "writeoffType"]) val waiverType: String?,
+    @SerializedName("original_amount") val originalAmount: String?,
+    @SerializedName(value = "waiver_amount", alternate = ["amount", "writeoff_amount", "writeOffAmount"]) val waiverAmount: String?,
+    @SerializedName(value = "final_payable_amount", alternate = ["final_due", "finalDue"]) val finalPayableAmount: String?,
+    val reason: String?,
+    @SerializedName("approval_reference") val approvalReference: String?,
+    @SerializedName("approval_date") val approvalDate: String?,
+    @SerializedName("admin_note") val adminNote: String?,
+    @SerializedName("resident_name") val residentName: String?,
+    @SerializedName("flat_no") val flatNo: String?,
+    @SerializedName("bill_number") val billNumber: String?,
+    @SerializedName("created_at") val createdAt: String?
+)
+
+data class ApplyWaiverRequest(
+    @SerializedName("waiverAmount") val waiverAmount: String,
+    val reason: String,
+    @SerializedName("waiverType") val waiverType: String = "Partial waiver",
+    @SerializedName("approvalReference") val approvalReference: String? = null,
+    @SerializedName("approvalDate") val approvalDate: String? = null,
+    @SerializedName("adminNote") val adminNote: String? = null
+)
+
+data class WriteOffRequest(
+    val writeoffType: String,
+    val amount: String?,
+    val reason: String,
+    val remarks: String? = null
+)
+
+data class WriteOffResultDto(
+    val id: String?,
+    val billId: String?,
+    val writeoffType: String?,
+    val amount: String?,
+    val previousDue: String?,
+    val finalDue: String?,
+    val status: String?
+)
+
+data class ApplyPenaltyRequest(
+    val amount: String,
+    val reason: String? = null
 )
 
 data class CreateDisputeRequest(

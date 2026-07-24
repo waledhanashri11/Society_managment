@@ -22,6 +22,10 @@ const {
   markBillPaid,
   sendPaymentReminder,
   getReports,
+  createWriteOff,
+  getWriteOffs,
+  getWriteOffDashboard,
+  getWriteOffReport,
   payMaintenanceBill,
   getSettings,
   saveSettings,
@@ -71,6 +75,10 @@ router.put('/payments/:id/reject', auth, adminAuth, rejectPayment);
 router.put('/payments/:id', auth, adminAuth, updatePayment);
 router.get('/payments', auth, adminAuth, getPayments);
 router.get('/reports', auth, adminAuth, getReports);
+router.post('/:billId/writeoff', auth, adminAuth, createWriteOff);
+router.get('/writeoffs', auth, adminAuth, getWriteOffs);
+router.get('/dashboard/writeoffs', auth, adminAuth, getWriteOffDashboard);
+router.get('/reports/writeoffs', auth, adminAuth, getWriteOffReport);
 router.get('/user/my-maintenance', auth, getUserMaintenance);
 router.post('/bills/:id/write-off', auth, adminAuth, createWriteOff);
 router.get('/write-offs', auth, adminAuth, getWriteOffHistory);

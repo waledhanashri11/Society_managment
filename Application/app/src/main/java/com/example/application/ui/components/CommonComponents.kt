@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -41,7 +42,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarDefaults
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -54,17 +57,25 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.application.ui.theme.SocietyBlue40
+import com.example.application.ui.theme.SocietyDarkBlue
+import com.example.application.ui.theme.SocietyError
+import com.example.application.ui.theme.SocietyLightBlue
+import com.example.application.ui.theme.SocietySurfaceLight
+import com.example.application.ui.theme.SocietyTextPrimary
+import com.example.application.ui.theme.SocietyTextSecondary
 
 enum class AppRoleTheme {
     Admin,
     Resident
 }
 
-private val AdminPrimary = Color(0xFF2446D8)
-private val AdminContainer = Color(0xFFEAF0FF)
-private val ResidentPrimary = Color(0xFF5E3FD1)
-private val ResidentContainer = Color(0xFFF1ECFF)
+private val AdminPrimary = SocietyBlue40
+private val AdminContainer = SocietyLightBlue
+private val ResidentPrimary = SocietyBlue40
+private val ResidentContainer = SocietyLightBlue
 
 fun rolePrimary(role: AppRoleTheme): Color = if (role == AppRoleTheme.Admin) AdminPrimary else ResidentPrimary
 fun roleContainer(role: AppRoleTheme): Color = if (role == AppRoleTheme.Admin) AdminContainer else ResidentContainer
@@ -136,13 +147,31 @@ fun AppBottomNavigation(
     items: List<String>,
     onSelected: (String) -> Unit
 ) {
-    NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+    NavigationBar(
+        containerColor = MaterialTheme.colorScheme.surface,
+        tonalElevation = NavigationBarDefaults.Elevation
+    ) {
         items.forEach { item ->
             NavigationBarItem(
                 selected = selected == item,
                 onClick = { onSelected(item) },
-                icon = { Icon(iconForLabel(item), contentDescription = item, tint = if (selected == item) rolePrimary(role) else MaterialTheme.colorScheme.onSurfaceVariant) },
-                label = { Text(item, style = MaterialTheme.typography.labelSmall) }
+                icon = { Icon(iconForLabel(item), contentDescription = item) },
+                label = {
+                    Text(
+                        item,
+                        style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                },
+                alwaysShowLabel = true,
+                colors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = rolePrimary(role),
+                    selectedTextColor = rolePrimary(role),
+                    indicatorColor = roleContainer(role),
+                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             )
         }
     }
@@ -166,9 +195,11 @@ fun BuildingIllustration(role: AppRoleTheme, modifier: Modifier = Modifier) {
 fun ErrorMessageCard(message: String, modifier: Modifier = Modifier) {
     Card(
         modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = SocietySurfaceLight),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
-        Text(message, modifier = Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onErrorContainer)
+        Text(message, modifier = Modifier.padding(12.dp), color = SocietyError, style = MaterialTheme.typography.bodyMedium)
     }
 }
 
@@ -179,8 +210,15 @@ fun AppLoadingIndicator(modifier: Modifier = Modifier) {
 
 @Composable
 fun PrimaryAppButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
-    Button(onClick = onClick, modifier = modifier.fillMaxWidth(), enabled = enabled) {
-        Text(text)
+    Button(
+        onClick = onClick,
+        modifier = modifier.fillMaxWidth().height(48.dp),
+        enabled = enabled,
+        shape = RoundedCornerShape(10.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = SocietyBlue40)
+    ) {
+        Icon(iconForLabel(text), contentDescription = null, modifier = Modifier.size(19.dp))
+        Text(text, modifier = Modifier.padding(start = 8.dp), fontWeight = FontWeight.SemiBold)
     }
 }
 
@@ -196,23 +234,34 @@ fun BasicAppTextField(
         value = value,
         onValueChange = onValueChange,
         modifier = modifier.fillMaxWidth(),
+        leadingIcon = { Icon(iconForLabel(label), contentDescription = null, tint = SocietyBlue40) },
         label = { Text(label) },
         enabled = enabled,
-        singleLine = true
+        singleLine = true,
+        shape = RoundedCornerShape(14.dp)
     )
 }
 
 @Composable
 fun EmptyState(title: String, message: String, modifier: Modifier = Modifier) {
-    Column(modifier = modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        Text(message, modifier = Modifier.padding(top = 6.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Column(modifier = modifier.fillMaxWidth().padding(vertical = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            modifier = Modifier
+                .size(66.dp)
+                .clip(CircleShape)
+                .background(SocietyLightBlue),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(Icons.Filled.MoreHoriz, contentDescription = null, tint = SocietyBlue40, modifier = Modifier.size(34.dp))
+        }
+        Text(title, modifier = Modifier.padding(top = 8.dp), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = SocietyTextPrimary)
+        Text(message, modifier = Modifier.padding(top = 6.dp), color = SocietyTextSecondary)
     }
 }
 
 @Composable
 fun RetryState(message: String, onRetry: () -> Unit, modifier: Modifier = Modifier) {
-    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         ErrorMessageCard(message)
         PrimaryAppButton(text = "Retry", onClick = onRetry)
     }
@@ -226,7 +275,7 @@ fun DashboardSkeleton() {
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(82.dp)
-                    .clip(RoundedCornerShape(22.dp))
+                    .clip(RoundedCornerShape(12.dp))
                     .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
             )
         }
@@ -244,10 +293,15 @@ fun SectionCard(
     subtitle: String? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp)) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = SocietySurfaceLight),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            subtitle?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = SocietyTextPrimary)
+            subtitle?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = SocietyTextSecondary) }
             content()
         }
     }
@@ -256,15 +310,22 @@ fun SectionCard(
 @Composable
 fun KeyValue(label: String, value: String) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(label, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+        Text(label, modifier = Modifier.weight(1f), color = SocietyTextSecondary)
+        Text(value, modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold, color = SocietyTextPrimary)
     }
 }
 
 @Composable
 fun QuickAction(label: String, onClick: () -> Unit) {
-    Surface(onClick = onClick, shape = RoundedCornerShape(16.dp), color = ResidentContainer) {
-        Text(label, modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp), color = ResidentPrimary)
+    Surface(onClick = onClick, shape = RoundedCornerShape(10.dp), color = ResidentContainer) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(iconForLabel(label), contentDescription = null, tint = ResidentPrimary, modifier = Modifier.size(18.dp))
+            Text(label, color = ResidentPrimary, fontWeight = FontWeight.SemiBold)
+        }
     }
 }
 
@@ -277,11 +338,16 @@ fun MetricGrid(items: List<Triple<String, String, String?>>) {
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         items.forEach { (title, value, subtitle) ->
-            Card(modifier = Modifier.width(156.dp), shape = RoundedCornerShape(18.dp)) {
+            Card(
+                modifier = Modifier.width(156.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = SocietySurfaceLight),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+            ) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    Text(title, style = MaterialTheme.typography.labelLarge)
-                    subtitle?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = SocietyDarkBlue)
+                    Text(title, style = MaterialTheme.typography.labelLarge, color = SocietyTextPrimary)
+                    subtitle?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = SocietyTextSecondary) }
                 }
             }
         }

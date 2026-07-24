@@ -26,6 +26,11 @@ const statusClass = (status = '') => {
   const key = status.toLowerCase().replace(/\s/g, '-');
   return `mm-status mm-status-${key}`;
 };
+const statusLabel = (status = '') => {
+  if (status === 'PARTIAL_WRITE_OFF') return 'Partial Write-off';
+  if (['WRITTEN_OFF', 'SETTLED'].includes(status)) return 'Written Off';
+  return status || 'Pending';
+};
 const cycleNumber = (year, month) => Number(year) * 12 + Number(month);
 const backendOrigin = (process.env.REACT_APP_API_URL || 'http://localhost:5000/api').replace(/\/api\/?$/, '').replace(/\/$/, '');
 const fileUrl = (value) => {
@@ -107,6 +112,13 @@ const Maintenance = () => {
   // Custom bill editing states
   const [editingBill, setEditingBill] = useState(null);
   const [editBillForm, setEditBillForm] = useState({ amount: '', reason: '' });
+  const [writeOffBill, setWriteOffBill] = useState(null);
+  const [writeOffForm, setWriteOffForm] = useState({
+    writeoffType: 'PARTIAL',
+    amount: '',
+    reason: 'Billing Error',
+    remarks: ''
+  });
 
   // Write-off states
   const [writeOffBill, setWriteOffBill] = useState(null);
@@ -242,16 +254,18 @@ const Maintenance = () => {
     const billsList = Array.isArray(bills) ? bills : [];
     const totalResidents = dashboard?.summary?.residents || 0;
     const collected = billsList.reduce((sum, bill) => sum + Number(bill?.paid_amount || 0), 0);
-    const pending = billsList.reduce((sum, bill) => sum + Number(bill?.remaining_amount || 0), 0);
+    const pending = billsList.reduce((sum, bill) => sum + Number(bill?.remaining_due ?? bill?.current_due ?? bill?.remaining_amount ?? 0), 0);
+    const writtenOff = billsList.reduce((sum, bill) => sum + Number(bill?.write_off_amount || 0), 0);
     const overdue = billsList.reduce((sum, bill) => {
       const isOverdue = (bill?.payment_status || bill?.status) === 'Overdue';
-      return sum + (isOverdue ? Number(bill?.remaining_amount || 0) : 0);
+      return sum + (isOverdue ? Number(bill?.remaining_due ?? bill?.current_due ?? bill?.remaining_amount ?? 0) : 0);
     }, 0);
     const totalAmount = collected + pending;
     const collectionPercentage = totalAmount ? Math.round((collected / totalAmount) * 100) : 0;
     return {
       collected,
       pending,
+      writtenOff,
       overdue,
       residents: totalResidents || new Set(billsList.map((b) => b?.resident_id).filter(Boolean)).size,
       collectionPercentage
@@ -681,7 +695,7 @@ const Maintenance = () => {
         const bucket = byKey.get(key);
         if (!bucket) return;
         bucket.collected += Number(bill.paid_amount || 0);
-        bucket.pending += Number(bill.remaining_amount || 0);
+        bucket.pending += Number(bill.remaining_due ?? bill.current_due ?? bill.remaining_amount ?? 0);
       });
       return timeline;
     }
@@ -754,9 +768,10 @@ const Maintenance = () => {
         penalty: Number(bill.penalty_amount || 0),
         total_amount: Number(bill.total_amount || 0),
         paid_amount: Number(bill.paid_amount || 0),
-        remaining_amount: Number(bill.remaining_amount || 0),
+        write_off_amount: Number(bill.write_off_amount || 0),
+        remaining_amount: Number(bill.remaining_due ?? bill.current_due ?? bill.remaining_amount ?? 0),
         due_date: date(bill.due_date),
-        status: bill.payment_status || bill.status || ''
+        status: statusLabel(bill.payment_status || bill.status || '')
       };
     });
   };
@@ -776,6 +791,7 @@ const Maintenance = () => {
     return downloadCsv('maintenance-overview.csv', [
       { metric: 'Total collected', value: calculatedStats.collected },
       { metric: 'Pending payments', value: calculatedStats.pending },
+      { metric: 'Written off amount', value: calculatedStats.writtenOff },
       { metric: 'Overdue amount', value: calculatedStats.overdue },
       { metric: 'Collection rate', value: `${calculatedStats.collectionPercentage || 0}%` },
       { metric: 'Total residents', value: calculatedStats.residents },
@@ -913,6 +929,45 @@ const Maintenance = () => {
     setModal('edit_bill');
   };
 
+  const openWriteOff = (bill) => {
+    setWriteOffBill(bill);
+    setWriteOffForm({
+      writeoffType: 'PARTIAL',
+      amount: '',
+      reason: 'Billing Error',
+      remarks: ''
+    });
+    setModal('writeoff');
+  };
+
+  const submitWriteOff = async (e) => {
+    e.preventDefault();
+    if (!writeOffBill?.id) return;
+    const currentDue = Number(writeOffBill.remaining_due ?? writeOffBill.current_due ?? writeOffBill.remaining_amount ?? writeOffBill.total_amount ?? 0);
+    const writeOffAmount = writeOffForm.writeoffType === 'TOTAL' ? currentDue : Number(writeOffForm.amount || 0);
+    if (writeOffAmount <= 0 || writeOffAmount > currentDue) {
+      notify('Write-off amount must be greater than 0 and not more than current due');
+      return;
+    }
+    setSaving(true);
+    try {
+      await maintenanceAPI.createWriteOff(writeOffBill.id, {
+        writeoffType: writeOffForm.writeoffType,
+        amount: writeOffForm.writeoffType === 'TOTAL' ? undefined : writeOffAmount,
+        reason: writeOffForm.reason,
+        remarks: writeOffForm.remarks
+      });
+      notify('Maintenance write-off saved');
+      setModal(null);
+      setWriteOffBill(null);
+      await load();
+    } catch (err) {
+      notify(err.response?.data?.message || 'Could not save write-off');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const submitEditBill = async (e) => {
     e.preventDefault();
     setSaving(true);
@@ -1028,6 +1083,7 @@ const Maintenance = () => {
   const statCards = [
     { label: 'Total Collected', value: money(calculatedStats.collected), note: 'Accumulated payments', icon: IndianRupee, tone: 'blue', up: true },
     { label: 'Total Pending', value: money(calculatedStats.pending), note: 'Outstanding payments', icon: Wallet, tone: 'amber' },
+    { label: 'Written Off', value: money(calculatedStats.writtenOff), note: 'Admin approved adjustments', icon: ReceiptIndianRupee, tone: 'indigo' },
     { label: 'Overdue Amount', value: money(calculatedStats.overdue), note: 'Grace period expired', icon: AlertCircle, tone: 'red' },
     { label: 'Total Residents', value: calculatedStats.residents, note: 'Registered members', icon: Activity, tone: 'indigo', up: true },
     { label: 'Collection Rate', value: `${calculatedStats.collectionPercentage || 0}%`, note: 'Overall performance', icon: TrendingUp, tone: 'green', up: true }
@@ -1098,7 +1154,7 @@ const Maintenance = () => {
               <div className="mm-ring" style={{ '--progress': `${calculatedStats.collectionPercentage || 0}%` }}>
                 <div><strong>{calculatedStats.collectionPercentage || 0}%</strong><span>collected</span></div>
               </div>
-              <div className="mm-health-row"><span><i className="dot green" />Paid bills</span><strong>{bills.filter((b) => (b.payment_status || b.status) === 'Paid').length}</strong></div>
+              <div className="mm-health-row"><span><i className="dot green" />Paid/settled bills</span><strong>{bills.filter((b) => ['Paid', 'PAID', 'SETTLED', 'WRITTEN_OFF'].includes(b.payment_status || b.status)).length}</strong></div>
               <div className="mm-health-row"><span><i className="dot amber" />Pending</span><strong>{bills.filter((b) => (b.payment_status || b.status) === 'Pending').length}</strong></div>
               <div className="mm-health-row"><span><i className="dot red" />Overdue</span><strong>{bills.filter((b) => (b.payment_status || b.status) === 'Overdue').length}</strong></div>
             </section>
@@ -1112,7 +1168,7 @@ const Maintenance = () => {
                   <div className="mm-list-row" key={bill.id}>
                     <div className="mm-avatar">{(bill.resident_name || 'R').slice(0, 1)}</div>
                     <div className="mm-list-main"><strong>{bill.resident_name || 'Resident'}</strong><span>Flat {bill.flat_no || '—'} · {bill.title}</span></div>
-                    <div className="mm-list-amount"><strong>{money(bill.total_amount)}</strong><span className={statusClass(bill.write_off_status || bill.payment_status || bill.status)}>{bill.write_off_status || bill.payment_status || bill.status}</span></div>
+                    <div className="mm-list-amount"><strong>{money(bill.total_amount)}</strong><span className={statusClass(bill.write_off_status || bill.payment_status || bill.status)}>{statusLabel(bill.write_off_status || bill.payment_status || bill.status)}</span></div>
                   </div>
                 ))}
               </div> : <Empty title="No maintenance bills generated yet" copy="Generate your first monthly billing cycle." />}
@@ -1136,7 +1192,7 @@ const Maintenance = () => {
           </div>
           <div className="mm-toolbar">
             <label className="mm-search"><Search size={17} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search resident name or flat..." /></label>
-            <label className="mm-filter"><Filter size={16} /><select value={status} onChange={(e) => setStatus(e.target.value)}><option>All</option><option>Paid</option><option>Pending</option><option>Partial</option><option>Under Review</option><option>Overdue</option></select></label>
+            <label className="mm-filter"><Filter size={16} /><select value={status} onChange={(e) => setStatus(e.target.value)}><option>All</option><option>Paid</option><option>Pending</option><option>Partial</option><option>Under Review</option><option>Overdue</option><option>PARTIAL_WRITE_OFF</option><option>WRITTEN_OFF</option><option>SETTLED</option></select></label>
             <label className="mm-filter"><select value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)}><option>All</option>{months.map((month, index) => <option key={month} value={index + 1}>{month}</option>)}</select></label>
             <label className="mm-filter"><select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)}><option>All</option>{yearOptions.map((year) => <option key={year}>{year}</option>)}</select></label>
           </div>
@@ -1153,6 +1209,7 @@ const Maintenance = () => {
                     <th>Penalty</th>
                     <th>Total Amount</th>
                     <th>Paid</th>
+                    <th>Write-off</th>
                     <th>Remaining</th>
                     <th>Due Date</th>
                     <th>Status</th>
@@ -1161,6 +1218,7 @@ const Maintenance = () => {
                 </thead>
                 <tbody>{filteredBills.map((bill) => {
                   const currentStatus = bill.write_off_status || bill.payment_status || bill.status;
+                  const remainingDue = bill.remaining_due ?? bill.current_due ?? bill.remaining_amount;
                   return (
                     <tr key={bill.id}>
                       <td><strong>{bill.resident_name || 'Resident'}</strong></td>
@@ -1193,9 +1251,10 @@ const Maintenance = () => {
                       <td className="text-red-500 font-semibold">{money(bill.penalty_amount)}</td>
                       <td><strong>{money(bill.total_amount)}</strong></td>
                       <td className="text-green-600 font-semibold">{money(bill.paid_amount)}</td>
-                      <td><strong>{money(bill.remaining_amount)}</strong></td>
+                      <td className="text-blue-600 font-semibold">{money(bill.write_off_amount)}</td>
+                      <td><strong>{money(remainingDue)}</strong></td>
                       <td>{date(bill.due_date)}</td>
-                      <td><span className={statusClass(currentStatus)}>{currentStatus}</span></td>
+                      <td><span className={statusClass(currentStatus)}>{statusLabel(currentStatus)}</span></td>
                       <td>
                         <div className="mm-action-group">
                           <button
@@ -1644,6 +1703,70 @@ const Maintenance = () => {
           <div className="mm-form-actions"><button type="button" className="mm-button mm-button-light" onClick={() => setModal(null)}>Cancel</button><button className="mm-button mm-button-primary" disabled={saving}>Record expense</button></div>
         </form>
       </Modal>}
+
+      {modal === 'writeoff' && writeOffBill && (
+        <Modal
+          title="Maintenance Write-off"
+          subtitle={`${writeOffBill.resident_name || 'Resident'} · Flat ${writeOffBill.flat_no || ''}`}
+          onClose={() => { if (!saving) { setModal(null); setWriteOffBill(null); } }}
+        >
+          {(() => {
+            const currentDue = Number(writeOffBill.remaining_due ?? writeOffBill.current_due ?? writeOffBill.remaining_amount ?? writeOffBill.total_amount ?? 0);
+            const typedAmount = Number(writeOffForm.amount || 0);
+            const writeOffAmount = writeOffForm.writeoffType === 'TOTAL' ? currentDue : typedAmount;
+            const finalDue = Math.max(0, currentDue - writeOffAmount);
+            const canSubmit = currentDue > 0 && writeOffAmount > 0 && writeOffAmount <= currentDue;
+            return (
+              <form onSubmit={submitWriteOff} className="mm-form p-4">
+                <div className="rounded-lg p-4 mb-4 border text-sm" style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0', borderRadius: '8px', padding: '16px', marginBottom: '16px' }}>
+                  <div style={{ marginBottom: 8 }}><strong>Original Amount:</strong> {money(writeOffBill.original_amount || writeOffBill.amount)}</div>
+                  <div style={{ marginBottom: 8 }}><strong>Penalty:</strong> {money(writeOffBill.penalty_amount || writeOffBill.late_fee)}</div>
+                  <div style={{ marginBottom: 8 }}><strong>Paid:</strong> {money(writeOffBill.paid_amount)}</div>
+                  <div><strong>Current Due:</strong> {money(currentDue)}</div>
+                </div>
+
+                <label className="mm-field mm-field-full">
+                  <span>Write-off Type</span>
+                  <select value={writeOffForm.writeoffType} onChange={(e) => setWriteOffForm({ ...writeOffForm, writeoffType: e.target.value, amount: '' })}>
+                    <option value="PARTIAL">Partial write-off</option>
+                    <option value="TOTAL">Total write-off</option>
+                  </select>
+                </label>
+
+                {writeOffForm.writeoffType === 'PARTIAL' && (
+                  <label className="mm-field mm-field-full">
+                    <span>Write-off Amount</span>
+                    <input type="number" min="1" max={currentDue} required value={writeOffForm.amount} onChange={(e) => setWriteOffForm({ ...writeOffForm, amount: e.target.value })} />
+                  </label>
+                )}
+
+                <label className="mm-field mm-field-full">
+                  <span>Reason</span>
+                  <select value={writeOffForm.reason} onChange={(e) => setWriteOffForm({ ...writeOffForm, reason: e.target.value })}>
+                    {['Billing Error', 'Society Decision', 'Financial Assistance', 'Management Approval', 'Other'].map((reason) => <option key={reason}>{reason}</option>)}
+                  </select>
+                </label>
+
+                <label className="mm-field mm-field-full">
+                  <span>Admin Remarks (optional)</span>
+                  <textarea rows="3" value={writeOffForm.remarks} onChange={(e) => setWriteOffForm({ ...writeOffForm, remarks: e.target.value })} placeholder="Internal note for audit trail. Residents will not see this." />
+                </label>
+
+                <div className="rounded-lg p-4 border text-sm" style={{ backgroundColor: '#eef2ff', borderColor: '#c7d2fe', borderRadius: '8px', padding: '16px' }}>
+                  <div style={{ marginBottom: 8 }}><strong>Write-off:</strong> {money(writeOffAmount)}</div>
+                  <div><strong>Final Due:</strong> {money(finalDue)}</div>
+                  <p style={{ margin: '8px 0 0', color: '#475467' }}>Resident side will only show the updated due amount/status, not the reason or remarks.</p>
+                </div>
+
+                <div className="mm-form-actions">
+                  <button type="button" className="mm-button mm-button-light" disabled={saving} onClick={() => { setModal(null); setWriteOffBill(null); }}>Cancel</button>
+                  <button type="submit" className="mm-button mm-button-primary" disabled={saving || !canSubmit}>{saving ? 'Saving...' : 'Apply Write-off'}</button>
+                </div>
+              </form>
+            );
+          })()}
+        </Modal>
+      )}
 
       {modal === 'edit_bill' && editingBill && (
         <Modal 

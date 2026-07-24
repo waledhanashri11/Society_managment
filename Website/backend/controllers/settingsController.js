@@ -1,4 +1,5 @@
 const { promisePool } = require('../config/database');
+const { buildPublicFileUrl } = require('../utils/fileUrl');
 
 const DEFAULT_SETTINGS = {
   adminName: 'Admin',
@@ -130,7 +131,7 @@ const getPaymentSettings = async (req, res) => {
 
     res.json({
       societyName: savedSettings.societyName || DEFAULT_SETTINGS.societyName,
-      paymentQrImage: savedSettings.paymentQrImage || '',
+      paymentQrImage: buildPublicFileUrl(req, savedSettings.paymentQrImage) || '',
       paymentUpiId: savedSettings.paymentUpiId || '',
       paymentNote: savedSettings.paymentNote || DEFAULT_SETTINGS.paymentNote
     });

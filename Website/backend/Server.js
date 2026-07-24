@@ -5,6 +5,7 @@ require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 const { initDatabase } = require('./config/database');
 
 const app = express();
+app.set('trust proxy', 1);
 
 const allowedOrigins = [
   'http://localhost:3000',
@@ -55,7 +56,8 @@ const staffRoutes = require('./routes/staff');
 const settingsRoutes = require('./routes/settings');
 const notificationRoutes = require('./routes/notifications');
 const nocRoutes = require('./routes/noc');
-const rulesRoutes = require('./routes/rules');
+const ruleRoutes = require('./routes/rules');
+const eventRoutes = require('./routes/events');
 const nocController = require('./controllers/nocController');
 
 app.use('/api/auth', authRoutes);
@@ -71,9 +73,20 @@ app.use('/api/residents', residentMgmtRoutes);
 app.use('/api/staff', staffRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/notifications', notificationRoutes);
-app.use('/api/rules', rulesRoutes);
+app.use('/api/rules', ruleRoutes);
+app.use('/api/events', eventRoutes);
 app.get('/share/noc/:token', nocController.getSharedPdf);
 app.use('/api/noc', nocRoutes);
+
+app.get('/api/health', (req, res) => {
+  res.json({
+    success: true,
+    service: 'society-management-backend',
+    backendFolder: 'Website/backend',
+    maintenanceFix: 'writeoff-payment-visibility-runtime-schema-v2',
+    generatedAt: new Date().toISOString()
+  });
+});
 
 app.get('/', (req, res) => {
   res.json({ message: 'Society Management System API' });

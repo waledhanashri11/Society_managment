@@ -19,10 +19,19 @@ private val DarkColorScheme = darkColorScheme(
 
 private val LightColorScheme = lightColorScheme(
     primary = SocietyBlue40,
+    onPrimary = SocietySurfaceLight,
+    primaryContainer = SocietyLightBlue,
+    onPrimaryContainer = SocietyDarkBlue,
     secondary = SocietyGreen40,
+    onSecondary = SocietySurfaceLight,
     tertiary = SocietyGold40,
+    error = SocietyError,
     background = SocietyBackgroundLight,
+    onBackground = SocietyTextPrimary,
     surface = SocietySurfaceLight,
+    onSurface = SocietyTextPrimary,
+    onSurfaceVariant = SocietyTextSecondary,
+    surfaceVariant = SocietyLightBlue,
     outline = SocietyOutlineLight
 )
 
