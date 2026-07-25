@@ -2007,9 +2007,10 @@ const getPaymentVerifications = async (req, res) => {
           u.name AS "residentName",
           f.flat_no AS "flatNumber"
       FROM payments p
-      LEFT JOIN maintenance m ON COALESCE(p.bill_id, (SELECT pm.maintenance_id FROM payment_maintenance pm WHERE pm.payment_id = p.id LIMIT 1)) = m.id
-      LEFT JOIN users u ON COALESCE(m.resident_id, p.resident_id) = u.id
-      LEFT JOIN flats f ON m.flat_id = f.id
+      LEFT JOIN payment_maintenance pm ON pm.payment_id = p.id
+      LEFT JOIN maintenance m ON m.id = COALESCE(pm.maintenance_id, p.bill_id)
+      LEFT JOIN users u ON u.id = COALESCE(m.resident_id, p.resident_id)
+      LEFT JOIN flats f ON f.id = m.flat_id
       WHERE p.payment_status IN ('PENDING_REVIEW', 'Pending Verification', 'Pending', 'Under Review', 'NEEDS_CLARIFICATION', 'Needs Clarification', 'pending', 'under_review')
       ORDER BY p.created_at DESC
     `;
