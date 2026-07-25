@@ -87,7 +87,7 @@ interface MaintenanceApiService {
     @GET("api/maintenance/payments")
     suspend fun getPayments(): Response<ApiResponse<List<MaintenancePaymentDto>>>
 
-    @GET("api/maintenance/payments/pending-verification")
+    @GET("api/maintenance/payments")
     suspend fun getPaymentVerifications(): Response<ApiResponse<List<MaintenancePaymentVerificationDto>>>
 
     @POST("api/maintenance/payments")

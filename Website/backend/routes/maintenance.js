@@ -18,6 +18,8 @@ const {
   getPendingVerificationPayments,
   getPaymentHistory,
   getPaymentReceipt,
+  getPaymentVerifications,
+  getPaymentScreenshot,
   getPayments,
   markBillPaid,
   sendPaymentReminder,
@@ -70,6 +72,8 @@ router.post('/payments', auth, createPayment);
 router.get('/payments/pending-verification', auth, adminAuth, getPendingVerificationPayments);
 router.get('/payments/history', auth, getPaymentHistory);
 router.get('/payments/:id/receipt', auth, getPaymentReceipt);
+router.get('/payment-verifications', auth, adminAuth, getPaymentVerifications);
+router.get('/payments/:id/screenshot', getPaymentScreenshot);
 router.put('/payments/:id/approve', auth, adminAuth, approvePayment);
 router.put('/payments/:id/reject', auth, adminAuth, rejectPayment);
 router.put('/payments/:id', auth, adminAuth, updatePayment);

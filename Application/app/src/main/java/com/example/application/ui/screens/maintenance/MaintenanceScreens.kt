@@ -973,7 +973,14 @@ private fun PaymentVerificationSection(
     var clarificationPayment by remember { mutableStateOf<MaintenancePaymentVerificationDto?>(null) }
     var bulkReject by remember { mutableStateOf(false) }
 
-    val pendingVerifications = verifications.filter { it.verificationStatus.isPaymentVerificationPending() }
+    val sortedVerifications = remember(verifications) {
+        verifications.sortedWith(
+            compareByDescending<MaintenancePaymentVerificationDto> { it.verificationStatus.isPaymentVerificationPending() }
+                .thenByDescending { it.submittedAt ?: "" }
+        )
+    }
+
+    val pendingVerifications = sortedVerifications.filter { it.verificationStatus.isPaymentVerificationPending() }
     val selectedPending = pendingVerifications.filter { it.submissionId in selectedPaymentIds }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -994,10 +1001,10 @@ private fun PaymentVerificationSection(
                 }
             }
         }
-        if (verifications.isEmpty()) {
+        if (sortedVerifications.isEmpty()) {
             EmptyState("No payment proofs found", "Submitted resident payment screenshots will appear here.")
         } else {
-            verifications.forEach { payment ->
+            sortedVerifications.forEach { payment ->
                 PaymentVerificationCard(
                     verification = payment,
                     selected = payment.submissionId in selectedPaymentIds,
@@ -1009,7 +1016,10 @@ private fun PaymentVerificationSection(
                     onOpenScreenshot = { screenshotPayment = payment },
                     onApprove = { payment.submissionId?.let { viewModel.updatePayment(it, "Paid") } },
                     onReject = { rejectPayment = payment },
-                    onClarify = { clarificationPayment = payment }
+                    onClarify = { clarificationPayment = payment },
+                    onReconsider = {
+                        payment.submissionId?.let { viewModel.updatePayment(it, "Pending Verification", "Reconsidering payment verification") }
+                    }
                 )
             }
         }
@@ -1117,7 +1127,8 @@ private fun PaymentVerificationCard(
     onOpenScreenshot: () -> Unit,
     onApprove: () -> Unit,
     onReject: () -> Unit,
-    onClarify: () -> Unit
+    onClarify: () -> Unit,
+    onReconsider: () -> Unit
 ) {
     val status = verification.verificationStatus.normalizePaymentStatus()
     val isPending = verification.verificationStatus.isPaymentVerificationPending()
@@ -1193,7 +1204,7 @@ private fun PaymentVerificationCard(
                     }
                 }
             }
-
+ 
             if (isPending) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = onApprove, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)) {
@@ -1207,11 +1218,13 @@ private fun PaymentVerificationCard(
                     Text("Request Clarification")
                 }
             } else if (isRejected) {
-                Text(
-                    "Rejected payments stay visible here for review.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error
-                )
+                Button(
+                    onClick = onReconsider,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+                ) {
+                    Text("Reconsider")
+                }
             }
         }
     }
