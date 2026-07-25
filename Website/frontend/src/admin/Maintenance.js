@@ -34,17 +34,26 @@ const statusLabel = (status = '') => {
 };
 const cycleNumber = (year, month) => Number(year) * 12 + Number(month);
 const backendOrigin = (process.env.REACT_APP_API_URL || 'http://localhost:5000/api').replace(/\/api\/?$/, '').replace(/\/$/, '');
-const fileUrl = (value) => {
+const fileUrl = (value, cacheKey = '') => {
   if (!value) return '';
   const cleanValue = String(value).trim().replace(/\\/g, '/');
-  if (/^(https?:|data:|blob:)/i.test(cleanValue)) return cleanValue;
-  return `${backendOrigin}${cleanValue.startsWith('/') ? cleanValue : `/${cleanValue}`}`;
+  if (/^(data:|blob:)/i.test(cleanValue)) return cleanValue;
+  const base = /^https?:/i.test(cleanValue)
+    ? cleanValue
+    : `${backendOrigin}${cleanValue.startsWith('/') ? cleanValue : `/${cleanValue}`}`;
+  if (!cacheKey) return base;
+  return `${base}${base.includes('?') ? '&' : '?'}v=${encodeURIComponent(cacheKey)}`;
 };
+const paymentProofKey = (payment) => [
+  payment?.payment_id || payment?.id || '',
+  payment?.screenshot_url || payment?.screenshot || payment?.screenshot_path || payment?.payment_screenshot || '',
+  payment?.updated_at || payment?.created_at || ''
+].join('|');
 const paymentProofPath = (payment) => {
   if (payment?.screenshot_path && String(payment.screenshot_path).startsWith('/uploads/')) return payment.screenshot_path;
   return payment?.screenshot_url || payment?.screenshot || payment?.screenshot_path || payment?.payment_screenshot || '';
 };
-const paymentProofUrl = (payment) => fileUrl(paymentProofPath(payment));
+const paymentProofUrl = (payment) => fileUrl(paymentProofPath(payment), paymentProofKey(payment));
 
 function Modal({ title, subtitle, onClose, children, wide = false }) {
   return (
@@ -1422,6 +1431,7 @@ const Maintenance = () => {
                                 title="Zoom Screenshot"
                               >
                                 <img
+                                  key={paymentProofKey(payment)}
                                   src={proofUrl}
                                   alt="Payment proof thumbnail"
                                   loading="lazy"
@@ -1968,6 +1978,7 @@ const Maintenance = () => {
                   )}
                   <div className="mm-zoom-viewport">
                     <img
+                      key={paymentProofKey(viewingScreenshot)}
                       src={viewingScreenshot.proofUrl}
                       alt="Full proof"
                       className="mm-zoom-img"
