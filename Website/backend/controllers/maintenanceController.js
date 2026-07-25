@@ -663,12 +663,12 @@ const getCoveredBillsForPayment = async (db, payment) => {
 };
 
 const withCoveredPaymentBills = async (db, payments = []) => {
-  const result = [];
-  for (const payment of payments) {
-    const covered_bills = await getCoveredBillsForPayment(db, payment);
-    result.push({ ...payment, covered_bills });
-  }
-  return result;
+  return Promise.all(
+    payments.map(async (payment) => {
+      const covered_bills = await getCoveredBillsForPayment(db, payment);
+      return { ...payment, covered_bills };
+    })
+  );
 };
 
 const reconcilePaidPayments = async () => ({ updatedBills: 0 });
