@@ -32,6 +32,10 @@ const statusLabel = (status = '') => {
   if (['WRITTEN_OFF', 'SETTLED'].includes(status)) return 'Written Off';
   return status || 'Pending';
 };
+const normalizedStatus = (status = '') => String(status || '').trim().toUpperCase().replace(/\s+/g, '_');
+const isPendingPaymentStatus = (status) => ['PENDING', 'PENDING_REVIEW', 'PENDING_VERIFICATION', 'UNDER_REVIEW'].includes(normalizedStatus(status));
+const isApprovedPaymentStatus = (status) => ['APPROVED', 'PAID', 'VERIFIED'].includes(normalizedStatus(status));
+const isRejectedPaymentStatus = (status) => ['REJECTED', 'DECLINED'].includes(normalizedStatus(status));
 const cycleNumber = (year, month) => Number(year) * 12 + Number(month);
 const backendOrigin = (process.env.REACT_APP_API_URL || 'http://localhost:5000/api').replace(/\/api\/?$/, '').replace(/\/$/, '');
 const fileUrl = (value, cacheKey = '') => {
@@ -357,8 +361,8 @@ const Maintenance = () => {
     list.sort((a, b) => {
       const statusA = a.original_payment_status || a.payment_status;
       const statusB = b.original_payment_status || b.payment_status;
-      const isPendingA = ['Pending', 'Pending Verification', 'Under Review'].includes(statusA);
-      const isPendingB = ['Pending', 'Pending Verification', 'Under Review'].includes(statusB);
+      const isPendingA = isPendingPaymentStatus(statusA);
+      const isPendingB = isPendingPaymentStatus(statusB);
 
       if (isPendingA && !isPendingB) return -1;
       if (!isPendingA && isPendingB) return 1;
@@ -373,15 +377,15 @@ const Maintenance = () => {
 
   const paymentsStats = useMemo(() => {
     const totalRequests = payments.length;
-    const pendingVerification = payments.filter(p => ['Pending', 'Pending Verification', 'Under Review'].includes(p.payment_status)).length;
-    const approvedPayments = payments.filter(p => ['Approved', 'Paid'].includes(p.payment_status)).length;
-    const rejectedPayments = payments.filter(p => p.payment_status === 'Rejected').length;
+    const pendingVerification = payments.filter(p => isPendingPaymentStatus(p.payment_status)).length;
+    const approvedPayments = payments.filter(p => isApprovedPaymentStatus(p.payment_status)).length;
+    const rejectedPayments = payments.filter(p => isRejectedPaymentStatus(p.payment_status)).length;
     
     const now = new Date();
     const currentMonth = now.getMonth();
     const currentYear = now.getFullYear();
     const totalReceivedThisMonth = payments
-      .filter(p => ['Approved', 'Paid'].includes(p.payment_status) && p.paid_at && new Date(p.paid_at).getMonth() === currentMonth && new Date(p.paid_at).getFullYear() === currentYear)
+      .filter(p => isApprovedPaymentStatus(p.payment_status) && p.paid_at && new Date(p.paid_at).getMonth() === currentMonth && new Date(p.paid_at).getFullYear() === currentYear)
       .reduce((sum, p) => sum + Number(p.amount || 0), 0);
       
     const pendingCollection = calculatedStats.pending;
@@ -404,7 +408,7 @@ const Maintenance = () => {
   }, [filteredPayments, currentPage, rowsPerPage]);
 
   const pendingPayments = useMemo(() => {
-    return filteredPayments.filter(p => ['Pending', 'Pending Verification', 'Under Review'].includes(p.original_payment_status || p.payment_status));
+    return filteredPayments.filter(p => isPendingPaymentStatus(p.original_payment_status || p.payment_status));
   }, [filteredPayments]);
 
   const allPendingSelected = useMemo(() => {
@@ -1394,7 +1398,7 @@ const Maintenance = () => {
                     const proofUrl = paymentProofUrl(payment);
                     const proofBroken = brokenProofs[payment.id];
                     const currentPaymentStatus = payment.original_payment_status || payment.payment_status;
-                    const isPending = ['Pending', 'Pending Verification', 'Under Review'].includes(currentPaymentStatus);
+                    const isPending = isPendingPaymentStatus(currentPaymentStatus);
                     
                     return (
                       <tr key={payment.id} style={{ background: selectedPaymentIds.has(payment.payment_id) ? 'var(--blue-soft)' : 'transparent' }}>
@@ -1491,7 +1495,7 @@ const Maintenance = () => {
                               <button className="mm-mini-action blue" onClick={() => handlePrintReceipt(payment)} title="Print Receipt"><Printer size={13} /> Print Receipt</button>
                             )}
                               
-                              {currentPaymentStatus === 'Rejected' && (
+                              {isRejectedPaymentStatus(currentPaymentStatus) && (
                                 <button
                                   className="mm-mini-action red"
                                   onClick={() => handleReconsiderPayment(payment)}

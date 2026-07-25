@@ -55,10 +55,11 @@ const getPaymentScreenshot = async (req, res) => {
     }
     
     if (payment.screenshot_url) {
-      const fs = require('fs');
-      const path = require('path');
-      const filePath = path.join(__dirname, '..', payment.screenshot_url);
+      const uploadRoot = path.resolve(__dirname, '..');
+      const cleanPath = String(payment.screenshot_url).replace(/\\/g, '/').replace(/^\/+/, '');
+      const filePath = path.resolve(uploadRoot, cleanPath);
       if (fs.existsSync(filePath)) {
+        if (!filePath.startsWith(uploadRoot)) return res.status(400).send('Invalid screenshot path');
         return res.sendFile(filePath);
       }
     }
@@ -1942,7 +1943,7 @@ const getPendingVerificationPayments = async (req, res) => {
       LEFT JOIN users u ON m.resident_id = u.id
       LEFT JOIN users payer ON p.resident_id = payer.id
       LEFT JOIN flats f ON m.flat_id = f.id
-      WHERE p.payment_status IN ('PENDING_REVIEW', 'Pending Verification', 'Pending', 'Under Review', 'NEEDS_CLARIFICATION', 'Needs Clarification')
+      WHERE p.payment_status IN ('PENDING_REVIEW', 'Pending Verification', 'Pending', 'Under Review', 'NEEDS_CLARIFICATION', 'Needs Clarification', 'REJECTED', 'Rejected')
       ORDER BY p.created_at DESC
     `);
     if (!payments.length) {
@@ -1961,7 +1962,7 @@ const getPendingVerificationPayments = async (req, res) => {
         LEFT JOIN users u ON m.resident_id = u.id
         LEFT JOIN users payer ON p.resident_id = payer.id
         LEFT JOIN flats f ON m.flat_id = f.id
-        WHERE COALESCE(p.payment_status, 'PENDING_REVIEW') NOT IN ('REJECTED', 'Rejected')
+        WHERE COALESCE(p.payment_status, 'PENDING_REVIEW') NOT IN ('APPROVED', 'Approved', 'Paid', 'Verified')
         ORDER BY p.created_at DESC
         LIMIT 25
       `);
@@ -2012,7 +2013,7 @@ const getPaymentVerifications = async (req, res) => {
       LEFT JOIN maintenance m ON m.id = COALESCE(pm.maintenance_id, p.bill_id)
       LEFT JOIN users u ON u.id = COALESCE(m.resident_id, p.resident_id)
       LEFT JOIN flats f ON f.id = m.flat_id
-      WHERE p.payment_status IN ('PENDING_REVIEW', 'Pending Verification', 'Pending', 'Under Review', 'NEEDS_CLARIFICATION', 'Needs Clarification', 'pending', 'under_review')
+      WHERE p.payment_status IN ('PENDING_REVIEW', 'Pending Verification', 'Pending', 'Under Review', 'NEEDS_CLARIFICATION', 'Needs Clarification', 'REJECTED', 'Rejected', 'Declined', 'pending', 'under_review', 'rejected')
       ORDER BY p.created_at DESC
     `;
     
@@ -2173,12 +2174,13 @@ const getPayments = async (req, res) => {
              CASE WHEN p.payment_proof IS NOT NULL OR p.screenshot_url IS NOT NULL THEN 1 ELSE 0 END AS has_screenshot,
              p.transaction_id AS utr_number,
              CONCAT('BILL-', m.id) AS bill_number, m.title, m.month, m.year, m.due_date, m.total_amount AS total_amount,
-             m.resident_id,
+             COALESCE(m.resident_id, p.resident_id) AS resident_id,
              u.name AS resident_name, f.flat_no
       FROM payments p
-      JOIN maintenance m ON p.bill_id = m.id
-      JOIN users u ON m.resident_id = u.id
-      JOIN flats f ON m.flat_id = f.id
+      LEFT JOIN payment_maintenance pm ON pm.payment_id = p.id
+      LEFT JOIN maintenance m ON m.id = COALESCE(pm.maintenance_id, p.bill_id)
+      LEFT JOIN users u ON u.id = COALESCE(m.resident_id, p.resident_id)
+      LEFT JOIN flats f ON m.flat_id = f.id
       ORDER BY p.created_at DESC
     `);
     const paymentsWithCoveredBills = await withCoveredPaymentBills(promisePool, payments);
