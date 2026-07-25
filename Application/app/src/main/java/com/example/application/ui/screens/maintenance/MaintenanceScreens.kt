@@ -15,6 +15,7 @@ import android.graphics.pdf.PdfDocument
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import com.example.application.data.remote.dto.MaintenancePaymentVerificationDto
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -124,6 +125,9 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import kotlin.math.max
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.HorizontalDivider
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -275,7 +279,7 @@ fun AdminPaymentVerificationScreen(
                 when {
                     state.isLoading && data == null -> item { DashboardSkeleton() }
                     data == null -> item { EmptyState("Payment verification unavailable", "Pull down or tap refresh.") }
-                    else -> item { PaymentVerificationSection(data.payments, state.query, state.filter, viewModel) }
+                    else -> item { PaymentVerificationSection(data.verifications, viewModel) }
                 }
             }
         }
@@ -959,120 +963,84 @@ private fun androidx.compose.foundation.lazy.LazyListScope.paymentsTab(payments:
 
 @Composable
 private fun PaymentVerificationSection(
-    payments: List<MaintenancePaymentDto>,
-    query: String,
-    filter: String,
+    verifications: List<MaintenancePaymentVerificationDto>,
     viewModel: AdminMaintenanceViewModel
 ) {
     val context = LocalContext.current
-    var screenshotPayment by remember { mutableStateOf<MaintenancePaymentDto?>(null) }
-    var receiptPayment by remember { mutableStateOf<MaintenancePaymentDto?>(null) }
-    var rejectPayment by remember { mutableStateOf<MaintenancePaymentDto?>(null) }
-    var clarificationPayment by remember { mutableStateOf<MaintenancePaymentDto?>(null) }
-    var bulkReject by remember { mutableStateOf(false) }
     var selectedPaymentIds by remember { mutableStateOf<Set<String>>(emptySet()) }
-    val visiblePayments = remember(payments, query, filter) {
-        payments.filter { payment ->
-            val status = payment.paymentStatus.orEmpty()
-            val normalizedStatus = status.normalizePaymentStatus()
-            val filterOk = filter == "All" ||
-                status.equals(filter, true) ||
-                (filter == "Pending" && normalizedStatus in setOf("PENDING", "PAYMENT_PROOF_SUBMITTED", "UNDER_REVIEW", "PENDING_VERIFICATION", "NEEDS_CLARIFICATION")) ||
-                (filter == "Paid" && normalizedStatus in setOf("PAID", "APPROVED")) ||
-                (filter == "Rejected" && normalizedStatus == "REJECTED") ||
-                filter in setOf("Partial", "Overdue")
-            val q = query.trim().lowercase()
-            val queryOk = q.isBlank() || listOf(payment.residentName, payment.flatNo, payment.transactionId, payment.month, payment.year)
-                .any { it?.lowercase()?.contains(q) == true }
-            filterOk && queryOk
-        }
+    var screenshotPayment by remember { mutableStateOf<MaintenancePaymentVerificationDto?>(null) }
+    var rejectPayment by remember { mutableStateOf<MaintenancePaymentVerificationDto?>(null) }
+    var clarificationPayment by remember { mutableStateOf<MaintenancePaymentVerificationDto?>(null) }
+    var bulkReject by remember { mutableStateOf(false) }
+
+    val pendingVerifications = verifications.filter { 
+        val status = it.verificationStatus?.trim()?.replace("-", "_")?.replace(" ", "_")?.uppercase()
+        status in setOf("PENDING", "PENDING_REVIEW", "NEEDS_CLARIFICATION", "PAYMENT_PROOF_SUBMITTED", "PENDING_VERIFICATION") 
     }
-    val pendingPayments = visiblePayments.filter { it.id != null && it.paymentStatus.isVerificationPendingStatus() }
-    val selectedPending = pendingPayments.filter { it.id in selectedPaymentIds }
+    val selectedPending = pendingVerifications.filter { it.submissionId in selectedPaymentIds }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         SectionCard("Payment Verification", "Review resident UPI proofs before marking bills paid") {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("Pending Review" to "Pending", "Needs Clarification" to "Needs Clarification", "Approved" to "Paid", "Rejected" to "Rejected", "All" to "All").forEach { (label, value) ->
-                    FilterChip(selected = filter == value, onClick = { viewModel.setFilter(value) }, label = { Text(label) })
-                }
-            }
-            SearchAndFilter(query, viewModel::setQuery, filter, viewModel::setFilter)
-            Text("Tip: filter by Pending, Approved/Paid, Rejected, month, flat or resident name.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (pendingPayments.isNotEmpty()) {
+            if (pendingVerifications.isNotEmpty()) {
                 MaintenanceActions {
                     TextButton(onClick = {
-                        selectedPaymentIds = if (selectedPending.size == pendingPayments.size) emptySet() else pendingPayments.mapNotNull { it.id }.toSet()
-                    }) { Text(if (selectedPending.size == pendingPayments.size) "Clear Selection" else "Select Pending") }
+                        selectedPaymentIds = if (selectedPending.size == pendingVerifications.size) emptySet() else pendingVerifications.mapNotNull { it.submissionId }.toSet()
+                    }) { Text(if (selectedPending.size == pendingVerifications.size) "Clear Selection" else "Select Pending") }
                     Button(
                         onClick = {
-                            selectedPending.forEach { payment -> payment.id?.let { viewModel.updatePayment(it, "Paid") } }
+                            selectedPending.forEach { payment -> payment.submissionId?.let { viewModel.updatePayment(it, "Paid") } }
                             selectedPaymentIds = emptySet()
                         },
                         enabled = selectedPending.isNotEmpty()
                     ) { Text("Approve Selected (${selectedPending.size})") }
                     Button(onClick = { bulkReject = true }, enabled = selectedPending.isNotEmpty()) { Text("Reject Selected") }
-                    OutlinedButton(onClick = { sharePaymentsCsv(context, visiblePayments) }) { Text("Export CSV") }
                 }
-            } else {
-                OutlinedButton(onClick = { sharePaymentsCsv(context, visiblePayments) }) { Text("Export CSV") }
             }
         }
-        if (visiblePayments.isEmpty()) {
+        if (verifications.isEmpty()) {
             EmptyState("No payment proofs found", "Submitted resident payment screenshots will appear here.")
         } else {
-            visiblePayments.forEach { payment ->
+            verifications.forEach { payment ->
                 PaymentVerificationCard(
-                    payment = payment,
-                    selected = payment.id in selectedPaymentIds,
+                    verification = payment,
+                    selected = payment.submissionId in selectedPaymentIds,
                     onSelectToggle = {
-                        payment.id?.let { id ->
+                        payment.submissionId?.let { id ->
                             selectedPaymentIds = if (id in selectedPaymentIds) selectedPaymentIds - id else selectedPaymentIds + id
                         }
                     },
                     onOpenScreenshot = { screenshotPayment = payment },
-                    onApprove = { payment.id?.let { viewModel.updatePayment(it, "Paid") } },
+                    onApprove = { payment.submissionId?.let { viewModel.updatePayment(it, "Paid") } },
                     onReject = { rejectPayment = payment },
-                    onClarify = { clarificationPayment = payment },
-                    onViewReceipt = { receiptPayment = payment },
-                    onDownloadReceipt = { saveReceiptPdf(context, payment) },
-                    onShareReceipt = { shareReceiptPdf(context, payment) }
+                    onClarify = { clarificationPayment = payment }
                 )
             }
         }
     }
 
     screenshotPayment?.let { payment ->
-        AlertDialog(
+        androidx.compose.material3.AlertDialog(
             onDismissRequest = { screenshotPayment = null },
             title = { Text("Payment Screenshot") },
             text = {
-                PaymentProofImage(
-                    image = payment.proofImage(),
-                    contentDescription = "Payment screenshot",
-                    modifier = Modifier.fillMaxWidth().height(520.dp).clip(RoundedCornerShape(14.dp)),
-                    contentScale = ContentScale.Fit
-                )
+                if (!payment.screenshotUrl.isNullOrBlank()) {
+                    PaymentProofImage(
+                        image = payment.screenshotUrl,
+                        contentDescription = "Payment screenshot",
+                        modifier = Modifier.fillMaxWidth().height(520.dp).clip(RoundedCornerShape(14.dp)),
+                        contentScale = ContentScale.Fit
+                    )
+                } else {
+                    Text("No image available")
+                }
             },
             confirmButton = { TextButton(onClick = { screenshotPayment = null }) { Text("Close") } }
         )
     }
 
-    receiptPayment?.let { payment ->
-        AlertDialog(
-            onDismissRequest = { receiptPayment = null },
-            title = { Text("Payment Receipt") },
-            text = { ReceiptPreview(payment) },
-            confirmButton = {
-                TextButton(onClick = { saveReceiptPdf(context, payment) }) { Text("Download PDF") }
-            },
-            dismissButton = { TextButton(onClick = { receiptPayment = null }) { Text("Close") } }
-        )
-    }
-
     rejectPayment?.let { payment ->
-        var reason by remember(payment.id) { mutableStateOf("") }
-        AlertDialog(
+        var reason by remember(payment.submissionId) { mutableStateOf("") }
+        androidx.compose.material3.AlertDialog(
             onDismissRequest = { rejectPayment = null },
             title = { Text("Reject Payment") },
             text = {
@@ -1084,7 +1052,7 @@ private fun PaymentVerificationSection(
             confirmButton = {
                 Button(
                     onClick = {
-                        payment.id?.let { viewModel.updatePayment(it, "Rejected", reason.ifBlank { "Payment proof rejected by admin" }) }
+                        payment.submissionId?.let { viewModel.updatePayment(it, "Rejected", reason.ifBlank { "Payment proof rejected by admin" }) }
                         rejectPayment = null
                     },
                     enabled = reason.isNotBlank()
@@ -1095,8 +1063,8 @@ private fun PaymentVerificationSection(
     }
 
     clarificationPayment?.let { payment ->
-        var note by remember(payment.id) { mutableStateOf("") }
-        AlertDialog(
+        var note by remember(payment.submissionId) { mutableStateOf("") }
+        androidx.compose.material3.AlertDialog(
             onDismissRequest = { clarificationPayment = null },
             title = { Text("Ask for Clarification") },
             text = {
@@ -1108,7 +1076,7 @@ private fun PaymentVerificationSection(
             confirmButton = {
                 Button(
                     onClick = {
-                        payment.id?.let { viewModel.updatePayment(it, "Needs Clarification", note.ifBlank { "Please provide clearer payment details." }) }
+                        payment.submissionId?.let { viewModel.updatePayment(it, "Needs Clarification", note.ifBlank { "Please provide clearer payment details." }) }
                         clarificationPayment = null
                     },
                     enabled = note.isNotBlank()
@@ -1120,7 +1088,7 @@ private fun PaymentVerificationSection(
 
     if (bulkReject) {
         var reason by remember { mutableStateOf("") }
-        AlertDialog(
+        androidx.compose.material3.AlertDialog(
             onDismissRequest = { bulkReject = false },
             title = { Text("Reject Selected Payments") },
             text = {
@@ -1132,7 +1100,7 @@ private fun PaymentVerificationSection(
             confirmButton = {
                 Button(onClick = {
                     selectedPending.forEach { payment ->
-                        payment.id?.let { viewModel.updatePayment(it, "Rejected", reason.ifBlank { "Payment proof rejected by admin" }) }
+                        payment.submissionId?.let { viewModel.updatePayment(it, "Rejected", reason.ifBlank { "Payment proof rejected by admin" }) }
                     }
                     selectedPaymentIds = emptySet()
                     bulkReject = false
@@ -1145,50 +1113,99 @@ private fun PaymentVerificationSection(
 
 @Composable
 private fun PaymentVerificationCard(
-    payment: MaintenancePaymentDto,
+    verification: MaintenancePaymentVerificationDto,
     selected: Boolean,
     onSelectToggle: () -> Unit,
     onOpenScreenshot: () -> Unit,
     onApprove: () -> Unit,
     onReject: () -> Unit,
-    onClarify: () -> Unit,
-    onViewReceipt: () -> Unit,
-    onDownloadReceipt: () -> Unit,
-    onShareReceipt: () -> Unit
+    onClarify: () -> Unit
 ) {
-    val status = friendlyPaymentStatus(payment.paymentStatus)
-    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-            if (payment.paymentStatus.isVerificationPendingStatus()) {
-                FilterChip(selected = selected, onClick = onSelectToggle, label = { Text(if (selected) "Selected" else "Select for bulk action") })
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-                PaymentProofImage(
-                    image = payment.proofImage(),
-                    contentDescription = "Payment screenshot thumbnail",
-                    modifier = Modifier.height(92.dp).weight(0.36f).clip(RoundedCornerShape(14.dp)).clickable { onOpenScreenshot() },
-                    contentScale = ContentScale.Crop
-                )
-                Column(modifier = Modifier.weight(0.64f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(payment.residentName ?: "Resident", fontWeight = FontWeight.Bold)
-                    Text("Flat ${payment.flatNo ?: "-"} • ${payment.month ?: "-"}/${payment.year ?: "-"}")
-                    Text(DashboardFormatters.money(payment.amount.toMoneyDecimal()), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text("Status: $status", color = MaterialTheme.colorScheme.primary)
+    val status = verification.verificationStatus?.trim()?.replace("-", "_")?.replace(" ", "_")?.uppercase() ?: "NO_SUBMISSION"
+    val isPending = status in setOf("PENDING_REVIEW", "PENDING_VERIFICATION", "PENDING", "UNDER_REVIEW", "NEEDS_CLARIFICATION")
+    
+    val maintAmt = verification.billAmount?.toDoubleOrNull() ?: 0.0
+    val penAmt = verification.penaltyAmount?.toDoubleOrNull() ?: 0.0
+    val totAmt = maintAmt + penAmt
+    
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable { if (isPending) onSelectToggle() },
+        colors = CardDefaults.cardColors(containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f) else MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("${verification.residentName ?: "Unknown"} â€¢ Flat ${verification.flatNumber ?: "--"}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text("${verification.title ?: "Maintenance"} â€¢ ${monthName(verification.billingMonth?.toString())} ${verification.billingYear ?: ""}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (isPending) {
+                    Checkbox(checked = selected, onCheckedChange = { onSelectToggle() }, modifier = Modifier.size(24.dp))
                 }
             }
-            KeyValue("Submitted", DashboardFormatters.date(payment.createdAt ?: payment.paidAt))
-            KeyValue("Transaction Ref", payment.transactionId ?: "-")
-            KeyValue("Payment method", payment.paymentMethod ?: "-")
-            payment.residentNote?.takeIf { it.isNotBlank() }?.let { KeyValue("Resident note", it) }
-            payment.rejectionReason?.takeIf { it.isNotBlank() }?.let { KeyValue("Reject reason", it) }
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = onOpenScreenshot) { Text("Open Screenshot") }
-                if ((payment.paymentStatus).isVerificationPendingStatus()) Button(onClick = onApprove) { Text("Approve") }
-                if ((payment.paymentStatus).isVerificationPendingStatus()) TextButton(onClick = onReject) { Text("Reject") }
-                if ((payment.paymentStatus).isVerificationPendingStatus()) TextButton(onClick = onClarify) { Text("Ask Clarification") }
-                if ((payment.paymentStatus).isApprovedStatus()) TextButton(onClick = onViewReceipt) { Text("View Receipt") }
-                if ((payment.paymentStatus).isApprovedStatus()) TextButton(onClick = onDownloadReceipt) { Text("Download PDF") }
-                if ((payment.paymentStatus).isApprovedStatus()) TextButton(onClick = onShareReceipt) { Text("Share") }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                InfoItem("Maint Amount", "â‚¹${verification.billAmount ?: "0"}")
+                InfoItem("Penalty", "â‚¹${verification.penaltyAmount ?: "0"}")
+                InfoItem("Total Bill", "â‚¹${totAmt.toInt()}")
+            }
+            
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+            
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                InfoItem("Submitted", "â‚¹${verification.submittedAmount ?: "0"}")
+                InfoItem("Method", verification.paymentMethod ?: "--")
+                InfoItem("Ref/UTR", verification.transactionReference ?: "--")
+            }
+            
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                InfoItem("Payment Date", verification.paymentDate?.take(10) ?: "--")
+                InfoItem("Submit Date", verification.submittedAt?.take(10) ?: "--")
+            }
+            
+            Row(verticalAlignment = Alignment.Top, modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.weight(1f)) {
+                    StatusBadge(verification.verificationStatus ?: "Unknown")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    if (!verification.adminNote.isNullOrBlank()) {
+                        Text("Admin Note: ${verification.adminNote}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    }
+                    if (!verification.residentNote.isNullOrBlank()) {
+                        Text("Resident Note: ${verification.residentNote}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    if (!verification.screenshotUrl.isNullOrBlank()) {
+                        PaymentProofImage(
+                            image = verification.screenshotUrl,
+                            contentDescription = "Thumbnail",
+                            modifier = Modifier.size(60.dp).clickable { onOpenScreenshot() },
+                            contentScale = ContentScale.Crop
+                        )
+                        TextButton(onClick = onOpenScreenshot) {
+                            Text("View Proof", style = MaterialTheme.typography.bodySmall)
+                        }
+                    } else {
+                        Text("No Proof", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            }
+
+            if (isPending) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = onApprove, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)) {
+                        Text("Approve")
+                    }
+                    OutlinedButton(onClick = onReject, modifier = Modifier.weight(1f), colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
+                        Text("Reject")
+                    }
+                }
+                TextButton(onClick = onClarify, modifier = Modifier.fillMaxWidth()) {
+                    Text("Request Clarification")
+                }
             }
         }
     }
@@ -2887,3 +2904,35 @@ private fun String?.toMoneyDecimal(): BigDecimal {
 
 
 
+
+
+@Composable
+fun InfoItem(label: String, value: String) {
+    Column {
+        Text(text = label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(text = value, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+    }
+}
+
+@Composable
+fun StatusBadge(status: String) {
+    val (bgColor, textColor) = when (status.uppercase().replace(" ", "_").replace("-", "_")) {
+        "PAID", "APPROVED" -> MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer
+        "PENDING_REVIEW", "PENDING_VERIFICATION", "PENDING" -> MaterialTheme.colorScheme.secondaryContainer to MaterialTheme.colorScheme.onSecondaryContainer
+        "REJECTED", "OVERDUE" -> MaterialTheme.colorScheme.errorContainer to MaterialTheme.colorScheme.onErrorContainer
+        "NEEDS_CLARIFICATION" -> MaterialTheme.colorScheme.tertiaryContainer to MaterialTheme.colorScheme.onTertiaryContainer
+        else -> MaterialTheme.colorScheme.surfaceVariant to MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Surface(
+        color = bgColor,
+        shape = MaterialTheme.shapes.small,
+        modifier = Modifier.padding(2.dp)
+    ) {
+        Text(
+            text = status.replace("_", " "),
+            color = textColor,
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+        )
+    }
+}

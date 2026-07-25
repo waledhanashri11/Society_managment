@@ -1,5 +1,6 @@
 package com.example.application.data.remote.api
 
+import com.example.application.data.remote.dto.MaintenancePaymentVerificationDto
 import com.example.application.data.remote.dto.ApiResponse
 import com.example.application.data.remote.dto.ApplyWaiverRequest
 import com.example.application.data.remote.dto.BillDetailsDto
@@ -87,7 +88,7 @@ interface MaintenanceApiService {
     suspend fun getPayments(): Response<ApiResponse<List<MaintenancePaymentDto>>>
 
     @GET("api/maintenance/payments/pending-verification")
-    suspend fun getPendingVerificationPayments(): Response<ApiResponse<List<MaintenancePaymentDto>>>
+    suspend fun getPaymentVerifications(): Response<ApiResponse<List<MaintenancePaymentVerificationDto>>>
 
     @POST("api/maintenance/payments")
     suspend fun submitPayment(@Body request: SubmitPaymentRequest): Response<ApiResponse<Unit>>

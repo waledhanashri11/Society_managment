@@ -347,3 +347,38 @@ data class PaymentSettingsDto(
     @SerializedName(value = "payment_note", alternate = ["paymentNote"])
     val paymentNote: String?
 )
+
+
+data class MaintenancePaymentVerificationDto(
+    @SerializedName("id") val submissionId: String?,
+    @SerializedName("bill_id") val billId: String?,
+    val title: String?,
+    val month: Int?,
+    val year: Int?,
+    @SerializedName("total_amount") val billAmount: String?,
+    @SerializedName("due_date") val dueDate: String?,
+    val amount: String?,
+    @SerializedName("payment_method") val paymentMethod: String?,
+    @SerializedName("transaction_id") val transactionReference: String?,
+    @SerializedName("utr_number") val utrNumber: String?,
+    @SerializedName("payment_status") val verificationStatus: String?,
+    @SerializedName("paid_at") val paymentDate: String?,
+    @SerializedName("created_at") val submittedAt: String?,
+    val remarks: String?,
+    @SerializedName("resident_note") val residentNote: String?,
+    @SerializedName("resident_id") val residentId: String?,
+    @SerializedName("resident_name") val residentName: String?,
+    @SerializedName("flat_no") val flatNumber: String?,
+    @SerializedName("bill_number") val billNumber: String?,
+    @SerializedName("has_screenshot") val hasScreenshot: Int?,
+    @SerializedName("screenshot_url") val screenshotUrl: String?,
+    val screenshot: String?,
+    @SerializedName("screenshot_path") val screenshotPath: String?
+) {
+    // Compatibility accessors used by existing UI code
+    val billingMonth: Int? get() = month
+    val billingYear: Int? get() = year
+    val submittedAmount: String? get() = amount
+    val adminNote: String? get() = remarks
+    val penaltyAmount: String? get() = null
+}
