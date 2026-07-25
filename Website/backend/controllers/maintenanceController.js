@@ -2857,6 +2857,7 @@ module.exports = {
   approvePayment,
   rejectPayment,
   getPendingVerificationPayments,
+  getPaymentVerifications,
   getPaymentHistory,
   getPaymentReceipt,
   getPaymentScreenshot,
