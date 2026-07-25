@@ -973,10 +973,7 @@ private fun PaymentVerificationSection(
     var clarificationPayment by remember { mutableStateOf<MaintenancePaymentVerificationDto?>(null) }
     var bulkReject by remember { mutableStateOf(false) }
 
-    val pendingVerifications = verifications.filter { 
-        val status = it.verificationStatus?.trim()?.replace("-", "_")?.replace(" ", "_")?.uppercase()
-        status in setOf("PENDING", "PENDING_REVIEW", "NEEDS_CLARIFICATION", "PAYMENT_PROOF_SUBMITTED", "PENDING_VERIFICATION") 
-    }
+    val pendingVerifications = verifications.filter { it.verificationStatus.isPaymentVerificationPending() }
     val selectedPending = pendingVerifications.filter { it.submissionId in selectedPaymentIds }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1019,13 +1016,14 @@ private fun PaymentVerificationSection(
     }
 
     screenshotPayment?.let { payment ->
+        val proofImage = payment.proofImage()
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { screenshotPayment = null },
             title = { Text("Payment Screenshot") },
             text = {
-                if (!payment.screenshotUrl.isNullOrBlank()) {
+                if (!proofImage.isNullOrBlank()) {
                     PaymentProofImage(
-                        image = payment.screenshotUrl,
+                        image = proofImage,
                         contentDescription = "Payment screenshot",
                         modifier = Modifier.fillMaxWidth().height(520.dp).clip(RoundedCornerShape(14.dp)),
                         contentScale = ContentScale.Fit
@@ -1121,8 +1119,10 @@ private fun PaymentVerificationCard(
     onReject: () -> Unit,
     onClarify: () -> Unit
 ) {
-    val status = verification.verificationStatus?.trim()?.replace("-", "_")?.replace(" ", "_")?.uppercase() ?: "NO_SUBMISSION"
-    val isPending = status in setOf("PENDING_REVIEW", "PENDING_VERIFICATION", "PENDING", "UNDER_REVIEW", "NEEDS_CLARIFICATION")
+    val status = verification.verificationStatus.normalizePaymentStatus()
+    val isPending = verification.verificationStatus.isPaymentVerificationPending()
+    val isRejected = verification.verificationStatus.isPaymentVerificationRejected()
+    val proofImage = verification.proofImage()
     
     val maintAmt = verification.billAmount?.toDoubleOrNull() ?: 0.0
     val penAmt = verification.penaltyAmount?.toDoubleOrNull() ?: 0.0
@@ -1178,9 +1178,9 @@ private fun PaymentVerificationCard(
                 }
                 
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    if (!verification.screenshotUrl.isNullOrBlank()) {
+                    if (!proofImage.isNullOrBlank()) {
                         PaymentProofImage(
-                            image = verification.screenshotUrl,
+                            image = proofImage,
                             contentDescription = "Thumbnail",
                             modifier = Modifier.size(60.dp).clickable { onOpenScreenshot() },
                             contentScale = ContentScale.Crop
@@ -1206,6 +1206,12 @@ private fun PaymentVerificationCard(
                 TextButton(onClick = onClarify, modifier = Modifier.fillMaxWidth()) {
                     Text("Request Clarification")
                 }
+            } else if (isRejected) {
+                Text(
+                    "Rejected payments stay visible here for review.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
             }
         }
     }
@@ -2500,6 +2506,16 @@ private fun String?.isVerificationPendingStatus(): Boolean {
     return normalized in setOf("PENDING_VERIFICATION", "PAYMENT_PROOF_SUBMITTED", "UNDER_REVIEW")
 }
 
+private fun String?.isPaymentVerificationPending(): Boolean {
+    val normalized = normalizePaymentStatus()
+    return normalized in setOf("PENDING", "PENDING_REVIEW", "PENDING_VERIFICATION", "PAYMENT_PROOF_SUBMITTED", "UNDER_REVIEW", "NEEDS_CLARIFICATION")
+}
+
+private fun String?.isPaymentVerificationRejected(): Boolean {
+    val normalized = normalizePaymentStatus()
+    return normalized in setOf("REJECTED", "DECLINED")
+}
+
 private fun String?.isApprovedStatus(): Boolean {
     val normalized = normalizePaymentStatus()
     return normalized in setOf("PAID", "APPROVED")
@@ -2517,6 +2533,14 @@ private fun MaintenanceBillDto.isOverdueBill(): Boolean {
 }
 
 private fun MaintenancePaymentDto.proofImage(): String? {
+    return listOfNotNull(
+        screenshotUrl?.takeIf { it.isNotBlank() },
+        screenshot?.takeIf { it.isNotBlank() },
+        screenshotPath?.takeIf { it.isNotBlank() }
+    ).firstOrNull()
+}
+
+private fun MaintenancePaymentVerificationDto.proofImage(): String? {
     return listOfNotNull(
         screenshotUrl?.takeIf { it.isNotBlank() },
         screenshot?.takeIf { it.isNotBlank() },
