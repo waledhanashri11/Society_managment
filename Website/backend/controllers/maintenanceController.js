@@ -115,7 +115,8 @@ const ensureMaintenanceRuntimeSchema = async () => {
       ADD CONSTRAINT payments_payment_status_check
       CHECK (payment_status IN (
         'Pending', 'Under Review', 'Pending Verification', 'Needs Clarification',
-        'Approved', 'Paid', 'Rejected'
+        'Approved', 'Paid', 'Rejected',
+        'PENDING_REVIEW', 'PENDING_VERIFICATION', 'NEEDS_CLARIFICATION', 'APPROVED', 'PAID', 'REJECTED'
       )) NOT VALID
   `);
   await promisePool.query(`
@@ -1494,7 +1495,7 @@ const createPayment = async (req, res) => {
     const paymentsHasResidentId = await hasTableColumn('payments', 'resident_id');
     const paymentsHasPaymentProof = await hasTableColumn('payments', 'payment_proof');
     const insertColumns = ['bill_id', 'payment_method', 'transaction_id', 'amount', 'payment_status', 'paid_at', 'screenshot_url'];
-    const insertValues = [primaryBillId, paymentMethod, utr, paidAmount, 'PENDING_REVIEW', paidAt, screenshotPath];
+    const insertValues = [primaryBillId, paymentMethod, utr, paidAmount, 'Pending Verification', paidAt, screenshotPath];
     if (paymentsHasResidentId) {
       insertColumns.push('resident_id');
       insertValues.push(req.user.id);
