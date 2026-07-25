@@ -19,7 +19,7 @@ const resolvePaymentScreenshotUrl = (req, value) => {
 const withPaymentScreenshotUrls = (req, payments = []) => {
   const forwardedProto = String(req?.headers?.['x-forwarded-proto'] || '').split(',')[0].trim();
   const protocol = forwardedProto || req?.protocol || 'https';
-  const host = req?.get?.('host') || req?.headers?.host;
+  const host = req?.headers?.['x-forwarded-host'] || req?.get?.('host') || req?.headers?.host;
   const baseUrl = host ? `${protocol}://${host}` : '';
   
   return payments.map((payment) => {
@@ -2020,7 +2020,7 @@ const getPaymentVerifications = async (req, res) => {
     
     const forwardedProto = String(req?.headers?.['x-forwarded-proto'] || '').split(',')[0].trim();
     const protocol = forwardedProto || req?.protocol || 'https';
-    const host = req?.get?.('host') || req?.headers?.host;
+    const host = req?.headers?.['x-forwarded-host'] || req?.get?.('host') || req?.headers?.host;
     const baseUrl = host ? `${protocol}://${host}` : '';
     
     const items = rows.map(row => ({

@@ -1,4 +1,4 @@
-﻿package com.example.application.ui.screens.maintenance
+package com.example.application.ui.screens.maintenance
 
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -227,7 +227,7 @@ fun AdminMaintenanceScreen(
                         else -> billsTab(bills, state.query, state.filter, viewModel, { dialog = it })
                     }
                     if (data.warnings.isNotEmpty()) {
-                        item { SectionCard("Warnings") { data.warnings.forEach { Text("• $it") } } }
+                        item { SectionCard("Warnings") { data.warnings.forEach { Text("\u2022 $it") } } }
                     }
                 }
             }
@@ -922,7 +922,7 @@ private fun AdminMaintenanceOverviewSection(
             val pending = data.payments.filter { it.paymentStatus.normalizePaymentStatus() == "PENDING_VERIFICATION" }.take(3)
             if (pending.isEmpty()) Text("No pending payment submissions.")
             pending.forEach { payment ->
-                KeyValue("${payment.residentName ?: "Resident"} • Flat ${payment.flatNo ?: "-"}", DashboardFormatters.money(payment.amount.toMoneyDecimal()))
+                KeyValue("${payment.residentName ?: "Resident"} \u2022 Flat ${payment.flatNo ?: "-"}", DashboardFormatters.money(payment.amount.toMoneyDecimal()))
             }
         }
         SectionCard("Top Outstanding Flats") {
@@ -933,7 +933,7 @@ private fun AdminMaintenanceOverviewSection(
             }
             if (outstanding.isEmpty()) Text("No outstanding dues.")
             outstanding.forEach { bill ->
-                KeyValue("Flat ${bill.flatNo ?: "-"} • ${bill.residentName ?: "Resident"}", DashboardFormatters.money(bill.expectedPayableAmount()))
+                KeyValue("Flat ${bill.flatNo ?: "-"} \u2022 ${bill.residentName ?: "Resident"}", DashboardFormatters.money(bill.expectedPayableAmount()))
             }
         }
         SectionCard("Quick Actions") {
@@ -950,8 +950,8 @@ private fun androidx.compose.foundation.lazy.LazyListScope.paymentsTab(payments:
     else items(payments, key = { it.id ?: it.transactionId.orEmpty() }) { payment ->
         ManagementCard {
             Text(payment.residentName ?: "Resident", fontWeight = FontWeight.Bold)
-            Text("Flat ${payment.flatNo ?: "-"} • ${DashboardFormatters.money(payment.amount.toMoneyDecimal())}")
-            Text("Method: ${payment.paymentMethod ?: "-"} • Txn: ${payment.transactionId ?: "-"}")
+            Text("Flat ${payment.flatNo ?: "-"} \u2022 ${DashboardFormatters.money(payment.amount.toMoneyDecimal())}")
+            Text("Method: ${payment.paymentMethod ?: "-"} \u2022 Txn: ${payment.transactionId ?: "-"}")
             Text("Status: ${payment.paymentStatus ?: "-"}")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 TextButton(onClick = { payment.id?.let { viewModel.updatePayment(it, "Paid") } }) { Text("Approve") }
@@ -1136,8 +1136,8 @@ private fun PaymentVerificationCard(
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("${verification.residentName ?: "Unknown"} • Flat ${verification.flatNumber ?: "--"}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text("${verification.title ?: "Maintenance"} • ${monthName(verification.billingMonth?.toString())} ${verification.billingYear ?: ""}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("${verification.residentName ?: "Unknown"} \u2022 Flat ${verification.flatNumber ?: "--"}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text("${verification.title ?: "Maintenance"} \u2022 ${monthName(verification.billingMonth?.toString())} ${verification.billingYear ?: ""}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 if (isPending) {
                     Checkbox(checked = selected, onCheckedChange = { onSelectToggle() }, modifier = Modifier.size(24.dp))
@@ -1147,15 +1147,15 @@ private fun PaymentVerificationCard(
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                InfoItem("Maint Amount", "₹${verification.billAmount ?: "0"}")
-                InfoItem("Penalty", "₹${verification.penaltyAmount ?: "0"}")
-                InfoItem("Total Bill", "₹${totAmt.toInt()}")
+                InfoItem("Maint Amount", "\u20B9${verification.billAmount ?: "0"}")
+                InfoItem("Penalty", "\u20B9${verification.penaltyAmount ?: "0"}")
+                InfoItem("Total Bill", "\u20B9${totAmt.toInt()}")
             }
             
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
             
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                InfoItem("Submitted", "₹${verification.submittedAmount ?: "0"}")
+                InfoItem("Submitted", "\u20B9${verification.submittedAmount ?: "0"}")
                 InfoItem("Method", verification.paymentMethod ?: "--")
                 InfoItem("Ref/UTR", verification.transactionReference ?: "--")
             }
@@ -1239,8 +1239,8 @@ private fun androidx.compose.foundation.lazy.LazyListScope.expensesTab(expenses:
     else items(expenses, key = { it.id ?: it.expenseNumber.orEmpty() }) { expense ->
         ManagementCard {
             Text(expense.expenseNumber ?: "Expense", fontWeight = FontWeight.Bold)
-            Text("${expense.category ?: "-"} • ${expense.vendor ?: "-"}")
-            Text("${DashboardFormatters.money(expense.amount.toMoneyDecimal())} • ${DashboardFormatters.date(expense.expenseDate)}")
+            Text("${expense.category ?: "-"} \u2022 ${expense.vendor ?: "-"}")
+            Text("${DashboardFormatters.money(expense.amount.toMoneyDecimal())} \u2022 ${DashboardFormatters.date(expense.expenseDate)}")
             TextButton(onClick = { expense.id?.let(viewModel::deleteExpense) }) { Text("Delete") }
         }
     }
@@ -1264,7 +1264,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.categoriesTab(categor
     else items(categories, key = { it.id ?: it.name.orEmpty() }) { category ->
         ManagementCard {
             Text(category.name ?: "Category", fontWeight = FontWeight.Bold)
-            Text("${DashboardFormatters.money(category.amount.toMoneyDecimal())} • ${category.calculationType ?: "FIXED"} • ${if (category.active == false) "Inactive" else "Active"}")
+            Text("${DashboardFormatters.money(category.amount.toMoneyDecimal())} \u2022 ${category.calculationType ?: "FIXED"} \u2022 ${if (category.active == false) "Inactive" else "Active"}")
             Row {
                 TextButton(onClick = { openDialog(MaintenanceDialog.Category(category)) }) { Text("Edit") }
                 TextButton(onClick = { category.id?.let(viewModel::deleteCategory) }) { Text("Delete") }
@@ -1290,7 +1290,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.disputesTab(disputes:
     else items(disputes, key = { it.id ?: it.subject.orEmpty() }) { dispute ->
         ManagementCard {
             Text(dispute.subject ?: "Dispute", fontWeight = FontWeight.Bold)
-            Text("${dispute.residentName ?: "Resident"} • Flat ${dispute.flatNo ?: "-"}")
+            Text("${dispute.residentName ?: "Resident"} \u2022 Flat ${dispute.flatNo ?: "-"}")
             Text(dispute.description ?: "-")
             Text("Status: ${dispute.status ?: "open"}")
         }
@@ -1341,12 +1341,12 @@ private fun BillCard(
                         color = Color(0xFF101828)
                     )
                     Text(
-                        "${bill.residentName ?: "My Bill"} • Flat ${bill.flatNo ?: "-"}",
+                        "${bill.residentName ?: "My Bill"} \u2022 Flat ${bill.flatNo ?: "-"}",
                         color = Color(0xFF475467),
                         style = MaterialTheme.typography.bodyMedium
                     )
                     Text(
-                        "Month ${bill.month ?: "-"} / ${bill.year ?: "-"} • Due ${DashboardFormatters.date(bill.dueDate ?: bill.maintenanceDueDate)}",
+                        "Month ${bill.month ?: "-"} / ${bill.year ?: "-"} \u2022 Due ${DashboardFormatters.date(bill.dueDate ?: bill.maintenanceDueDate)}",
                         color = Color(0xFF667085),
                         style = MaterialTheme.typography.bodySmall
                     )
@@ -1429,7 +1429,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.transactionsTab(payme
     else items(payments, key = { it.id ?: it.transactionId.orEmpty() }) { payment ->
         ManagementCard {
             Text(payment.receiptNumber ?: payment.transactionId ?: "Transaction", fontWeight = FontWeight.Bold)
-            KeyValue("Resident", "${payment.residentName ?: "-"} • Flat ${payment.flatNo ?: "-"}")
+            KeyValue("Resident", "${payment.residentName ?: "-"} \u2022 Flat ${payment.flatNo ?: "-"}")
             KeyValue("Amount", DashboardFormatters.money(payment.amount.toMoneyDecimal()))
             KeyValue("Method", payment.paymentMethod ?: "-")
             KeyValue("Status", friendlyPaymentStatus(payment.paymentStatus))
@@ -1526,7 +1526,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.waiversTab(
         ManagementCard {
             Text(waiver.waiverType ?: "Waiver", fontWeight = FontWeight.Bold)
             KeyValue("Bill", waiver.billNumber ?: waiver.billId ?: "-")
-            KeyValue("Resident", "${waiver.residentName ?: "-"} • Flat ${waiver.flatNo ?: "-"}")
+            KeyValue("Resident", "${waiver.residentName ?: "-"} \u2022 Flat ${waiver.flatNo ?: "-"}")
             KeyValue("Amount", DashboardFormatters.money(waiver.waiverAmount.toMoneyDecimal()))
             KeyValue("Reason", waiver.reason ?: "-")
             KeyValue("Date", DashboardFormatters.date(waiver.createdAt))
@@ -2138,7 +2138,7 @@ private fun PaymentFlowHeader(bill: MaintenanceBillDto, expectedAmount: String) 
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text("Pay via UPI", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         Text(
-            "${bill.flatNo ?: "Flat"}  •  ${bill.month ?: "-"}/${bill.year ?: "-"}  •  ${DashboardFormatters.money(expectedAmount.toMoneyDecimal())}",
+            "${bill.flatNo ?: "Flat"}  \u2022  ${bill.month ?: "-"}/${bill.year ?: "-"}  \u2022  ${DashboardFormatters.money(expectedAmount.toMoneyDecimal())}",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -2326,12 +2326,20 @@ private fun openUpiApp(context: Context, upiId: String, accountName: String, amo
 
 private fun fullMediaUrl(path: String?): String? {
     if (path.isNullOrBlank()) return null
+    var url = path
+    val baseHost = BuildConfig.BASE_URL.replace("http://", "").replace("https://", "").trimEnd('/')
+    if (url.contains("localhost:5000", ignoreCase = true)) {
+        url = url.replace("localhost:5000", baseHost, ignoreCase = true)
+    }
+    if (url.contains("10.0.2.2:5000", ignoreCase = true)) {
+        url = url.replace("10.0.2.2:5000", baseHost, ignoreCase = true)
+    }
     if (
-        path.startsWith("http", ignoreCase = true) ||
-        path.startsWith("content:", ignoreCase = true) ||
-        path.startsWith("data:image/", ignoreCase = true)
-    ) return path
-    return BuildConfig.BASE_URL.trimEnd('/') + "/" + path.trimStart('/')
+        url.startsWith("http", ignoreCase = true) ||
+        url.startsWith("content:", ignoreCase = true) ||
+        url.startsWith("data:image/", ignoreCase = true)
+    ) return url
+    return BuildConfig.BASE_URL.trimEnd('/') + "/" + url.trimStart('/')
 }
 
 @Composable

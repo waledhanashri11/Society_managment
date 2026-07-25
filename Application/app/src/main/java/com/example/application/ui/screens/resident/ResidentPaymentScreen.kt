@@ -540,6 +540,14 @@ private fun MaintenanceBillDto.hasActivePaymentSubmission(): Boolean {
 
 private fun fullMediaUrl(path: String?): String? {
     if (path.isNullOrBlank()) return null
-    if (path.startsWith("http", ignoreCase = true) || path.startsWith("content:", ignoreCase = true) || path.startsWith("data:", ignoreCase = true)) return path
-    return BuildConfig.BASE_URL.trimEnd('/') + "/" + path.trimStart('/')
+    var url = path
+    val baseHost = BuildConfig.BASE_URL.replace("http://", "").replace("https://", "").trimEnd('/')
+    if (url.contains("localhost:5000", ignoreCase = true)) {
+        url = url.replace("localhost:5000", baseHost, ignoreCase = true)
+    }
+    if (url.contains("10.0.2.2:5000", ignoreCase = true)) {
+        url = url.replace("10.0.2.2:5000", baseHost, ignoreCase = true)
+    }
+    if (url.startsWith("http", ignoreCase = true) || url.startsWith("content:", ignoreCase = true) || url.startsWith("data:", ignoreCase = true)) return url
+    return BuildConfig.BASE_URL.trimEnd('/') + "/" + url.trimStart('/')
 }
