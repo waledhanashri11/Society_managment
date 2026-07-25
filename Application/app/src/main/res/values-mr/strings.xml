@@ -46,6 +46,10 @@
     <string name="events_delete">कार्यक्रम हटवायचा?</string>
     <string name="events_image">कार्यक्रमाचे चित्र निवडा</string>
     <string name="language">भाषा</string>
+    <string name="language_select">भाषा निवडा</string>
+    <string name="language_english">English</string>
+    <string name="language_hindi">हिंदी</string>
+    <string name="language_marathi">मराठी</string>
     <string name="language_hint">अॅपची भाषा निवडा. निवडल्यानंतर अॅप रीफ्रेश होईल.</string>
     <string name="meeting_action_items">कार्य आयटम</string>
     <string name="meeting_add_action">कार्य आयटम जोडा</string>

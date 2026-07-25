@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.application.data.remote.dto.MaintenanceBillDto
+import com.example.application.ui.components.LanguageSelector
 import com.example.application.util.DashboardFormatters
 import com.example.application.viewmodel.ResidentDashboardViewModel
 import com.example.application.viewmodel.SessionViewModel
@@ -402,6 +403,7 @@ private fun ResidentDrawer(
             }
             Text(residentName ?: "Resident", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text("Flat: ${flat ?: "-"}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            LanguageSelector(showTitle = false, showHint = false)
         }
         listOf(
             DrawerItem("Payment History", Icons.Filled.Payments),

@@ -71,6 +71,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.application.data.repository.AdminDashboardData
+import com.example.application.ui.components.LanguageSelector
 import com.example.application.util.DashboardFormatters
 import com.example.application.viewmodel.AdminDashboardViewModel
 import com.example.application.viewmodel.SessionViewModel
@@ -424,6 +425,7 @@ private fun AdminDrawer(adminName: String, onAction: (String) -> Unit) {
             Surface(modifier = Modifier.size(60.dp), shape = CircleShape, color = Color(0xFFEAF3FF)) { Box(contentAlignment = Alignment.Center) { Icon(Icons.Filled.Security, contentDescription = "Admin", tint = AdminBlue) } }
             Text(adminName, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
             Text("Super Admin", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            LanguageSelector(showTitle = false, showHint = false)
         }
         listOf(
             AdminAction("Residents", "Residents", Icons.Filled.Groups, AdminBlue),

@@ -46,6 +46,10 @@
     <string name="events_delete">Delete Event?</string>
     <string name="events_image">Select Event Image</string>
     <string name="language">Language</string>
+    <string name="language_select">Select language</string>
+    <string name="language_english">English</string>
+    <string name="language_hindi">हिंदी</string>
+    <string name="language_marathi">मराठी</string>
     <string name="language_hint">Choose app language. The app will refresh after selection.</string>
     <string name="meeting_action_items">Action Items</string>
     <string name="meeting_add_action">Add Action Item</string>
