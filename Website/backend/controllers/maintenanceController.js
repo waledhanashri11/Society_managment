@@ -16,17 +16,59 @@ const resolvePaymentScreenshotUrl = (req, value) => {
   return buildPublicFileUrl(req, value, { mustExist: true, rootDir: path.resolve(__dirname, '..') });
 };
 
-const withPaymentScreenshotUrls = (req, payments = []) => payments.map((payment) => {
-  const rawScreenshot = payment.screenshot_url || payment.screenshot || null;
-  const fallbackProof = payment.payment_proof || payment.paymentProof || null;
-  const publicUrl = resolvePaymentScreenshotUrl(req, rawScreenshot) || resolvePaymentScreenshotUrl(req, fallbackProof);
-  return {
-    ...payment,
-    screenshot_url: publicUrl,
-    screenshot: publicUrl,
-    screenshot_path: rawScreenshot
-  };
-});
+const withPaymentScreenshotUrls = (req, payments = []) => {
+  const forwardedProto = String(req?.headers?.['x-forwarded-proto'] || '').split(',')[0].trim();
+  const protocol = forwardedProto || req?.protocol || 'https';
+  const host = req?.get?.('host') || req?.headers?.host;
+  const baseUrl = host ? `${protocol}://${host}` : '';
+  
+  return payments.map((payment) => {
+    let publicUrl = null;
+    if (payment.has_screenshot || payment.screenshot_url || payment.payment_proof || payment.screenshot_path) {
+      publicUrl = baseUrl ? `${baseUrl}/api/maintenance/payments/${payment.id}/screenshot` : `/api/maintenance/payments/${payment.id}/screenshot`;
+    }
+    const safePayment = { ...payment };
+    delete safePayment.payment_proof;
+    delete safePayment.paymentProof;
+    return {
+      ...safePayment,
+      screenshot_url: publicUrl,
+      screenshot: publicUrl,
+      screenshot_path: publicUrl
+    };
+  });
+};
+
+const getPaymentScreenshot = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const [rows] = await promisePool.query('SELECT payment_proof, screenshot_url FROM payments WHERE id = ?', [id]);
+    if (rows.length === 0) return res.status(404).send('Payment not found');
+    
+    const payment = rows[0];
+    if (payment.payment_proof && String(payment.payment_proof).startsWith('data:image/')) {
+      const match = String(payment.payment_proof).match(/^data:(image\/(?:png|jpeg|jpg|webp|gif));base64,(.+)$/);
+      if (match) {
+        res.setHeader('Content-Type', match[1]);
+        return res.send(Buffer.from(match[2], 'base64'));
+      }
+    }
+    
+    if (payment.screenshot_url) {
+      const fs = require('fs');
+      const path = require('path');
+      const filePath = path.join(__dirname, '..', payment.screenshot_url);
+      if (fs.existsSync(filePath)) {
+        return res.sendFile(filePath);
+      }
+    }
+    
+    return res.status(404).send('Screenshot not found');
+  } catch (error) {
+    console.error('Error fetching screenshot:', error);
+    return res.status(500).send('Error loading screenshot');
+  }
+};
 
 const tableColumnCache = new Map();
 
@@ -1452,14 +1494,14 @@ const createPayment = async (req, res) => {
     const paymentsHasResidentId = await hasTableColumn('payments', 'resident_id');
     const paymentsHasPaymentProof = await hasTableColumn('payments', 'payment_proof');
     const insertColumns = ['bill_id', 'payment_method', 'transaction_id', 'amount', 'payment_status', 'paid_at', 'screenshot_url'];
-    const insertValues = [primaryBillId, paymentMethod, utr, paidAmount, 'Pending Verification', paidAt, screenshotPath];
+    const insertValues = [primaryBillId, paymentMethod, utr, paidAmount, 'PENDING_REVIEW', paidAt, screenshotPath];
     if (paymentsHasResidentId) {
       insertColumns.push('resident_id');
       insertValues.push(req.user.id);
     }
     if (paymentsHasPaymentProof) {
       insertColumns.push('payment_proof');
-      insertValues.push((screenshot || screenshotUrl) || screenshotPath);
+      insertValues.push((screenshot || screenshotUrl));
     }
 
     const placeholders = insertColumns.map(() => '?').join(', ');
@@ -1540,8 +1582,8 @@ const approvePayment = async (req, res) => {
     }
 
     const payment = paymentRows[0];
-    const currentStatus = String(payment.payment_status || '').trim().toLowerCase();
-    if (['approved', 'paid', 'rejected'].includes(currentStatus)) {
+    const currentStatus = String(payment.payment_status || '').trim().toUpperCase();
+    if (['APPROVED', 'PAID', 'REJECTED'].includes(currentStatus)) {
       await connection.rollback();
       return sendResponse(res, 400, `Payment has already been ${String(payment.payment_status).toLowerCase()}`);
     }
@@ -1554,7 +1596,7 @@ const approvePayment = async (req, res) => {
     const paymentsHasUpdatedAt = await hasTableColumn('payments', 'updated_at');
     const maintenanceHasRemarks = await hasTableColumn('maintenance', 'remarks');
 
-    const paymentSet = ["payment_status = 'Approved'"];
+    const paymentSet = ["payment_status = 'APPROVED'"];
     const paymentValues = [];
     if (paymentsHasVerifiedBy) {
       paymentSet.push('verified_by = ?');
@@ -1587,8 +1629,45 @@ const approvePayment = async (req, res) => {
         [` Payment approved on ${new Date().toLocaleString('en-IN')}.`, billIds]
       );
     }
+    let remainingPayment = Number(payment.amount || 0);
     for (const billId of billIds) {
-      await markMaintenanceBillPaid(connection, billId, payment.paid_at || new Date());
+      const [billRows] = await connection.query('SELECT * FROM maintenance WHERE id = ? FOR UPDATE', [billId]);
+      if (!billRows.length) continue;
+      const bill = billRows[0];
+      const billDue = Number(bill.remaining_amount !== null ? bill.remaining_amount : (bill.total_amount || bill.amount || 0));
+      
+      let amountToApply = Math.min(billDue, remainingPayment);
+      if (amountToApply <= 0 && remainingPayment > 0 && billDue <= 0) {
+        amountToApply = 0; // already paid
+      } else if (amountToApply <= 0 && remainingPayment > 0) {
+        amountToApply = remainingPayment; // apply rest to this bill even if it overpays
+      }
+
+      const newPaidAmount = Number(bill.paid_amount || 0) + amountToApply;
+      const newRemaining = Math.max(0, billDue - amountToApply);
+      const newStatus = newRemaining <= 0 ? 'Paid' : (newPaidAmount > 0 ? 'Partial' : bill.status);
+      
+      const setParts = [
+        "status = ?",
+        "paid_amount = ?",
+        "remaining_amount = ?"
+      ];
+      const values = [newStatus, newPaidAmount, newRemaining];
+      
+      const maintenanceHasPaymentDate = await hasTableColumn('maintenance', 'payment_date');
+      const maintenanceHasUpdatedAt = await hasTableColumn('maintenance', 'updated_at');
+      if (maintenanceHasPaymentDate) {
+        setParts.push('payment_date = ?');
+        values.push(payment.paid_at || new Date());
+      }
+      if (maintenanceHasUpdatedAt) setParts.push('updated_at = NOW()');
+      values.push(billId);
+
+      await connection.query(
+        `UPDATE maintenance SET ${setParts.join(', ')} WHERE id = ?`,
+        values
+      );
+      remainingPayment -= amountToApply;
     }
 
     // Fetch details for audit log & resident notification
@@ -1700,7 +1779,7 @@ const rejectPayment = async (req, res) => {
     const maintenanceHasRemarks = await hasTableColumn('maintenance', 'remarks');
     const maintenanceHasUpdatedAt = await hasTableColumn('maintenance', 'updated_at');
 
-    const paymentSet = ["payment_status = 'Rejected'"];
+    const paymentSet = ["payment_status = 'REJECTED'"];
     const paymentValues = [];
     if (paymentsHasVerifiedBy) {
       paymentSet.push('verified_by = ?');
@@ -1848,7 +1927,9 @@ const getPendingVerificationPayments = async (req, res) => {
   try {
     await ensureMaintenanceRuntimeSchema();
     let [payments] = await promisePool.query(`
-      SELECT p.*, p.transaction_id AS utr_number, p.screenshot_url AS screenshot,
+      SELECT p.id, p.bill_id, p.payment_method, p.transaction_id, p.amount, p.payment_status, p.paid_at, p.created_at, p.updated_at, p.remarks, p.verified_by, p.verified_at, p.rejection_reason, p.receipt_number, p.resident_id, p.rejected_by, p.rejected_at,
+             CASE WHEN p.payment_proof IS NOT NULL OR p.screenshot_url IS NOT NULL THEN 1 ELSE 0 END AS has_screenshot,
+             p.transaction_id AS utr_number,
              COALESCE(CONCAT('BILL-', m.id), CONCAT('PAY-', p.id)) AS bill_number,
              m.title, m.month, m.year, m.due_date,
              COALESCE(m.total_amount, p.amount) AS total_amount,
@@ -1860,12 +1941,14 @@ const getPendingVerificationPayments = async (req, res) => {
       LEFT JOIN users u ON m.resident_id = u.id
       LEFT JOIN users payer ON p.resident_id = payer.id
       LEFT JOIN flats f ON m.flat_id = f.id
-      WHERE p.payment_status IN ('Pending Verification', 'Pending', 'Under Review', 'Needs Clarification')
+      WHERE p.payment_status IN ('PENDING_REVIEW', 'Pending Verification', 'Pending', 'Under Review', 'NEEDS_CLARIFICATION', 'Needs Clarification')
       ORDER BY p.created_at DESC
     `);
     if (!payments.length) {
       [payments] = await promisePool.query(`
-        SELECT p.*, p.transaction_id AS utr_number, p.screenshot_url AS screenshot,
+        SELECT p.id, p.bill_id, p.payment_method, p.transaction_id, p.amount, p.payment_status, p.paid_at, p.created_at, p.updated_at, p.remarks, p.verified_by, p.verified_at, p.rejection_reason, p.receipt_number, p.resident_id, p.rejected_by, p.rejected_at,
+               CASE WHEN p.payment_proof IS NOT NULL OR p.screenshot_url IS NOT NULL THEN 1 ELSE 0 END AS has_screenshot,
+               p.transaction_id AS utr_number,
                COALESCE(CONCAT('BILL-', m.id), CONCAT('PAY-', p.id)) AS bill_number,
                m.title, m.month, m.year, m.due_date,
                COALESCE(m.total_amount, p.amount) AS total_amount,
@@ -1877,7 +1960,7 @@ const getPendingVerificationPayments = async (req, res) => {
         LEFT JOIN users u ON m.resident_id = u.id
         LEFT JOIN users payer ON p.resident_id = payer.id
         LEFT JOIN flats f ON m.flat_id = f.id
-        WHERE COALESCE(p.payment_status, 'Pending') <> 'Rejected'
+        WHERE COALESCE(p.payment_status, 'PENDING_REVIEW') NOT IN ('REJECTED', 'Rejected')
         ORDER BY p.created_at DESC
         LIMIT 25
       `);
@@ -1889,12 +1972,96 @@ const getPendingVerificationPayments = async (req, res) => {
   }
 };
 
+
+const getPaymentVerifications = async (req, res) => {
+  try {
+    let query = `
+      SELECT 
+          m.id AS "billId",
+          m.title,
+          m.month AS "billingMonth",
+          m.year AS "billingYear",
+          m.total_amount AS "billAmount",
+          m.paid_amount AS "paidAmount",
+          m.remaining_amount AS "remainingAmount",
+          m.status AS "billStatus",
+          m.due_date AS "dueDate",
+          p.id AS "submissionId",
+          p.amount AS "submittedAmount",
+          p.transaction_id AS "transactionReference",
+          p.payment_method AS "paymentMethod",
+          p.paid_at AS "paymentDate",
+          CASE 
+            WHEN p.payment_status IN ('PENDING_REVIEW', 'Pending Verification', 'Pending', 'Under Review') THEN 'PENDING_REVIEW'
+            WHEN p.payment_status IN ('NEEDS_CLARIFICATION', 'Needs Clarification') THEN 'NEEDS_CLARIFICATION'
+            WHEN p.payment_status IN ('APPROVED', 'Approved', 'Paid', 'Verified') THEN 'APPROVED'
+            WHEN p.payment_status IN ('REJECTED', 'Rejected', 'Declined') THEN 'REJECTED'
+            WHEN p.id IS NOT NULL THEN 'PENDING_REVIEW'
+            ELSE 'NO_SUBMISSION'
+          END AS "verificationStatus",
+          p.remarks AS "adminNote",
+          p.resident_note AS "residentNote",
+          p.created_at AS "submittedAt",
+          CASE WHEN p.payment_proof IS NOT NULL OR p.screenshot_url IS NOT NULL THEN 1 ELSE 0 END AS has_screenshot,
+          u.id AS "residentId",
+          u.name AS "residentName",
+          f.flat_no AS "flatNumber"
+      FROM payments p
+      LEFT JOIN maintenance m ON COALESCE(p.bill_id, (SELECT pm.maintenance_id FROM payment_maintenance pm WHERE pm.payment_id = p.id LIMIT 1)) = m.id
+      LEFT JOIN users u ON COALESCE(m.resident_id, p.resident_id) = u.id
+      LEFT JOIN flats f ON m.flat_id = f.id
+      WHERE p.payment_status IN ('PENDING_REVIEW', 'Pending Verification', 'Pending', 'Under Review', 'NEEDS_CLARIFICATION', 'Needs Clarification', 'pending', 'under_review')
+      ORDER BY p.created_at DESC
+    `;
+    
+    const [rows] = await promisePool.query(query);
+    
+    const forwardedProto = String(req?.headers?.['x-forwarded-proto'] || '').split(',')[0].trim();
+    const protocol = forwardedProto || req?.protocol || 'https';
+    const host = req?.get?.('host') || req?.headers?.host;
+    const baseUrl = host ? `${protocol}://${host}` : '';
+    
+    const items = rows.map(row => ({
+      billId: row.billId || row.billid,
+      title: row.title,
+      billingMonth: row.billingMonth || row.billingmonth,
+      billingYear: row.billingYear || row.billingyear,
+      billAmount: row.billAmount || row.billamount,
+      paidAmount: row.paidAmount || row.paidamount,
+      remainingAmount: row.remainingAmount || row.remainingamount,
+      billStatus: row.billStatus || row.billstatus,
+      dueDate: row.dueDate || row.duedate,
+      submissionId: row.submissionId || row.submissionid,
+      submittedAmount: row.submittedAmount || row.submittedamount,
+      transactionReference: row.transactionReference || row.transactionreference,
+      paymentMethod: row.paymentMethod || row.paymentmethod,
+      paymentDate: row.paymentDate || row.paymentdate,
+      verificationStatus: row.verificationStatus || row.verificationstatus,
+      adminNote: row.adminNote || row.adminnote,
+      residentNote: row.residentNote || row.residentnote,
+      submittedAt: row.submittedAt || row.submittedat,
+      residentId: row.residentId || row.residentid,
+      residentName: row.residentName || row.residentname,
+      flatNumber: row.flatNumber || row.flatnumber,
+      screenshotUrl: (row.has_screenshot || row.has_screenshot === 1) ? `${baseUrl}/api/maintenance/payments/${row.submissionId || row.submissionid}/screenshot` : null,
+    }));
+    
+    // Return items directly in the data field to match Android's ApiResponse<List<MaintenancePaymentVerificationDto>>
+    return sendResponse(res, 200, 'Pending payment verifications fetched successfully', items);
+  } catch (error) {
+    console.error('Error fetching payment verifications:', error);
+    return sendResponse(res, 500, 'Server error', null, [error.message]);
+  }
+};
+
 const getPaymentHistory = async (req, res) => {
   try {
     const where = req.user.role === 'admin' ? '1 = 1' : 'm.resident_id = ?';
     const params = req.user.role === 'admin' ? [] : [req.user.id];
     const [payments] = await promisePool.query(
-      `SELECT p.*, p.transaction_id AS utr_number, p.screenshot_url AS screenshot,
+      `SELECT p.id, p.bill_id, p.payment_method, p.transaction_id, p.amount, p.payment_status, p.paid_at, p.created_at, p.updated_at, p.remarks, p.verified_by, p.verified_at, p.rejection_reason, p.receipt_number, p.resident_id, p.rejected_by, p.rejected_at,
+              CASE WHEN p.payment_proof IS NOT NULL OR p.screenshot_url IS NOT NULL THEN 1 ELSE 0 END AS has_screenshot,
+              p.transaction_id AS utr_number,
               CONCAT('BILL-', m.id) AS bill_number, m.title, m.month, m.year, m.due_date, m.total_amount,
               u.name AS resident_name, f.flat_no
        FROM payments p
@@ -1950,10 +2117,10 @@ const updatePayment = async (req, res) => {
   try {
     const { id } = req.params;
     const { paymentStatus, remarks } = req.body;
-    if (paymentStatus === 'Paid') {
+    if (paymentStatus === 'Paid' || paymentStatus === 'APPROVED') {
       return approvePayment(req, res);
     }
-    if (paymentStatus === 'Rejected') {
+    if (paymentStatus === 'Rejected' || paymentStatus === 'REJECTED') {
       req.body.rejectionReason = remarks || req.body.rejectionReason || 'Rejected by admin';
       return rejectPayment(req, res);
     }
@@ -1969,9 +2136,13 @@ const updatePayment = async (req, res) => {
       return sendResponse(res, 404, 'Associated bill not found');
     }
 
+    let newStatus = paymentStatus;
+    if (paymentStatus === 'Needs Clarification') newStatus = 'NEEDS_CLARIFICATION';
+    else if (paymentStatus === 'Pending Review' || paymentStatus === 'Pending Verification' || paymentStatus === 'Pending') newStatus = 'PENDING_REVIEW';
+    
     await promisePool.query(
       'UPDATE payments SET payment_status = ?, remarks = ?, updated_at = NOW() WHERE id = ?',
-      [paymentStatus, remarks || null, id]
+      [newStatus, remarks || null, id]
     );
     await promisePool.query(
       `UPDATE maintenance SET status = ?,
@@ -1996,7 +2167,9 @@ const getPayments = async (req, res) => {
   try {
     await reconcilePaidPayments();
     const [payments] = await promisePool.query(`
-      SELECT p.*, p.transaction_id AS utr_number, p.screenshot_url AS screenshot,
+      SELECT p.id, p.bill_id, p.payment_method, p.transaction_id, p.amount, p.payment_status, p.paid_at, p.created_at, p.updated_at, p.remarks, p.verified_by, p.verified_at, p.rejection_reason, p.receipt_number, p.resident_id, p.rejected_by, p.rejected_at,
+             CASE WHEN p.payment_proof IS NOT NULL OR p.screenshot_url IS NOT NULL THEN 1 ELSE 0 END AS has_screenshot,
+             p.transaction_id AS utr_number,
              CONCAT('BILL-', m.id) AS bill_number, m.title, m.month, m.year, m.due_date, m.total_amount AS total_amount,
              m.resident_id,
              u.name AS resident_name, f.flat_no
@@ -2682,6 +2855,7 @@ module.exports = {
   getPendingVerificationPayments,
   getPaymentHistory,
   getPaymentReceipt,
+  getPaymentScreenshot,
   getPayments,
   markBillPaid,
   sendPaymentReminder,
