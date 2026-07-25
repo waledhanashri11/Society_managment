@@ -1,4 +1,4 @@
-package com.example.application.ui.screens.maintenance
+﻿package com.example.application.ui.screens.maintenance
 
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -227,7 +227,7 @@ fun AdminMaintenanceScreen(
                         else -> billsTab(bills, state.query, state.filter, viewModel, { dialog = it })
                     }
                     if (data.warnings.isNotEmpty()) {
-                        item { SectionCard("Warnings") { data.warnings.forEach { Text("â€¢ $it") } } }
+                        item { SectionCard("Warnings") { data.warnings.forEach { Text("• $it") } } }
                     }
                 }
             }
@@ -950,8 +950,8 @@ private fun androidx.compose.foundation.lazy.LazyListScope.paymentsTab(payments:
     else items(payments, key = { it.id ?: it.transactionId.orEmpty() }) { payment ->
         ManagementCard {
             Text(payment.residentName ?: "Resident", fontWeight = FontWeight.Bold)
-            Text("Flat ${payment.flatNo ?: "-"} â€¢ ${DashboardFormatters.money(payment.amount.toMoneyDecimal())}")
-            Text("Method: ${payment.paymentMethod ?: "-"} â€¢ Txn: ${payment.transactionId ?: "-"}")
+            Text("Flat ${payment.flatNo ?: "-"} • ${DashboardFormatters.money(payment.amount.toMoneyDecimal())}")
+            Text("Method: ${payment.paymentMethod ?: "-"} • Txn: ${payment.transactionId ?: "-"}")
             Text("Status: ${payment.paymentStatus ?: "-"}")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 TextButton(onClick = { payment.id?.let { viewModel.updatePayment(it, "Paid") } }) { Text("Approve") }
@@ -1136,8 +1136,8 @@ private fun PaymentVerificationCard(
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("${verification.residentName ?: "Unknown"} â€¢ Flat ${verification.flatNumber ?: "--"}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text("${verification.title ?: "Maintenance"} â€¢ ${monthName(verification.billingMonth?.toString())} ${verification.billingYear ?: ""}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("${verification.residentName ?: "Unknown"} • Flat ${verification.flatNumber ?: "--"}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text("${verification.title ?: "Maintenance"} • ${monthName(verification.billingMonth?.toString())} ${verification.billingYear ?: ""}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 if (isPending) {
                     Checkbox(checked = selected, onCheckedChange = { onSelectToggle() }, modifier = Modifier.size(24.dp))
@@ -1147,15 +1147,15 @@ private fun PaymentVerificationCard(
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                InfoItem("Maint Amount", "â‚¹${verification.billAmount ?: "0"}")
-                InfoItem("Penalty", "â‚¹${verification.penaltyAmount ?: "0"}")
-                InfoItem("Total Bill", "â‚¹${totAmt.toInt()}")
+                InfoItem("Maint Amount", "₹${verification.billAmount ?: "0"}")
+                InfoItem("Penalty", "₹${verification.penaltyAmount ?: "0"}")
+                InfoItem("Total Bill", "₹${totAmt.toInt()}")
             }
             
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
             
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                InfoItem("Submitted", "â‚¹${verification.submittedAmount ?: "0"}")
+                InfoItem("Submitted", "₹${verification.submittedAmount ?: "0"}")
                 InfoItem("Method", verification.paymentMethod ?: "--")
                 InfoItem("Ref/UTR", verification.transactionReference ?: "--")
             }
@@ -1239,8 +1239,8 @@ private fun androidx.compose.foundation.lazy.LazyListScope.expensesTab(expenses:
     else items(expenses, key = { it.id ?: it.expenseNumber.orEmpty() }) { expense ->
         ManagementCard {
             Text(expense.expenseNumber ?: "Expense", fontWeight = FontWeight.Bold)
-            Text("${expense.category ?: "-"} â€¢ ${expense.vendor ?: "-"}")
-            Text("${DashboardFormatters.money(expense.amount.toMoneyDecimal())} â€¢ ${DashboardFormatters.date(expense.expenseDate)}")
+            Text("${expense.category ?: "-"} • ${expense.vendor ?: "-"}")
+            Text("${DashboardFormatters.money(expense.amount.toMoneyDecimal())} • ${DashboardFormatters.date(expense.expenseDate)}")
             TextButton(onClick = { expense.id?.let(viewModel::deleteExpense) }) { Text("Delete") }
         }
     }
@@ -1264,7 +1264,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.categoriesTab(categor
     else items(categories, key = { it.id ?: it.name.orEmpty() }) { category ->
         ManagementCard {
             Text(category.name ?: "Category", fontWeight = FontWeight.Bold)
-            Text("${DashboardFormatters.money(category.amount.toMoneyDecimal())} â€¢ ${category.calculationType ?: "FIXED"} â€¢ ${if (category.active == false) "Inactive" else "Active"}")
+            Text("${DashboardFormatters.money(category.amount.toMoneyDecimal())} • ${category.calculationType ?: "FIXED"} • ${if (category.active == false) "Inactive" else "Active"}")
             Row {
                 TextButton(onClick = { openDialog(MaintenanceDialog.Category(category)) }) { Text("Edit") }
                 TextButton(onClick = { category.id?.let(viewModel::deleteCategory) }) { Text("Delete") }
@@ -1290,7 +1290,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.disputesTab(disputes:
     else items(disputes, key = { it.id ?: it.subject.orEmpty() }) { dispute ->
         ManagementCard {
             Text(dispute.subject ?: "Dispute", fontWeight = FontWeight.Bold)
-            Text("${dispute.residentName ?: "Resident"} â€¢ Flat ${dispute.flatNo ?: "-"}")
+            Text("${dispute.residentName ?: "Resident"} • Flat ${dispute.flatNo ?: "-"}")
             Text(dispute.description ?: "-")
             Text("Status: ${dispute.status ?: "open"}")
         }
