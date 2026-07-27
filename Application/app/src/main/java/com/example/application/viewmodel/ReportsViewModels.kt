@@ -18,7 +18,9 @@ import kotlinx.coroutines.launch
 data class AdminReportsUiState(
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
-    val filter: ReportFilterState = ReportFilterState(),
+    // Admin dashboard derives financial years locally from all available records.
+    // Keeping the API filter year empty prevents silently dropping the prior FY.
+    val filter: ReportFilterState = ReportFilterState(year = ""),
     val data: AdminReportsData? = null,
     val error: String? = null,
     val exportMessage: String? = null

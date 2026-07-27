@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Report
 import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -56,6 +57,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -90,6 +92,8 @@ import com.example.application.viewmodel.ResidentReportsViewModel
 import java.math.BigDecimal
 import java.io.File
 import java.time.LocalDate
+import java.time.YearMonth
+import java.time.format.DateTimeFormatter
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -99,85 +103,108 @@ fun AdminReportsScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    var tab by remember { mutableStateOf(0) }
+    var selectedYear by remember { mutableStateOf<String?>(null) }
+    var selectedMonth by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     var pendingCsv by remember { mutableStateOf<String?>(null) }
     val csvLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
-        val csv = pendingCsv.orEmpty()
-        runCatching {
-            context.contentResolver.openOutputStream(uri)?.use { output ->
-                output.write(csv.toByteArray(Charsets.UTF_8))
-            } ?: error("Unable to open selected file.")
-        }.onSuccess {
-            Toast.makeText(context, "Admin report CSV saved successfully", Toast.LENGTH_SHORT).show()
-        }.onFailure {
-            Toast.makeText(context, "CSV export failed: ${it.message}", Toast.LENGTH_LONG).show()
+        runCatching { context.contentResolver.openOutputStream(uri)?.use { it.write(pendingCsv.orEmpty().toByteArray()) } }
+            .onSuccess { Toast.makeText(context, "Report CSV saved", Toast.LENGTH_SHORT).show() }
+            .onFailure { Toast.makeText(context, "CSV export failed", Toast.LENGTH_LONG).show() }
+    }
+    val data = state.data
+    val years = remember(data) { data?.financialYears().orEmpty() }
+    val activeYear = selectedYear ?: years.firstOrNull()
+    val periodData = remember(data, activeYear) { data?.forFinancialYear(activeYear) }
+    Scaffold(topBar = {
+        TopAppBar(title = { Column { Text("Reports", fontWeight = FontWeight.Bold); Text("Admin", style = MaterialTheme.typography.labelSmall) } }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, "Back") } }, actions = {
+            IconButton(onClick = { viewModel.load(refresh = true) }) { Icon(Icons.Filled.Refresh, "Refresh") }
+        })
+    }) { padding ->
+        LazyColumn(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            item {
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color(0xFFEAF1FF)).padding(4.dp)) {
+                    listOf("Annual Report", "Monthly Report").forEachIndexed { index, label ->
+                        FilterChip(selected = tab == index, onClick = { tab = index }, label = { Text(label) }, modifier = Modifier.weight(1f))
+                    }
+                }
+            }
+            state.error?.let { item { RetryState(it, onRetry = { viewModel.load(true) }) } }
+            if (state.isLoading && data == null) item { AppLoadingIndicator() }
+            else if (periodData == null || activeYear == null) item { EmptyState("No report data", "No financial records are available yet.") }
+            else {
+                item {
+                    Text("Financial year", style = MaterialTheme.typography.labelMedium, color = ReportBlue)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
+                        years.forEach { year -> FilterChip(selected = year == activeYear, onClick = { selectedYear = year }, label = { Text(year) }) }
+                    }
+                }
+                if (tab == 0) item { AnnualReportDashboard(periodData, onExport = { pendingCsv = periodData.toCsv(activeYear); csvLauncher.launch("annual-report-$activeYear.csv") }, onPdf = { shareReportPdf(context, "Annual Report $activeYear", periodData.toCsv(activeYear)) }) }
+                item { Text("Monthly reports", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = ReportBlue) }
+                val months = periodData.months()
+                if (months.isEmpty()) item { EmptyState("No monthly data", "No bills or expenses were recorded in this financial year.") }
+                else items(months, key = { "month-${it.first}-${it.second}" }) { month ->
+                    MonthlyReportRow(periodData.forMonth(month.first, month.second), month.first, month.second, onClick = { selectedMonth = month })
+                }
+            }
         }
     }
-    ReportScaffold(
-        title = "Admin Reports",
-        subtitle = "Financial, expense and complaint reports",
-        onBack = onBack,
-        isRefreshing = state.isRefreshing,
-        onRefresh = { viewModel.load(refresh = true) },
-        action = {
-            Row {
-                TextButton(onClick = {
-                    val csv = state.data?.let { buildAdminReportCsv(it, state.filter) }.orEmpty()
-                    if (csv.isBlank()) Toast.makeText(context, "No report data available", Toast.LENGTH_SHORT).show()
-                    else {
-                        pendingCsv = csv
-                        csvLauncher.launch("admin_report.csv")
-                    }
-                }) { Text("CSV") }
-                TextButton(onClick = {
-                    val csv = state.data?.let { buildAdminReportCsv(it, state.filter) }.orEmpty()
-                    if (csv.isBlank()) Toast.makeText(context, "No report data available", Toast.LENGTH_SHORT).show()
-                    else shareReportPdf(context, "Admin Reports", csv)
-                }) { Text("PDF") }
-            }
-        },
-        showRefresh = false
-    ) {
-        item {
-            ReportFilters(
-                filter = state.filter,
-                onMonth = viewModel::updateMonth,
-                onYear = viewModel::updateYear,
-                onStatus = viewModel::updateStatus,
-                onReset = viewModel::resetFilters
-            )
-        }
-
-        state.error?.let { error ->
-            item { RetryState(message = error, onRetry = { viewModel.load(refresh = true) }, modifier = Modifier.padding(16.dp)) }
-        }
-
-        state.exportMessage?.let { message ->
-            item { InfoCard(message = message) }
-        }
-
-        when {
-            state.isLoading -> item { LoadingReportSkeleton() }
-            state.data == null -> item { EmptyState("No reports", "Report data is not available yet.", modifier = Modifier.padding(16.dp)) }
-            else -> adminReportsContent(
-                data = state.data!!,
-                onExportCsv = {
-                    val csv = buildAdminReportCsv(state.data!!, state.filter)
-                    if (csv.isBlank()) Toast.makeText(context, "No report data available", Toast.LENGTH_SHORT).show()
-                    else {
-                        pendingCsv = csv
-                        csvLauncher.launch("admin_report.csv")
-                    }
-                },
-                onExportPdf = {
-                    val csv = buildAdminReportCsv(state.data!!, state.filter)
-                    if (csv.isBlank()) Toast.makeText(context, "No report data available", Toast.LENGTH_SHORT).show()
-                    else shareReportPdf(context, "Admin Reports", csv)
-                }
-            )
-        }
+    selectedMonth?.let { month ->
+        val report = periodData?.forMonth(month.first, month.second)
+        if (report != null) MonthlyReportDetailsDialog(report, month.first, month.second, onDismiss = { selectedMonth = null })
     }
 }
+
+private data class AdminPeriodReport(
+    val bills: List<MaintenanceBillDto>,
+    val expenses: List<ExpenseDto>,
+    val complaints: List<ComplaintDto>
+) {
+    val collected: BigDecimal get() = bills.filter { it.operationalReportStatus() == "Paid" }.sumOf { (it.paidAmount ?: "0").toMoneyDecimal() }
+    val expensesTotal: BigDecimal get() = expenses.sumOf { it.amount.toMoneyDecimal() }
+    val billed: BigDecimal get() = bills.sumOf { (it.totalAmount ?: it.amount ?: "0").toMoneyDecimal() }
+    val pending: BigDecimal get() = bills.filter { it.operationalReportStatus() != "Paid" }.sumOf { (it.remainingAmount ?: it.totalAmount ?: it.amount ?: "0").toMoneyDecimal() }
+    val net: BigDecimal get() = collected - expensesTotal
+}
+
+private fun AdminReportsData.financialYears(): List<String> {
+    val dates = bills.mapNotNull { it.reportDate() } + expenses.mapNotNull { it.expenseDate?.take(10) }
+    return dates.mapNotNull { runCatching { LocalDate.parse(it) }.getOrNull() }
+        .map { if (it.monthValue >= 4) "${it.year}-${it.year + 1}" else "${it.year - 1}-${it.year}" }.distinct().sortedDescending()
+}
+
+private fun AdminReportsData.forFinancialYear(year: String?): AdminPeriodReport {
+    if (year.isNullOrBlank()) return AdminPeriodReport(bills, expenses, complaints)
+    val start = year.substringBefore('-').toIntOrNull() ?: return AdminPeriodReport(emptyList(), emptyList(), emptyList())
+    fun inYear(value: String?): Boolean { val d = value?.take(10)?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: return false; return d >= LocalDate.of(start, 4, 1) && d <= LocalDate.of(start + 1, 3, 31) }
+    return AdminPeriodReport(bills.filter { inYear(it.reportDate()) }, expenses.filter { inYear(it.expenseDate) }, complaints.filter { inYear(it.createdAt) })
+}
+
+private fun AdminPeriodReport.months(): List<Pair<Int, Int>> = (bills.mapNotNull { it.reportDate()?.take(7) } + expenses.mapNotNull { it.expenseDate?.take(7) })
+    .mapNotNull { it.split('-').let { p -> if (p.size == 2) p[0].toIntOrNull()?.let { y -> p[1].toIntOrNull()?.let { m -> y to m } } else null } }.distinct()
+    .sortedWith(compareByDescending<Pair<Int, Int>> { it.first }.thenByDescending { it.second })
+
+private fun AdminPeriodReport.forMonth(year: Int, month: Int) = AdminPeriodReport(bills.filter { it.reportDate()?.take(7) == "%04d-%02d".format(year, month) }, expenses.filter { it.expenseDate?.take(7) == "%04d-%02d".format(year, month) }, complaints.filter { it.createdAt?.take(7) == "%04d-%02d".format(year, month) })
+
+private fun MaintenanceBillDto.reportDate(): String? = paymentDate ?: dueDate ?: year?.let { y -> month?.toIntOrNull()?.let { m -> "%04d-%02d-01".format(y.toIntOrNull() ?: return@let null, m) } }
+private fun MaintenanceBillDto.operationalReportStatus(): String { val remaining = (remainingAmount ?: totalAmount ?: amount ?: "0").toMoneyDecimal(); if (remaining <= BigDecimal.ZERO) return "Paid"; val due = dueDate?.take(10)?.let { runCatching { LocalDate.parse(it) }.getOrNull() }; return if (due != null && due.isBefore(LocalDate.now())) "Overdue" else "Pending" }
+
+@Composable private fun AnnualReportDashboard(report: AdminPeriodReport, onExport: () -> Unit, onPdf: () -> Unit) {
+    Card(colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FAFF))) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { Text("Annual summary", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = ReportBlue); Row { TextButton(onClick = onExport) { Icon(Icons.Filled.Download, null); Text("CSV") }; TextButton(onClick = onPdf) { Text("PDF") } } }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { ReportMetric("Collected", report.collected, ReportGreen, Modifier.weight(1f)); ReportMetric("Expenses", report.expensesTotal, Color(0xFFE5484D), Modifier.weight(1f)); ReportMetric("Net", report.net, ReportBlue, Modifier.weight(1f)) }
+        Text("${report.bills.size} bills · ${report.expenses.size} expenses · ${report.complaints.size} complaints", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    } }
+}
+
+@Composable private fun ReportMetric(label: String, value: BigDecimal, color: Color, modifier: Modifier = Modifier) { Column(modifier.background(color.copy(alpha = .08f), RoundedCornerShape(10.dp)).padding(10.dp)) { Text(label, style = MaterialTheme.typography.labelSmall); Text(DashboardFormatters.money(value), color = color, fontWeight = FontWeight.Bold) } }
+
+@Composable private fun MonthlyReportRow(report: AdminPeriodReport, year: Int, month: Int, onClick: () -> Unit) { Card(onClick = onClick) { Row(Modifier.fillMaxWidth().padding(14.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { Column { Text(YearMonth.of(year, month).format(DateTimeFormatter.ofPattern("MMMM yyyy")), fontWeight = FontWeight.SemiBold); Text("${report.bills.size} bills · ${report.expenses.size} expenses", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }; Column(horizontalAlignment = Alignment.End) { Text("Net ${DashboardFormatters.money(report.net)}", color = if (report.net.signum() >= 0) ReportGreen else Color(0xFFE5484D), fontWeight = FontWeight.Bold); Text("Income ${DashboardFormatters.money(report.collected)}", style = MaterialTheme.typography.labelSmall) } } } }
+
+@Composable private fun MonthlyReportDetailsDialog(report: AdminPeriodReport, year: Int, month: Int, onDismiss: () -> Unit) { AlertDialog(onDismissRequest = onDismiss, confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }, title = { Text(YearMonth.of(year, month).format(DateTimeFormatter.ofPattern("MMMM yyyy")), color = ReportBlue, fontWeight = FontWeight.Bold) }, text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { Text("${YearMonth.of(year, month).atDay(1)} – ${YearMonth.of(year, month).atEndOfMonth()}", style = MaterialTheme.typography.bodySmall); ReportMetric("Income", report.collected, ReportGreen); ReportMetric("Expenses", report.expensesTotal, Color(0xFFE5484D)); ReportMetric("Net surplus / deficit", report.net, ReportBlue); HorizontalDivider(); Text("Collection: ${report.bills.count { it.operationalReportStatus() == "Paid" }} paid · ${report.bills.count { it.operationalReportStatus() == "Pending" }} pending · ${report.bills.count { it.operationalReportStatus() == "Overdue" }} overdue"); if (report.expenses.isNotEmpty()) Text("Expense categories: ${report.expenses.groupBy { it.category.orEmpty().ifBlank { "Uncategorised" } }.entries.joinToString { "${it.key} (${it.value.size})" }}") } }) }
+
+private fun AdminPeriodReport.toCsv(year: String): String = buildString { appendLine("Admin report,$year"); appendLine("Income,$collected"); appendLine("Expenses,$expensesTotal"); appendLine("Net,$net"); appendLine(); appendLine("Bills,Status,Total,Paid,Remaining"); bills.forEach { appendLine("${it.title.orEmpty()},${it.operationalReportStatus()},${it.totalAmount ?: it.amount ?: ""},${it.paidAmount ?: ""},${it.remainingAmount ?: ""}") }; appendLine(); appendLine("Expenses,Category,Amount,Date"); expenses.forEach { appendLine("${it.vendor ?: it.expenseNumber.orEmpty()},${it.category.orEmpty()},${it.amount.orEmpty()},${it.expenseDate.orEmpty()}") } }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
