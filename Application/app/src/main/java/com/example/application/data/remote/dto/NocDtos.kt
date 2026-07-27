@@ -30,3 +30,15 @@ data class CreateNocRequest(
 data class ReviewNocRequest(
     val remarks: String?
 )
+
+data class UploadNocInfoRequest(
+    val documents: List<String> = emptyList(),
+    val remarks: String?
+)
+
+data class NocTypeDto(
+    val id: String?,
+    val name: String?,
+    val description: String?,
+    val active: Boolean?
+)

@@ -84,7 +84,43 @@ data class NoticeDto(
     val title: String?,
     val description: String?,
     val priority: String?,
-    @SerializedName("created_at") val createdAt: String?
+    @SerializedName("created_at") val createdAt: String?,
+    @SerializedName("has_poll") val hasPoll: Boolean? = null,
+    @SerializedName("poll_status") val pollStatus: String? = null,
+    val poll: NoticePollDto? = null
+)
+
+data class NoticePollDto(
+    val id: String?,
+    val question: String?,
+    @SerializedName("poll_type") val pollType: String?,
+    @SerializedName("start_at") val startAt: String?,
+    @SerializedName("end_at") val endAt: String?,
+    val status: String?,
+    @SerializedName("allow_vote_change") val allowVoteChange: Boolean? = null,
+    @SerializedName("my_vote_option_ids") val myVoteOptionIds: List<Int>? = null,
+    val options: List<NoticePollOptionDto>? = null,
+    val results: NoticePollResultsDto? = null
+)
+
+data class NoticePollOptionDto(
+    val id: Int?,
+    @SerializedName("option_text") val optionText: String?
+)
+
+data class NoticePollResultsDto(
+    @SerializedName("votes_cast") val votesCast: Int?,
+    @SerializedName("total_eligible") val totalEligible: Int?,
+    @SerializedName("participation_percent") val participationPercent: Int?,
+    @SerializedName("winning_option") val winningOption: String?,
+    val options: List<NoticePollResultOptionDto>? = null
+)
+
+data class NoticePollResultOptionDto(
+    val id: Int?,
+    @SerializedName("option_text") val optionText: String?,
+    val votes: Int?,
+    val percent: Int?
 )
 
 data class PaymentDto(

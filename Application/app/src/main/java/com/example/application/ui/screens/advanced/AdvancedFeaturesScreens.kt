@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.application.viewmodel.AdvancedFeaturesViewModel
+import com.example.application.util.ThemePreference
 
 @Composable
 fun AdminAdvancedFeaturesScreen(onBack: () -> Unit, viewModel: AdvancedFeaturesViewModel = hiltViewModel()) {
@@ -81,6 +82,7 @@ private fun AdminTools(vm: AdvancedFeaturesViewModel, state: com.example.applica
     var flatId by remember { mutableStateOf("") }
     var residentId by remember { mutableStateOf("") }
     var recordId by remember { mutableStateOf("") }
+    var writeOffId by remember { mutableStateOf("") }
     var reason by remember { mutableStateOf("") }
     var categoryIds by remember { mutableStateOf("") }
     var flatIds by remember { mutableStateOf("") }
@@ -151,6 +153,15 @@ private fun AdminTools(vm: AdvancedFeaturesViewModel, state: com.example.applica
             )
         }
     }
+    ToolSection("Appearance") {
+        Text(
+            if (ThemePreference.darkTheme) "Dark theme is enabled." else "Light theme is enabled.",
+            style = MaterialTheme.typography.bodyMedium
+        )
+        WideAction(if (ThemePreference.darkTheme) "Switch to Light Theme" else "Switch to Dark Theme") {
+            ThemePreference.toggle(context)
+        }
+    }
     ToolSection("Flat ownership and history") {
         Field(flatId, { flatId = it }, "Flat ID")
         Field(residentId, { residentId = it }, "New resident ID (blank to unassign)")
@@ -169,11 +180,26 @@ private fun AdminTools(vm: AdvancedFeaturesViewModel, state: com.example.applica
         WideAction("Create NOC type") { vm.createNocType(nocType, "Created from Android") }
     }
     ToolSection("Reports") { WideAction("Complaint report", vm::complaintReport) }
+    ToolSection("Maintenance reports") {
+        Field(writeOffId, { writeOffId = it }, "Write-off ID")
+        ActionRow("Write-off history", vm::writeOffHistory, "AGM report", vm::agmReport)
+        WideAction("Reverse write-off") { vm.reverseWriteOff(writeOffId) }
+    }
 }
 
 @Composable
 private fun ResidentTools(vm: AdvancedFeaturesViewModel) {
     var id by remember { mutableStateOf("") }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    ToolSection("Appearance") {
+        Text(
+            if (ThemePreference.darkTheme) "Dark theme is enabled." else "Light theme is enabled.",
+            style = MaterialTheme.typography.bodyMedium
+        )
+        WideAction(if (ThemePreference.darkTheme) "Switch to Light Theme" else "Switch to Dark Theme") {
+            ThemePreference.toggle(context)
+        }
+    }
     ToolSection("My updates") {
         ActionRow("Visitors", vm::visitors, "Parcels", vm::parcels)
         WideAction("Recent activity", vm::activities)

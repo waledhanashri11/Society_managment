@@ -8,6 +8,7 @@ import com.example.application.data.remote.dto.MarkReadResponse
 import com.example.application.data.remote.dto.MessageResponse
 import com.example.application.data.remote.dto.NoticeDto
 import com.example.application.data.remote.dto.NoticeSaveRequest
+import com.example.application.data.remote.dto.NoticeVoteRequest
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.DELETE
@@ -32,6 +33,12 @@ interface CommunicationApiService {
     @PUT("api/complaints/{id}")
     suspend fun updateComplaint(@Path("id") id: String, @Body request: ComplaintUpdateRequest): Response<MessageResponse>
 
+    @PUT("api/complaints/{id}/confirm-resolved")
+    suspend fun confirmResolved(@Path("id") id: String): Response<MessageResponse>
+
+    @PUT("api/complaints/{id}/reopen")
+    suspend fun reopenComplaint(@Path("id") id: String, @Body request: Map<String, String>): Response<MessageResponse>
+
     @DELETE("api/complaints/{id}")
     suspend fun deleteComplaint(@Path("id") id: String): Response<MessageResponse>
 
@@ -47,6 +54,12 @@ interface CommunicationApiService {
     @POST("api/notices")
     suspend fun createNotice(@Body request: NoticeSaveRequest): Response<NoticeDto>
 
+    @PUT("api/notices/{id}/poll/close")
+    suspend fun closePoll(@Path("id") id: String): Response<MessageResponse>
+
+    @POST("api/notices/{id}/vote")
+    suspend fun voteNotice(@Path("id") id: String, @Body request: NoticeVoteRequest): Response<MessageResponse>
+
     @DELETE("api/notices/{id}")
     suspend fun deleteNotice(@Path("id") id: String): Response<MessageResponse>
 
@@ -55,4 +68,10 @@ interface CommunicationApiService {
 
     @PUT("api/notifications/read")
     suspend fun markNotificationsRead(): Response<MarkReadResponse>
+
+    @GET("api/notifications/admin")
+    suspend fun getAdminNotifications(): Response<AdminNotificationsResponse>
+
+    @PUT("api/notifications/admin/read")
+    suspend fun markAdminNotificationsRead(): Response<MarkReadResponse>
 }

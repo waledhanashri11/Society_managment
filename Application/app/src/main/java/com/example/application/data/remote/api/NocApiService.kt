@@ -3,7 +3,9 @@ package com.example.application.data.remote.api
 import com.example.application.data.remote.dto.ApiResponse
 import com.example.application.data.remote.dto.CreateNocRequest
 import com.example.application.data.remote.dto.NocRequestDto
+import com.example.application.data.remote.dto.NocTypeDto
 import com.example.application.data.remote.dto.ReviewNocRequest
+import com.example.application.data.remote.dto.UploadNocInfoRequest
 import retrofit2.Response
 import retrofit2.http.Streaming
 import okhttp3.ResponseBody
@@ -30,11 +32,29 @@ interface NocApiService {
     @PUT("api/noc/{id}/review")
     suspend fun markUnderReview(@Path("id") id: String, @Body request: ReviewNocRequest): Response<ApiResponse<Unit>>
 
+    @PUT("api/noc/{id}/request-info")
+    suspend fun requestInfo(@Path("id") id: String, @Body request: ReviewNocRequest): Response<ApiResponse<Unit>>
+
+    @PUT("api/noc/{id}/upload-info")
+    suspend fun uploadInfo(@Path("id") id: String, @Body request: UploadNocInfoRequest): Response<ApiResponse<Unit>>
+
     @PUT("api/noc/{id}/approve")
     suspend fun approveNoc(@Path("id") id: String, @Body request: ReviewNocRequest): Response<ApiResponse<Unit>>
 
     @PUT("api/noc/{id}/reject")
     suspend fun rejectNoc(@Path("id") id: String, @Body request: Map<String, String?>): Response<ApiResponse<Unit>>
+
+    @PUT("api/noc/{id}/complete")
+    suspend fun completeNoc(@Path("id") id: String): Response<ApiResponse<Unit>>
+
+    @POST("api/noc/{id}/share")
+    suspend fun generateShareLink(@Path("id") id: String): Response<ApiResponse<Map<String, String>>>
+
+    @GET("api/noc/types")
+    suspend fun getTypes(): Response<List<NocTypeDto>>
+
+    @POST("api/noc/types")
+    suspend fun createType(@Body request: Map<String, String>): Response<ApiResponse<Map<String, String>>>
 
     @Streaming
     @GET("api/noc/{id}/pdf")

@@ -89,6 +89,20 @@ class ResidentNocViewModel @Inject constructor(
             }
         }
     }
+
+    fun uploadInfo(id: String, remarks: String, documentData: List<String>) {
+        viewModelScope.launch {
+            _state.update { it.copy(submitting = true, error = null, message = null) }
+            when (val result = repository.uploadInfo(id, documentData, remarks.takeIf { it.isNotBlank() })) {
+                is NetworkResult.Success -> {
+                    _state.update { it.copy(submitting = false, message = result.data) }
+                    load(refresh = true)
+                }
+                is NetworkResult.Error -> _state.update { it.copy(submitting = false, error = repository.userMessageFor(result.error)) }
+                NetworkResult.Loading -> Unit
+            }
+        }
+    }
 }
 
 @HiltViewModel
@@ -124,6 +138,17 @@ class AdminNocViewModel @Inject constructor(
                     _state.update { it.copy(submitting = false, message = result.data) }
                     load(refresh = true)
                 }
+                is NetworkResult.Error -> _state.update { it.copy(submitting = false, error = repository.userMessageFor(result.error)) }
+                NetworkResult.Loading -> Unit
+            }
+        }
+    }
+
+    fun share(id: String) {
+        viewModelScope.launch {
+            _state.update { it.copy(submitting = true, error = null, message = null) }
+            when (val result = repository.generateShareLink(id)) {
+                is NetworkResult.Success -> _state.update { it.copy(submitting = false, message = result.data) }
                 is NetworkResult.Error -> _state.update { it.copy(submitting = false, error = repository.userMessageFor(result.error)) }
                 NetworkResult.Loading -> Unit
             }

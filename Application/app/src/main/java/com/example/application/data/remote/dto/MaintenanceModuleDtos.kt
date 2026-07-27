@@ -373,7 +373,12 @@ data class MaintenancePaymentVerificationDto(
     @SerializedName("has_screenshot") val hasScreenshot: Int?,
     @SerializedName(value = "screenshot_url", alternate = ["proofUrl"]) val screenshotUrl: String?,
     @SerializedName(value = "screenshot", alternate = ["payment_proof", "payment_screenshot"]) val screenshot: String?,
-    @SerializedName(value = "screenshot_path", alternate = ["payment_proof", "payment_screenshot"]) val screenshotPath: String?
+    @SerializedName(value = "screenshot_path", alternate = ["proofPath", "payment_proof_path", "payment_screenshot_path"]) val screenshotPath: String?,
+    @SerializedName("wing") val wing: String?,
+    @SerializedName("resident_phone") val residentPhone: String?,
+    @SerializedName("resident_email") val residentEmail: String?,
+    @SerializedName("verified_at") val verifiedAt: String?,
+    @SerializedName("rejected_at") val rejectedAt: String?
 ) {
     // Compatibility accessors used by existing UI code
     val billingMonth: Int? get() = month

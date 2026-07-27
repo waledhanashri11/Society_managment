@@ -1721,7 +1721,7 @@ const approvePayment = async (req, res) => {
         [
           residentInfo.resident_user_id,
           'Payment Approved',
-          `Your maintenance payment of ₹${Number(payment.amount).toLocaleString('en-IN')} for ${auditBillNumbers} has been approved. Receipt: ${receiptNumber}`,
+          `Your payment for ${auditBillNumbers} has been approved. Your receipt is now available.`,
           'payment'
         ]
         );
@@ -1856,7 +1856,7 @@ const rejectPayment = async (req, res) => {
           [
             residentId,
             'Payment Rejected',
-            `Your maintenance payment for ${monthText} has been rejected. Reason: ${reason}`,
+            `Your payment proof for ${monthText} was rejected. Reason: ${reason}. Please submit corrected details.`,
             'payment'
           ]
         );
@@ -1937,7 +1937,9 @@ const getPendingVerificationPayments = async (req, res) => {
              COALESCE(m.total_amount, p.amount) AS total_amount,
              COALESCE(m.resident_id, p.resident_id) AS resident_id,
              COALESCE(u.name, payer.name, 'Resident') AS resident_name,
-             f.flat_no
+             COALESCE(u.phone, payer.phone) AS resident_phone,
+             COALESCE(u.email, payer.email) AS resident_email,
+             f.flat_no, f.wing
       FROM payments p
       LEFT JOIN maintenance m ON p.bill_id = m.id
       LEFT JOIN users u ON m.resident_id = u.id
@@ -1956,7 +1958,9 @@ const getPendingVerificationPayments = async (req, res) => {
                COALESCE(m.total_amount, p.amount) AS total_amount,
                COALESCE(m.resident_id, p.resident_id) AS resident_id,
                COALESCE(u.name, payer.name, 'Resident') AS resident_name,
-               f.flat_no
+               COALESCE(u.phone, payer.phone) AS resident_phone,
+               COALESCE(u.email, payer.email) AS resident_email,
+               f.flat_no, f.wing
         FROM payments p
         LEFT JOIN maintenance m ON p.bill_id = m.id
         LEFT JOIN users u ON m.resident_id = u.id
@@ -2159,6 +2163,24 @@ const updatePayment = async (req, res) => {
       await promisePool.query('UPDATE maintenance SET payment_date = NOW() WHERE id = ?', [payment.bill_id]);
     }
 
+    if (newStatus === 'NEEDS_CLARIFICATION') {
+      try {
+        const residentId = payment.resident_id || billRows[0].resident_id;
+        if (residentId) {
+          await promisePool.query(
+            `INSERT INTO notifications (resident_id, title, message, type, is_read, created_at)
+             VALUES (?, 'Clarification Needed', ?, 'payment', false, NOW())`,
+            [
+              residentId,
+              `Your payment proof for ${billRows[0].title || 'Monthly Maintenance'} requires clarification: ${remarks}. Please update your details.`
+            ]
+          );
+        }
+      } catch (notificationError) {
+        console.error('Clarification notification failed:', notificationError);
+      }
+    }
+
     return sendResponse(res, 200, 'Payment updated successfully');
   } catch (error) {
     console.error('Update payment error:', error);
@@ -2175,7 +2197,7 @@ const getPayments = async (req, res) => {
              p.transaction_id AS utr_number,
              CONCAT('BILL-', m.id) AS bill_number, m.title, m.month, m.year, m.due_date, m.total_amount AS total_amount,
              COALESCE(m.resident_id, p.resident_id) AS resident_id,
-             u.name AS resident_name, f.flat_no
+             u.name AS resident_name, u.phone AS resident_phone, u.email AS resident_email, f.flat_no, f.wing
       FROM payments p
       LEFT JOIN payment_maintenance pm ON pm.payment_id = p.id
       LEFT JOIN maintenance m ON m.id = COALESCE(pm.maintenance_id, p.bill_id)

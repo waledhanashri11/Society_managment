@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.application.data.remote.dto.AdminNotificationsResponse
 import com.example.application.data.remote.dto.ComplaintDto
 import com.example.application.data.remote.dto.NoticeDto
+import com.example.application.data.remote.dto.NoticePollSaveRequest
 import com.example.application.data.repository.CommunicationRepository
 import com.example.application.util.NetworkResult
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -94,6 +95,20 @@ class ResidentComplaintsViewModel @Inject constructor(private val repository: Co
             }
         }
     }
+
+    fun confirmResolved(id: String) = action { repository.confirmResolved(id) }
+    fun reopen(id: String, comment: String) = action { repository.reopenComplaint(id, comment) }
+
+    private fun action(call: suspend () -> NetworkResult<String>) {
+        viewModelScope.launch {
+            _state.update { it.copy(submitting = true, error = null, message = null) }
+            when (val result = call()) {
+                is NetworkResult.Success -> { _state.update { it.copy(submitting = false, message = result.data) }; load(true) }
+                is NetworkResult.Error -> _state.update { it.copy(submitting = false, error = repository.userMessageFor(result.error)) }
+                NetworkResult.Loading -> Unit
+            }
+        }
+    }
 }
 
 @HiltViewModel
@@ -112,8 +127,10 @@ class NoticesViewModel @Inject constructor(private val repository: Communication
         }
     }
     fun setQuery(value: String) = _state.update { it.copy(query = value) }
-    fun createNotice(title: String, description: String) = action { repository.createNotice(title, description) }
+    fun createNotice(title: String, description: String, poll: NoticePollSaveRequest? = null) = action { repository.createNotice(title, description, poll) }
     fun deleteNotice(id: String) = action { repository.deleteNotice(id) }
+    fun closePoll(id: String) = action { repository.closePoll(id) }
+    fun vote(id: String, optionIds: List<Int>) = action { repository.voteNotice(id, optionIds) }
     private fun action(call: suspend () -> NetworkResult<String>) {
         viewModelScope.launch {
             _state.update { it.copy(submitting = true, error = null, message = null) }

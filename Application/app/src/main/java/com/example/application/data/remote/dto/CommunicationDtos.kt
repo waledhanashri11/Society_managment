@@ -17,7 +17,25 @@ data class ComplaintUpdateRequest(
 
 data class NoticeSaveRequest(
     val title: String,
-    val description: String
+    val description: String,
+    val poll: NoticePollSaveRequest? = null
+)
+
+data class NoticePollSaveRequest(
+    val enabled: Boolean,
+    val question: String,
+    @SerializedName("poll_type") val pollType: String = "yes_no",
+    val options: List<String> = listOf("Yes", "No"),
+    @SerializedName("start_at") val startAt: String,
+    @SerializedName("end_at") val endAt: String,
+    val anonymous: Boolean = false,
+    @SerializedName("allow_vote_change") val allowVoteChange: Boolean = false,
+    @SerializedName("show_results_before_end") val showResultsBeforeEnd: Boolean = false,
+    val mandatory: Boolean = false
+)
+
+data class NoticeVoteRequest(
+    @SerializedName("option_ids") val optionIds: List<Int>
 )
 
 data class AdminNotificationsResponse(

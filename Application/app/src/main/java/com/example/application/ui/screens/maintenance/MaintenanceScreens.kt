@@ -35,6 +35,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -300,6 +304,7 @@ fun ResidentMaintenanceScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val data = state.data
     val context = LocalContext.current
+    var disputeBill by remember { mutableStateOf<MaintenanceBillDto?>(null) }
     Scaffold(topBar = {
         ResidentMaintenanceTopBar(onBack = onBack, onPaymentHistory = onPaymentHistory)
     }, bottomBar = {
@@ -350,7 +355,8 @@ fun ResidentMaintenanceScreen(
                                 bill = bill,
                                 onPay = { bill.id?.let(onPayBill) },
                                 onDownloadReceipt = { saveResidentReceiptPdf(context, bill) },
-                                onViewStatus = onPaymentHistory
+                                onViewStatus = onPaymentHistory,
+                                onDispute = { disputeBill = bill }
                             )
                         }
                     }
@@ -384,6 +390,43 @@ fun ResidentMaintenanceScreen(
                 }
             }
         }
+    }
+    disputeBill?.let { bill ->
+        var subject by remember(bill.id) { mutableStateOf("") }
+        var description by remember(bill.id) { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { disputeBill = null },
+            title = { Text("Raise Maintenance Dispute") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(bill.displayTitle(), fontWeight = FontWeight.Bold)
+                    OutlinedTextField(
+                        value = subject,
+                        onValueChange = { subject = it },
+                        label = { Text("Subject") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = description,
+                        onValueChange = { description = it },
+                        label = { Text("Description") },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 3
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        bill.id?.let { viewModel.createDispute(it, subject.trim(), description.trim()) }
+                        disputeBill = null
+                    },
+                    enabled = subject.isNotBlank() && description.isNotBlank() && !state.submitting
+                ) { Text(if (state.submitting) "Submitting..." else "Submit Dispute") }
+            },
+            dismissButton = { TextButton(onClick = { disputeBill = null }) { Text("Cancel") } }
+        )
     }
 }
 
@@ -568,7 +611,8 @@ private fun ResidentMaintenanceBillCard(
     bill: MaintenanceBillDto,
     onPay: () -> Unit,
     onDownloadReceipt: () -> Unit,
-    onViewStatus: () -> Unit
+    onViewStatus: () -> Unit,
+    onDispute: () -> Unit
 ) {
     val status = bill.paymentStatus ?: bill.latestPaymentStatus ?: bill.status
     val canPay = status.isResidentPayableStatus()
@@ -637,6 +681,11 @@ private fun ResidentMaintenanceBillCard(
                         Icon(Icons.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
                         Text("Status")
+                    }
+                }
+                if (!finished && !verifying) {
+                    TextButton(onClick = onDispute) {
+                        Text("Raise dispute")
                     }
                 }
             }
@@ -966,12 +1015,17 @@ private fun PaymentVerificationSection(
     verifications: List<MaintenancePaymentVerificationDto>,
     viewModel: AdminMaintenanceViewModel
 ) {
-    val context = LocalContext.current
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    val submitting = state.submitting
+
     var selectedPaymentIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var screenshotPayment by remember { mutableStateOf<MaintenancePaymentVerificationDto?>(null) }
-    var rejectPayment by remember { mutableStateOf<MaintenancePaymentVerificationDto?>(null) }
-    var clarificationPayment by remember { mutableStateOf<MaintenancePaymentVerificationDto?>(null) }
+    var detailsPayment by remember { mutableStateOf<MaintenancePaymentVerificationDto?>(null) }
+    var confirmApprovePayment by remember { mutableStateOf<MaintenancePaymentVerificationDto?>(null) }
+    var confirmRejectPayment by remember { mutableStateOf<MaintenancePaymentVerificationDto?>(null) }
+    var confirmClarifyPayment by remember { mutableStateOf<MaintenancePaymentVerificationDto?>(null) }
     var bulkReject by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
 
     val sortedVerifications = remember(verifications) {
         verifications.sortedWith(
@@ -980,31 +1034,122 @@ private fun PaymentVerificationSection(
         )
     }
 
+    val filteredVerifications = remember(sortedVerifications, searchQuery) {
+        if (searchQuery.isBlank()) sortedVerifications
+        else {
+            val query = searchQuery.trim().lowercase()
+            sortedVerifications.filter {
+                it.residentName?.lowercase()?.contains(query) == true ||
+                it.flatNumber?.lowercase()?.contains(query) == true ||
+                it.title?.lowercase()?.contains(query) == true ||
+                it.transactionReference?.lowercase()?.contains(query) == true ||
+                it.utrNumber?.lowercase()?.contains(query) == true
+            }
+        }
+    }
+
     val pendingVerifications = sortedVerifications.filter { it.verificationStatus.isPaymentVerificationPending() }
     val selectedPending = pendingVerifications.filter { it.submissionId in selectedPaymentIds }
 
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        SectionCard("Payment Verification", "Review resident UPI proofs before marking bills paid") {
-            if (pendingVerifications.isNotEmpty()) {
-                MaintenanceActions {
-                    TextButton(onClick = {
-                        selectedPaymentIds = if (selectedPending.size == pendingVerifications.size) emptySet() else pendingVerifications.mapNotNull { it.submissionId }.toSet()
-                    }) { Text(if (selectedPending.size == pendingVerifications.size) "Clear Selection" else "Select Pending") }
-                    Button(
-                        onClick = {
-                            selectedPending.forEach { payment -> payment.submissionId?.let { viewModel.updatePayment(it, "Paid") } }
-                            selectedPaymentIds = emptySet()
-                        },
-                        enabled = selectedPending.isNotEmpty()
-                    ) { Text("Approve Selected (${selectedPending.size})") }
-                    Button(onClick = { bulkReject = true }, enabled = selectedPending.isNotEmpty()) { Text("Reject Selected") }
+    val todayStr = remember {
+        java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
+    }
+    val pendingCount = remember(verifications) {
+        verifications.count { it.verificationStatus.isPaymentVerificationPending() }
+    }
+    val approvedTodayCount = remember(verifications) {
+        verifications.count {
+            it.verificationStatus.normalizePaymentStatus() == "APPROVED" &&
+            it.verifiedAt?.startsWith(todayStr) == true
+        }
+    }
+    val rejectedTodayCount = remember(verifications) {
+        verifications.count {
+            it.verificationStatus.isPaymentVerificationRejected() &&
+            it.rejectedAt?.startsWith(todayStr) == true
+        }
+    }
+    val totalSubmittedAmount = remember(verifications) {
+        verifications.fold(BigDecimal.ZERO) { sum, item ->
+            sum + (item.submittedAmount?.toBigDecimalOrNull() ?: BigDecimal.ZERO)
+        }
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        VerificationSummarySection(
+            pendingCount = pendingCount,
+            approvedTodayCount = approvedTodayCount,
+            rejectedTodayCount = rejectedTodayCount,
+            totalSubmittedAmount = totalSubmittedAmount
+        )
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("Search resident, flat, title, or UTR") },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    trailingIcon = if (searchQuery.isNotEmpty()) {
+                        {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(Icons.Default.Close, contentDescription = "Clear")
+                            }
+                        }
+                    } else null,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    singleLine = true
+                )
+
+                if (pendingVerifications.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TextButton(
+                            onClick = {
+                                selectedPaymentIds = if (selectedPending.size == pendingVerifications.size) emptySet() else pendingVerifications.mapNotNull { it.submissionId }.toSet()
+                            }
+                        ) {
+                            Text(if (selectedPending.size == pendingVerifications.size) "Clear Selection" else "Select All Pending")
+                        }
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            if (selectedPending.isNotEmpty()) {
+                                Button(
+                                    onClick = {
+                                        selectedPending.forEach { payment ->
+                                            payment.submissionId?.let { viewModel.updatePayment(it, "Paid") }
+                                        }
+                                        selectedPaymentIds = emptySet()
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
+                                ) {
+                                    Text("Approve (${selectedPending.size})")
+                                }
+                                Button(
+                                    onClick = { bulkReject = true },
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                                ) {
+                                    Text("Reject")
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
-        if (sortedVerifications.isEmpty()) {
-            EmptyState("No payment proofs found", "Submitted resident payment screenshots will appear here.")
+
+        if (filteredVerifications.isEmpty()) {
+            EmptyState("No payment submissions waiting for verification.", "Submitted resident payment screenshots will appear here.")
         } else {
-            sortedVerifications.forEach { payment ->
+            filteredVerifications.forEach { payment ->
                 PaymentVerificationCard(
                     verification = payment,
                     selected = payment.submissionId in selectedPaymentIds,
@@ -1014,20 +1159,133 @@ private fun PaymentVerificationSection(
                         }
                     },
                     onOpenScreenshot = { screenshotPayment = payment },
-                    onApprove = { payment.submissionId?.let { viewModel.updatePayment(it, "Paid") } },
-                    onReject = { rejectPayment = payment },
-                    onClarify = { clarificationPayment = payment },
-                    onReconsider = {
-                        payment.submissionId?.let { viewModel.updatePayment(it, "Pending Verification", "Reconsidering payment verification") }
-                    }
+                    onViewDetails = { detailsPayment = payment }
                 )
             }
         }
     }
 
+    detailsPayment?.let { payment ->
+        PaymentDetailsDialog(
+            payment = payment,
+            submitting = submitting,
+            onDismiss = { detailsPayment = null },
+            onApprove = { confirmApprovePayment = payment },
+            onReject = { confirmRejectPayment = payment },
+            onClarify = { confirmClarifyPayment = payment },
+            onReconsider = {
+                payment.submissionId?.let { id ->
+                    viewModel.updatePayment(id, "Pending Verification", "Reconsidering payment verification")
+                }
+                detailsPayment = null
+            }
+        )
+    }
+
+    confirmApprovePayment?.let { payment ->
+        AlertDialog(
+            onDismissRequest = { confirmApprovePayment = null },
+            title = { Text("Approve Payment") },
+            text = { Text("Are you sure you want to approve this payment of \u20B9${payment.submittedAmount ?: "0"} by ${payment.residentName ?: "Resident"}?") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        payment.submissionId?.let { id ->
+                            viewModel.updatePayment(id, "Paid")
+                        }
+                        confirmApprovePayment = null
+                        detailsPayment = null
+                    },
+                    enabled = !submitting,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
+                ) {
+                    Text("Approve")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmApprovePayment = null }) { Text("Cancel") }
+            }
+        )
+    }
+
+    confirmRejectPayment?.let { payment ->
+        var reason by remember(payment.submissionId) { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { confirmRejectPayment = null },
+            title = { Text("Reject Payment") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Please enter a required reason for rejection. Resident will be notified to submit corrected proof.")
+                    OutlinedTextField(
+                        value = reason,
+                        onValueChange = { reason = it },
+                        placeholder = { Text("Reason for rejection") },
+                        modifier = Modifier.fillMaxWidth(),
+                        maxLines = 3
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        payment.submissionId?.let { id ->
+                            viewModel.updatePayment(id, "Rejected", reason.ifBlank { "Payment proof rejected by admin" })
+                        }
+                        confirmRejectPayment = null
+                        detailsPayment = null
+                    },
+                    enabled = reason.isNotBlank() && !submitting,
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Reject")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmRejectPayment = null }) { Text("Cancel") }
+            }
+        )
+    }
+
+    confirmClarifyPayment?.let { payment ->
+        var note by remember(payment.submissionId) { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { confirmClarifyPayment = null },
+            title = { Text("Request Clarification") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Please enter a clear message detailing what needs to be corrected.")
+                    OutlinedTextField(
+                        value = note,
+                        onValueChange = { note = it },
+                        placeholder = { Text("Message for resident") },
+                        modifier = Modifier.fillMaxWidth(),
+                        maxLines = 3
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        payment.submissionId?.let { id ->
+                            viewModel.updatePayment(id, "Needs Clarification", note.ifBlank { "Please provide clearer payment details." })
+                        }
+                        confirmClarifyPayment = null
+                        detailsPayment = null
+                    },
+                    enabled = note.isNotBlank() && !submitting
+                ) {
+                    Text("Send Request")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmClarifyPayment = null }) { Text("Cancel") }
+            }
+        )
+    }
+
     screenshotPayment?.let { payment ->
         val proofImage = payment.proofImage()
-        androidx.compose.material3.AlertDialog(
+        AlertDialog(
             onDismissRequest = { screenshotPayment = null },
             title = { Text("Payment Screenshot") },
             text = {
@@ -1035,7 +1293,7 @@ private fun PaymentVerificationSection(
                     PaymentProofImage(
                         image = proofImage,
                         contentDescription = "Payment screenshot",
-                        modifier = Modifier.fillMaxWidth().height(520.dp).clip(RoundedCornerShape(14.dp)),
+                        modifier = Modifier.fillMaxWidth().height(480.dp).clip(RoundedCornerShape(14.dp)),
                         contentScale = ContentScale.Fit
                     )
                 } else {
@@ -1046,76 +1304,262 @@ private fun PaymentVerificationSection(
         )
     }
 
-    rejectPayment?.let { payment ->
-        var reason by remember(payment.submissionId) { mutableStateOf("") }
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { rejectPayment = null },
-            title = { Text("Reject Payment") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Enter a clear reason. Resident can resubmit after rejection.")
-                    BasicAppTextField(reason, { reason = it }, "Rejection reason")
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        payment.submissionId?.let { viewModel.updatePayment(it, "Rejected", reason.ifBlank { "Payment proof rejected by admin" }) }
-                        rejectPayment = null
-                    },
-                    enabled = reason.isNotBlank()
-                ) { Text("Reject") }
-            },
-            dismissButton = { TextButton(onClick = { rejectPayment = null }) { Text("Cancel") } }
-        )
-    }
-
-    clarificationPayment?.let { payment ->
-        var note by remember(payment.submissionId) { mutableStateOf("") }
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { clarificationPayment = null },
-            title = { Text("Ask for Clarification") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Use this when the proof may be valid but more information is needed.")
-                    BasicAppTextField(note, { note = it }, "Clarification note")
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        payment.submissionId?.let { viewModel.updatePayment(it, "Needs Clarification", note.ifBlank { "Please provide clearer payment details." }) }
-                        clarificationPayment = null
-                    },
-                    enabled = note.isNotBlank()
-                ) { Text("Send") }
-            },
-            dismissButton = { TextButton(onClick = { clarificationPayment = null }) { Text("Cancel") } }
-        )
-    }
-
     if (bulkReject) {
         var reason by remember { mutableStateOf("") }
-        androidx.compose.material3.AlertDialog(
+        AlertDialog(
             onDismissRequest = { bulkReject = false },
             title = { Text("Reject Selected Payments") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("${selectedPending.size} selected payment proofs will be rejected.")
-                    BasicAppTextField(reason, { reason = it }, "Rejection reason")
+                    Text("Enter rejection reason for all selected payments.")
+                    OutlinedTextField(
+                        value = reason,
+                        onValueChange = { reason = it },
+                        placeholder = { Text("Rejection reason") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             },
             confirmButton = {
-                Button(onClick = {
-                    selectedPending.forEach { payment ->
-                        payment.submissionId?.let { viewModel.updatePayment(it, "Rejected", reason.ifBlank { "Payment proof rejected by admin" }) }
-                    }
-                    selectedPaymentIds = emptySet()
-                    bulkReject = false
-                }, enabled = reason.isNotBlank()) { Text("Reject Selected") }
+                Button(
+                    onClick = {
+                        selectedPending.forEach { payment ->
+                            payment.submissionId?.let { viewModel.updatePayment(it, "Rejected", reason) }
+                        }
+                        selectedPaymentIds = emptySet()
+                        bulkReject = false
+                    },
+                    enabled = reason.isNotBlank() && !submitting
+                ) {
+                    Text("Reject All")
+                }
             },
             dismissButton = { TextButton(onClick = { bulkReject = false }) { Text("Cancel") } }
         )
+    }
+}
+
+@Composable
+private fun VerificationSummarySection(
+    pendingCount: Int,
+    approvedTodayCount: Int,
+    rejectedTodayCount: Int,
+    totalSubmittedAmount: BigDecimal
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            SummaryCard("Pending Review", pendingCount.toString(), MaterialTheme.colorScheme.secondaryContainer)
+            SummaryCard("Rejected Today", rejectedTodayCount.toString(), MaterialTheme.colorScheme.errorContainer)
+        }
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            SummaryCard("Approved Today", approvedTodayCount.toString(), MaterialTheme.colorScheme.primaryContainer)
+            SummaryCard("Total Submitted", "\u20B9${totalSubmittedAmount.toInt()}", MaterialTheme.colorScheme.surfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun SummaryCard(title: String, value: String, containerColor: Color) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = containerColor),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(title, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+private fun PaymentDetailsDialog(
+    payment: MaintenancePaymentVerificationDto,
+    submitting: Boolean,
+    onDismiss: () -> Unit,
+    onApprove: () -> Unit,
+    onReject: () -> Unit,
+    onClarify: () -> Unit,
+    onReconsider: () -> Unit
+) {
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth(0.95f)
+                .fillMaxHeight(0.9f)
+                .clip(RoundedCornerShape(24.dp)),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 6.dp
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(20.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Payment Verification Details",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "Close")
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    SectionHeader("Resident Information")
+                    DetailRow("Name", payment.residentName ?: "Unknown")
+                    DetailRow("Phone", payment.residentPhone ?: "--")
+                    DetailRow("Email", payment.residentEmail ?: "--")
+                    DetailRow("Flat / Wing", "Flat ${payment.flatNumber ?: "--"} ${payment.wing?.let { "\u2022 Wing $it" } ?: ""}")
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                    SectionHeader("Bill Information")
+                    DetailRow("Title / Month", "${payment.title ?: "Maintenance"} \u2022 ${monthName(payment.billingMonth?.toString())} ${payment.billingYear ?: ""}")
+                    val maintAmt = payment.billAmount?.toDoubleOrNull() ?: 0.0
+                    val penAmt = payment.penaltyAmount?.toDoubleOrNull() ?: 0.0
+                    val totAmt = maintAmt + penAmt
+                    DetailRow("Bill Amount", "\u20B9${payment.billAmount ?: "0"}")
+                    DetailRow("Penalty / Late Fee", "\u20B9${payment.penaltyAmount ?: "0"}")
+                    DetailRow("Total Payable", "\u20B9${totAmt.toInt()}")
+                    DetailRow("Due Date", payment.dueDate?.take(10) ?: "--")
+                    DetailRow("Verification Status", payment.verificationStatus ?: "Pending")
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                    SectionHeader("Submitted Payment Information")
+                    DetailRow("Paid Amount", "\u20B9${payment.submittedAmount ?: "0"}")
+                    DetailRow("Transaction ID / UTR", payment.transactionReference ?: "--")
+                    DetailRow("Payment Date", payment.paymentDate?.take(10) ?: "--")
+                    DetailRow("Submission Date", payment.submittedAt?.take(16)?.replace("T", " ") ?: "--")
+                    DetailRow("Resident Note", payment.residentNote ?: "--")
+
+                    val proofImage = payment.proofImage()
+                    if (!proofImage.isNullOrBlank()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Payment Proof Screenshot",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(220.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp))
+                        ) {
+                            PaymentProofImage(
+                                image = proofImage,
+                                contentDescription = "Screenshot",
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Fit
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                val isPending = payment.verificationStatus.isPaymentVerificationPending()
+                val isRejected = payment.verificationStatus.isPaymentVerificationRejected()
+
+                if (isPending) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Button(
+                            onClick = onApprove,
+                            modifier = Modifier.weight(1f),
+                            enabled = !submitting,
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
+                        ) {
+                            if (submitting) {
+                                CircularProgressIndicator(modifier = Modifier.size(20.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
+                            } else {
+                                Text("Approve")
+                            }
+                        }
+
+                        OutlinedButton(
+                            onClick = onReject,
+                            modifier = Modifier.weight(1f),
+                            enabled = !submitting,
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                        ) {
+                            Text("Reject")
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    TextButton(
+                        onClick = onClarify,
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !submitting
+                    ) {
+                        Text("Request Clarification")
+                    }
+                } else if (isRejected) {
+                    Button(
+                        onClick = onReconsider,
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !submitting,
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+                    ) {
+                        if (submitting) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), color = MaterialTheme.colorScheme.onSecondary, strokeWidth = 2.dp)
+                        } else {
+                            Text("Reconsider")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SectionHeader(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.primary
+    )
+    Spacer(modifier = Modifier.height(6.dp))
+}
+
+@Composable
+private fun DetailRow(label: String, value: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -1125,30 +1569,32 @@ private fun PaymentVerificationCard(
     selected: Boolean,
     onSelectToggle: () -> Unit,
     onOpenScreenshot: () -> Unit,
-    onApprove: () -> Unit,
-    onReject: () -> Unit,
-    onClarify: () -> Unit,
-    onReconsider: () -> Unit
+    onViewDetails: () -> Unit
 ) {
-    val status = verification.verificationStatus.normalizePaymentStatus()
     val isPending = verification.verificationStatus.isPaymentVerificationPending()
-    val isRejected = verification.verificationStatus.isPaymentVerificationRejected()
     val proofImage = verification.proofImage()
-    
-    val maintAmt = verification.billAmount?.toDoubleOrNull() ?: 0.0
-    val penAmt = verification.penaltyAmount?.toDoubleOrNull() ?: 0.0
-    val totAmt = maintAmt + penAmt
-    
+
     Card(
-        modifier = Modifier.fillMaxWidth().clickable { if (isPending) onSelectToggle() },
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onViewDetails() },
         colors = CardDefaults.cardColors(containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f) else MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant)
+        border = BorderStroke(1.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
+            ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("${verification.residentName ?: "Unknown"} \u2022 Flat ${verification.flatNumber ?: "--"}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text("${verification.title ?: "Maintenance"} \u2022 ${monthName(verification.billingMonth?.toString())} ${verification.billingYear ?: ""}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(verification.residentName ?: "Unknown", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(
+                        text = "Flat ${verification.flatNumber ?: "--"} ${verification.wing?.let { "\u2022 Wing $it" } ?: ""}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
                 if (isPending) {
                     Checkbox(checked = selected, onCheckedChange = { onSelectToggle() }, modifier = Modifier.size(24.dp))
@@ -1158,73 +1604,58 @@ private fun PaymentVerificationCard(
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                InfoItem("Maint Amount", "\u20B9${verification.billAmount ?: "0"}")
-                InfoItem("Penalty", "\u20B9${verification.penaltyAmount ?: "0"}")
-                InfoItem("Total Bill", "\u20B9${totAmt.toInt()}")
+                InfoItem("Bill Month/Title", "${verification.title ?: "Maintenance"} \u2022 ${monthName(verification.billingMonth?.toString())} ${verification.billingYear ?: ""}")
+                InfoItem("Bill ID", "BILL-${verification.billId ?: "--"}")
             }
-            
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
-            
+
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                InfoItem("Submitted", "\u20B9${verification.submittedAmount ?: "0"}")
-                InfoItem("Method", verification.paymentMethod ?: "--")
+                InfoItem("Submitted Amount", "\u20B9${verification.submittedAmount ?: "0"}")
+                InfoItem("Expected Amount", "\u20B9${verification.billAmount ?: "0"}")
+            }
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 InfoItem("Ref/UTR", verification.transactionReference ?: "--")
-            }
-            
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 InfoItem("Payment Date", verification.paymentDate?.take(10) ?: "--")
-                InfoItem("Submit Date", verification.submittedAt?.take(10) ?: "--")
             }
-            
-            Row(verticalAlignment = Alignment.Top, modifier = Modifier.fillMaxWidth()) {
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                InfoItem("Submission Date", verification.submittedAt?.take(10) ?: "--")
+                Box(modifier = Modifier.weight(1f))
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Column(modifier = Modifier.weight(1f)) {
                     StatusBadge(verification.verificationStatus ?: "Unknown")
-                    Spacer(modifier = Modifier.height(8.dp))
-                    if (!verification.adminNote.isNullOrBlank()) {
-                        Text("Admin Note: ${verification.adminNote}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                    }
-                    if (!verification.residentNote.isNullOrBlank()) {
-                        Text("Resident Note: ${verification.residentNote}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
                 }
-                
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    if (!proofImage.isNullOrBlank()) {
-                        PaymentProofImage(
-                            image = proofImage,
-                            contentDescription = "Thumbnail",
-                            modifier = Modifier.size(60.dp).clickable { onOpenScreenshot() },
-                            contentScale = ContentScale.Crop
-                        )
-                        TextButton(onClick = onOpenScreenshot) {
-                            Text("View Proof", style = MaterialTheme.typography.bodySmall)
-                        }
-                    } else {
-                        Text("No Proof", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                    }
+
+                if (!proofImage.isNullOrBlank()) {
+                    PaymentProofImage(
+                        image = proofImage,
+                        contentDescription = "Thumbnail",
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp))
+                            .clickable { onOpenScreenshot() },
+                        contentScale = ContentScale.Crop
+                    )
                 }
             }
- 
-            if (isPending) {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = onApprove, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)) {
-                        Text("Approve")
-                    }
-                    OutlinedButton(onClick = onReject, modifier = Modifier.weight(1f), colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
-                        Text("Reject")
-                    }
-                }
-                TextButton(onClick = onClarify, modifier = Modifier.fillMaxWidth()) {
-                    Text("Request Clarification")
-                }
-            } else if (isRejected) {
-                Button(
-                    onClick = onReconsider,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
-                ) {
-                    Text("Reconsider")
-                }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Button(
+                onClick = onViewDetails,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer)
+            ) {
+                Text("View Details")
             }
         }
     }
