@@ -17,7 +17,11 @@ data class MeetingDetailsDto(
     @SerializedName("end_time") val endTime: String?, val venue: String?, val description: String?,
     val priority: String?, val status: String?, val agendas: List<MeetingAgendaDto>?, val report: MeetingReportDto?,
     val actions: List<MeetingActionDto>?, val documents: List<MeetingDocumentDto>?, val vote: MeetingVoteDto?,
-    @SerializedName("my_attendance") val myAttendance: String?
+    @SerializedName("my_attendance") val myAttendance: String?,
+    @SerializedName("my_fine") val myFine: MeetingFineDto? = null,
+    @SerializedName("is_compulsory") val isCompulsory: Boolean? = null,
+    @SerializedName("fine_amount") val fineAmount: Double? = null,
+    @SerializedName("fine_due_days") val fineDueDays: Int? = null
 )
 
 data class MeetingAgendaDto(@SerializedName("item_text") val itemText: String?, @SerializedName("order_index") val orderIndex: Int?, val id: String? = null)
@@ -38,8 +42,30 @@ data class MeetingActionDto(
 )
 data class MeetingVoteDto(val id: String?, val question: String?, @SerializedName("yes_count") val yesCount: Int?, @SerializedName("no_count") val noCount: Int?, @SerializedName("abstain_count") val abstainCount: Int?, @SerializedName("has_voted") val hasVoted: Boolean?, @SerializedName("my_choice") val myChoice: String?)
 data class MeetingAttendanceDto(@SerializedName("resident_id") val residentId: String?, @SerializedName("resident_name") val residentName: String?, @SerializedName("flat_no") val flatNo: String?, val wing: String?, val status: String?)
+data class MeetingFineDto(
+    val id: String?,
+    @SerializedName("meeting_id") val meetingId: String?,
+    @SerializedName("resident_id") val residentId: String?,
+    @SerializedName("resident_name") val residentName: String?,
+    @SerializedName("flat_no") val flatNo: String?,
+    val wing: String?,
+    val amount: Double?,
+    val reason: String?,
+    @SerializedName("due_date") val dueDate: String?,
+    val status: String?,
+    @SerializedName("paid_at") val paidAt: String?,
+    @SerializedName("waived_reason") val waivedReason: String?
+)
+data class MeetingCommentDto(
+    val id: String?,
+    @SerializedName("meeting_id") val meetingId: String?,
+    @SerializedName("user_id") val userId: String?,
+    @SerializedName("user_name") val userName: String?,
+    @SerializedName("comment_text") val commentText: String?,
+    @SerializedName("created_at") val createdAt: String?
+)
 
-data class MeetingSaveRequest(val title: String, @SerializedName("meeting_type") val meetingType: String, @SerializedName("meeting_date") val meetingDate: String, @SerializedName("start_time") val startTime: String, @SerializedName("end_time") val endTime: String, val venue: String, val description: String? = null, val priority: String = "Normal", @SerializedName("notify_residents") val notifyResidents: Boolean = false, val documents: List<MeetingDocumentUploadDto> = emptyList())
+data class MeetingSaveRequest(val title: String, @SerializedName("meeting_type") val meetingType: String, @SerializedName("meeting_date") val meetingDate: String, @SerializedName("start_time") val startTime: String, @SerializedName("end_time") val endTime: String, val venue: String, val description: String? = null, val priority: String = "Normal", @SerializedName("notify_residents") val notifyResidents: Boolean = false, @SerializedName("is_compulsory") val isCompulsory: Boolean = false, @SerializedName("fine_amount") val fineAmount: Double = 0.0, @SerializedName("fine_due_days") val fineDueDays: Int = 7, val documents: List<MeetingDocumentUploadDto> = emptyList())
 data class MeetingDocumentUploadDto(val name: String, val data: String)
 data class MeetingAgendaSaveRequest(val items: List<MeetingAgendaSaveItem>)
 data class MeetingAgendaSaveItem(@SerializedName("item_text") val itemText: String, @SerializedName("order_index") val orderIndex: Int)
@@ -50,3 +76,5 @@ data class MeetingActionSaveRequest(@SerializedName("meeting_id") val meetingId:
 data class MeetingActionStatusRequest(val status: String, @SerializedName("completion_details") val completionDetails: String? = null)
 data class MeetingVoteSaveRequest(@SerializedName("meeting_id") val meetingId: String, val question: String)
 data class MeetingVoteCastRequest(val choice: String)
+data class MeetingFineWaiveRequest(@SerializedName("waived_reason") val waivedReason: String)
+data class MeetingCommentSaveRequest(@SerializedName("comment_text") val commentText: String)

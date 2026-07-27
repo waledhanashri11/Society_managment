@@ -49,6 +49,9 @@ sealed class AppRoute(val route: String) {
     }
     data object ResidentReports : AppRoute("resident_reports")
     data object ResidentNoc : AppRoute("resident_noc")
+    data object PublicNoc : AppRoute("share/noc/{token}") {
+        fun createRoute(token: String) = "share/noc/$token"
+    }
     data object ResidentMembers : AppRoute("resident/members")
     data object ResidentComplaints : AppRoute("resident_complaints")
     data object ResidentNotices : AppRoute("resident_notices")

@@ -5,6 +5,7 @@ import com.example.application.data.remote.dto.ErrorResponse
 import com.example.application.data.remote.dto.SocietyRuleAcknowledgementReportDto
 import com.example.application.data.remote.dto.SocietyRuleActionResponse
 import com.example.application.data.remote.dto.SocietyRuleDto
+import com.example.application.data.remote.dto.SocietyRulesMetaDto
 import com.example.application.data.remote.dto.SocietyRuleSaveRequest
 import com.example.application.util.AppError
 import com.example.application.util.NetworkResult
@@ -35,6 +36,8 @@ class SocietyRulesRepository @Inject constructor(
         residentRulesCache?.takeIf { !refresh }?.let { return NetworkResult.Success(it) }
         return safeCall { api.getRules(status = "published") }.also { if (it is NetworkResult.Success) residentRulesCache = it.data }
     }
+
+    suspend fun getMeta(): NetworkResult<SocietyRulesMetaDto> = safeCall { api.getMeta() }
 
     suspend fun getRule(id: String): NetworkResult<SocietyRuleDto> = safeCall { api.getRule(id) }
 
@@ -76,6 +79,12 @@ class SocietyRulesRepository @Inject constructor(
 
     suspend fun acknowledgeRule(id: String): NetworkResult<String> {
         return messageCall { api.acknowledgeRule(id) }.also {
+            if (it is NetworkResult.Success) residentRulesCache = null
+        }
+    }
+
+    suspend fun acceptRules(): NetworkResult<String> {
+        return messageCall { api.acceptRules() }.also {
             if (it is NetworkResult.Success) residentRulesCache = null
         }
     }

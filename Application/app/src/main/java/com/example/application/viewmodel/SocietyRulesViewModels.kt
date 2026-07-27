@@ -24,6 +24,8 @@ data class SocietyRulesState(
     val status: String = "All",
     val selectedRule: SocietyRuleDto? = null,
     val report: SocietyRuleAcknowledgementReportDto? = null,
+    val rulesVersion: Int? = null,
+    val needsAcceptance: Boolean = false,
     val error: String? = null,
     val message: String? = null,
     val submitting: Boolean = false
@@ -106,6 +108,11 @@ class ResidentSocietyRulesViewModel @Inject constructor(
     fun load(refresh: Boolean = false) {
         viewModelScope.launch {
             _state.update { it.copy(isLoading = it.items.isEmpty(), isRefreshing = refresh, error = null, message = null) }
+            when (val meta = repository.getMeta()) {
+                is NetworkResult.Success -> _state.update { it.copy(rulesVersion = meta.data.version, needsAcceptance = meta.data.needsAcceptance == true) }
+                is NetworkResult.Error -> Unit
+                NetworkResult.Loading -> Unit
+            }
             when (val result = repository.getResidentRules(refresh)) {
                 is NetworkResult.Success -> _state.update { it.copy(isLoading = false, isRefreshing = false, items = result.data) }
                 is NetworkResult.Error -> _state.update { it.copy(isLoading = false, isRefreshing = false, error = repository.userMessageFor(result.error)) }
@@ -140,6 +147,20 @@ class ResidentSocietyRulesViewModel @Inject constructor(
             when (val result = repository.acknowledgeRule(id)) {
                 is NetworkResult.Success -> {
                     _state.update { it.copy(submitting = false, message = result.data, selectedRule = it.selectedRule?.copy(isAcknowledged = true, acknowledgedAt = "now")) }
+                    load(true)
+                }
+                is NetworkResult.Error -> _state.update { it.copy(submitting = false, error = repository.userMessageFor(result.error)) }
+                NetworkResult.Loading -> Unit
+            }
+        }
+    }
+
+    fun acceptCurrentRules() {
+        viewModelScope.launch {
+            _state.update { it.copy(submitting = true, error = null, message = null) }
+            when (val result = repository.acceptRules()) {
+                is NetworkResult.Success -> {
+                    _state.update { it.copy(submitting = false, needsAcceptance = false, message = result.data) }
                     load(true)
                 }
                 is NetworkResult.Error -> _state.update { it.copy(submitting = false, error = repository.userMessageFor(result.error)) }

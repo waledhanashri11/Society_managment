@@ -3,6 +3,7 @@ package com.example.application.data.remote.api
 import com.example.application.data.remote.dto.SocietyRuleAcknowledgementReportDto
 import com.example.application.data.remote.dto.SocietyRuleActionResponse
 import com.example.application.data.remote.dto.SocietyRuleDto
+import com.example.application.data.remote.dto.SocietyRulesMetaDto
 import com.example.application.data.remote.dto.SocietyRuleSaveRequest
 import retrofit2.Response
 import retrofit2.http.Body
@@ -13,6 +14,9 @@ import retrofit2.http.Path
 import retrofit2.http.Query
 
 interface SocietyRulesApiService {
+    @GET("api/rules/meta")
+    suspend fun getMeta(): Response<SocietyRulesMetaDto>
+
     @GET("api/rules")
     suspend fun getRules(
         @Query("search") search: String? = null,
@@ -50,6 +54,9 @@ interface SocietyRulesApiService {
 
     @POST("api/rules/{id}/acknowledge")
     suspend fun acknowledgeRule(@Path("id") id: String): Response<SocietyRuleActionResponse>
+
+    @POST("api/rules/accept")
+    suspend fun acceptRules(): Response<SocietyRuleActionResponse>
 
     @GET("api/rules/{id}/acknowledgements")
     suspend fun getAcknowledgementReport(@Path("id") id: String): Response<SocietyRuleAcknowledgementReportDto>

@@ -42,6 +42,7 @@ import com.example.application.ui.screens.maintenance.AdminMaintenanceScreen
 import com.example.application.ui.screens.maintenance.AdminPaymentVerificationScreen
 import com.example.application.ui.screens.maintenance.ResidentMaintenanceScreen
 import com.example.application.ui.screens.noc.AdminNocScreen
+import com.example.application.ui.screens.noc.PublicNocCertificateScreen
 import com.example.application.ui.screens.noc.ResidentNocScreen
 import com.example.application.ui.screens.reports.AdminReportsScreen
 import com.example.application.ui.screens.reports.ResidentReportsScreen
@@ -52,6 +53,7 @@ import com.example.application.ui.screens.resident.ResidentPaymentScreen
 import com.example.application.ui.screens.resident.ResidentProfileScreen
 import com.example.application.ui.screens.rules.AdminSocietyRulesScreen
 import com.example.application.ui.screens.rules.ResidentSocietyRulesScreen
+import com.example.application.ui.screens.rules.ResidentRulesGate
 import com.example.application.ui.screens.meetings.AdminMeetingsScreen
 import com.example.application.ui.screens.meetings.ResidentMeetingsScreen
 import com.example.application.ui.screens.splash.SplashScreen
@@ -187,6 +189,21 @@ fun SocietyNavGraph(
             AdminNocScreen(onBack = { navController.popBackStack() })
         }
 
+        composable(
+            route = AppRoute.PublicNoc.route,
+            arguments = listOf(navArgument("token") { type = NavType.StringType }),
+            deepLinks = listOf(
+                navDeepLink { uriPattern = "societymanagement://share/noc/{token}" },
+                navDeepLink { uriPattern = "https://*/share/noc/{token}" },
+                navDeepLink { uriPattern = "http://*/share/noc/{token}" }
+            )
+        ) { backStackEntry ->
+            PublicNocCertificateScreen(
+                token = backStackEntry.arguments?.getString("token").orEmpty(),
+                onBack = { navController.popBackStack() }
+            )
+        }
+
         composable(AppRoute.AdminMaintenance.route) {
             AdminMaintenanceScreen(
                 onBack = { navController.popBackStack() },
@@ -302,43 +319,51 @@ fun SocietyNavGraph(
         }
 
         composable(AppRoute.ResidentDashboard.route) {
-            ResidentDashboardScreen(
-                onProfileClick = { navController.navigate(AppRoute.ResidentProfile.route) },
-                onLogoutComplete = ::navigateToLogin,
-                onQuickAction = { title: String ->
-                    when {
-                        title.startsWith("ResidentPayment:") -> {
-                            val id = title.substringAfter(":")
-                            if (id.isNotBlank()) navController.navigate(AppRoute.ResidentPayment.createRoute(id))
+            ResidentRulesGate(onOpenRules = { navController.navigate(AppRoute.ResidentRules.route) }) {
+                ResidentDashboardScreen(
+                    onProfileClick = { navController.navigate(AppRoute.ResidentProfile.route) },
+                    onLogoutComplete = ::navigateToLogin,
+                    onQuickAction = { title: String ->
+                        when {
+                            title.startsWith("ResidentPayment:") -> {
+                                val id = title.substringAfter(":")
+                                if (id.isNotBlank()) navController.navigate(AppRoute.ResidentPayment.createRoute(id))
+                            }
+                            title == "Maintenance" -> navController.navigate(AppRoute.ResidentMaintenance.route)
+                            title == "Payment History" -> navController.navigate(AppRoute.ResidentPaymentHistory.route)
+                            title == "Create Complaint" || title == "Raise Complaint" || title == "My Complaints" -> navController.navigate(AppRoute.ResidentComplaints.route)
+                            title == "Notices" || title == "View Notices" -> navController.navigate(AppRoute.ResidentNotices.route)
+                            title == "Rules" || title == "Society Rules" -> navController.navigate(AppRoute.ResidentRules.route)
+                            title == "Meetings" || title == "Meeting Management" -> navController.navigate(AppRoute.ResidentMeetings.route)
+                            title == "Events" -> navController.navigate(AppRoute.ResidentEvents.route)
+                            title == "Reports" -> navController.navigate(AppRoute.ResidentReports.route)
+                            title == "NOC Requests" -> navController.navigate(AppRoute.ResidentNoc.route)
+                            title == "Members" -> navController.navigate(AppRoute.ResidentMembers.route)
+                            title == "Notifications" -> navController.navigate(AppRoute.Notifications.route)
+                            title == "Visitors" || title == "Parcels" || title == "Activities" || title == "More" || title == "Services" -> navController.navigate(AppRoute.ResidentAdvanced.route)
+                            else -> navController.navigate(AppRoute.ComingSoon.createRoute(title))
                         }
-                        title == "Maintenance" -> navController.navigate(AppRoute.ResidentMaintenance.route)
-                        title == "Payment History" -> navController.navigate(AppRoute.ResidentPaymentHistory.route)
-                        title == "Create Complaint" || title == "Raise Complaint" || title == "My Complaints" -> navController.navigate(AppRoute.ResidentComplaints.route)
-                        title == "Notices" || title == "View Notices" -> navController.navigate(AppRoute.ResidentNotices.route)
-                        title == "Rules" || title == "Society Rules" -> navController.navigate(AppRoute.ResidentRules.route)
-                        title == "Meetings" || title == "Meeting Management" -> navController.navigate(AppRoute.ResidentMeetings.route)
-                        title == "Events" -> navController.navigate(AppRoute.ResidentEvents.route)
-                        title == "Reports" -> navController.navigate(AppRoute.ResidentReports.route)
-                        title == "NOC Requests" -> navController.navigate(AppRoute.ResidentNoc.route)
-                        title == "Members" -> navController.navigate(AppRoute.ResidentMembers.route)
-                        title == "Notifications" -> navController.navigate(AppRoute.Notifications.route)
-                        title == "Visitors" || title == "Parcels" || title == "Activities" || title == "More" || title == "Services" -> navController.navigate(AppRoute.ResidentAdvanced.route)
-                        else -> navController.navigate(AppRoute.ComingSoon.createRoute(title))
                     }
-                }
-            )
+                )
+            }
         }
 
         composable(AppRoute.ResidentReports.route) {
-            ResidentReportsScreen(onBack = { navController.popBackStack() })
+            ResidentRulesGate(onOpenRules = { navController.navigate(AppRoute.ResidentRules.route) }) {
+                ResidentReportsScreen(onBack = { navController.popBackStack() })
+            }
         }
 
         composable(AppRoute.ResidentNoc.route) {
-            ResidentNocScreen(onBack = { navController.popBackStack() })
+            ResidentRulesGate(onOpenRules = { navController.navigate(AppRoute.ResidentRules.route) }) {
+                ResidentNocScreen(onBack = { navController.popBackStack() })
+            }
         }
 
         composable(AppRoute.ResidentPaymentHistory.route) {
-            ResidentPaymentHistoryScreen(onBack = { navController.popBackStack() })
+            ResidentRulesGate(onOpenRules = { navController.navigate(AppRoute.ResidentRules.route) }) {
+                ResidentPaymentHistoryScreen(onBack = { navController.popBackStack() })
+            }
         }
 
         composable(
@@ -346,41 +371,51 @@ fun SocietyNavGraph(
             arguments = listOf(navArgument("id") { type = NavType.StringType })
         ) { backStackEntry ->
             val billId = backStackEntry.arguments?.getString("id") ?: ""
-            ResidentPaymentScreen(
-                billId = billId,
-                onBack = { navController.popBackStack() },
-                onViewPaymentHistory = { navController.navigate(AppRoute.ResidentPaymentHistory.route) }
-            )
+            ResidentRulesGate(onOpenRules = { navController.navigate(AppRoute.ResidentRules.route) }) {
+                ResidentPaymentScreen(
+                    billId = billId,
+                    onBack = { navController.popBackStack() },
+                    onViewPaymentHistory = { navController.navigate(AppRoute.ResidentPaymentHistory.route) }
+                )
+            }
         }
 
         composable(AppRoute.ResidentMembers.route) {
-            ResidentMembersScreen(onBack = { navController.popBackStack() })
+            ResidentRulesGate(onOpenRules = { navController.navigate(AppRoute.ResidentRules.route) }) {
+                ResidentMembersScreen(onBack = { navController.popBackStack() })
+            }
         }
 
         composable(AppRoute.ResidentMaintenance.route) {
-            ResidentMaintenanceScreen(
-                onBack = { navController.popBackStack() },
-                onPayBill = { billId -> navController.navigate(AppRoute.ResidentPayment.createRoute(billId)) },
-                onPaymentHistory = { navController.navigate(AppRoute.ResidentPaymentHistory.route) },
-                onHome = { navigateResidentTab(AppRoute.ResidentDashboard.route) },
-                onNotices = { navigateResidentTab(AppRoute.ResidentNotices.route) },
-                onProfile = { navigateResidentTab(AppRoute.ResidentProfile.route) }
-            )
+            ResidentRulesGate(onOpenRules = { navController.navigate(AppRoute.ResidentRules.route) }) {
+                ResidentMaintenanceScreen(
+                    onBack = { navController.popBackStack() },
+                    onPayBill = { billId -> navController.navigate(AppRoute.ResidentPayment.createRoute(billId)) },
+                    onPaymentHistory = { navController.navigate(AppRoute.ResidentPaymentHistory.route) },
+                    onHome = { navigateResidentTab(AppRoute.ResidentDashboard.route) },
+                    onNotices = { navigateResidentTab(AppRoute.ResidentNotices.route) },
+                    onProfile = { navigateResidentTab(AppRoute.ResidentProfile.route) }
+                )
+            }
         }
 
         composable(AppRoute.ResidentComplaints.route) {
-            ResidentComplaintsScreen(
-                onBack = { navController.popBackStack() },
-                onHome = { navigateResidentTab(AppRoute.ResidentDashboard.route) },
-                onNotices = { navigateResidentTab(AppRoute.ResidentNotices.route) },
-                onPayments = { navigateResidentTab(AppRoute.ResidentMaintenance.route) },
-                onReports = { navigateResidentTab(AppRoute.ResidentReports.route) },
-                onProfile = { navigateResidentTab(AppRoute.ResidentProfile.route) }
-            )
+            ResidentRulesGate(onOpenRules = { navController.navigate(AppRoute.ResidentRules.route) }) {
+                ResidentComplaintsScreen(
+                    onBack = { navController.popBackStack() },
+                    onHome = { navigateResidentTab(AppRoute.ResidentDashboard.route) },
+                    onNotices = { navigateResidentTab(AppRoute.ResidentNotices.route) },
+                    onPayments = { navigateResidentTab(AppRoute.ResidentMaintenance.route) },
+                    onReports = { navigateResidentTab(AppRoute.ResidentReports.route) },
+                    onProfile = { navigateResidentTab(AppRoute.ResidentProfile.route) }
+                )
+            }
         }
 
         composable(AppRoute.ResidentNotices.route) {
-            NoticesScreen(onBack = { navController.popBackStack() }, admin = false)
+            ResidentRulesGate(onOpenRules = { navController.navigate(AppRoute.ResidentRules.route) }) {
+                NoticesScreen(onBack = { navController.popBackStack() }, admin = false)
+            }
         }
 
         composable(AppRoute.ResidentRules.route) {
@@ -388,23 +423,31 @@ fun SocietyNavGraph(
         }
 
         composable(AppRoute.ResidentMeetings.route) {
-            ResidentMeetingsScreen(onBack = { navController.popBackStack() })
+            ResidentRulesGate(onOpenRules = { navController.navigate(AppRoute.ResidentRules.route) }) {
+                ResidentMeetingsScreen(onBack = { navController.popBackStack() })
+            }
         }
 
         composable(AppRoute.ResidentEvents.route) {
-            ResidentEventsScreen(onBack = { navController.popBackStack() })
+            ResidentRulesGate(onOpenRules = { navController.navigate(AppRoute.ResidentRules.route) }) {
+                ResidentEventsScreen(onBack = { navController.popBackStack() })
+            }
         }
 
         composable(AppRoute.ResidentProfile.route) {
-            ResidentProfileScreen(
-                onBack = { navController.popBackStack() },
-                onChangePassword = { navController.navigate(AppRoute.ChangePassword.route) },
-                onLogoutComplete = ::navigateToLogin
-            )
+            ResidentRulesGate(onOpenRules = { navController.navigate(AppRoute.ResidentRules.route) }) {
+                ResidentProfileScreen(
+                    onBack = { navController.popBackStack() },
+                    onChangePassword = { navController.navigate(AppRoute.ChangePassword.route) },
+                    onLogoutComplete = ::navigateToLogin
+                )
+            }
         }
 
         composable(AppRoute.ResidentAdvanced.route) {
-            ResidentAdvancedFeaturesScreen(onBack = { navController.popBackStack() })
+            ResidentRulesGate(onOpenRules = { navController.navigate(AppRoute.ResidentRules.route) }) {
+                ResidentAdvancedFeaturesScreen(onBack = { navController.popBackStack() })
+            }
         }
 
         composable(AppRoute.ChangePassword.route) {

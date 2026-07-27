@@ -29,9 +29,12 @@ class MeetingsRepository @Inject constructor(private val api: MeetingsApiService
     suspend fun create(request: MeetingSaveRequest) = message { api.createMeeting(request) }
     suspend fun update(id: String, request: MeetingSaveRequest) = message { api.updateMeeting(id, request) }
     suspend fun delete(id: String) = message { api.deleteMeeting(id) }
+    suspend fun duplicate(id: String) = message { api.duplicateMeeting(id) }
     suspend fun agenda(id: String, request: MeetingAgendaSaveRequest) = message { api.saveAgenda(id, request) }
     suspend fun attendance(id: String) = safe { api.getAttendance(id) }
     suspend fun saveAttendance(id: String, request: MeetingAttendanceSaveRequest) = message { api.saveAttendance(id, request) }
+    suspend fun markAllPresent(id: String) = message { api.markAllPresent(id) }
+    suspend fun selfAttendance(id: String) = message { api.selfAttendance(id) }
     suspend fun report(id: String, request: MeetingReportSaveRequest) = message { api.saveReport(id, request) }
     suspend fun action(request: MeetingActionSaveRequest) = message { api.createAction(request) }
     suspend fun updateAction(id: String, request: MeetingActionSaveRequest) = message { api.updateAction(id, request) }
@@ -39,6 +42,11 @@ class MeetingsRepository @Inject constructor(private val api: MeetingsApiService
     suspend fun deleteAction(id: String) = message { api.deleteAction(id) }
     suspend fun vote(request: MeetingVoteSaveRequest) = message { api.createVote(request) }
     suspend fun castVote(id: String, choice: String) = message { api.castVote(id, MeetingVoteCastRequest(choice)) }
+    suspend fun fines(): NetworkResult<List<MeetingFineDto>> = safe { api.getFines() }
+    suspend fun payFine(id: String) = message { api.payFine(id) }
+    suspend fun waiveFine(id: String, reason: String) = message { api.waiveFine(id, MeetingFineWaiveRequest(reason)) }
+    suspend fun comments(id: String): NetworkResult<List<MeetingCommentDto>> = safe { api.getComments(id) }
+    suspend fun addComment(id: String, text: String) = message { api.addComment(id, MeetingCommentSaveRequest(text)) }
     fun clearCache() { cache = null; detailsCache.clear() }
     fun userMessageFor(error: AppError): String = when (error) {
         AppError.NoInternet -> "No internet connection. Cached meetings may be available."

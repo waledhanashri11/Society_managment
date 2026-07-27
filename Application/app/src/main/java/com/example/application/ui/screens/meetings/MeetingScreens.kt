@@ -55,6 +55,8 @@ fun AdminMeetingsScreen(onBack: () -> Unit, viewModel: MeetingsViewModel = hiltV
     var attendance by remember { mutableStateOf(false) }
     var report by remember { mutableStateOf(false) }
     var poll by remember { mutableStateOf(false) }
+    var fines by remember { mutableStateOf(false) }
+    var comments by remember { mutableStateOf(false) }
     MeetingScaffold("Meetings", onBack, { viewModel.load(true) }) {
         MeetingFilters(state.query, state.filter, viewModel::setQuery, viewModel::setFilter)
         if (state.error != null && state.meetings.isEmpty()) RetryState(state.error ?: "Unable to load meetings", { viewModel.load(true) })
@@ -66,9 +68,12 @@ fun AdminMeetingsScreen(onBack: () -> Unit, viewModel: MeetingsViewModel = hiltV
                     onDetails = { selected = meeting; viewModel.open(meeting.id ?: "") },
                     onEdit = { selected = meeting; editor = true },
                     onDelete = { meeting.id?.let(viewModel::deleteMeeting) },
+                    onDuplicate = { meeting.id?.let(viewModel::duplicateMeeting) },
                     onAttendance = { meeting.id?.let { viewModel.loadAttendance(it); selected = meeting; attendance = true } },
                     onReport = { selected = meeting; report = true; viewModel.open(meeting.id ?: "") },
-                    onPoll = { selected = meeting; poll = true; viewModel.open(meeting.id ?: "") })
+                    onPoll = { selected = meeting; poll = true; viewModel.open(meeting.id ?: "") },
+                    onFines = { selected = meeting; viewModel.loadFines(); fines = true },
+                    onComments = { meeting.id?.let { selected = meeting; viewModel.loadComments(it); comments = true } })
             }
         }
     }
@@ -87,11 +92,14 @@ fun AdminMeetingsScreen(onBack: () -> Unit, viewModel: MeetingsViewModel = hiltV
             onCreatePoll = { poll = true },
             onSaveAction = { id, request -> if (id == null) viewModel.createAction(request) else viewModel.updateAction(id, request) },
             onDeleteAction = viewModel::deleteAction,
-            onUpdateActionStatus = viewModel::updateActionStatus
+            onUpdateActionStatus = viewModel::updateActionStatus,
+            onOpenComments = { meeting.id?.let { viewModel.loadComments(it); comments = true } }
         )
-        if (attendance) AttendanceDialog(state.attendance, state.submitting, { attendance = false }) { viewModel.saveAttendance(meeting.id ?: "", it) }
+        if (attendance) AttendanceDialog(state.attendance, state.submitting, { attendance = false }, onMarkAllPresent = { viewModel.markAllPresent(meeting.id ?: "") }) { viewModel.saveAttendance(meeting.id ?: "", it) }
         if (report) ReportDialog(state.selected?.report, state.submitting, { report = false }) { summary, discussion, decisions, remarks -> viewModel.saveReport(meeting.id ?: "", summary, discussion, decisions, remarks); report = false }
         if (poll) PollDialog(state.selected?.vote, state.submitting, { poll = false }) { question -> viewModel.createVote(meeting.id ?: "", question); poll = false }
+        if (fines) MeetingFinesDialog(state.fines.filter { it.meetingId == meeting.id || meeting.id.isNullOrBlank() }, state.submitting, admin = true, onDismiss = { fines = false }, onPay = viewModel::payFine, onWaive = viewModel::waiveFine)
+        if (comments) MeetingCommentsDialog(state.comments, state.submitting, { comments = false }) { text -> viewModel.addComment(meeting.id ?: "", text); viewModel.loadComments(meeting.id ?: "") }
     }
 }
 
@@ -99,6 +107,7 @@ fun AdminMeetingsScreen(onBack: () -> Unit, viewModel: MeetingsViewModel = hiltV
 fun ResidentMeetingsScreen(onBack: () -> Unit, viewModel: MeetingsViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var selectedId by remember { mutableStateOf<String?>(null) }
+    var comments by remember { mutableStateOf(false) }
     val detail = state.selected
     MeetingScaffold("Meetings", onBack, { viewModel.load(true) }) {
         MeetingFilters(state.query, state.filter, viewModel::setQuery, viewModel::setFilter)
@@ -106,7 +115,7 @@ fun ResidentMeetingsScreen(onBack: () -> Unit, viewModel: MeetingsViewModel = hi
         else if (state.meetings.isEmpty() && !state.loading) EmptyState("No meetings", "Upcoming society meetings will appear here.")
         else LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
             items(filteredMeetings(state.meetings, state.query, state.filter), key = { it.id ?: it.title.orEmpty() }) { meeting ->
-                MeetingCard(meeting, false, onDetails = { selectedId = meeting.id; meeting.id?.let(viewModel::open) }, onEdit = {}, onDelete = {}, onAttendance = {}, onReport = {}, onPoll = {})
+                MeetingCard(meeting, false, onDetails = { selectedId = meeting.id; meeting.id?.let(viewModel::open) }, onEdit = {}, onDelete = {}, onDuplicate = {}, onAttendance = {}, onReport = {}, onPoll = {}, onFines = {}, onComments = { meeting.id?.let { selectedId = it; viewModel.loadComments(it); comments = true } })
             }
         }
     }
@@ -120,8 +129,10 @@ fun ResidentMeetingsScreen(onBack: () -> Unit, viewModel: MeetingsViewModel = hi
         onCreatePoll = {},
         onSaveAction = { _, _ -> },
         onDeleteAction = {},
-        onUpdateActionStatus = viewModel::updateActionStatus
+        onUpdateActionStatus = viewModel::updateActionStatus,
+        onOpenComments = { selectedId?.let { viewModel.loadComments(it); comments = true } }
     )
+    if (selectedId != null && comments) MeetingCommentsDialog(state.comments, state.submitting, { comments = false }) { text -> viewModel.addComment(selectedId!!, text); viewModel.loadComments(selectedId!!) }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -152,15 +163,15 @@ private fun filteredMeetings(items: List<MeetingDto>, query: String, filter: Str
 }
 
 @Composable
-private fun MeetingCard(meeting: MeetingDto, admin: Boolean, onDetails: () -> Unit, onEdit: () -> Unit, onDelete: () -> Unit, onAttendance: () -> Unit, onReport: () -> Unit, onPoll: () -> Unit) {
+private fun MeetingCard(meeting: MeetingDto, admin: Boolean, onDetails: () -> Unit, onEdit: () -> Unit, onDelete: () -> Unit, onDuplicate: () -> Unit, onAttendance: () -> Unit, onReport: () -> Unit, onPoll: () -> Unit, onFines: () -> Unit, onComments: () -> Unit) {
     Card(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(meeting.title ?: "Meeting", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium); StatusChip(meeting.status ?: "Scheduled") }
             Text(meeting.meetingType ?: "Meeting", color = MaterialTheme.colorScheme.primary)
             KeyValue("Date", meeting.meetingDate?.take(10) ?: "-"); KeyValue("Time", "${meeting.startTime ?: "-"} - ${meeting.endTime ?: "-"}"); KeyValue("Venue", meeting.venue ?: "-")
             if (meeting.totalCount != null) KeyValue("Attendance", "${meeting.presentCount ?: 0}/${meeting.totalCount}")
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) { OutlinedButton(onClick = onDetails) { Icon(Icons.Filled.Visibility, null); Spacer(Modifier.width(4.dp)); Text("Details") }; if (admin) { TextButton(onClick = onEdit) { Icon(Icons.Filled.Edit, null); Text("Edit") }; TextButton(onClick = onDelete) { Icon(Icons.Filled.Delete, null); Text("Delete") } } }
-            if (admin) Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) { TextButton(onClick = onAttendance) { Icon(Icons.Filled.CheckCircle, null); Text("Attendance") }; TextButton(onClick = onReport) { Text("Minutes") }; TextButton(onClick = onPoll) { Icon(Icons.Filled.HowToVote, null); Text("Poll") } }
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) { OutlinedButton(onClick = onDetails) { Icon(Icons.Filled.Visibility, null); Spacer(Modifier.width(4.dp)); Text("Details") }; TextButton(onClick = onComments) { Text("Comments") }; if (admin) { TextButton(onClick = onEdit) { Icon(Icons.Filled.Edit, null); Text("Edit") }; TextButton(onClick = onDelete) { Icon(Icons.Filled.Delete, null); Text("Delete") } } }
+            if (admin) Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) { TextButton(onClick = onAttendance) { Icon(Icons.Filled.CheckCircle, null); Text("Attendance") }; TextButton(onClick = onReport) { Text("Minutes") }; TextButton(onClick = onPoll) { Icon(Icons.Filled.HowToVote, null); Text("Poll") }; TextButton(onClick = onFines) { Text("Fines") }; TextButton(onClick = onDuplicate) { Text("Duplicate") } }
         }
     }
 }
@@ -178,7 +189,8 @@ private fun MeetingDetailsDialog(
     onCreatePoll: () -> Unit,
     onSaveAction: (String?, MeetingActionSaveRequest) -> Unit,
     onDeleteAction: (String) -> Unit,
-    onUpdateActionStatus: (String, String, String?) -> Unit
+    onUpdateActionStatus: (String, String, String?) -> Unit,
+    onOpenComments: () -> Unit
 ) {
     val context = LocalContext.current
     var createAction by remember(detail.id) { mutableStateOf(false) }
@@ -188,7 +200,9 @@ private fun MeetingDetailsDialog(
     AlertDialog(onDismissRequest = onDismiss, title = { Text(detail.title ?: "Meeting") }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(9.dp)) {
             KeyValue("Type", detail.meetingType ?: "-"); KeyValue("Date", detail.meetingDate?.take(10) ?: "-"); KeyValue("Time", "${detail.startTime ?: "-"} - ${detail.endTime ?: "-"}"); KeyValue("Venue", detail.venue ?: "-"); KeyValue("Priority", detail.priority ?: "Normal"); KeyValue("Status", detail.status ?: "-")
+            if (detail.isCompulsory == true) KeyValue("Compulsory fine", "₹${detail.fineAmount ?: 0.0} due in ${detail.fineDueDays ?: 7} days")
             Text(detail.description ?: "No description provided.")
+            OutlinedButton(onClick = onOpenComments, modifier = Modifier.fillMaxWidth()) { Text("Open Comments / Q&A") }
             Text("Agenda", fontWeight = FontWeight.Bold); detail.agendas.orEmpty().forEachIndexed { index, item -> Text("${index + 1}. ${item.itemText ?: ""}") }
             detail.report?.let { report ->
                 Text("Minutes", fontWeight = FontWeight.Bold); Text(report.summary ?: "No summary"); Text(report.discussion ?: ""); Text(report.decisionsTaken ?: "")
@@ -226,7 +240,11 @@ private fun MeetingDetailsDialog(
                 Text("Documents & Attachments", fontWeight = FontWeight.Bold)
                 detail.documents.orEmpty().forEach { doc -> OutlinedButton(onClick = { openMeetingDocument(context, doc) }, modifier = Modifier.fillMaxWidth()) { Text(doc.fileName ?: doc.fileUrl ?: doc.filePath ?: "Open attachment") } }
             }
-            if (!admin) { detail.myAttendance?.let { Text("Your attendance: $it", color = MaterialTheme.colorScheme.primary) }; detail.vote?.let { vote -> Text("Poll: ${vote.question}", fontWeight = FontWeight.Bold); if (vote.hasVoted == true) Text("You voted ${vote.myChoice}") else Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { listOf("YES", "NO", "ABSTAIN").forEach { TextButton(onClick = { onVote(it) }) { Text(it) } } } } }
+            if (!admin) {
+                detail.myAttendance?.let { Text("Your attendance: $it", color = MaterialTheme.colorScheme.primary) }
+                detail.myFine?.let { fine -> MeetingFineCard(fine, admin = false, submitting = submitting, onPay = {}, onWaive = { _, _ -> }) }
+                detail.vote?.let { vote -> Text("Poll: ${vote.question}", fontWeight = FontWeight.Bold); if (vote.hasVoted == true) Text("You voted ${vote.myChoice}") else Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { listOf("YES", "NO", "ABSTAIN").forEach { TextButton(onClick = { onVote(it) }) { Text(it) } } } }
+            }
         }
     }, confirmButton = { if (!admin && detail.myAttendance == null) Button(onClick = onAttend) { Text("Mark attendance") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } })
     if (createAction || editAction != null) ActionEditorDialog(detail.id.orEmpty(), editAction, submitting, { createAction = false; editAction = null }) { actionId, request -> onSaveAction(actionId, request); createAction = false; editAction = null }
@@ -277,6 +295,9 @@ private fun MeetingEditorDialog(existing: MeetingDto?, submitting: Boolean, onDi
     var description by remember { mutableStateOf(existing?.description.orEmpty()) }
     var priority by remember { mutableStateOf(existing?.priority ?: "Normal") }
     var notifyResidents by remember { mutableStateOf(false) }
+    var compulsory by remember { mutableStateOf(false) }
+    var fineAmount by remember { mutableStateOf("0") }
+    var fineDueDays by remember { mutableStateOf("7") }
     var attachments by remember { mutableStateOf<List<MeetingDocumentUploadDto>>(emptyList()) }
     val context = LocalContext.current
     val documentPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
@@ -299,9 +320,14 @@ private fun MeetingEditorDialog(existing: MeetingDto?, submitting: Boolean, onDi
                 BasicAppTextField(description, { description = it }, "Description")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     FilterChip(selected = notifyResidents, onClick = { notifyResidents = !notifyResidents }, label = { Text("Notify residents") })
+                    FilterChip(selected = compulsory, onClick = { compulsory = !compulsory }, label = { Text("Compulsory") })
                     OutlinedButton(onClick = { documentPicker.launch(arrayOf("application/pdf", "image/*", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")) }) {
                         Text("Attach files")
                     }
+                }
+                if (compulsory) {
+                    BasicAppTextField(fineAmount, { fineAmount = it }, "Absence fine amount")
+                    BasicAppTextField(fineDueDays, { fineDueDays = it }, "Fine due days")
                 }
                 attachments.forEach { doc ->
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -315,7 +341,7 @@ private fun MeetingEditorDialog(existing: MeetingDto?, submitting: Boolean, onDi
         confirmButton = {
             Button(
                 enabled = !submitting && title.isNotBlank() && date.isNotBlank() && start.isNotBlank() && end.isNotBlank() && venue.isNotBlank(),
-                onClick = { onSave(MeetingSaveRequest(title, type, date, start, end, venue, description.ifBlank { null }, priority, notifyResidents, attachments)) }
+                onClick = { onSave(MeetingSaveRequest(title, type, date, start, end, venue, description.ifBlank { null }, priority, notifyResidents, compulsory, fineAmount.toDoubleOrNull() ?: 0.0, fineDueDays.toIntOrNull() ?: 7, attachments)) }
             ) { Text(if (submitting) "Saving…" else "Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
@@ -360,12 +386,18 @@ private fun ActionEditorDialog(meetingId: String, existing: MeetingActionDto?, s
     )
 }
 
-@Composable private fun AttendanceDialog(rows: List<MeetingAttendanceDto>, submitting: Boolean, onDismiss: () -> Unit, onSave: (List<MeetingAttendanceDto>) -> Unit) { var values by remember(rows) { mutableStateOf(rows) }; AlertDialog(onDismissRequest = onDismiss, title = { Text("Attendance") }, text = { Column(Modifier.heightIn(max = 450.dp).verticalScroll(rememberScrollState())) { values.forEachIndexed { index, row -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Column { Text(row.residentName ?: "Resident", fontWeight = FontWeight.Bold); Text("Flat ${row.flatNo ?: "-"}") }; TextButton(onClick = { values = values.toMutableList().also { it[index] = row.copy(status = nextStatus(row.status)) } }) { Text(row.status ?: "Absent") } } } } }, confirmButton = { Button(enabled = !submitting, onClick = { onSave(values); onDismiss() }) { Text("Save") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } }) }
+@Composable private fun AttendanceDialog(rows: List<MeetingAttendanceDto>, submitting: Boolean, onDismiss: () -> Unit, onMarkAllPresent: () -> Unit, onSave: (List<MeetingAttendanceDto>) -> Unit) { var values by remember(rows) { mutableStateOf(rows) }; AlertDialog(onDismissRequest = onDismiss, title = { Text("Attendance") }, text = { Column(Modifier.heightIn(max = 450.dp).verticalScroll(rememberScrollState())) { OutlinedButton(onClick = { values = values.map { it.copy(status = "Present") }; onMarkAllPresent() }, enabled = !submitting, modifier = Modifier.fillMaxWidth()) { Text("Mark all present") }; Spacer(Modifier.height(8.dp)); values.forEachIndexed { index, row -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Column { Text(row.residentName ?: "Resident", fontWeight = FontWeight.Bold); Text("Flat ${row.flatNo ?: "-"}") }; TextButton(onClick = { values = values.toMutableList().also { it[index] = row.copy(status = nextStatus(row.status)) } }) { Text(row.status ?: "Absent") } } } } }, confirmButton = { Button(enabled = !submitting, onClick = { onSave(values); onDismiss() }) { Text("Save") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } }) }
 private fun nextStatus(status: String?): String = when (status) { "Absent" -> "Present"; "Present" -> "Late"; "Late" -> "Excused"; else -> "Absent" }
 
 @Composable private fun ReportDialog(existing: MeetingReportDto?, submitting: Boolean, onDismiss: () -> Unit, onSave: (String, String, String, String) -> Unit) { var summary by remember { mutableStateOf(existing?.summary.orEmpty()) }; var discussion by remember { mutableStateOf(existing?.discussion.orEmpty()) }; var decisions by remember { mutableStateOf(existing?.decisionsTaken.orEmpty()) }; var remarks by remember { mutableStateOf(existing?.remarks.orEmpty()) }; AlertDialog(onDismissRequest = onDismiss, title = { Text("Minutes of Meeting") }, text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) { BasicAppTextField(summary, { summary = it }, "Summary"); BasicAppTextField(discussion, { discussion = it }, "Discussion"); BasicAppTextField(decisions, { decisions = it }, "Key decisions"); BasicAppTextField(remarks, { remarks = it }, "Remarks") } }, confirmButton = { Button(enabled = !submitting, onClick = { onSave(summary, discussion, decisions, remarks) }) { Text("Save minutes") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }) }
 
 @Composable private fun PollDialog(existing: MeetingVoteDto?, submitting: Boolean, onDismiss: () -> Unit, onSave: (String) -> Unit) { var question by remember { mutableStateOf(existing?.question.orEmpty()) }; AlertDialog(onDismissRequest = onDismiss, title = { Text("Meeting poll") }, text = { BasicAppTextField(question, { question = it }, "Question") }, confirmButton = { Button(enabled = question.isNotBlank() && !submitting, onClick = { onSave(question) }) { Text("Save poll") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }) }
+
+@Composable private fun MeetingFinesDialog(fines: List<MeetingFineDto>, submitting: Boolean, admin: Boolean, onDismiss: () -> Unit, onPay: (String) -> Unit, onWaive: (String, String) -> Unit) { AlertDialog(onDismissRequest = onDismiss, title = { Text("Meeting Fines") }, text = { Column(Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) { if (fines.isEmpty()) Text("No fines found for this meeting."); fines.forEach { fine -> MeetingFineCard(fine, admin, submitting, onPay, onWaive) } } }, confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }) }
+
+@Composable private fun MeetingFineCard(fine: MeetingFineDto, admin: Boolean, submitting: Boolean, onPay: (String) -> Unit, onWaive: (String, String) -> Unit) { var reason by remember(fine.id) { mutableStateOf("") }; Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) { Text(fine.residentName ?: "Resident", fontWeight = FontWeight.Bold); Text("Flat ${fine.flatNo ?: "-"} • ₹${fine.amount ?: 0.0} • ${fine.status ?: "Pending"}"); Text(fine.reason ?: "Absence fine"); fine.dueDate?.let { Text("Due: ${it.take(10)}") }; if (admin && fine.status.equals("Pending", true)) { BasicAppTextField(reason, { reason = it }, "Waive reason"); Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { TextButton(enabled = !submitting, onClick = { fine.id?.let(onPay) }) { Text("Mark Paid") }; TextButton(enabled = !submitting, onClick = { fine.id?.let { onWaive(it, reason.ifBlank { "Waived by society committee" }) } }) { Text("Waive") } } } } } }
+
+@Composable private fun MeetingCommentsDialog(comments: List<MeetingCommentDto>, submitting: Boolean, onDismiss: () -> Unit, onSend: (String) -> Unit) { var text by remember { mutableStateOf("") }; AlertDialog(onDismissRequest = onDismiss, title = { Text("Comments / Q&A") }, text = { Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) { if (comments.isEmpty()) Text("No comments yet."); comments.forEach { comment -> Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(10.dp)) { Text(comment.userName ?: "User", fontWeight = FontWeight.Bold); Text(comment.commentText ?: "-"); comment.createdAt?.let { Text(it.take(16), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } } } }; BasicAppTextField(text, { text = it }, "Write a comment") } }, confirmButton = { Button(enabled = !submitting && text.isNotBlank(), onClick = { onSend(text.trim()); text = "" }) { Text("Send") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } }) }
 
 private fun openMinutesPdf(context: Context, detail: MeetingDetailsDto) {
     val file = createMinutesPdf(context, detail) ?: return

@@ -70,6 +70,37 @@ import com.example.application.viewmodel.AdminSocietyRulesViewModel
 import com.example.application.viewmodel.ResidentSocietyRulesViewModel
 import com.example.application.viewmodel.SocietyRulesState
 
+@Composable
+fun ResidentRulesGate(
+    onOpenRules: () -> Unit,
+    viewModel: ResidentSocietyRulesViewModel = hiltViewModel(),
+    content: @Composable () -> Unit
+) {
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    content()
+    if (state.needsAcceptance) {
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text("Society rules acceptance required") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Please accept the current society rules before using the resident portal.")
+                    state.rulesVersion?.let { Text("Current rules version: $it", fontWeight = FontWeight.SemiBold) }
+                    state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                }
+            },
+            confirmButton = {
+                Button(onClick = viewModel::acceptCurrentRules, enabled = !state.submitting) {
+                    Text(if (state.submitting) "Accepting..." else "Accept and Continue")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = onOpenRules) { Text("View Rules") }
+            }
+        )
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun AdminSocietyRulesScreen(
@@ -190,6 +221,15 @@ fun ResidentSocietyRulesScreen(
         onRetry = { viewModel.load(true) }
     ) {
         item {
+            if (state.needsAcceptance) {
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer), modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Rules acceptance pending", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                        Text("Accept the current rules version to unlock the resident portal.", color = MaterialTheme.colorScheme.onPrimaryContainer)
+                        Button(onClick = viewModel::acceptCurrentRules, enabled = !state.submitting) { Text(if (state.submitting) "Accepting..." else "Accept Current Rules") }
+                    }
+                }
+            }
             RuleFilters(
                 state = state,
                 admin = false,

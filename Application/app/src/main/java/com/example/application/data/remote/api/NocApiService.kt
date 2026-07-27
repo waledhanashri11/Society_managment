@@ -4,6 +4,7 @@ import com.example.application.data.remote.dto.ApiResponse
 import com.example.application.data.remote.dto.CreateNocRequest
 import com.example.application.data.remote.dto.NocRequestDto
 import com.example.application.data.remote.dto.NocTypeDto
+import com.example.application.data.remote.dto.PublicNocCertificateDto
 import com.example.application.data.remote.dto.ReviewNocRequest
 import com.example.application.data.remote.dto.UploadNocInfoRequest
 import retrofit2.Response
@@ -52,6 +53,9 @@ interface NocApiService {
 
     @GET("api/noc/types")
     suspend fun getTypes(): Response<List<NocTypeDto>>
+
+    @GET("api/noc/public/{token}")
+    suspend fun getPublicCertificate(@Path("token") token: String): Response<PublicNocCertificateDto>
 
     @POST("api/noc/types")
     suspend fun createType(@Body request: Map<String, String>): Response<ApiResponse<Map<String, String>>>

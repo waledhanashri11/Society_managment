@@ -42,3 +42,22 @@ data class NocTypeDto(
     val description: String?,
     val active: Boolean?
 )
+
+data class PublicNocCertificateDto(
+    val society: PublicNocSocietyDto?,
+    val certificate: PublicNocCertificateDetailsDto?
+)
+
+data class PublicNocSocietyDto(val name: String?)
+
+data class PublicNocCertificateDetailsDto(
+    @SerializedName("request_number") val requestNumber: String?,
+    @SerializedName("noc_type") val nocType: String?,
+    val purpose: String?,
+    @SerializedName("issue_date") val issueDate: String?,
+    @SerializedName("expiry_date") val expiryDate: String?,
+    @SerializedName("verification_number") val verificationNumber: String?,
+    @SerializedName("resident_name") val residentName: String?,
+    @SerializedName("flat_no") val flatNo: String?,
+    val wing: String?
+)

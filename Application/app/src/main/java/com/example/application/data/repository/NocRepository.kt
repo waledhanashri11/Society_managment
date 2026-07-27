@@ -5,6 +5,7 @@ import com.example.application.data.remote.dto.ApiResponse
 import com.example.application.data.remote.dto.CreateNocRequest
 import com.example.application.data.remote.dto.ErrorResponse
 import com.example.application.data.remote.dto.NocRequestDto
+import com.example.application.data.remote.dto.PublicNocCertificateDto
 import com.example.application.data.remote.dto.ReviewNocRequest
 import com.example.application.data.remote.dto.UploadNocInfoRequest
 import com.example.application.util.AppError
@@ -95,6 +96,26 @@ class NocRepository @Inject constructor(
             NetworkResult.Error(AppError.NoInternet)
         } catch (_: Exception) {
             NetworkResult.Error(AppError.Unknown("Unable to generate share link."))
+        }
+    }
+
+    suspend fun getPublicCertificate(token: String): NetworkResult<PublicNocCertificateDto> {
+        return try {
+            val response = api.getPublicCertificate(token)
+            if (response.isSuccessful) {
+                response.body()?.let { NetworkResult.Success(it) }
+                    ?: NetworkResult.Error(AppError.Unknown("Certificate details are empty."))
+            } else {
+                NetworkResult.Error(mapHttpError(response.code(), parseErrorMessage(response.errorBody()?.string())))
+            }
+        } catch (_: UnknownHostException) {
+            NetworkResult.Error(AppError.NoInternet)
+        } catch (_: SocketTimeoutException) {
+            NetworkResult.Error(AppError.Timeout)
+        } catch (_: IOException) {
+            NetworkResult.Error(AppError.NoInternet)
+        } catch (_: Exception) {
+            NetworkResult.Error(AppError.Unknown("Unable to load the public NOC certificate."))
         }
     }
 

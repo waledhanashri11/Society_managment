@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.application.data.remote.dto.CreateNocRequest
 import com.example.application.data.remote.dto.NocRequestDto
+import com.example.application.data.remote.dto.PublicNocCertificateDto
 import com.example.application.data.repository.NocRepository
 import com.example.application.util.NetworkResult
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -24,6 +25,39 @@ data class NocUiState(
     val submitting: Boolean = false,
     val certificateUri: String? = null
 )
+
+data class PublicNocUiState(
+    val loading: Boolean = false,
+    val token: String = "",
+    val certificate: PublicNocCertificateDto? = null,
+    val error: String? = null
+)
+
+@HiltViewModel
+class PublicNocViewModel @Inject constructor(
+    private val repository: NocRepository
+) : ViewModel() {
+    private val _state = MutableStateFlow(PublicNocUiState())
+    val state: StateFlow<PublicNocUiState> = _state.asStateFlow()
+
+    fun setToken(value: String) = _state.update { it.copy(token = value, error = null) }
+
+    fun load(token: String = _state.value.token) {
+        val clean = token.substringAfterLast("/").trim()
+        if (clean.isBlank()) {
+            _state.update { it.copy(error = "Enter a NOC share token or link.") }
+            return
+        }
+        viewModelScope.launch {
+            _state.update { it.copy(loading = true, token = clean, error = null, certificate = null) }
+            when (val result = repository.getPublicCertificate(clean)) {
+                is NetworkResult.Success -> _state.update { it.copy(loading = false, certificate = result.data) }
+                is NetworkResult.Error -> _state.update { it.copy(loading = false, error = repository.userMessageFor(result.error)) }
+                NetworkResult.Loading -> Unit
+            }
+        }
+    }
+}
 
 @HiltViewModel
 class ResidentNocViewModel @Inject constructor(

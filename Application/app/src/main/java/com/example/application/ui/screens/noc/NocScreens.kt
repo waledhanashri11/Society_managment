@@ -64,11 +64,73 @@ import com.example.application.ui.components.EmptyState
 import com.example.application.ui.components.KeyValue
 import com.example.application.ui.components.RetryState
 import com.example.application.viewmodel.AdminNocViewModel
+import com.example.application.viewmodel.PublicNocViewModel
 import com.example.application.viewmodel.ResidentNocViewModel
 import java.io.ByteArrayOutputStream
 
 private val NocTypes = listOf("Address Proof", "Vehicle NOC", "Tenant NOC", "Sale/Transfer NOC", "Other")
 private val NocStatuses = listOf("All", "Submitted", "Under Review", "Additional Information Required", "Approved", "Completed", "Rejected", "Cancelled")
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun PublicNocCertificateScreen(
+    token: String,
+    onBack: () -> Unit,
+    viewModel: PublicNocViewModel = hiltViewModel()
+) {
+    val state by viewModel.state.collectAsStateWithLifecycle()
+
+    LaunchedEffect(token) {
+        if (token.isNotBlank()) viewModel.load(token)
+    }
+
+    Scaffold(
+        topBar = {
+            AppTopBar(
+                title = "Shared NOC Certificate",
+                subtitle = "Verify public NOC by token",
+                role = AppRoleTheme.Resident,
+                navigationIcon = Icons.Filled.ArrowBack,
+                navigationText = "Back",
+                onNavigationClick = onBack
+            )
+        }
+    ) { padding ->
+        Column(
+            Modifier.fillMaxSize().padding(padding).padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            OutlinedTextField(
+                value = state.token,
+                onValueChange = viewModel::setToken,
+                label = { Text("Share token or /share/noc link") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+            Button(onClick = { viewModel.load() }, enabled = !state.loading, modifier = Modifier.fillMaxWidth()) {
+                Text(if (state.loading) "Loading..." else "View Certificate")
+            }
+            state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            state.certificate?.let { certificate ->
+                val details = certificate.certificate
+                Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp)) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(certificate.society?.name ?: "Society Management System", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        Text("NOC Certificate", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                        KeyValue("Request number", details?.requestNumber ?: "-")
+                        KeyValue("Verification number", details?.verificationNumber ?: "-")
+                        KeyValue("Type", details?.nocType ?: "-")
+                        KeyValue("Purpose", details?.purpose ?: "-")
+                        KeyValue("Resident", details?.residentName ?: "-")
+                        KeyValue("Flat", listOfNotNull(details?.wing, details?.flatNo).joinToString("-").ifBlank { "-" })
+                        KeyValue("Issued", shortDate(details?.issueDate))
+                        KeyValue("Expires", shortDate(details?.expiryDate))
+                    }
+                }
+            }
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
