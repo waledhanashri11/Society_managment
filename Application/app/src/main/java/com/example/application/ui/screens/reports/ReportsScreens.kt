@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -234,7 +235,32 @@ private fun MaintenanceBillDto.operationalReportStatus(): String { val remaining
 
 @Composable private fun MonthlyTrend(report: AdminPeriodReport) { val months = report.months().sortedWith(compareBy<Pair<Int, Int>> { it.first }.thenBy { it.second }); if (months.isEmpty()) return; val values = months.map { report.forMonth(it.first, it.second).net }; val max = values.map { it.abs() }.maxOrNull()?.takeIf { it > BigDecimal.ZERO } ?: BigDecimal.ONE; Column(verticalArrangement = Arrangement.spacedBy(6.dp)) { Text("Monthly net trend", fontWeight = FontWeight.Bold, color = ReportBlue); months.takeLast(12).forEach { month -> val value = report.forMonth(month.first, month.second).net; Row(verticalAlignment = Alignment.CenterVertically) { Text(YearMonth.of(month.first, month.second).format(DateTimeFormatter.ofPattern("MMM")), modifier = Modifier.width(38.dp), style = MaterialTheme.typography.labelSmall); Box(Modifier.height(18.dp).fillMaxWidth(value.abs().divide(max, 3, java.math.RoundingMode.HALF_UP).toFloat().coerceAtLeast(.04f)), contentAlignment = Alignment.CenterStart) { Box(Modifier.fillMaxSize().background(if (value.signum() >= 0) ReportGreen else Color(0xFFE5484D), RoundedCornerShape(4.dp))) }; Spacer(Modifier.width(8.dp)); Text(DashboardFormatters.money(value), style = MaterialTheme.typography.labelSmall) } } } }
 
-@Composable private fun ComparisonCard(current: AdminPeriodReport, previous: AdminPeriodReport) { fun pct(now: BigDecimal, old: BigDecimal) = if (old.signum() == 0) "—" else "${now.subtract(old).divide(old, 2, java.math.RoundingMode.HALF_UP).multiply(BigDecimal(100)).setScale(0)}%"; Text("Year-on-year comparison", fontWeight = FontWeight.Bold, color = ReportBlue); Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("Income ${pct(current.collected, previous.collected)}"); Text("Expenses ${pct(current.expensesTotal, previous.expensesTotal)}"); Text("Net ${pct(current.net, previous.net)}") } }
+@Composable
+private fun ComparisonCard(current: AdminPeriodReport, previous: AdminPeriodReport) {
+    fun percentage(now: BigDecimal, old: BigDecimal): String {
+        if (old.signum() == 0) return "--"
+        val change = now
+            .subtract(old)
+            .divide(old, 2, java.math.RoundingMode.HALF_UP)
+            .multiply(BigDecimal(100))
+            .setScale(0, java.math.RoundingMode.HALF_UP)
+        return "$change%"
+    }
+
+    Text(
+        text = "Year-on-year comparison",
+        fontWeight = FontWeight.Bold,
+        color = ReportBlue
+    )
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text("Income ${percentage(current.collected, previous.collected)}")
+        Text("Expenses ${percentage(current.expensesTotal, previous.expensesTotal)}")
+        Text("Net ${percentage(current.net, previous.net)}")
+    }
+}
 
 @Composable private fun ReportMetric(label: String, value: BigDecimal, color: Color, modifier: Modifier = Modifier) { Column(modifier.background(color.copy(alpha = .08f), RoundedCornerShape(10.dp)).padding(10.dp)) { Text(label, style = MaterialTheme.typography.labelSmall); Text(DashboardFormatters.money(value), color = color, fontWeight = FontWeight.Bold) } }
 
@@ -268,7 +294,8 @@ fun ResidentReportsScreen(
     }
 }
 
-@Composable private fun ResidentSocietyReportContent(data: ResidentReportsData) {
+@Composable
+private fun ResidentSocietyReportContent(data: ResidentReportsData) {
     val summary = data.societySummary
     val income = summary?.totalSocietyCollection.toMoneyDecimal() ?: data.allMaintenance.sumOf { it.paidAmount.toMoneyDecimal() }
     val expenses = summary?.totalSocietyExpenses.toMoneyDecimal() ?: data.expenses.sumOf { it.amount.toMoneyDecimal() }
@@ -277,16 +304,128 @@ fun ResidentReportsScreen(
     val pending = summary?.pendingBillsCount ?: data.allMaintenance.count { it.remainingAmount.toMoneyDecimal() > BigDecimal.ZERO }
     val overdue = summary?.overdueBillsCount ?: 0
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Card(colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FAFF))) { Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { Text("1. Society financial summary", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = ReportBlue); Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { TransparencyMetric("Income", DashboardFormatters.money(income), ReportGreen); TransparencyMetric("Expenses", DashboardFormatters.money(expenses), Color(0xFFE5484D)); TransparencyMetric("Net balance", DashboardFormatters.money(net), ReportBlue) }; Text("${data.allMaintenance.size} maintenance records · ${data.expenses.size} expense records", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
-        SectionCard("2. Collection status") { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) { TransparencyMetric("Paid", paid.toString(), ReportGreen); TransparencyMetric("Pending", pending.toString(), ReportAmber); TransparencyMetric("Overdue", overdue.toString(), Color(0xFFE5484D)); TransparencyMetric("Bills", data.allMaintenance.size.toString(), ReportBlue) } }
-        if (data.allMaintenance.isNotEmpty()) SectionCard("3. Payment status") { data.allMaintenance.take(8).forEach { bill -> Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.SpaceBetween) { Column { Text("Flat ${bill.flatNo ?: "—"}", fontWeight = FontWeight.SemiBold); Text(bill.title ?: "Maintenance", style = MaterialTheme.typography.labelSmall) }; val settled = bill.remainingAmount.toMoneyDecimal() <= BigDecimal.ZERO; Text(if (settled) "Paid" else "Pending", color = if (settled) ReportGreen else ReportAmber, fontWeight = FontWeight.Bold) } } }
-        if (data.expenses.isNotEmpty()) SectionCard("4. Expense summary") { data.expenses.groupBy { it.category.orEmpty().ifBlank { "Other" } }.mapValues { it.value.sumOf { e -> e.amount.toMoneyDecimal() } }.forEach { (category, amount) -> Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), horizontalArrangement = Arrangement.SpaceBetween) { Text(category); Text(DashboardFormatters.money(amount), fontWeight = FontWeight.SemiBold) } }; Text("Total expenses ${DashboardFormatters.money(expenses)}", color = Color(0xFFE5484D), fontWeight = FontWeight.Bold) }
-        if (data.complaints.isNotEmpty()) SectionCard("5. Complaints summary") { Text("Total complaints: ${data.complaints.size}"); Text("Resolved: ${data.complaints.count { it.status.equals("resolved", true) }}", color = ReportGreen); Text("Open / in progress: ${data.complaints.count { !it.status.equals("resolved", true) }}", color = ReportAmber) }
+        ResidentReportSectionCard("1. Society financial summary") {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                TransparencyMetric("Income", DashboardFormatters.money(income), ReportGreen)
+                TransparencyMetric("Expenses", DashboardFormatters.money(expenses), Color(0xFFE5484D))
+                TransparencyMetric("Net balance", DashboardFormatters.money(net), ReportBlue)
+            }
+            Text(
+                "${data.allMaintenance.size} maintenance records · ${data.expenses.size} expense records",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        ResidentReportSectionCard("2. Collection status") {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                TransparencyMetric("Paid", paid.toString(), ReportGreen)
+                TransparencyMetric("Pending", pending.toString(), ReportAmber)
+                TransparencyMetric("Overdue", overdue.toString(), Color(0xFFE5484D))
+                TransparencyMetric("Bills", data.allMaintenance.size.toString(), ReportBlue)
+            }
+        }
+
+        if (data.allMaintenance.isNotEmpty()) {
+            ResidentReportSectionCard("3. Payment status") {
+                data.allMaintenance.take(8).forEach { bill ->
+                    val settled = bill.remainingAmount.toMoneyDecimal() <= BigDecimal.ZERO
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Text("Flat ${bill.flatNo ?: "--"}", fontWeight = FontWeight.SemiBold)
+                            Text(bill.title ?: "Maintenance", style = MaterialTheme.typography.labelSmall)
+                        }
+                        Text(
+                            text = if (settled) "Paid" else "Pending",
+                            color = if (settled) ReportGreen else ReportAmber,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
+
+        if (data.expenses.isNotEmpty()) {
+            val groupedExpenses = data.expenses
+                .groupBy { it.category.orEmpty().ifBlank { "Other" } }
+                .mapValues { entry -> entry.value.sumOf { expense -> expense.amount.toMoneyDecimal() } }
+            ResidentReportSectionCard("4. Expense summary") {
+                groupedExpenses.forEach { (category, amount) ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(category)
+                        Text(DashboardFormatters.money(amount), fontWeight = FontWeight.SemiBold)
+                    }
+                }
+                Text(
+                    "Total expenses ${DashboardFormatters.money(expenses)}",
+                    color = Color(0xFFE5484D),
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+
+        if (data.complaints.isNotEmpty()) {
+            val resolvedCount = data.complaints.count { complaint ->
+                complaint.status.equals("resolved", ignoreCase = true)
+            }
+            ResidentReportSectionCard("5. Complaints summary") {
+                Text("Total complaints: ${data.complaints.size}")
+                Text("Resolved: $resolvedCount", color = ReportGreen)
+                Text("Open / in progress: ${data.complaints.size - resolvedCount}", color = ReportAmber)
+            }
+        }
         Text("Society-wide values come from approved backend report records. Private resident contact details and payment proofs are hidden.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
-@Composable private fun TransparencyMetric(label: String, value: String, color: Color) { Column(Modifier.fillMaxWidth(.24f).background(color.copy(alpha = .08f), RoundedCornerShape(8.dp)).padding(8.dp)) { Text(value, color = color, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium); Text(label, style = MaterialTheme.typography.labelSmall) } }
+@Composable
+private fun ResidentReportSectionCard(
+    title: String,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FAFF))
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = ReportBlue
+            )
+            content()
+        }
+    }
+}
+
+@Composable
+private fun RowScope.TransparencyMetric(label: String, value: String, color: Color) {
+    Column(
+        modifier = Modifier
+            .weight(1f)
+            .background(color.copy(alpha = .08f), RoundedCornerShape(8.dp))
+            .padding(8.dp)
+    ) {
+        Text(value, color = color, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+        Text(label, style = MaterialTheme.typography.labelSmall)
+    }
+}
 
 /* Legacy resident report implementation retained below for shared chart/helper functions. */
 /*
