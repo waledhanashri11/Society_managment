@@ -6,10 +6,24 @@ import {
 } from 'lucide-react';
 import { meetingAPI } from '../services/api';
 import { CardSkeleton, TableSkeleton } from '../components/Skeletons';
+import { useTranslation } from 'react-i18next';
 
 const money = (val) => `₹${Number(val || 0).toLocaleString('en-IN')}`;
 
-const AdminMeetings = () => {
+function AdminMeetings() {
+  const { t } = useTranslation();
+  const translateMeetingType = (type) => {
+    if (type === 'Annual General Meeting (AGM)') return t('meetings.agm');
+    if (type === 'Committee Meeting') return t('meetings.committeeMeeting');
+    if (type === 'Emergency Meeting') return t('meetings.emergencyMeeting');
+    if (type === 'Budget Meeting') return t('meetings.budgetMeeting');
+    return type;
+  };
+  const translateStatus = (status) => {
+    if (status === 'Completed') return t('meetings.statusCompleted', 'Completed');
+    if (status === 'Scheduled') return t('meetings.scheduled', 'Scheduled');
+    return status;
+  };
   const [meetings, setMeetings] = useState([]);
   const [analytics, setAnalytics] = useState(null);
   const [fines, setFines] = useState([]);
@@ -220,11 +234,11 @@ const AdminMeetings = () => {
     <div className="portal-module">
       <div className="portal-page-title">
         <div>
-          <h1>Meetings Management</h1>
-          <p>Schedule society meetings, record attendance, and publish official Minutes of Meeting (MoM).</p>
+          <h1>{t('meetings.title')}</h1>
+          <p>{t('meetings.subtitle')}</p>
         </div>
         <button className="portal-primary-btn" onClick={() => { resetForm(); setShowCreateModal(true); }}>
-          <Plus size={16} /> Schedule Meeting
+          <Plus size={16} /> {t('meetings.scheduleMeeting', 'Schedule Meeting')}
         </button>
       </div>
 
@@ -232,27 +246,27 @@ const AdminMeetings = () => {
       {analytics && (
         <div className="portal-kpis">
           <div className="portal-kpi">
-            <span>Total Meetings</span>
+            <span>{t('meetings.totalMeetings')}</span>
             <strong>{analytics.totalMeetings}</strong>
-            <small>Recorded in system</small>
+            <small>{t('meetings.recordedSystem')}</small>
             <div className="portal-kpi-icon"><CalendarDays size={18} /></div>
           </div>
           <div className="portal-kpi green">
-            <span>Avg Attendance Rate</span>
+            <span>{t('meetings.avgAttendance')}</span>
             <strong>{analytics.attendancePercentage}%</strong>
-            <small>Resident participation</small>
+            <small>{t('meetings.participation')}</small>
             <div className="portal-kpi-icon"><UserCheck size={18} /></div>
           </div>
           <div className="portal-kpi orange">
-            <span>Upcoming Meetings</span>
+            <span>{t('meetings.upcomingMeetings')}</span>
             <strong>{analytics.upcomingMeetings}</strong>
-            <small>Scheduled ahead</small>
+            <small>{t('meetings.scheduledAhead')}</small>
             <div className="portal-kpi-icon"><Clock size={18} /></div>
           </div>
           <div className="portal-kpi red">
-            <span>Absence Fines</span>
+            <span>{t('meetings.absenceFines')}</span>
             <strong>{money(analytics.fines?.pending_fines)}</strong>
-            <small>Compulsory absence fines</small>
+            <small>{t('meetings.compulsoryFines')}</small>
             <div className="portal-kpi-icon"><DollarSign size={18} /></div>
           </div>
         </div>
@@ -264,13 +278,13 @@ const AdminMeetings = () => {
           className={activeTab === 'list' ? 'portal-primary-btn' : 'portal-light-btn'}
           onClick={() => setActiveTab('list')}
         >
-          Meetings Directory
+          {t('meetings.directory')}
         </button>
         <button
           className={activeTab === 'fines' ? 'portal-primary-btn' : 'portal-light-btn'}
           onClick={() => setActiveTab('fines')}
         >
-          Compulsory Absence Fines ({fines.length})
+          {t('meetings.compAbsenceFinesCount', { count: fines.length })}
         </button>
       </div>
 
@@ -279,25 +293,25 @@ const AdminMeetings = () => {
         <section className="portal-panel portal-table-card">
           <div className="portal-panel-head">
             <div>
-              <h2>Society Meetings Directory</h2>
-              <p>Search, filter and manage society & committee meetings.</p>
+              <h2>{t('meetings.panelTitle')}</h2>
+              <p>{t('meetings.panelSubtitle')}</p>
             </div>
           </div>
 
           <div className="portal-form-grid" style={{ gridTemplateColumns: '1fr 220px' }}>
             <label>
-              <span>Search</span>
+              <span>{t('common.search', 'Search')}</span>
               <input
                 type="text"
-                placeholder="Search meetings by title..."
+                placeholder={t('meetings.searchPlaceholder', 'Search meetings by title...')}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
             </label>
             <label>
-              <span>Meeting Type</span>
+              <span>{t('meetings.meetingType', 'Meeting Type')}</span>
               <select value={filterType} onChange={(e) => setFilterType(e.target.value)}>
-                <option value="">All Meeting Types</option>
+                <option value="">{t('meetings.allMeetingTypes', 'All Meeting Types')}</option>
                 <option value="Annual General Meeting (AGM)">AGM</option>
                 <option value="Committee Meeting">Committee Meeting</option>
                 <option value="Emergency Meeting">Emergency Meeting</option>
@@ -313,12 +327,12 @@ const AdminMeetings = () => {
               <table className="portal-data-table">
                 <thead>
                   <tr>
-                    <th>MEETING DETAILS</th>
-                    <th>TYPE</th>
-                    <th>DATE & TIME</th>
-                    <th>VENUE</th>
-                    <th>STATUS</th>
-                    <th style={{ textAlign: 'right' }}>ACTIONS</th>
+                    <th>{t('meetings.meetingDetails')}</th>
+                    <th>{t('meetings.type')}</th>
+                    <th>{t('meetings.dateTime')}</th>
+                    <th>{t('meetings.venue')}</th>
+                    <th>{t('meetings.status')}</th>
+                    <th style={{ textAlign: 'right' }}>{t('meetings.actions')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -329,12 +343,12 @@ const AdminMeetings = () => {
                         {m.is_compulsory && (
                           <div>
                             <small className="portal-status overdue" style={{ fontSize: '9px', padding: '1px 5px' }}>
-                              Compulsory ({money(m.fine_amount)})
+                              {t('meetings.compAbsenceFines')} ({money(m.fine_amount)})
                             </small>
                           </div>
                         )}
                       </td>
-                      <td>{m.meeting_type}</td>
+                      <td>{translateMeetingType(m.meeting_type)}</td>
                       <td>
                         <div>{new Date(m.meeting_date).toLocaleDateString()}</div>
                         <small className="portal-muted-text">{m.start_time} - {m.end_time}</small>
@@ -342,15 +356,15 @@ const AdminMeetings = () => {
                       <td>{m.venue}</td>
                       <td>
                         <span className={`portal-status ${m.status === 'Completed' ? 'resolved' : 'pending'}`}>
-                          {m.status}
+                          {translateStatus(m.status)}
                         </span>
                       </td>
                       <td>
                         <div className="portal-row-actions" style={{ justifyContent: 'flex-end' }}>
-                          <button type="button" className="portal-light-btn" onClick={() => handleOpenDetail(m)}>View</button>
-                          <button type="button" className="portal-light-btn" onClick={() => handleOpenAttendance(m)}>Attendance</button>
-                          <button type="button" className="portal-primary-btn" style={{ padding: '4px 10px', fontSize: '11px' }} onClick={() => handleOpenReportModal(m)}>MoM Report</button>
-                          <button type="button" className="portal-light-btn" style={{ color: '#ef4444' }} onClick={() => handleDelete(m.id)}>Delete</button>
+                          <button type="button" className="portal-light-btn" onClick={() => handleOpenDetail(m)}>{t('common.view', 'View')}</button>
+                          <button type="button" className="portal-light-btn" onClick={() => handleOpenAttendance(m)}>{t('meetings.attendance', 'Attendance')}</button>
+                          <button type="button" className="portal-primary-btn" style={{ padding: '4px 10px', fontSize: '11px' }} onClick={() => handleOpenReportModal(m)}>{t('meetings.momReport', 'MoM Report')}</button>
+                          <button type="button" className="portal-light-btn" style={{ color: '#ef4444' }} onClick={() => handleDelete(m.id)}>{t('common.delete', 'Delete')}</button>
                         </div>
                       </td>
                     </tr>
@@ -358,7 +372,7 @@ const AdminMeetings = () => {
                 </tbody>
               </table>
             )}
-            {!loading && !meetings.length && <div className="portal-empty">No meetings found.</div>}
+            {!loading && !meetings.length && <div className="portal-empty">{t('common.noData', 'No data available')}</div>}
           </div>
         </section>
       )}
@@ -368,8 +382,8 @@ const AdminMeetings = () => {
         <section className="portal-panel portal-table-card">
           <div className="portal-panel-head">
             <div>
-              <h2>Compulsory Absence Fines</h2>
-              <p>Fines recorded for residents absent during mandatory meetings.</p>
+              <h2>{t('meetings.compAbsenceFines')}</h2>
+              <p>{t('meetings.finesRecordedSubtitle')}</p>
             </div>
           </div>
           <div className="portal-table-wrap">
@@ -379,12 +393,12 @@ const AdminMeetings = () => {
               <table className="portal-data-table">
                 <thead>
                   <tr>
-                    <th>RESIDENT & FLAT</th>
-                    <th>MEETING TITLE</th>
-                    <th>FINE AMOUNT</th>
-                    <th>DUE DATE</th>
-                    <th>STATUS</th>
-                    <th style={{ textAlign: 'right' }}>ACTIONS</th>
+                    <th>{t('meetings.residentFlat')}</th>
+                    <th>{t('meetings.meetingTitle')}</th>
+                    <th>{t('meetings.fineAmount')}</th>
+                    <th>{t('common.dueDate', 'Due Date')}</th>
+                    <th>{t('meetings.status')}</th>
+                    <th style={{ textAlign: 'right' }}>{t('meetings.actions')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -392,21 +406,21 @@ const AdminMeetings = () => {
                     <tr key={f.id}>
                       <td>
                         <strong>{f.resident_name}</strong>
-                        <div className="portal-muted-text">Flat {f.flat_no} · Wing {f.wing}</div>
+                        <div className="portal-muted-text">{t('common.flat', 'Flat')} {f.flat_no} · Wing {f.wing}</div>
                       </td>
                       <td>{f.meeting_title}</td>
                       <td><strong style={{ color: '#dc2626' }}>{money(f.amount)}</strong></td>
                       <td>{new Date(f.due_date).toLocaleDateString()}</td>
                       <td>
                         <span className={`portal-status ${f.status === 'Paid' ? 'resolved' : 'overdue'}`}>
-                          {f.status}
+                          {f.status === 'Paid' ? t('common.paid', 'Paid') : (f.status === 'Pending' ? t('common.pending', 'Pending') : t('common.overdue', 'Overdue'))}
                         </span>
                       </td>
                       <td>
                         <div className="portal-row-actions" style={{ justifyContent: 'flex-end' }}>
                           {f.status === 'Pending' && (
                             <button type="button" className="portal-light-btn" onClick={() => handleWaiveFine(f.id)}>
-                              Waive Fine
+                              {t('meetings.waiveFine')}
                             </button>
                           )}
                         </div>
@@ -416,7 +430,7 @@ const AdminMeetings = () => {
                 </tbody>
               </table>
             )}
-            {!loading && !fines.length && <div className="portal-empty">No absence fines recorded.</div>}
+            {!loading && !fines.length && <div className="portal-empty">{t('common.noData', 'No data available')}</div>}
           </div>
         </section>
       )}
@@ -468,10 +482,17 @@ const AdminMeetings = () => {
                 <input type="text" required placeholder="e.g. Society Clubhouse" value={formData.venue} onChange={(e) => setFormData({ ...formData, venue: e.target.value })} />
               </label>
 
-              <label className="portal-field-full" style={{ flexDirection: 'row', alignItems: 'center', gap: '8px' }}>
-                <input type="checkbox" checked={formData.is_compulsory} onChange={(e) => setFormData({ ...formData, is_compulsory: e.target.checked })} style={{ width: 'auto' }} />
-                <span>Compulsory Meeting (Fine absent residents)</span>
-              </label>
+              <div className="portal-field-full" style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 14px', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '12px', margin: '4px 0' }}>
+                <input 
+                  type="checkbox" 
+                  id="is_compulsory_check"
+                  checked={formData.is_compulsory} 
+                  onChange={(e) => setFormData({ ...formData, is_compulsory: e.target.checked })} 
+                />
+                <label htmlFor="is_compulsory_check" style={{ fontSize: '12px', fontWeight: '700', color: '#1e293b', cursor: 'pointer', margin: 0 }}>
+                  Compulsory Meeting (Fine absent residents)
+                </label>
+              </div>
 
               {formData.is_compulsory && (
                 <>

@@ -1,8 +1,10 @@
 import React, { useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { authAPI } from '../services/api';
 
 const ResetPassword = () => {
+  const { t } = useTranslation();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const token = useMemo(() => searchParams.get('token') || '', [searchParams]);
@@ -46,14 +48,14 @@ const ResetPassword = () => {
   return (
     <div className="auth-container">
       <div className="auth-card">
-        <h2>Reset Password</h2>
-        <p className="auth-helper">Create a new password for your account.</p>
+        <h2>{t('auth.resetPasswordTitle', 'Reset Password')}</h2>
+        <p className="auth-helper">{t('auth.resetPasswordHelper', 'Create a new password for your account.')}</p>
         <form onSubmit={handleSubmit}>
           {error && <div className="alert alert-danger">{error}</div>}
           {message && <div className="alert alert-success">{message}</div>}
 
           <div className="mb-3">
-            <label className="form-label">New Password</label>
+            <label className="form-label">{t('auth.newPassword', 'New Password')}</label>
             <input
               type="password"
               className="form-control"
@@ -65,7 +67,7 @@ const ResetPassword = () => {
           </div>
 
           <div className="mb-3">
-            <label className="form-label">Confirm Password</label>
+            <label className="form-label">{t('auth.confirmPassword', 'Confirm Password')}</label>
             <input
               type="password"
               className="form-control"
@@ -77,11 +79,12 @@ const ResetPassword = () => {
           </div>
 
           <button type="submit" className="btn btn-primary w-100" disabled={loading}>
-            Reset Password
+            {loading ? t('auth.submitting', 'Submitting...') : t('auth.resetPasswordBtn', 'Reset Password')}
           </button>
 
           <p className="text-center mt-3">
-            Back to <Link to="/login">Login</Link>
+            {t('auth.backToLogin', 'Back to')}{' '}
+            <Link to="/login">{t('auth.login', 'Login')}</Link>
           </p>
         </form>
       </div>

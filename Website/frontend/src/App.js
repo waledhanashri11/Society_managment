@@ -96,7 +96,7 @@ function App() {
             <Route path="notices" element={<Notices />} />
             <Route path="society-rules" element={<SocietyRules />} />
             <Route path="reports" element={<Reports />} />
-            <Route path="write-off-history" element={<WriteOffHistory />} />
+            <Route path="write-off-history" element={<Navigate to="/admin/agm-report" replace />} />
             <Route path="agm-report" element={<AGMReport />} />
             <Route path="noc-management" element={<NOCManagement />} />
             <Route path="settings" element={<AdminSettings />} />

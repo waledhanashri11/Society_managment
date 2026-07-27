@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Eye, Image, MessageSquarePlus, MessageSquareWarning, Send, Trash2, X } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { CheckCircle2, Edit3, Eye, Image, MessageSquarePlus, MessageSquareWarning, RotateCcw, Send, Trash2, X } from 'lucide-react';
 import { complaintAPI } from '../services/api';
-import { TableSkeleton } from '../components/Skeletons';
+import { CardSkeleton, TableSkeleton } from '../components/Skeletons';
+import { useTranslation } from 'react-i18next';
 
 const fullDate = (value) => value ? new Date(value).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
 const MAX_IMAGES = 3;
@@ -12,6 +13,7 @@ const getComplaintImages = (complaint) => Array.isArray(complaint.complaint_imag
   : Array.isArray(complaint.complaint_images) ? complaint.complaint_images : [];
 
 const ResidentComplaints = () => {
+  const { t } = useTranslation();
   const [complaints, setComplaints] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -23,7 +25,7 @@ const ResidentComplaints = () => {
   const [deletingComplaint, setDeletingComplaint] = useState(null);
   const [reopeningComplaint, setReopeningComplaint] = useState(null);
   const [reopenComment, setReopenComment] = useState('');
-  const [activeTab, setActiveTab] = useState('active');
+  const [statusFilter, setStatusFilter] = useState('all');
   const [showWebcam, setShowWebcam] = useState(false);
   const [webcamStream, setWebcamStream] = useState(null);
   
@@ -209,63 +211,118 @@ const ResidentComplaints = () => {
     }
   };
 
-  const filteredComplaints = complaints.filter((item) => {
-    if (activeTab === 'history') {
-      return item.status === 'closed';
-    }
-    return item.status !== 'closed';
-  });
+  const stats = useMemo(() => ({
+    total: complaints.length,
+    pending: complaints.filter((c) => c.status === 'pending').length,
+    inProgress: complaints.filter((c) => c.status === 'in_progress').length,
+    resolved: complaints.filter((c) => c.status === 'resolved').length,
+    closed: complaints.filter((c) => c.status === 'closed').length
+  }), [complaints]);
+
+  const filteredComplaints = useMemo(() => {
+    if (statusFilter === 'all') return complaints;
+    return complaints.filter((c) => c.status === statusFilter);
+  }, [complaints, statusFilter]);
 
   return (
     <div className="portal-module">
       {toast && <div className="resident-toast">{toast}</div>}
       <div className="portal-page-title">
         <div>
-          <h1>Complaints</h1>
-          <p>Raise a new complaint and track your requests.</p>
+          <h1>{t('nav.complaints', 'Complaints')}</h1>
+          <p>{t('complaints.subtitle', 'Raise a new complaint and track your requests.')}</p>
         </div>
-        <button className="portal-primary-btn" onClick={() => setShowForm(true)}>
-          <MessageSquarePlus size={16} /> Raise Complaint
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div className="portal-date-chip">
+            <MessageSquareWarning size={15} /> {t('complaints.complaintDesk', 'Complaint Desk')}
+          </div>
+          <button className="portal-primary-btn" style={{ background: 'linear-gradient(90deg, #087d40, #0ab35c)', boxShadow: '0 8px 18px rgba(8,125,64,.2)' }} onClick={() => setShowForm(true)}>
+            <MessageSquarePlus size={16} /> {t('complaints.raiseComplaint', 'Raise Complaint')}
+          </button>
+        </div>
       </div>
 
-      {/* Tabs */}
-      <div className="portal-tabs" style={{ display: 'flex', gap: '20px', borderBottom: '1px solid #e2e8f0', marginBottom: '20px' }}>
+      {loading ? <CardSkeleton count={5} /> : (
+        <div className="portal-kpis" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0,1fr))', gap: '12px', marginBottom: '14px' }}>
+          <div className="portal-kpi">
+            <span>{t('complaints.total', 'Total Complaints')}</span>
+            <strong>{stats.total}</strong>
+            <small>{t('complaints.allRequests', 'All complaint requests')}</small>
+            <div className="portal-kpi-icon"><MessageSquareWarning size={18} /></div>
+          </div>
+          <div className="portal-kpi orange">
+            <span>{t('complaints.pending', 'Pending')}</span>
+            <strong>{stats.pending}</strong>
+            <small>{t('complaints.needsAttention', 'Needs attention')}</small>
+            <div className="portal-kpi-icon" style={{ color: '#dd6b20', background: '#fff5e9' }}><Edit3 size={18} /></div>
+          </div>
+          <div className="portal-kpi" style={{ borderColor: '#bfdbfe' }}>
+            <span>{t('complaints.inProgress', 'In Progress')}</span>
+            <strong style={{ color: '#2563eb' }}>{stats.inProgress}</strong>
+            <small>{t('complaints.workStarted', 'Work started')}</small>
+            <div className="portal-kpi-icon" style={{ color: '#2563eb', background: '#eff6ff' }}><Edit3 size={18} /></div>
+          </div>
+          <div className="portal-kpi green">
+            <span>{t('complaints.resolved', 'Resolved')}</span>
+            <strong>{stats.resolved}</strong>
+            <small>{t('complaints.fixedIssues', 'Fixed issues')}</small>
+            <div className="portal-kpi-icon"><CheckCircle2 size={18} /></div>
+          </div>
+          <div className="portal-kpi" style={{ borderColor: '#cbd5e1' }}>
+            <span>{t('complaints.closed', 'Closed')}</span>
+            <strong style={{ color: '#475569' }}>{stats.closed}</strong>
+            <small>{t('complaints.confirmedClosed', 'Confirmed closed')}</small>
+            <div className="portal-kpi-icon" style={{ color: '#475569', background: '#f1f5f9' }}><CheckCircle2 size={18} /></div>
+          </div>
+        </div>
+      )}
+
+      {/* Filter Buttons */}
+      <div className="portal-filters" style={{ display: 'flex', gap: '10px', marginBottom: '14px', flexWrap: 'wrap' }}>
         <button 
-          className={`portal-tab-btn ${activeTab === 'active' ? 'active' : ''}`}
-          style={{ 
-            padding: '10px 14px', 
-            border: 'none', 
-            background: 'none', 
-            fontWeight: '700', 
-            fontSize: '13px', 
-            cursor: 'pointer', 
-            color: activeTab === 'active' ? '#087d40' : '#64748b', 
-            borderBottom: activeTab === 'active' ? '2px solid #087d40' : 'none' 
-          }}
-          onClick={() => setActiveTab('active')}
+          className={`portal-light-btn ${statusFilter === 'all' ? 'active' : ''}`}
+          style={{ background: statusFilter === 'all' ? '#087d40' : '#eef3f8', color: statusFilter === 'all' ? 'white' : '#40506a', fontWeight: 'bold' }}
+          onClick={() => setStatusFilter('all')}
         >
-          Active Complaints
+          {t('complaints.allFilter', 'All')} ({stats.total})
         </button>
         <button 
-          className={`portal-tab-btn ${activeTab === 'history' ? 'active' : ''}`}
-          style={{ 
-            padding: '10px 14px', 
-            border: 'none', 
-            background: 'none', 
-            fontWeight: '700', 
-            fontSize: '13px', 
-            cursor: 'pointer', 
-            color: activeTab === 'history' ? '#087d40' : '#64748b', 
-            borderBottom: activeTab === 'history' ? '2px solid #087d40' : 'none' 
-          }}
-          onClick={() => setActiveTab('history')}
+          className={`portal-light-btn ${statusFilter === 'pending' ? 'active' : ''}`}
+          style={{ background: statusFilter === 'pending' ? '#087d40' : '#eef3f8', color: statusFilter === 'pending' ? 'white' : '#40506a', fontWeight: 'bold' }}
+          onClick={() => setStatusFilter('pending')}
         >
-          Complaint History
+          {t('complaints.pending', 'Pending')} ({stats.pending})
+        </button>
+        <button 
+          className={`portal-light-btn ${statusFilter === 'in_progress' ? 'active' : ''}`}
+          style={{ background: statusFilter === 'in_progress' ? '#087d40' : '#eef3f8', color: statusFilter === 'in_progress' ? 'white' : '#40506a', fontWeight: 'bold' }}
+          onClick={() => setStatusFilter('in_progress')}
+        >
+          {t('complaints.inProgress', 'In Progress')} ({stats.inProgress})
+        </button>
+        <button 
+          className={`portal-light-btn ${statusFilter === 'resolved' ? 'active' : ''}`}
+          style={{ background: statusFilter === 'resolved' ? '#087d40' : '#eef3f8', color: statusFilter === 'resolved' ? 'white' : '#40506a', fontWeight: 'bold' }}
+          onClick={() => setStatusFilter('resolved')}
+        >
+          {t('complaints.resolved', 'Resolved')} ({stats.resolved})
+        </button>
+        <button 
+          className={`portal-light-btn ${statusFilter === 'closed' ? 'active' : ''}`}
+          style={{ background: statusFilter === 'closed' ? '#087d40' : '#eef3f8', color: statusFilter === 'closed' ? 'white' : '#40506a', fontWeight: 'bold' }}
+          onClick={() => setStatusFilter('closed')}
+        >
+          {t('complaints.closed', 'Closed')} ({stats.closed})
         </button>
       </div>
 
       <section className="portal-panel portal-table-card">
+        <div className="portal-panel-head">
+          <div>
+            <h2>{t('complaints.queueTitle', 'My Complaints')}</h2>
+            <p>{t('complaints.queueSubtitle', 'View and track your raised complaints.')}</p>
+          </div>
+        </div>
         {loading ? (
           <TableSkeleton rows={5} columns={6} />
         ) : filteredComplaints.length ? (
@@ -273,12 +330,12 @@ const ResidentComplaints = () => {
             <table className="portal-data-table">
               <thead>
                 <tr>
-                  <th>Complaint</th>
-                  <th>Status</th>
-                  <th>Reply</th>
-                  <th>Photos</th>
-                  <th>Date</th>
-                  <th style={{ width: '220px', textAlign: 'center' }}>Actions</th>
+                  <th>{t('complaints.tableComplaint', 'Complaint')}</th>
+                  <th>{t('common.status', 'Status')}</th>
+                  <th>{t('complaints.tableReply', 'Reply')}</th>
+                  <th>{t('complaints.tablePhotos', 'Photos')}</th>
+                  <th>{t('common.date', 'Date')}</th>
+                  <th style={{ width: '220px', textAlign: 'center' }}>{t('common.actions', 'Actions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -288,12 +345,12 @@ const ResidentComplaints = () => {
                   return (
                     <tr key={item.id}>
                       <td><strong>{item.title}</strong><div className="portal-muted-text">{item.description}</div></td>
-                      <td><span className={`portal-status ${item.status}`}>{String(item.status).replace('_', ' ')}</span></td>
+                      <td><span className={`portal-status ${item.status}`}>{t(`complaintStatus.${item.status}`)}</span></td>
                       <td>{item.reply || '—'}</td>
                       <td>
                         {getComplaintImages(item).length ? (
                           <button className="portal-link-button" onClick={() => setViewingPhoto({ title: item.title, images: getComplaintImages(item), index: 0 })}>
-                            <Image size={13} /> View Photo
+                            <Image size={13} /> {t('complaints.viewPhoto', 'View Photo')}
                           </button>
                         ) : (
                           <span className="portal-muted-text">-</span>
@@ -301,38 +358,22 @@ const ResidentComplaints = () => {
                       </td>
                       <td>{fullDate(item.created_at)}</td>
                       <td style={{ textAlign: 'center' }}>
-                        <div className="resident-bill-actions" style={{ display: 'flex', gap: '6px', justifyContent: 'center', flexWrap: 'nowrap' }}>
-                          <button 
-                            className="portal-link-button" 
-                            style={{ display: 'flex', alignItems: 'center', gap: '2px', padding: '3px 6px' }}
-                            onClick={() => setViewingComplaint(item)}
-                          >
-                            <Eye size={12} /> View
+                        <div className="portal-row-actions" style={{ justifyContent: 'center' }}>
+                          <button onClick={() => setViewingComplaint(item)}>
+                            <Eye size={13} /> {t('common.view', 'View')}
                           </button>
                           {isPending && (
-                            <button 
-                              className="portal-link-button" 
-                              style={{ display: 'flex', alignItems: 'center', gap: '2px', padding: '3px 6px', color: '#dc2626' }}
-                              onClick={() => setDeletingComplaint(item)}
-                            >
-                              <Trash2 size={12} /> Delete
+                            <button className="danger" onClick={() => setDeletingComplaint(item)}>
+                              <Trash2 size={13} /> {t('common.delete', 'Delete')}
                             </button>
                           )}
                           {isResolved && (
                             <>
-                              <button 
-                                className="portal-link-button" 
-                                style={{ display: 'flex', alignItems: 'center', gap: '2px', padding: '3px 6px', color: '#087d40' }}
-                                onClick={() => handleConfirmResolved(item.id)}
-                              >
-                                Confirm
+                              <button style={{ color: '#05783b', background: '#e8f8ef' }} onClick={() => handleConfirmResolved(item.id)}>
+                                <CheckCircle2 size={13} /> {t('complaints.confirm', 'Confirm')}
                               </button>
-                              <button 
-                                className="portal-link-button" 
-                                style={{ display: 'flex', alignItems: 'center', gap: '2px', padding: '3px 6px', color: '#dd6b20' }}
-                                onClick={() => setReopeningComplaint(item)}
-                              >
-                                Reopen
+                              <button style={{ color: '#dd6b20', background: '#fff5e9' }} onClick={() => setReopeningComplaint(item)}>
+                                <RotateCcw size={13} /> {t('complaints.reopen', 'Reopen')}
                               </button>
                             </>
                           )}
@@ -347,7 +388,7 @@ const ResidentComplaints = () => {
         ) : (
           <div className="portal-empty">
             <MessageSquareWarning size={26} /><br />
-            {activeTab === 'history' ? 'No closed complaints in history.' : 'No active complaints raised yet.'}
+            {statusFilter === 'closed' ? t('complaints.noHistory', 'No closed complaints in history.') : t('complaints.noActive', 'No complaints found.')}
           </div>
         )}
       </section>
@@ -356,23 +397,23 @@ const ResidentComplaints = () => {
         <div className="portal-modal-backdrop" onMouseDown={resetForm}>
           <div className="portal-modal" onMouseDown={(event) => event.stopPropagation()}>
             <div className="portal-modal-head">
-              <div><h3>Raise a complaint</h3><p>Tell the society team what needs attention.</p></div>
+              <div><h3>{t('complaints.raiseComplaint', 'Raise a complaint')}</h3><p>{t('complaints.raiseComplaintNote', 'Tell the society team what needs attention.')}</p></div>
               <button type="button" onClick={resetForm}>×</button>
             </div>
             <form className="portal-form" onSubmit={submitComplaint}>
               {!showWebcam ? (
                 <>
                   <label className="portal-field-full">
-                    Subject
+                    {t('complaints.subject', 'Subject')}
                     <input required value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} />
                   </label>
                   <label className="portal-field-full">
-                    Description
+                    {t('complaints.description', 'Description')}
                     <textarea required rows="5" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} />
                   </label>
                   
                   <div className="portal-field-full">
-                    <span className="block text-sm font-bold text-slate-700 mb-2">Photos (optional, up to 3 JPG/PNG images, 5 MB each)</span>
+                    <span className="block text-sm font-bold text-slate-700 mb-2">{t('complaints.photosNotice', 'Photos (optional, up to 3 JPG/PNG images, 5 MB each)')}</span>
                     
                     {selectedImages.length < MAX_IMAGES && (
                       <div className="grid grid-cols-2 gap-3 mb-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
@@ -383,7 +424,7 @@ const ResidentComplaints = () => {
                           style={{ minHeight: '70px', background: '#eff6ff33', border: '1px dashed #93c5fd', borderRadius: '10px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
                         >
                           <span style={{ fontSize: '18px' }}>📷</span>
-                          <span style={{ fontSize: '12px' }}>Take Photo</span>
+                          <span style={{ fontSize: '12px' }}>{t('complaints.takePhoto', 'Take Photo')}</span>
                         </button>
                         
                         <button
@@ -393,7 +434,7 @@ const ResidentComplaints = () => {
                           style={{ minHeight: '70px', background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: '10px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
                         >
                           <span style={{ fontSize: '18px' }}>🖼️</span>
-                          <span style={{ fontSize: '12px' }}>Choose from Gallery</span>
+                          <span style={{ fontSize: '12px' }}>{t('complaints.chooseGallery', 'Choose from Gallery')}</span>
                         </button>
                       </div>
                     )}
@@ -438,8 +479,8 @@ const ResidentComplaints = () => {
                   )}
 
                   <div className="portal-form-actions">
-                    <button type="button" className="portal-light-btn" onClick={resetForm}>Cancel</button>
-                    <button className="portal-primary-btn"><Send size={15} /> Submit Complaint</button>
+                    <button type="button" className="portal-light-btn" onClick={resetForm}>{t('common.cancel', 'Cancel')}</button>
+                    <button className="portal-primary-btn"><Send size={15} /> {t('complaints.submitComplaint', 'Submit Complaint')}</button>
                   </div>
                 </>
               ) : (
@@ -459,7 +500,7 @@ const ResidentComplaints = () => {
                       className="portal-primary-btn flex-1 flex items-center justify-center"
                       style={{ padding: '8px 16px', background: '#059669', borderColor: '#059669', flex: 1, cursor: 'pointer' }}
                     >
-                      Capture Photo
+                      {t('complaints.capturePhoto', 'Capture Photo')}
                     </button>
                     <button
                       type="button"
@@ -467,7 +508,7 @@ const ResidentComplaints = () => {
                       className="portal-light-btn flex-1 flex items-center justify-center"
                       style={{ padding: '8px 16px', background: 'white', color: '#1e293b', flex: 1, cursor: 'pointer' }}
                     >
-                      Close Camera
+                      {t('complaints.closeCamera', 'Close Camera')}
                     </button>
                   </div>
                 </div>
@@ -482,29 +523,29 @@ const ResidentComplaints = () => {
           <div className="portal-modal" onMouseDown={(event) => event.stopPropagation()}>
             <div className="portal-modal-head">
               <div>
-                <h3>Complaint Details</h3>
-                <p>Status: <span className={`portal-status ${viewingComplaint.status}`} style={{ display: 'inline-block', marginLeft: '6px' }}>{String(viewingComplaint.status).replace('_', ' ')}</span></p>
+                <h3>{t('complaints.detailsTitle', 'Complaint Details')}</h3>
+                <p>{t('common.status', 'Status')}: <span className={`portal-status ${viewingComplaint.status}`} style={{ display: 'inline-block', marginLeft: '6px' }}>{t(`complaintStatus.${viewingComplaint.status}`)}</span></p>
               </div>
               <button type="button" onClick={() => setViewingComplaint(null)}>×</button>
             </div>
             <div className="portal-form" style={{ padding: '18px 20px 20px', display: 'grid', gap: 14 }}>
               <div className="portal-field-full">
-                <strong>Subject</strong>
+                <strong>{t('complaints.subject', 'Subject')}</strong>
                 <p style={{ margin: '4px 0 0', fontSize: '14px', color: '#1e293b' }}>{viewingComplaint.title}</p>
               </div>
               <div className="portal-field-full">
-                <strong>Description</strong>
+                <strong>{t('complaints.description', 'Description')}</strong>
                 <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#475467', whiteSpace: 'pre-wrap' }}>{viewingComplaint.description}</p>
               </div>
               <div className="portal-field-full">
-                <strong>Admin Reply</strong>
+                <strong>{t('complaints.adminReply', 'Admin Reply')}</strong>
                 <p style={{ margin: '4px 0 0', fontSize: '13px', color: viewingComplaint.reply ? '#1e293b' : '#94a3b8', fontStyle: viewingComplaint.reply ? 'normal' : 'italic' }}>
-                  {viewingComplaint.reply || 'No reply from admin yet.'}
+                  {viewingComplaint.reply || t('complaints.noReply', 'No reply from admin yet.')}
                 </p>
               </div>
               {getComplaintImages(viewingComplaint).length > 0 && (
                 <div className="portal-field-full">
-                  <strong>Attached Photos</strong>
+                  <strong>{t('complaints.attachedPhotos', 'Attached Photos')}</strong>
                   <div className="flex gap-2 mt-2" style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
                     {getComplaintImages(viewingComplaint).map((img, idx) => (
                       <img 
@@ -522,15 +563,15 @@ const ResidentComplaints = () => {
 
               {/* Timeline Info */}
               <div className="portal-field-full" style={{ borderTop: '1px solid #e2e8f0', paddingTop: '12px', marginTop: '6px' }}>
-                <strong style={{ display: 'block', marginBottom: '8px', color: '#1e293b' }}>Complaint Timeline</strong>
+                <strong style={{ display: 'block', marginBottom: '8px', color: '#1e293b' }}>{t('complaints.timeline', 'Complaint Timeline')}</strong>
                 <div style={{ display: 'grid', gap: '6px', fontSize: '12px', color: '#475467' }}>
-                  <div>📅 <strong>Created:</strong> {fullDate(viewingComplaint.created_at)}</div>
-                  {viewingComplaint.in_progress_at && <div>🔵 <strong>In Progress:</strong> {fullDate(viewingComplaint.in_progress_at)}</div>}
-                  {viewingComplaint.resolved_at && <div>🟢 <strong>Resolved:</strong> {fullDate(viewingComplaint.resolved_at)}</div>}
-                  {viewingComplaint.closed_at && <div>⚫ <strong>Closed:</strong> {fullDate(viewingComplaint.closed_at)}</div>}
+                  <div>📅 <strong>{t('complaints.created', 'Created:')}</strong> {fullDate(viewingComplaint.created_at)}</div>
+                  {viewingComplaint.in_progress_at && <div>🔵 <strong>{t('complaints.inProgress', 'In Progress:')}</strong> {fullDate(viewingComplaint.in_progress_at)}</div>}
+                  {viewingComplaint.resolved_at && <div>🟢 <strong>{t('complaints.resolved', 'Resolved:')}</strong> {fullDate(viewingComplaint.resolved_at)}</div>}
+                  {viewingComplaint.closed_at && <div>⚫ <strong>{t('complaints.closed', 'Closed:')}</strong> {fullDate(viewingComplaint.closed_at)}</div>}
                   {viewingComplaint.reopened_at && (
                     <div style={{ padding: '6px 8px', background: '#fff5e9', borderLeft: '3px solid #dd6b20', borderRadius: '4px' }}>
-                      <div>⚠️ <strong>Reopened:</strong> {fullDate(viewingComplaint.reopened_at)}</div>
+                      <div>⚠️ <strong>{t('complaints.reopened', 'Reopened:')}</strong> {fullDate(viewingComplaint.reopened_at)}</div>
                       {viewingComplaint.reopened_comment && <div style={{ marginTop: '2px' }}><em>Comment: "{viewingComplaint.reopened_comment}"</em></div>}
                     </div>
                   )}
@@ -546,7 +587,7 @@ const ResidentComplaints = () => {
                       style={{ background: '#087d40', borderColor: '#087d40' }}
                       onClick={() => handleConfirmResolved(viewingComplaint.id)}
                     >
-                      Confirm Resolved
+                      {t('complaints.confirmResolved', 'Confirm Resolved')}
                     </button>
                     <button 
                       type="button"
@@ -557,11 +598,11 @@ const ResidentComplaints = () => {
                         setReopenComment('');
                       }}
                     >
-                      Issue Still Exists
+                      {t('complaints.issueStillExists', 'Issue Still Exists')}
                     </button>
                   </>
                 )}
-                <button type="button" className="portal-light-btn" onClick={() => setViewingComplaint(null)}>Close</button>
+                <button type="button" className="portal-light-btn" onClick={() => setViewingComplaint(null)}>{t('common.close', 'Close')}</button>
               </div>
             </div>
           </div>
@@ -573,23 +614,23 @@ const ResidentComplaints = () => {
           <div className="portal-modal" onMouseDown={(event) => event.stopPropagation()} style={{ maxWidth: '400px' }}>
             <div className="portal-modal-head">
               <div>
-                <h3>Delete Complaint</h3>
+                <h3>{t('complaints.deleteTitle', 'Delete Complaint')}</h3>
               </div>
               <button type="button" onClick={() => setDeletingComplaint(null)}>×</button>
             </div>
             <div className="portal-form" style={{ padding: '18px 20px 20px', display: 'grid', gap: 14 }}>
               <p style={{ fontSize: '14px', color: '#475467', margin: 0 }}>
-                Are you sure you want to delete this complaint? This action cannot be undone.
+                {t('complaints.deleteConfirmMsg', 'Are you sure you want to delete this complaint? This action cannot be undone.')}
               </p>
               <div className="portal-form-actions" style={{ justifyContent: 'flex-end', gap: 8, marginTop: 10, display: 'flex' }}>
-                <button type="button" className="portal-light-btn" onClick={() => setDeletingComplaint(null)}>Cancel</button>
+                <button type="button" className="portal-light-btn" onClick={() => setDeletingComplaint(null)}>{t('common.cancel', 'Cancel')}</button>
                 <button 
                   type="button" 
                   className="portal-primary-btn" 
                   style={{ background: '#dc2626', borderColor: '#dc2626', color: 'white' }}
                   onClick={handleDeleteConfirm}
                 >
-                  Delete
+                  {t('common.delete', 'Delete')}
                 </button>
               </div>
             </div>
@@ -602,29 +643,29 @@ const ResidentComplaints = () => {
           <div className="portal-modal" onMouseDown={(event) => event.stopPropagation()} style={{ maxWidth: '460px' }}>
             <div className="portal-modal-head">
               <div>
-                <h3>Reopen Complaint</h3>
-                <p>Describe the remaining issue below.</p>
+                <h3>{t('complaints.reopenTitle', 'Reopen Complaint')}</h3>
+                <p>{t('complaints.reopenSubtitle', 'Describe the remaining issue below.')}</p>
               </div>
               <button type="button" onClick={() => setReopeningComplaint(null)}>×</button>
             </div>
             <form className="portal-form" onSubmit={handleReopenSubmit} style={{ padding: '18px 20px 20px', display: 'grid', gap: 14 }}>
               <label className="portal-field-full">
-                Please describe the remaining issue (optional):
+                {t('complaints.reopenCommentLabel', 'Please describe the remaining issue (optional):')}
                 <textarea 
                   rows="3"
-                  placeholder="e.g. The leak was patched but it started dripping again."
+                  placeholder={t('complaints.reopenPlaceholder', 'e.g. The leak was patched but it started dripping again.')}
                   value={reopenComment} 
                   onChange={(event) => setReopenComment(event.target.value)} 
                 />
               </label>
               <div className="portal-form-actions" style={{ justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
-                <button type="button" className="portal-light-btn" onClick={() => setReopeningComplaint(null)}>Cancel</button>
+                <button type="button" className="portal-light-btn" onClick={() => setReopeningComplaint(null)}>{t('common.cancel', 'Cancel')}</button>
                 <button 
                   type="submit" 
                   className="portal-primary-btn" 
                   style={{ background: '#dd6b20', borderColor: '#dd6b20', color: 'white' }}
                 >
-                  Reopen Complaint
+                  {t('complaints.reopenButton', 'Reopen Complaint')}
                 </button>
               </div>
             </form>
@@ -636,7 +677,7 @@ const ResidentComplaints = () => {
         <div className="portal-modal-backdrop" onMouseDown={() => setViewingPhoto(null)}>
           <div className="portal-modal" onMouseDown={(event) => event.stopPropagation()}>
             <div className="portal-modal-head">
-              <div><h3>Complaint Photo</h3><p>{viewingPhoto.title}</p></div>
+              <div><h3>{t('complaints.photoTitle', 'Complaint Photo')}</h3><p>{viewingPhoto.title}</p></div>
               <button type="button" onClick={() => setViewingPhoto(null)}>×</button>
             </div>
             <div className="p-4">
@@ -645,7 +686,7 @@ const ResidentComplaints = () => {
                 <div className="mt-3 flex flex-wrap gap-2">
                   {viewingPhoto.images.map((image, index) => (
                     <button key={image} type="button" className={`rounded-lg border px-3 py-2 text-xs font-bold ${index === viewingPhoto.index ? 'border-blue-500 text-blue-700' : 'border-slate-200 text-slate-600'}`} onClick={() => setViewingPhoto({ ...viewingPhoto, index })}>
-                      Photo {index + 1}
+                      {t('complaints.photoBtn', 'Photo')} {index + 1}
                     </button>
                   ))}
                 </div>

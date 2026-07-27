@@ -2,10 +2,12 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Building2, CheckCircle2, Edit3, IndianRupee, Plus, Trash2, XCircle, RefreshCw, History, Calendar } from 'lucide-react';
 import { flatAPI, userAPI, residentsAPI, flatTypeAPI } from '../services/api';
 import { CardSkeleton } from '../components/Skeletons';
+import { useTranslation } from 'react-i18next';
 
 const money = (value) => `Rs. ${Number(value || 0).toLocaleString('en-IN')}`;
 
 const Flats = () => {
+  const { t } = useTranslation();
   const [tab, setTab] = useState('flats'); // 'flats' or 'flat_types'
   const [flats, setFlats] = useState([]);
   const [users, setUsers] = useState([]);
@@ -325,13 +327,13 @@ const Flats = () => {
     <div className="portal-module">
       <div className="portal-page-title">
         <div>
-          <h1>Flats Management</h1>
-          <p>Configure wings, floor levels, residents assignment, and flat type profiles.</p>
+          <h1>{t('flats.title')}</h1>
+          <p>{t('flats.subtitle')}</p>
         </div>
         {tab === 'flats' ? (
-          <button className="portal-primary-btn" onClick={handleAdd}><Plus size={17} /> Add Flat</button>
+          <button className="portal-primary-btn" onClick={handleAdd}><Plus size={17} /> {t('flats.addFlat')}</button>
         ) : (
-          <button className="portal-primary-btn" onClick={handleFlatTypeAdd}><Plus size={17} /> Add Flat Type</button>
+          <button className="portal-primary-btn" onClick={handleFlatTypeAdd}><Plus size={17} /> {t('flats.addFlatType')}</button>
         )}
       </div>
 
@@ -353,7 +355,7 @@ const Flats = () => {
           }}
           onClick={() => setTab('flats')}
         >
-          Flat Master
+          {t('flats.flatMaster')}
         </button>
         <button
           className={`pb-2 px-1 font-semibold text-sm transition-all border-b-2`}
@@ -371,7 +373,7 @@ const Flats = () => {
           }}
           onClick={() => setTab('flat_types')}
         >
-          Flat Types Config
+          {t('flats.flatTypesConfig')}
         </button>
       </div>
 
@@ -387,68 +389,68 @@ const Flats = () => {
       ) : tab === 'flats' ? (
         <>
           <div className="portal-kpis">
-            <div className="portal-kpi"><span>Total Flats</span><strong>{flats.length}</strong><small>{flats.filter((flat) => flat.owner_id).length} occupied</small><div className="portal-kpi-icon"><Building2 size={18} /></div></div>
-            <div className="portal-kpi green"><span>Total Monthly Expected Charge</span><strong>{money(totalMaintenance)}</strong><small>Expected base cycle</small><div className="portal-kpi-icon"><IndianRupee size={18} /></div></div>
+            <div className="portal-kpi"><span>{t('adminDashboard.totalFlats')}</span><strong>{flats.length}</strong><small>{t('adminDashboard.occupiedFlats', { count: flats.filter((flat) => flat.owner_id).length })}</small><div className="portal-kpi-icon"><Building2 size={18} /></div></div>
+            <div className="portal-kpi green"><span>{t('flats.totalExpected')}</span><strong>{money(totalMaintenance)}</strong><small>{t('flats.expectedBase')}</small><div className="portal-kpi-icon"><IndianRupee size={18} /></div></div>
           </div>
 
           <section className="portal-panel portal-table-card">
-            <div className="portal-panel-head"><div><h2>Flat Inventory List</h2><p>Overview of all units, flat classifications, and assigned owners.</p></div></div>
+            <div className="portal-panel-head"><div><h2>{t('flats.inventoryTitle')}</h2><p>{t('flats.inventorySubtitle')}</p></div></div>
             <div className="portal-table-wrap">
               <table className="portal-data-table">
                 <thead>
                   <tr>
-                    <th>Flat No</th>
-                    <th>Wing</th>
-                    <th>Floor</th>
-                    <th>Flat Type</th>
-                    <th>Status</th>
-                    <th>Assigned Resident</th>
-                    <th>Base Maintenance Charge</th>
-                    <th>Actions</th>
+                    <th>{t('flats.flatNo')}</th>
+                    <th>{t('common.wing', 'Wing')}</th>
+                    <th>{t('common.floor')}</th>
+                    <th>{t('flats.flatType')}</th>
+                    <th>{t('common.status')}</th>
+                    <th>{t('flats.assignedResident')}</th>
+                    <th>{t('flats.baseCharge')}</th>
+                    <th>{t('common.actions')}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {flats.map((flat) => (
                     <tr key={flat.id}>
-                      <td><strong>Flat {flat.flat_no}</strong></td>
+                      <td><strong>{t('common.flat')} {flat.flat_no}</strong></td>
                       <td>{flat.wing || 'A'}</td>
                       <td>{flat.floor_no}</td>
                       <td>
                         <span style={{ fontWeight: '500', color: flat.flat_type_name ? '#1e293b' : '#94a3b8' }}>
-                          {flat.flat_type_name || 'Not Assigned'}
+                          {flat.flat_type_name || t('common.notAssigned')}
                         </span>
                       </td>
-                      <td><span className={`portal-status ${flat.owner_id ? 'paid' : 'pending'}`}>{flat.owner_id ? 'Occupied' : 'Available'}</span></td>
-                      <td>{flat.assigned_resident_name || flat.owner_name || <span className="portal-muted-text">Unassigned</span>}</td>
+                      <td><span className={`portal-status ${flat.owner_id ? 'paid' : 'pending'}`}>{flat.owner_id ? t('flats.occupied') : t('flats.available')}</span></td>
+                      <td>{flat.assigned_resident_name || flat.owner_name || <span className="portal-muted-text">{t('common.notAssigned')}</span>}</td>
                       <td>{money(flat.maintenance_charge)}</td>
                       <td>
                         <div className="portal-row-actions">
-                          <button onClick={() => handleEdit(flat)}><Edit3 size={14} /> Edit</button>
-                          <button className="info" style={{ color: '#2563eb' }} onClick={() => handleTransferClick(flat)}><RefreshCw size={14} /> Transfer</button>
-                          <button className="danger" onClick={() => handleDelete(flat.id)}><Trash2 size={14} /> Delete</button>
+                          <button onClick={() => handleEdit(flat)}><Edit3 size={14} /> {t('common.edit')}</button>
+                          <button className="info" style={{ color: '#2563eb' }} onClick={() => handleTransferClick(flat)}><RefreshCw size={14} /> {t('flats.transfer')}</button>
+                          <button className="danger" onClick={() => handleDelete(flat.id)}><Trash2 size={14} /> {t('common.delete')}</button>
                         </div>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-              {!flats.length && <div className="portal-empty">No flats registered.</div>}
+              {!flats.length && <div className="portal-empty">{t('common.noData', 'No data available')}</div>}
             </div>
           </section>
         </>
       ) : (
         // Flat Types List
         <section className="portal-panel portal-table-card">
-          <div className="portal-panel-head"><div><h2>Flat Classification Types</h2><p>List of configurations defining base maintenance charges based on property size/structure.</p></div></div>
+          <div className="portal-panel-head"><div><h2>{t('flats.classTitle')}</h2><p>{t('flats.classSubtitle')}</p></div></div>
           <div className="portal-table-wrap">
             <table className="portal-data-table">
               <thead>
                 <tr>
-                  <th>Type Name</th>
-                  <th>Default Maintenance Charge</th>
-                  <th>Description</th>
-                  <th>Status</th>
-                  <th>Actions</th>
+                  <th>{t('flats.typeName')}</th>
+                  <th>{t('flats.baseCharge')}</th>
+                  <th>{t('common.description', 'Description')}</th>
+                  <th>{t('common.status')}</th>
+                  <th>{t('common.actions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -456,28 +458,28 @@ const Flats = () => {
                   <tr key={ft.id}>
                     <td><strong>{ft.name}</strong></td>
                     <td><strong>{money(ft.default_maintenance_amount)}</strong></td>
-                    <td>{ft.description || <span className="portal-muted-text">No description</span>}</td>
+                    <td>{ft.description || <span className="portal-muted-text">{t('common.notAdded')}</span>}</td>
                     <td>
                       <button 
                         onClick={() => handleFlatTypeStatusToggle(ft)}
                         style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}
                       >
                         <span className={`portal-status ${ft.status === 'Active' ? 'paid' : 'pending'}`}>
-                          {ft.status || 'Active'}
+                          {ft.status === 'Active' ? t('common.active', 'Active') : t('common.inactive', 'Inactive')}
                         </span>
                       </button>
                     </td>
                     <td>
                       <div className="portal-row-actions">
-                        <button onClick={() => handleFlatTypeEdit(ft)}><Edit3 size={14} /> Edit</button>
-                        <button className="danger" onClick={() => handleFlatTypeDelete(ft.id)}><Trash2 size={14} /> Delete</button>
+                        <button onClick={() => handleFlatTypeEdit(ft)}><Edit3 size={14} /> {t('common.edit')}</button>
+                        <button className="danger" onClick={() => handleFlatTypeDelete(ft.id)}><Trash2 size={14} /> {t('common.delete')}</button>
                       </div>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            {!flatTypes.length && <div className="portal-empty">No Flat Types configured yet. Click "Add Flat Type" to configure.</div>}
+            {!flatTypes.length && <div className="portal-empty">{t('common.noData', 'No data available')}</div>}
           </div>
         </section>
       )}

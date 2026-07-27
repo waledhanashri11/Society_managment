@@ -1,15 +1,21 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { Sun, Moon } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { authAPI } from '../services/api';
 import { setToken, setUser } from '../utils/auth';
+import LanguageSelector from '../components/LanguageSelector';
+import { useTheme } from '../utils/theme';
 
 const Login = () => {
+  const { t } = useTranslation();
   const [formData, setFormData] = useState({
     email: '',
     password: ''
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const { resolvedTheme, cycleTheme } = useTheme();
   const navigate = useNavigate();
 
   const handleChange = (e) => {
@@ -44,13 +50,33 @@ const Login = () => {
 
   return (
     <div className="auth-container">
+      <div className="auth-topbar">
+        <LanguageSelector variant="dark" />
+        <button
+          type="button"
+          onClick={cycleTheme}
+          aria-label="Toggle theme"
+          className="landing-theme-toggle"
+          title={resolvedTheme === 'dark' ? t('theme.lightMode', 'Light Mode') : t('theme.darkMode', 'Dark Mode')}
+        >
+          {resolvedTheme === 'dark' ? (
+            <span className="flex items-center gap-1.5 text-xs font-bold text-amber-300">
+              <Sun size={15} /> {t('auth.lightMode', 'Light')}
+            </span>
+          ) : (
+            <span className="flex items-center gap-1.5 text-xs font-bold text-indigo-300">
+              <Moon size={15} /> {t('auth.darkMode', 'Dark')}
+            </span>
+          )}
+        </button>
+      </div>
       <div className="auth-card">
-        <h2>Society Management</h2>
+        <h2>{t('common.societyManagement', 'Society Management')}</h2>
         <form onSubmit={handleSubmit}>
           {error && <div className="alert alert-danger">{error}</div>}
           
           <div className="mb-3">
-            <label className="form-label">Email</label>
+            <label className="form-label">{t('auth.email', 'Email')}</label>
             <input
               type="email"
               className="form-control"
@@ -62,7 +88,7 @@ const Login = () => {
           </div>
 
           <div className="mb-3">
-            <label className="form-label">Password</label>
+            <label className="form-label">{t('auth.password', 'Password')}</label>
             <input
               type="password"
               className="form-control"
@@ -72,7 +98,7 @@ const Login = () => {
               required
             />
             <div className="auth-small-link">
-              <Link to="/forgot-password">Forgot password?</Link>
+              <Link to="/forgot-password">{t('auth.forgotPasswordLink', 'Forgot password?')}</Link>
             </div>
           </div>
 
@@ -81,11 +107,12 @@ const Login = () => {
             className="btn btn-primary w-100"
             disabled={loading}
           >
-            Login
+            {loading ? t('auth.loggingIn', 'Logging in...') : t('auth.login', 'Login')}
           </button>
 
           <p className="text-center mt-3">
-            Don't have an account? <Link to="/register">Register</Link>
+            {t('auth.dontHaveAccount', "Don't have an account?")}{' '}
+            <Link to="/register">{t('auth.register', 'Register')}</Link>
           </p>
         </form>
       </div>

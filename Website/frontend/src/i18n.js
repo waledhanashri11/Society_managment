@@ -12,7 +12,11 @@ const languageLoaders = {
 
 export const getSavedLanguage = () => {
   const saved = localStorage.getItem(LANGUAGE_KEY);
-  return SUPPORTED_LANGUAGES.includes(saved) ? saved : 'en';
+  if (!SUPPORTED_LANGUAGES.includes(saved)) {
+    localStorage.setItem(LANGUAGE_KEY, 'en');
+    return 'en';
+  }
+  return saved;
 };
 
 export const loadLanguage = async (lng) => {

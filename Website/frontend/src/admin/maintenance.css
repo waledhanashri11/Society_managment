@@ -467,11 +467,126 @@
   background: #fbfdff;
 }
 
+.mm-action-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
 .mm-mini-action {
-  min-height: 30px;
-  border-radius: 10px;
-  padding: 6px 9px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  border-radius: 8px;
+  padding: 4px 9px;
   font-size: 11px;
+  font-weight: 600;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #334155;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.mm-mini-action:hover {
+  background: #f8fafc;
+  border-color: #94a3b8;
+}
+
+.mm-mini-action.blue {
+  color: #1d4ed8;
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+.mm-mini-action.blue:hover {
+  background: #dbeafe;
+}
+
+.mm-mini-action.green {
+  color: #047857;
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+  font-weight: 700;
+}
+.mm-mini-action.green:hover {
+  background: #d1fae5;
+}
+
+.mm-mini-action.red {
+  color: #b91c1c;
+  background: #fef2f2;
+  border-color: #fecaca;
+  font-weight: 700;
+}
+.mm-mini-action.red:hover {
+  background: #fee2e2;
+}
+
+.mm-action-dropdown-wrap {
+  position: relative;
+  display: inline-block;
+}
+
+.mm-action-dropdown-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 100;
+  min-width: 170px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.12), 0 8px 10px -6px rgba(0, 0, 0, 0.06);
+  padding: 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  animation: mm-in 0.15s ease-out;
+}
+
+.mm-action-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 11px;
+  border: none;
+  background: transparent;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 7px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.12s ease;
+}
+
+.mm-action-dropdown-item:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.mm-action-dropdown-item.green {
+  color: #047857;
+}
+.mm-action-dropdown-item.green:hover {
+  background: #ecfdf5;
+}
+
+.mm-action-dropdown-item.red {
+  color: #b91c1c;
+}
+.mm-action-dropdown-item.red:hover {
+  background: #fef2f2;
+}
+
+.mm-action-dropdown-divider {
+  height: 1px;
+  background: #e2e8f0;
+  margin: 3px 0;
 }
 
 .mm-status {

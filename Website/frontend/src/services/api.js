@@ -211,7 +211,7 @@ export const maintenanceAPI = {
   sendReminder: (id) => api.post(`/maintenance/bills/${id}/reminder`),
   submitPayment: (data) => mutate(api.post('/maintenance/payments', data), ['/maintenance', '/resident']),
   updatePayment: (id, data) => mutate(api.put(`/maintenance/payments/${id}`, data), ['/maintenance', '/resident']),
-  approvePayment: (id) => mutate(api.put(`/maintenance/payments/${id}/approve`), ['/maintenance', '/resident']),
+  approvePayment: (id, data) => mutate(api.put(`/maintenance/payments/${id}/approve`, data), ['/maintenance', '/resident']),
   rejectPayment: (id, data) => mutate(api.put(`/maintenance/payments/${id}/reject`, data), ['/maintenance', '/resident']),
   getPendingVerificationPayments: (config = {}) => cachedGet('/maintenance/payments/pending-verification', config),
   getPaymentHistory: (config = {}) => cachedGet('/maintenance/payments/history', config),

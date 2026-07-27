@@ -2,8 +2,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { CalendarDays, CheckCircle2, Edit3, Plus, ShieldCheck, Trash2, Users, XCircle } from 'lucide-react';
 import { userAPI, flatAPI } from '../services/api';
 import { CardSkeleton, TableSkeleton } from '../components/Skeletons';
+import { useTranslation } from 'react-i18next';
 
 const Residents = () => {
+  const { t } = useTranslation();
   const [residents, setResidents] = useState([]);
   const [flats, setFlats] = useState([]);
   const [showModal, setShowModal] = useState(false);
@@ -100,10 +102,10 @@ const Residents = () => {
     <div className="portal-module">
       <div className="portal-page-title">
         <div>
-          <h1>Residents</h1>
-          <p>Manage resident accounts and flat assignments.</p>
+          <h1>{t('nav.residents')}</h1>
+          <p>{t('residents.subtitle')}</p>
         </div>
-        <button className="portal-primary-btn" onClick={handleAdd}><Plus size={17} /> Add Resident</button>
+        <button className="portal-primary-btn" onClick={handleAdd}><Plus size={17} /> {t('residents.addResident', 'Add Resident')}</button>
       </div>
 
       {message.text && (
@@ -114,39 +116,39 @@ const Residents = () => {
       )}
 
       {loading ? <CardSkeleton count={2} /> : <div className="portal-kpis">
-        <div className="portal-kpi"><span>Total Residents</span><strong>{residents.length}</strong><small>Active resident accounts</small><div className="portal-kpi-icon"><Users size={18} /></div></div>
-        <div className="portal-kpi green"><span>Occupied Flats</span><strong>{occupiedFlats}</strong><small>{flats.length} total flats</small><div className="portal-kpi-icon"><CalendarDays size={18} /></div></div>
+        <div className="portal-kpi"><span>{t('adminDashboard.totalResidents')}</span><strong>{residents.length}</strong><small>{t('adminDashboard.approvedResidentAccounts')}</small><div className="portal-kpi-icon"><Users size={18} /></div></div>
+        <div className="portal-kpi green"><span>{t('adminDashboard.totalFlats')}</span><strong>{occupiedFlats}</strong><small>{t('residents.totalFlatsCount', { count: flats.length })}</small><div className="portal-kpi-icon"><CalendarDays size={18} /></div></div>
       </div>}
 
       <section className="portal-panel portal-table-card">
-        <div className="portal-panel-head"><div><h2>Resident Directory</h2><p>Names, assigned flats and account dates.</p></div></div>
+        <div className="portal-panel-head"><div><h2>{t('residents.directoryTitle')}</h2><p>{t('residents.directorySubtitle')}</p></div></div>
         <div className="portal-table-wrap">
           {loading ? <TableSkeleton rows={5} columns={6} /> : <table className="portal-data-table">
-            <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Assigned Flat</th><th>Wing</th><th>Floor</th><th>Status</th><th>Created At</th><th>Actions</th></tr></thead>
+            <thead><tr><th>{t('common.name', 'Name')}</th><th>{t('common.email', 'Email')}</th><th>{t('common.phone', 'Phone')}</th><th>{t('residents.assignedFlat', 'Assigned Flat')}</th><th>{t('common.wing', 'Wing')}</th><th>{t('common.floor', 'Floor')}</th><th>{t('common.status', 'Status')}</th><th>{t('common.createdAt', 'Created At')}</th><th>{t('common.actions', 'Actions')}</th></tr></thead>
             <tbody>
               {residents.map((resident) => (
                 <tr key={resident.id}>
                   <td><strong>{resident.name}</strong></td>
                   <td>{resident.email}</td>
-                  <td>{resident.phone || <span className="portal-muted-text">Not added</span>}</td>
-                  <td>{resident.flat_no ? <strong>Flat {resident.flat_no}</strong> : <span className="portal-muted-text">Not assigned</span>}</td>
+                  <td>{resident.phone || <span className="portal-muted-text">{t('common.notAdded')}</span>}</td>
+                  <td>{resident.flat_no ? <strong>{t('common.flat')} {resident.flat_no}</strong> : <span className="portal-muted-text">{t('common.notAssigned')}</span>}</td>
                   <td>{resident.wing || <span className="portal-muted-text">-</span>}</td>
                   <td>{resident.floor_no ?? <span className="portal-muted-text">-</span>}</td>
-                  <td><span className={`portal-status ${resident.status === 'approved' ? 'paid' : 'pending'}`}>{resident.status || 'approved'}</span></td>
+                  <td><span className={`portal-status ${resident.status === 'approved' ? 'paid' : 'pending'}`}>{t(resident.status ? resident.status.charAt(0).toUpperCase() + resident.status.slice(1) : 'Approved')}</span></td>
                   <td>{new Date(resident.created_at).toLocaleDateString()}</td>
                   <td>
                     <div className="portal-row-actions">
-                      {resident.status !== 'approved' && <button onClick={() => handleStatus(resident, 'approved')}><ShieldCheck size={14} /> Approve</button>}
-                      {resident.status !== 'rejected' && <button onClick={() => handleStatus(resident, 'rejected')}><XCircle size={14} /> Reject</button>}
-                      <button onClick={() => handleEdit(resident)}><Edit3 size={14} /> Edit</button>
-                      <button className="danger" onClick={() => handleDelete(resident.id)}><Trash2 size={14} /> Delete</button>
+                      {resident.status !== 'approved' && <button onClick={() => handleStatus(resident, 'approved')}><ShieldCheck size={14} /> {t('common.approve', 'Approve')}</button>}
+                      {resident.status !== 'rejected' && <button onClick={() => handleStatus(resident, 'rejected')}><XCircle size={14} /> {t('common.reject', 'Reject')}</button>}
+                      <button onClick={() => handleEdit(resident)}><Edit3 size={14} /> {t('common.edit')}</button>
+                      <button className="danger" onClick={() => handleDelete(resident.id)}><Trash2 size={14} /> {t('common.delete')}</button>
                     </div>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>}
-          {!loading && !residents.length && <div className="portal-empty">No residents found.</div>}
+          {!loading && !residents.length && <div className="portal-empty">{t('common.noData', 'No data available')}</div>}
         </div>
       </section>
 

@@ -299,8 +299,7 @@ const AdminSettings = () => {
         }
         return f;
       }));
-      
-      setSelectedFlat(null);
+            setSelectedFlat(null);
     } catch (err) {
       setError('Could not save category assignments.');
     } finally {
@@ -346,10 +345,10 @@ const AdminSettings = () => {
     <div className="portal-settings">
       <div className="portal-page-title">
         <div>
-          <h1>Settings</h1>
-          <p>Manage society profile, billing rules, alerts and admin security.</p>
+          <h1>{t('settings.title')}</h1>
+          <p>{t('settings.subtitle')}</p>
         </div>
-        <div className="portal-date-chip"><ShieldCheck size={15} /> Admin Controls</div>
+        <div className="portal-date-chip"><ShieldCheck size={15} /> {t('settings.adminControls')}</div>
       </div>
 
       {toast && <div className="mm-toast"><CheckCircle2 size={18} />{toast}</div>}
@@ -357,7 +356,7 @@ const AdminSettings = () => {
       {saved && (
         <div className="settings-success">
           <CheckCircle2 size={18} />
-          <span>Settings saved to backend successfully.</span>
+          <span>{t('settings.savedSuccess')}</span>
         </div>
       )}
 
@@ -369,7 +368,7 @@ const AdminSettings = () => {
 
       <div className="mm-tabs" role="tablist" style={{ marginBottom: '22px' }}>
         <button className={tab === 'general' ? 'active' : ''} onClick={() => setTab('general')}>
-          <UserCog size={17} /> Society & Account
+          <UserCog size={17} /> {t('settings.societyAndAccount')}
         </button>
       </div>
 
@@ -405,7 +404,7 @@ const AdminSettings = () => {
                     gap: '4px'
                   }}
                 >
-                  <Upload size={12} /> Upload
+                  <Upload size={12} /> {t('settings.upload')}
                 </button>
                 {settings.profilePicture && (
                   <button
@@ -425,7 +424,7 @@ const AdminSettings = () => {
                       gap: '4px'
                     }}
                   >
-                    <X size={12} /> Remove
+                    <X size={12} /> {t('settings.remove')}
                   </button>
                 )}
               </div>
@@ -438,7 +437,7 @@ const AdminSettings = () => {
               />
             </div>
             <h2>{user?.name || 'Admin'}</h2>
-            <p>Administrator</p>
+            <p>{t('common.administrator')}</p>
             <div className="settings-profile-meta">
               <span><Mail size={14} /> {user?.email}</span>
               {user?.phone && <span><Phone size={14} /> {user.phone}</span>}
@@ -477,9 +476,36 @@ const AdminSettings = () => {
               </div>
             )}
             <div className="appearance-card">
-              <div className="appearance-head">
-                <strong>{t('theme.appearance')}</strong>
-                <small>{t('theme.currentTheme', { theme: themeMode === 'system' ? resolvedTheme : themeMode })}</small>
+              <div className="appearance-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                <div>
+                  <strong>{t('theme.appearance')}</strong>
+                  <small style={{ display: 'block', marginTop: '2px' }}>
+                    {resolvedTheme === 'dark' ? t('theme.darkModeOn') : t('theme.darkModeOff')}
+                  </small>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setThemeMode(resolvedTheme === 'dark' ? 'light' : 'dark')}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '6px 14px',
+                    borderRadius: '999px',
+                    fontWeight: '800',
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    border: '1px solid',
+                    borderColor: resolvedTheme === 'dark' ? '#22c55e' : '#94a3b8',
+                    background: resolvedTheme === 'dark' ? 'rgba(34, 197, 94, 0.15)' : '#f1f5f9',
+                    color: resolvedTheme === 'dark' ? '#22c55e' : '#475569'
+                  }}
+                  title={resolvedTheme === 'dark' ? t('theme.disableDarkMode') : t('theme.enableDarkMode')}
+                >
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: resolvedTheme === 'dark' ? '#22c55e' : '#94a3b8' }} />
+                  {resolvedTheme === 'dark' ? t('theme.disableDarkMode') : t('theme.enableDarkMode')}
+                </button>
               </div>
               <div className="appearance-options" role="group" aria-label={t('theme.appearance')}>
                 {[
@@ -494,6 +520,9 @@ const AdminSettings = () => {
                   >
                     <Icon size={15} />
                     <span>{label}</span>
+                    <span style={{ marginLeft: 'auto', fontSize: '10px', fontWeight: '800', opacity: 0.85 }}>
+                      {themeMode === mode ? `[${t('theme.enabled')}]` : `[${t('theme.disabled')}]`}
+                    </span>
                   </button>
                 ))}
               </div>
@@ -544,30 +573,30 @@ const AdminSettings = () => {
                 {settings.paymentQrImage ? (
                   <>
                     <img src={settings.paymentQrImage} alt="Maintenance payment scanner" loading="lazy" decoding="async" />
-                    <button type="button" onClick={removeQrImage}><X size={14} /> Remove</button>
+                    <button type="button" onClick={removeQrImage}><X size={14} /> {t('settings.remove')}</button>
                   </>
                 ) : (
                   <div>
                     <QrCode size={36} />
-                    <strong>No QR uploaded</strong>
-                    <span>Upload your UPI scanner image here.</span>
+                    <strong>{t('settings.noQrUploaded')}</strong>
+                    <span>{t('settings.uploadScannerHelp')}</span>
                   </div>
                 )}
               </div>
               <div className="settings-form settings-form-plain">
                 <label>
-                  Upload QR / Scanner
+                  {t('settings.uploadQrScanner')}
                   <span className="settings-upload-button">
-                    <Upload size={15} /> Choose image
+                    <Upload size={15} /> {t('settings.chooseImage')}
                     <input type="file" accept="image/*" onChange={handleQrUpload} />
                   </span>
                 </label>
                 <label>
-                  UPI ID / Payment Name
+                  {t('settings.upiId')}
                   <input name="paymentUpiId" value={settings.paymentUpiId || ''} onChange={handleChange} placeholder="example@upi" />
                 </label>
                 <label className="settings-field-full">
-                  Payment Instructions
+                  {t('settings.paymentInstructions')}
                   <textarea name="paymentNote" rows="3" value={settings.paymentNote || ''} onChange={handleChange} />
                 </label>
               </div>
@@ -577,22 +606,22 @@ const AdminSettings = () => {
           <section className="portal-panel settings-card">
             <div className="portal-panel-head">
               <div>
-                <h2>Notifications</h2>
-                <p>Choose which admin alerts should stay active.</p>
+                <h2>{t('settings.notifications')}</h2>
+                <p>{t('settings.notificationsNote')}</p>
               </div>
               <Bell size={20} />
             </div>
             <div className="settings-toggle-list">
-              <label><input type="checkbox" name="autoReminder" checked={settings.autoReminder} onChange={handleChange} /><span><Clock size={30} /> Payment due reminders</span></label>
-              <label><input type="checkbox" name="paymentAlerts" checked={settings.paymentAlerts} onChange={handleChange} /><span><CreditCard size={20} /> Payment alerts</span></label>
-              <label><input type="checkbox" name="complaintAlerts" checked={settings.complaintAlerts} onChange={handleChange} /><span><UserCog size={20} /> Complaint updates</span></label>
-              <label><input type="checkbox" name="visitorAlerts" checked={settings.visitorAlerts} onChange={handleChange} /><span><Bell size={20} /> Visitor alerts</span></label>
+              <label><input type="checkbox" name="autoReminder" checked={settings.autoReminder} onChange={handleChange} /><span><Clock size={30} /> {t('settings.paymentDueReminders')}</span></label>
+              <label><input type="checkbox" name="paymentAlerts" checked={settings.paymentAlerts} onChange={handleChange} /><span><CreditCard size={20} /> {t('settings.paymentAlerts')}</span></label>
+              <label><input type="checkbox" name="complaintAlerts" checked={settings.complaintAlerts} onChange={handleChange} /><span><UserCog size={20} /> {t('settings.complaintUpdates')}</span></label>
+              <label><input type="checkbox" name="visitorAlerts" checked={settings.visitorAlerts} onChange={handleChange} /><span><Bell size={20} /> {t('settings.visitorAlerts')}</span></label>
             </div>
           </section>
 
           <div className="settings-actions settings-wide">
             <button type="submit" className="settings-save-btn" disabled={saving}>
-              <Save size={16} /> {saving ? 'Saving...' : 'Save Settings'}
+              <Save size={16} /> {saving ? t('common.saving') : t('settings.saveSettings')}
             </button>
           </div>
         </form>
@@ -600,8 +629,8 @@ const AdminSettings = () => {
         <section className="mm-panel mm-table-panel" style={{ marginTop: '10px' }}>
           <div className="mm-panel-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px' }}>
             <div>
-              <h2>Resident Maintenance Categories</h2>
-              <p>Customize maintenance categories billed to individual flats.</p>
+              <h2>{t('settings.resMaintenanceCategories')}</h2>
+              <p>{t('settings.resMaintenanceCategoriesNote')}</p>
             </div>
           </div>
           
@@ -610,7 +639,7 @@ const AdminSettings = () => {
               <div className="mm-empty" style={{ padding: '45px 15px', textAlign: 'center' }}>
                 <SlidersHorizontal size={36} style={{ color: '#94a3b8', marginBottom: '12px' }} />
                 <strong style={{ display: 'block', fontSize: '15px', color: '#1e293b', marginBottom: '8px' }}>
-                  No maintenance categories found. Please create categories first.
+                  {t('settings.noCategoriesFound')}
                 </strong>
                 <button
                   type="button"
@@ -618,14 +647,14 @@ const AdminSettings = () => {
                   style={{ display: 'inline-flex', marginTop: '12px' }}
                   onClick={() => window.location.href = '/admin/maintenance?tab=categories'}
                 >
-                  Go to Maintenance Categories
+                  {t('settings.goToCategories')}
                 </button>
               </div>
             ) : (
               <>
                 {selectedRows.length > 0 && (
                   <div className="mm-bulk-bar" style={{ display: 'flex', gap: '12px', alignItems: 'center', padding: '12px 16px', backgroundColor: '#f0fdf4', borderRadius: '8px', border: '1px solid #bbf7d0', marginBottom: '15px' }}>
-                    <span style={{ fontSize: '14px', fontWeight: '600', color: '#166534' }}>{selectedRows.length} flat(s) selected</span>
+                    <span style={{ fontSize: '14px', fontWeight: '600', color: '#166534' }}>{t('settings.flatsSelected', { count: selectedRows.length })}</span>
                     <button
                       type="button"
                       className="mm-button mm-button-primary"
@@ -636,7 +665,7 @@ const AdminSettings = () => {
                       }}
                       style={{ padding: '6px 12px', fontSize: '13px' }}
                     >
-                      Bulk Assign Categories
+                      {t('settings.bulkAssignCategories')}
                     </button>
                     <button
                       type="button"
@@ -644,7 +673,7 @@ const AdminSettings = () => {
                       onClick={() => setSelectedRows([])}
                       style={{ padding: '6px 12px', fontSize: '13px' }}
                     >
-                      Cancel Selection
+                      {t('settings.cancelSelection')}
                     </button>
                   </div>
                 )}
@@ -671,10 +700,10 @@ const AdminSettings = () => {
                               }}
                             />
                           </th>
-                          <th>Flat Number</th>
-                          <th>Resident Name</th>
-                          <th>Assigned Categories</th>
-                          <th style={{ textAlign: 'right' }}>Actions</th>
+                          <th>{t('settings.flatNumber')}</th>
+                          <th>{t('settings.residentName')}</th>
+                          <th>{t('settings.assignedCategories')}</th>
+                          <th style={{ textAlign: 'right' }}>{t('settings.actions')}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -698,8 +727,8 @@ const AdminSettings = () => {
                                   }}
                                 />
                               </td>
-                              <td><strong>Flat {flat.flat_no}</strong></td>
-                              <td>{flat.resident_name || <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>No active resident</span>}</td>
+                              <td><strong>{t('settings.flatLabel')} {flat.flat_no}</strong></td>
+                              <td>{flat.resident_name || <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>{t('settings.noActiveResident')}</span>}</td>
                               <td>
                                 {assignedCats.length > 0 ? (
                                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
@@ -710,7 +739,7 @@ const AdminSettings = () => {
                                     ))}
                                   </div>
                                 ) : (
-                                  <span style={{ color: '#94a3b8', fontSize: '13px', fontStyle: 'italic' }}>No custom categories (Base only)</span>
+                                  <span style={{ color: '#94a3b8', fontSize: '13px', fontStyle: 'italic' }}>{t('settings.noCustomCategories')}</span>
                                 )}
                               </td>
                               <td style={{ textAlign: 'right' }}>
@@ -719,7 +748,7 @@ const AdminSettings = () => {
                                   className="mm-mini-action blue"
                                   onClick={() => handleEditResident(flat)}
                                 >
-                                  Edit
+                                  {t('settings.edit')}
                                 </button>
                               </td>
                             </tr>
@@ -731,8 +760,8 @@ const AdminSettings = () => {
                 ) : (
                   <div className="mm-empty" style={{ padding: '40px 0' }}>
                     <Users size={32} style={{ color: '#94a3b8', marginBottom: '10px' }} />
-                    <strong>No occupied flats found</strong>
-                    <span>Only occupied flats with assigned residents are displayed here.</span>
+                    <strong>{t('settings.noOccupiedFlats')}</strong>
+                    <span>{t('settings.noOccupiedFlatsNote')}</span>
                   </div>
                 )}
               </>
@@ -743,15 +772,15 @@ const AdminSettings = () => {
 
       {selectedFlat && (
         <SettingsModal
-          title={`Assign Maintenance Categories`}
-          subtitle={`Flat: ${selectedFlat.flat_no} | Resident: ${selectedFlat.resident_name || 'N/A'}`}
+          title={t('settings.assignCategoriesTitle')}
+          subtitle={`${t('settings.flatLabel')}: ${selectedFlat.flat_no} | ${t('settings.residentLabel')}: ${selectedFlat.resident_name || 'N/A'}`}
           onClose={() => setSelectedFlat(null)}
         >
           <form onSubmit={handleSaveResidentCategories} className="mm-form">
             <div style={{ marginBottom: '15px' }}>
               <input
                 type="text"
-                placeholder="Search categories..."
+                placeholder={t('settings.searchCategories')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 style={{ width: '100%', padding: '8px 12px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '14px' }}
@@ -768,7 +797,7 @@ const AdminSettings = () => {
                   setSelectedCategories(prev => Array.from(new Set([...prev, ...visibleIds])));
                 }}
               >
-                Select All
+                {t('settings.selectAll')}
               </button>
               <button
                 type="button"
@@ -779,7 +808,7 @@ const AdminSettings = () => {
                   setSelectedCategories(prev => prev.filter(id => !visibleIds.includes(id)));
                 }}
               >
-                Clear All
+                {t('settings.clearAll')}
               </button>
             </div>
             
@@ -807,14 +836,14 @@ const AdminSettings = () => {
               ))}
               {filteredCategories.length === 0 && (
                 <div style={{ padding: '20px', gridColumn: '1 / -1', textAlign: 'center', color: '#94a3b8', fontSize: '13px' }}>
-                  No active categories match your query.
+                  {t('settings.noActiveCategories')}
                 </div>
               )}
             </div>
             
             <div className="mm-form-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '15px' }}>
-              <button type="button" className="mm-button mm-button-light" onClick={() => setSelectedFlat(null)}>Cancel</button>
-              <button type="submit" className="mm-button mm-button-primary" disabled={saving}>Save</button>
+              <button type="button" className="mm-button mm-button-light" onClick={() => setSelectedFlat(null)}>{t('settings.cancel')}</button>
+              <button type="submit" className="mm-button mm-button-primary" disabled={saving}>{t('settings.save')}</button>
             </div>
           </form>
         </SettingsModal>
@@ -822,15 +851,15 @@ const AdminSettings = () => {
 
       {bulkModalOpen && (
         <SettingsModal
-          title={`Bulk Assign Categories`}
-          subtitle={`${selectedRows.length} flat(s) selected`}
+          title={t('settings.bulkAssignTitle')}
+          subtitle={t('settings.flatsSelected', { count: selectedRows.length })}
           onClose={() => setBulkModalOpen(false)}
         >
           <form onSubmit={handleBulkAssign} className="mm-form">
             <div style={{ marginBottom: '15px' }}>
               <input
                 type="text"
-                placeholder="Search categories..."
+                placeholder={t('settings.searchCategories')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 style={{ width: '100%', padding: '8px 12px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '14px' }}
@@ -847,7 +876,7 @@ const AdminSettings = () => {
                   setSelectedCategories(prev => Array.from(new Set([...prev, ...visibleIds])));
                 }}
               >
-                Select All
+                {t('settings.selectAll')}
               </button>
               <button
                 type="button"
@@ -858,7 +887,7 @@ const AdminSettings = () => {
                   setSelectedCategories(prev => prev.filter(id => !visibleIds.includes(id)));
                 }}
               >
-                Clear All
+                {t('settings.clearAll')}
               </button>
             </div>
             
@@ -886,14 +915,14 @@ const AdminSettings = () => {
               ))}
               {filteredCategories.length === 0 && (
                 <div style={{ padding: '20px', gridColumn: '1 / -1', textAlign: 'center', color: '#94a3b8', fontSize: '13px' }}>
-                  No active categories match your query.
+                  {t('settings.noActiveCategories')}
                 </div>
               )}
             </div>
             
             <div className="mm-form-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '15px' }}>
-              <button type="button" className="mm-button mm-button-light" onClick={() => setBulkModalOpen(false)}>Cancel</button>
-              <button type="submit" className="mm-button mm-button-primary" disabled={saving}>Save Bulk Assignments</button>
+              <button type="button" className="mm-button mm-button-light" onClick={() => setBulkModalOpen(false)}>{t('settings.cancel')}</button>
+              <button type="submit" className="mm-button mm-button-primary" disabled={saving}>{t('settings.saveBulkAssignments')}</button>
             </div>
           </form>
         </SettingsModal>

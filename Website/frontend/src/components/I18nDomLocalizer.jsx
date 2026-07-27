@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
 const TRANSLATABLE_ATTRIBUTES = ['placeholder', 'title', 'aria-label'];
+const originalTextMap = new WeakMap();
 
 const getTextMap = (i18n) => {
   const bundle = i18n.getResourceBundle(i18n.resolvedLanguage || i18n.language || 'en', 'translation');
@@ -22,13 +23,26 @@ const localizeNode = (root, textMap, language) => {
     const trimmed = value.trim();
     if (!trimmed) return;
 
-    if (!node.parentElement?.dataset.i18nOriginalText) {
-      node.parentElement.dataset.i18nOriginalText = trimmed;
+    if (!originalTextMap.has(node)) {
+      originalTextMap.set(node, trimmed);
     }
 
-    const original = node.parentElement.dataset.i18nOriginalText;
-    const translated = language === 'en' ? original : textMap[original];
-    if (translated) node.nodeValue = preserveSpacing(value, translated);
+    const original = originalTextMap.get(node);
+    if (language === 'en') {
+      const resetValue = preserveSpacing(value, original);
+      if (node.nodeValue !== resetValue) {
+        node.nodeValue = resetValue;
+      }
+      return;
+    }
+
+    const translated = textMap[original];
+    if (translated) {
+      const formatted = preserveSpacing(value, translated);
+      if (node.nodeValue !== formatted) {
+        node.nodeValue = formatted;
+      }
+    }
   };
 
   const localizeElement = (element) => {

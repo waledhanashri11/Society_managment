@@ -1277,7 +1277,16 @@
 .settings-toggle-list input[type="checkbox"],
 .notice-poll-option input,
 .rules-accept-check input {
+  width: 18px !important;
+  height: 18px !important;
+  min-height: 18px !important;
+  padding: 0 !important;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  cursor: pointer;
   accent-color: var(--portal-blue);
+  flex-shrink: 0;
 }
 
 .portal-resident .portal-form input[type="checkbox"],
@@ -2840,4 +2849,50 @@
     min-width: 38px;
     opacity: 0;
   }
+}
+
+.portal-dropdown-language-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #edf0f3;
+  padding: 10px 14px;
+  background: white;
+}
+
+.portal-dropdown-language-item .portal-dropdown-item-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.portal-dropdown-language-item svg {
+  color: var(--portal-blue, #1473e6);
+  flex: 0 0 auto;
+}
+
+.portal-dropdown-language-item strong, .portal-dropdown-language-item small {
+  display: block;
+  text-align: left;
+}
+
+.portal-dropdown-language-item strong {
+  font-size: 10px;
+  color: #344255;
+}
+
+.portal-dropdown-language-item small {
+  margin-top: 3px;
+  color: var(--portal-muted, #687588);
+  font-size: 8px;
+}
+
+[data-theme="dark"] .portal-dropdown-language-item {
+  background: #111827;
+  border-color: #1f2937;
+}
+
+[data-theme="dark"] .portal-dropdown-language-item strong {
+  color: #f3f4f6;
 }
