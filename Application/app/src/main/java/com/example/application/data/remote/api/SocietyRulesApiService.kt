@@ -4,6 +4,7 @@ import com.example.application.data.remote.dto.SocietyRuleAcknowledgementReportD
 import com.example.application.data.remote.dto.SocietyRuleActionResponse
 import com.example.application.data.remote.dto.SocietyRuleDto
 import com.example.application.data.remote.dto.SocietyRulesMetaDto
+import com.example.application.data.remote.dto.SocietyRulesResponse
 import com.example.application.data.remote.dto.SocietyRuleSaveRequest
 import retrofit2.Response
 import retrofit2.http.Body
@@ -23,7 +24,7 @@ interface SocietyRulesApiService {
         @Query("category") category: String? = null,
         @Query("priority") priority: String? = null,
         @Query("status") status: String? = null
-    ): Response<List<SocietyRuleDto>>
+    ): Response<SocietyRulesResponse>
 
     @GET("api/rules/categories")
     suspend fun getCategories(): Response<List<String>>

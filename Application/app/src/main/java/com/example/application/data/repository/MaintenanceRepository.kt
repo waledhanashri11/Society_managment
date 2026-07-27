@@ -29,6 +29,7 @@ import javax.inject.Singleton
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import retrofit2.Response
+import kotlinx.coroutines.delay
 
 
 @Singleton
@@ -216,7 +217,11 @@ class MaintenanceRepository @Inject constructor(
 
     private suspend fun <T> messageCall(call: suspend () -> Response<ApiResponse<T>>): NetworkResult<String> {
         return try {
-            val response = call()
+            var response = call()
+            if (response.code() == 502 || response.code() == 503) {
+                delay(900)
+                response = call()
+            }
             if (response.isSuccessful && response.body()?.success != false) {
                 clearCaches()
                 NetworkResult.Success(response.body()?.message ?: "Saved successfully")

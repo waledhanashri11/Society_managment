@@ -17,6 +17,7 @@ import java.net.UnknownHostException
 import javax.inject.Inject
 import javax.inject.Singleton
 import retrofit2.Response
+import kotlinx.coroutines.delay
 
 @Singleton
 class SocietyRulesRepository @Inject constructor(
@@ -29,12 +30,20 @@ class SocietyRulesRepository @Inject constructor(
 
     suspend fun getAdminRules(refresh: Boolean = false): NetworkResult<List<SocietyRuleDto>> {
         adminRulesCache?.takeIf { !refresh }?.let { return NetworkResult.Success(it) }
-        return safeCall { api.getRules() }.also { if (it is NetworkResult.Success) adminRulesCache = it.data }
+        return when (val result = safeCall { api.getRules() }) {
+            is NetworkResult.Success -> NetworkResult.Success(result.data.rules).also { adminRulesCache = result.data.rules }
+            is NetworkResult.Error -> result
+            NetworkResult.Loading -> NetworkResult.Loading
+        }
     }
 
     suspend fun getResidentRules(refresh: Boolean = false): NetworkResult<List<SocietyRuleDto>> {
         residentRulesCache?.takeIf { !refresh }?.let { return NetworkResult.Success(it) }
-        return safeCall { api.getRules(status = "published") }.also { if (it is NetworkResult.Success) residentRulesCache = it.data }
+        return when (val result = safeCall { api.getRules(status = "published") }) {
+            is NetworkResult.Success -> NetworkResult.Success(result.data.rules).also { residentRulesCache = result.data.rules }
+            is NetworkResult.Error -> result
+            NetworkResult.Loading -> NetworkResult.Loading
+        }
     }
 
     suspend fun getMeta(): NetworkResult<SocietyRulesMetaDto> = safeCall { api.getMeta() }
@@ -122,7 +131,11 @@ class SocietyRulesRepository @Inject constructor(
 
     private suspend fun <T> safeCall(call: suspend () -> Response<T>): NetworkResult<T> {
         return try {
-            val response = call()
+            var response = call()
+            if (response.code() == 502 || response.code() == 503) {
+                delay(900)
+                response = call()
+            }
             if (response.isSuccessful) {
                 response.body()?.let { NetworkResult.Success(it) }
                     ?: NetworkResult.Error(AppError.Unknown("Unable to read server response."))

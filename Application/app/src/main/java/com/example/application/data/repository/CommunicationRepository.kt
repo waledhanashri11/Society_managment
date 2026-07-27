@@ -21,6 +21,7 @@ import java.net.UnknownHostException
 import javax.inject.Inject
 import javax.inject.Singleton
 import retrofit2.Response
+import kotlinx.coroutines.delay
 
 @Singleton
 class CommunicationRepository @Inject constructor(
@@ -117,7 +118,11 @@ class CommunicationRepository @Inject constructor(
 
     private suspend fun <T> safeCall(call: suspend () -> Response<T>): NetworkResult<T> {
         return try {
-            val response = call()
+            var response = call()
+            if (response.code() == 502 || response.code() == 503) {
+                delay(900)
+                response = call()
+            }
             if (response.isSuccessful) {
                 response.body()?.let { NetworkResult.Success(it) }
                     ?: NetworkResult.Error(AppError.Unknown("Unable to read server response."))

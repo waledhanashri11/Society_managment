@@ -109,7 +109,7 @@ class ResidentSocietyRulesViewModel @Inject constructor(
         viewModelScope.launch {
             _state.update { it.copy(isLoading = it.items.isEmpty(), isRefreshing = refresh, error = null, message = null) }
             when (val meta = repository.getMeta()) {
-                is NetworkResult.Success -> _state.update { it.copy(rulesVersion = meta.data.version, needsAcceptance = meta.data.needsAcceptance == true) }
+                is NetworkResult.Success -> _state.update { it.copy(rulesVersion = meta.data.version, needsAcceptance = (meta.data.acceptance?.needsAcceptance ?: meta.data.needsAcceptance) == true) }
                 is NetworkResult.Error -> Unit
                 NetworkResult.Loading -> Unit
             }

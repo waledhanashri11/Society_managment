@@ -2085,7 +2085,9 @@ const getPaymentVerifications = async (req, res) => {
       LEFT JOIN maintenance m ON m.id = COALESCE(pm.maintenance_id, p.bill_id)
       LEFT JOIN users u ON u.id = COALESCE(m.resident_id, p.resident_id)
       LEFT JOIN flats f ON f.id = m.flat_id
-      WHERE p.payment_status IN ('PENDING_REVIEW', 'Pending Verification', 'Pending', 'Under Review', 'NEEDS_CLARIFICATION', 'Needs Clarification', 'REJECTED', 'Rejected', 'Declined', 'pending', 'under_review', 'rejected')
+      -- The Android verification screen is also the payment audit ledger.
+      -- Return approved/paid rows as well as pending and rejected submissions.
+      WHERE p.id IS NOT NULL
       ORDER BY p.created_at DESC
     `;
     
