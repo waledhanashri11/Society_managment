@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.Card
@@ -74,6 +75,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.application.data.repository.AdminDashboardData
 import com.example.application.R
 import com.example.application.ui.components.LanguageSelector
+import com.example.application.ui.components.NotificationDropdown
 import com.example.application.ui.components.localizedLabel
 import com.example.application.util.DashboardFormatters
 import com.example.application.viewmodel.AdminDashboardViewModel
@@ -175,9 +177,7 @@ private fun AdminHeader(adminName: String, onMenu: () -> Unit, onNotifications: 
             horizontalArrangement = Arrangement.spacedBy(2.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onNotifications) {
-                Icon(Icons.Filled.Notifications, contentDescription = stringResource(R.string.notifications), tint = Color.White, modifier = Modifier.size(30.dp))
-            }
+            NotificationDropdown(tint = Color.White, onViewAll = onNotifications)
             IconButton(onClick = onLogout) {
                 Icon(Icons.Filled.Logout, contentDescription = stringResource(R.string.logout), tint = Color.White, modifier = Modifier.size(28.dp))
             }
@@ -440,6 +440,10 @@ private fun AdminDrawer(adminName: String, onAction: (String) -> Unit) {
             AdminAction("Meetings", "Meeting Management", Icons.Filled.Event, Color(0xFF5B5BD6)),
             AdminAction("Complaints", "Complaints", Icons.Filled.WarningAmber, Color(0xFFFFA000)),
             AdminAction("Reports", "Reports", Icons.Filled.TrendingUp, Color(0xFF9C3ED7)),
+            AdminAction("Settings", "Settings", Icons.Filled.Settings, Color(0xFF0B7F77)),
+            AdminAction("Write-offs", "Write-off History", Icons.Filled.ReceiptLong, Color(0xFFD14343)),
+            AdminAction("AGM Report", "AGM Report", Icons.Filled.TrendingUp, Color(0xFF5B5BD6)),
+            AdminAction("Flat Transfers", "Flat Transfers", Icons.Filled.Apartment, Color(0xFF20B86B)),
             AdminAction("NOC", "NOC Requests", Icons.Filled.Description, Color(0xFF16B6A4)),
             AdminAction("Logout", "Logout", Icons.Filled.Logout, Color(0xFFE53935))
         ).forEach { action ->
@@ -459,6 +463,10 @@ private fun adminQuickActions(): List<AdminAction> = listOf(
     AdminAction("Meetings", "Meeting Management", Icons.Filled.Event, Color(0xFF5B5BD6)),
     AdminAction("Complaints", "Complaints", Icons.Filled.WarningAmber, Color(0xFFFFA000)),
     AdminAction("Reports", "Reports", Icons.Filled.TrendingUp, Color(0xFF9C3ED7)),
+    AdminAction("Settings", "Settings", Icons.Filled.Settings, Color(0xFF0B7F77)),
+    AdminAction("Write-offs", "Write-off History", Icons.Filled.ReceiptLong, Color(0xFFD14343)),
+    AdminAction("AGM Report", "AGM Report", Icons.Filled.TrendingUp, Color(0xFF5B5BD6)),
+    AdminAction("Flat Transfers", "Flat Transfers", Icons.Filled.Apartment, Color(0xFF20B86B)),
     AdminAction("NOC", "NOC Requests", Icons.Filled.Description, Color(0xFF16B6A4)),
     AdminAction("Staff", "Staff", Icons.Filled.Security, Color(0xFF2F80ED))
 )

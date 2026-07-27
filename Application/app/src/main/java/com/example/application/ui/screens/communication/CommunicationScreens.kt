@@ -68,6 +68,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -584,30 +585,77 @@ fun NoticesScreen(onBack: () -> Unit, admin: Boolean, viewModel: NoticesViewMode
             var description by remember { mutableStateOf("") }
             var pollEnabled by remember { mutableStateOf(false) }
             var pollQuestion by remember { mutableStateOf("") }
+            var pollType by remember { mutableStateOf("yes_no") }
+            var pollStart by remember { mutableStateOf(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)) }
+            var pollEnd by remember { mutableStateOf(LocalDateTime.now().plusDays(7).format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)) }
+            var anonymous by remember { mutableStateOf(false) }
+            var allowChange by remember { mutableStateOf(true) }
+            var showEarly by remember { mutableStateOf(true) }
+            var mandatory by remember { mutableStateOf(false) }
+            val options = remember { mutableStateListOf("Yes", "No") }
             BasicAppTextField(title, { title = it }, "Title")
             BasicAppTextField(description, { description = it }, "Description")
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(checked = pollEnabled, onCheckedChange = { pollEnabled = it })
-                Text("Attach Yes/No poll")
+                Text("Attach resident poll")
             }
             if (pollEnabled) {
                 BasicAppTextField(pollQuestion, { pollQuestion = it }, "Poll Question")
+                Text("Poll type", fontWeight = FontWeight.Bold)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("yes_no" to "Yes / No", "single_choice" to "Single choice", "multiple_choice" to "Multiple choice").forEach { (value, label) ->
+                        FilterChip(
+                            selected = pollType == value,
+                            onClick = {
+                                pollType = value
+                                if (value == "yes_no") {
+                                    options.clear()
+                                    options.addAll(listOf("Yes", "No"))
+                                } else if (options.size < 2) {
+                                    options.clear()
+                                    options.addAll(listOf("", ""))
+                                }
+                            },
+                            label = { Text(label) }
+                        )
+                    }
+                }
+                BasicAppTextField(pollStart, { pollStart = it }, "Start date-time")
+                BasicAppTextField(pollEnd, { pollEnd = it }, "End date-time")
+                Text("Poll options", fontWeight = FontWeight.Bold)
+                options.forEachIndexed { index, option ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        BasicAppTextField(option, { options[index] = it }, "Option ${index + 1}", modifier = Modifier.weight(1f), enabled = pollType != "yes_no")
+                        if (pollType != "yes_no" && options.size > 2) TextButton(onClick = { options.removeAt(index) }) { Text("Remove") }
+                    }
+                }
+                if (pollType != "yes_no" && options.size < 10) OutlinedButton(onClick = { options.add("") }, modifier = Modifier.fillMaxWidth()) { Text("Add Option") }
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = anonymous, onClick = { anonymous = !anonymous }, label = { Text("Anonymous") })
+                    FilterChip(selected = allowChange, onClick = { allowChange = !allowChange }, label = { Text("Allow vote change") })
+                    FilterChip(selected = showEarly, onClick = { showEarly = !showEarly }, label = { Text("Show results before end") })
+                    FilterChip(selected = mandatory, onClick = { mandatory = !mandatory }, label = { Text("Mandatory") })
+                }
             }
             Button(
                 onClick = {
                     val poll = if (pollEnabled) NoticePollSaveRequest(
                         enabled = true,
                         question = pollQuestion.trim(),
-                        startAt = LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
-                        endAt = LocalDateTime.now().plusDays(7).format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
-                        allowVoteChange = true,
-                        showResultsBeforeEnd = true
+                        pollType = pollType,
+                        options = options.map { it.trim() }.filter { it.isNotBlank() }.ifEmpty { listOf("Yes", "No") },
+                        startAt = pollStart,
+                        endAt = pollEnd,
+                        anonymous = anonymous,
+                        allowVoteChange = allowChange,
+                        showResultsBeforeEnd = showEarly,
+                        mandatory = mandatory
                     ) else null
                     viewModel.createNotice(title, description, poll)
                     showCreate = false
                 },
                 modifier = Modifier.fillMaxWidth(),
-                enabled = title.isNotBlank() && description.isNotBlank() && (!pollEnabled || pollQuestion.isNotBlank())
+                enabled = title.isNotBlank() && description.isNotBlank() && (!pollEnabled || (pollQuestion.isNotBlank() && options.count { it.isNotBlank() } >= 2))
             ) { Text("Publish Notice") }
         }
     }

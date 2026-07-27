@@ -20,6 +20,10 @@ import com.example.application.ui.screens.advanced.ResidentAdvancedFeaturesScree
 import com.example.application.ui.screens.admin.FlatDetailsScreen
 import com.example.application.ui.screens.admin.FlatFormScreen
 import com.example.application.ui.screens.admin.FlatsListScreen
+import com.example.application.ui.screens.admin.AdminAgmReportScreen
+import com.example.application.ui.screens.admin.AdminFlatTransferHistoryScreen
+import com.example.application.ui.screens.admin.AdminSettingsScreen
+import com.example.application.ui.screens.admin.AdminWriteOffHistoryScreen
 import com.example.application.ui.screens.admin.ResidentDetailsScreen
 import com.example.application.ui.screens.admin.ResidentFormScreen
 import com.example.application.ui.screens.admin.ResidentsListScreen
@@ -171,10 +175,14 @@ fun SocietyNavGraph(
                         "Rules", "Society Rules" -> navController.navigate(AppRoute.AdminRules.route)
                         "Meetings", "Meeting Management" -> navController.navigate(AppRoute.AdminMeetings.route)
                         "Reports" -> navController.navigate(AppRoute.AdminReports.route)
+                        "Settings" -> navController.navigate(AppRoute.AdminSettings.route)
+                        "Write-off History" -> navController.navigate(AppRoute.AdminWriteOffHistory.route)
+                        "AGM Report" -> navController.navigate(AppRoute.AdminAgmReport.route)
+                        "Flat Transfers" -> navController.navigate(AppRoute.AdminFlatTransfers.route)
                         "NOC Requests" -> navController.navigate(AppRoute.AdminNoc.route)
                         "Notifications" -> navController.navigate(AppRoute.Notifications.route)
                         "Events" -> navController.navigate(AppRoute.AdminEvents.route)
-                        "Visitors", "Settings", "Advanced Tools", "More" -> navController.navigate(AppRoute.AdminAdvanced.route)
+                        "Visitors", "Advanced Tools", "More" -> navController.navigate(AppRoute.AdminAdvanced.route)
                         else -> navController.navigate(AppRoute.ComingSoon.createRoute(title))
                     }
                 }
@@ -183,6 +191,22 @@ fun SocietyNavGraph(
 
         composable(AppRoute.AdminReports.route) {
             AdminReportsScreen(onBack = { navController.popBackStack() })
+        }
+
+        composable(AppRoute.AdminSettings.route) {
+            AdminSettingsScreen(onBack = { navController.popBackStack() })
+        }
+
+        composable(AppRoute.AdminWriteOffHistory.route) {
+            AdminWriteOffHistoryScreen(onBack = { navController.popBackStack() })
+        }
+
+        composable(AppRoute.AdminAgmReport.route) {
+            AdminAgmReportScreen(onBack = { navController.popBackStack() })
+        }
+
+        composable(AppRoute.AdminFlatTransfers.route) {
+            AdminFlatTransferHistoryScreen(onBack = { navController.popBackStack() })
         }
 
         composable(AppRoute.AdminNoc.route) {

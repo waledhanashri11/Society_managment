@@ -67,6 +67,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.application.R
 import com.example.application.data.remote.dto.MaintenanceBillDto
 import com.example.application.ui.components.LanguageSelector
+import com.example.application.ui.components.NotificationDropdown
 import com.example.application.ui.components.localizedLabel
 import com.example.application.ui.components.localizedPaymentStatus
 import com.example.application.util.DashboardFormatters
@@ -254,13 +255,7 @@ private fun ResidentDashboardTopBar(
             }
         },
         actions = {
-            IconButton(onClick = onNotificationClick) {
-                Icon(
-                    imageVector = Icons.Filled.Notifications,
-                    contentDescription = stringResource(R.string.notifications),
-                    tint = Color(0xFF0B5FFF)
-                )
-            }
+            NotificationDropdown(tint = Color(0xFF0B5FFF), onViewAll = onNotificationClick)
             IconButton(onClick = onProfileClick) {
                 Surface(
                     modifier = Modifier.size(38.dp),
