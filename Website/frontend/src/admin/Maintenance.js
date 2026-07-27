@@ -140,8 +140,8 @@ function Maintenance() {
   const [editBillForm, setEditBillForm] = useState({ amount: '', reason: '' });
 
   // Write-off states
-  const [legacyWriteOffBill, setLegacyWriteOffBill] = useState(null);
-  const [legacyWriteOffForm, setLegacyWriteOffForm] = useState({ type: 'Maintenance', amount: '', reason: '' });
+  const [writeOffBill, setWriteOffBill] = useState(null);
+  const [writeOffForm, setWriteOffForm] = useState({ type: 'Maintenance', amount: '', reason: '' });
 
   // Payment Verification States
   const [rejectionType, setRejectionType] = useState('Invalid Screenshot');
@@ -1020,8 +1020,8 @@ function Maintenance() {
   };
 
   const handleWriteOffClick = (bill) => {
-    setLegacyWriteOffBill(bill);
-    setLegacyWriteOffForm({
+    setWriteOffBill(bill);
+    setWriteOffForm({
       type: 'Maintenance',
       amount: String(bill.remaining_amount || 0),
       reason: ''
@@ -1029,32 +1029,32 @@ function Maintenance() {
     setModal('write_off');
   };
 
-  const submitLegacyWriteOff = async (e) => {
+  const submitWriteOff = async (e) => {
     e.preventDefault();
-    if (!legacyWriteOffForm.reason.trim()) {
+    if (!writeOffForm.reason.trim()) {
       notify('A reason is mandatory for performing a write-off');
       return;
     }
     
-    if (legacyWriteOffForm.type !== 'Full' && (!legacyWriteOffForm.amount || Number(legacyWriteOffForm.amount) <= 0)) {
+    if (writeOffForm.type !== 'Full' && (!writeOffForm.amount || Number(writeOffForm.amount) <= 0)) {
       notify('Please enter a valid write-off amount');
       return;
     }
 
-    if (!window.confirm(`Are you sure you want to approve this write-off (${legacyWriteOffForm.type}) of amount ₹${legacyWriteOffForm.type === 'Full' ? legacyWriteOffBill.remaining_amount : legacyWriteOffForm.amount}?`)) {
+    if (!window.confirm(`Are you sure you want to approve this write-off (${writeOffForm.type}) of amount ₹${writeOffForm.type === 'Full' ? writeOffBill.remaining_amount : writeOffForm.amount}?`)) {
       return;
     }
 
     setSaving(true);
     try {
-      await maintenanceAPI.createWriteOff(legacyWriteOffBill.id, {
-        type: legacyWriteOffForm.type,
-        reason: legacyWriteOffForm.reason,
-        amount: legacyWriteOffForm.type === 'Full' ? Number(legacyWriteOffBill.remaining_amount) : Number(legacyWriteOffForm.amount)
+      await maintenanceAPI.createWriteOff(writeOffBill.id, {
+        type: writeOffForm.type,
+        reason: writeOffForm.reason,
+        amount: writeOffForm.type === 'Full' ? Number(writeOffBill.remaining_amount) : Number(writeOffForm.amount)
       });
       notify('Write-off applied successfully');
       setModal(null);
-      setLegacyWriteOffBill(null);
+      setWriteOffBill(null);
       await load();
     } catch (err) {
       notify(err.response?.data?.message || 'Could not record write-off');
@@ -1793,70 +1793,6 @@ function Maintenance() {
           <div className="mm-form-actions"><button type="button" className="mm-button mm-button-light" onClick={() => setModal(null)}>Cancel</button><button className="mm-button mm-button-primary" disabled={saving}>Record expense</button></div>
         </form>
       </Modal>}
-
-      {modal === 'writeoff' && writeOffBill && (
-        <Modal
-          title="Maintenance Write-off"
-          subtitle={`${writeOffBill.resident_name || 'Resident'} · Flat ${writeOffBill.flat_no || ''}`}
-          onClose={() => { if (!saving) { setModal(null); setWriteOffBill(null); } }}
-        >
-          {(() => {
-            const currentDue = Number(writeOffBill.remaining_due ?? writeOffBill.current_due ?? writeOffBill.remaining_amount ?? writeOffBill.total_amount ?? 0);
-            const typedAmount = Number(writeOffForm.amount || 0);
-            const writeOffAmount = writeOffForm.writeoffType === 'TOTAL' ? currentDue : typedAmount;
-            const finalDue = Math.max(0, currentDue - writeOffAmount);
-            const canSubmit = currentDue > 0 && writeOffAmount > 0 && writeOffAmount <= currentDue;
-            return (
-              <form onSubmit={submitWriteOff} className="mm-form p-4">
-                <div className="rounded-lg p-4 mb-4 border text-sm" style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0', borderRadius: '8px', padding: '16px', marginBottom: '16px' }}>
-                  <div style={{ marginBottom: 8 }}><strong>Original Amount:</strong> {money(writeOffBill.original_amount || writeOffBill.amount)}</div>
-                  <div style={{ marginBottom: 8 }}><strong>Penalty:</strong> {money(writeOffBill.penalty_amount || writeOffBill.late_fee)}</div>
-                  <div style={{ marginBottom: 8 }}><strong>Paid:</strong> {money(writeOffBill.paid_amount)}</div>
-                  <div><strong>Current Due:</strong> {money(currentDue)}</div>
-                </div>
-
-                <label className="mm-field mm-field-full">
-                  <span>Write-off Type</span>
-                  <select value={writeOffForm.writeoffType} onChange={(e) => setWriteOffForm({ ...writeOffForm, writeoffType: e.target.value, amount: '' })}>
-                    <option value="PARTIAL">Partial write-off</option>
-                    <option value="TOTAL">Total write-off</option>
-                  </select>
-                </label>
-
-                {writeOffForm.writeoffType === 'PARTIAL' && (
-                  <label className="mm-field mm-field-full">
-                    <span>Write-off Amount</span>
-                    <input type="number" min="1" max={currentDue} required value={writeOffForm.amount} onChange={(e) => setWriteOffForm({ ...writeOffForm, amount: e.target.value })} />
-                  </label>
-                )}
-
-                <label className="mm-field mm-field-full">
-                  <span>Reason</span>
-                  <select value={writeOffForm.reason} onChange={(e) => setWriteOffForm({ ...writeOffForm, reason: e.target.value })}>
-                    {['Billing Error', 'Society Decision', 'Financial Assistance', 'Management Approval', 'Other'].map((reason) => <option key={reason}>{reason}</option>)}
-                  </select>
-                </label>
-
-                <label className="mm-field mm-field-full">
-                  <span>Admin Remarks (optional)</span>
-                  <textarea rows="3" value={writeOffForm.remarks} onChange={(e) => setWriteOffForm({ ...writeOffForm, remarks: e.target.value })} placeholder="Internal note for audit trail. Residents will not see this." />
-                </label>
-
-                <div className="rounded-lg p-4 border text-sm" style={{ backgroundColor: '#eef2ff', borderColor: '#c7d2fe', borderRadius: '8px', padding: '16px' }}>
-                  <div style={{ marginBottom: 8 }}><strong>Write-off:</strong> {money(writeOffAmount)}</div>
-                  <div><strong>Final Due:</strong> {money(finalDue)}</div>
-                  <p style={{ margin: '8px 0 0', color: '#475467' }}>Resident side will only show the updated due amount/status, not the reason or remarks.</p>
-                </div>
-
-                <div className="mm-form-actions">
-                  <button type="button" className="mm-button mm-button-light" disabled={saving} onClick={() => { setModal(null); setWriteOffBill(null); }}>Cancel</button>
-                  <button type="submit" className="mm-button mm-button-primary" disabled={saving || !canSubmit}>{saving ? 'Saving...' : 'Apply Write-off'}</button>
-                </div>
-              </form>
-            );
-          })()}
-        </Modal>
-      )}
 
       {modal === 'edit_bill' && editingBill && (
         <Modal 
