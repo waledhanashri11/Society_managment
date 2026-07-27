@@ -252,6 +252,45 @@ fun ResidentReportsScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val data = state.data
+    val startYear = if (LocalDate.now().monthValue >= 4) LocalDate.now().year else LocalDate.now().year - 1
+    val financialYear = "$startYear-${startYear + 1}"
+    Scaffold(topBar = {
+        TopAppBar(title = { Column { Text("Society Reports", fontWeight = FontWeight.Bold); Text("Transparency · Trust · Together", style = MaterialTheme.typography.labelSmall) } }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, "Back") } }, actions = { IconButton(onClick = { viewModel.load(true) }) { Icon(Icons.Filled.Refresh, "Refresh") } })
+    }) { padding ->
+        LazyColumn(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { Column { Text("Financial year", color = ReportBlue, style = MaterialTheme.typography.labelMedium); Text("01 Apr $startYear – 31 Mar ${startYear + 1}", fontWeight = FontWeight.Bold) }; TextButton(onClick = { data?.let { shareReportPdf(context, "Society Report $financialYear", buildResidentReportCsv(it, state.filter)) } }) { Text("PDF") } } }
+            state.error?.let { item { RetryState(it, onRetry = { viewModel.load(true) }) } }
+            if (state.isLoading && data == null) item { AppLoadingIndicator() }
+            else if (data == null) item { EmptyState("No report data", "Society report data is not available yet.") }
+            else item { ResidentSocietyReportContent(data) }
+        }
+    }
+}
+
+@Composable private fun ResidentSocietyReportContent(data: ResidentReportsData) {
+    val summary = data.societySummary
+    val income = summary?.totalSocietyCollection.toMoneyDecimal() ?: data.allMaintenance.sumOf { it.paidAmount.toMoneyDecimal() }
+    val expenses = summary?.totalSocietyExpenses.toMoneyDecimal() ?: data.expenses.sumOf { it.amount.toMoneyDecimal() }
+    val net = summary?.netBalance.toMoneyDecimal() ?: income - expenses
+    val paid = summary?.paidBillsCount ?: data.allMaintenance.count { it.remainingAmount.toMoneyDecimal() <= BigDecimal.ZERO }
+    val pending = summary?.pendingBillsCount ?: data.allMaintenance.count { it.remainingAmount.toMoneyDecimal() > BigDecimal.ZERO }
+    val overdue = summary?.overdueBillsCount ?: 0
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Card(colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FAFF))) { Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { Text("1. Society financial summary", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = ReportBlue); Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { TransparencyMetric("Income", DashboardFormatters.money(income), ReportGreen); TransparencyMetric("Expenses", DashboardFormatters.money(expenses), Color(0xFFE5484D)); TransparencyMetric("Net balance", DashboardFormatters.money(net), ReportBlue) }; Text("${data.allMaintenance.size} maintenance records · ${data.expenses.size} expense records", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
+        SectionCard("2. Collection status") { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) { TransparencyMetric("Paid", paid.toString(), ReportGreen); TransparencyMetric("Pending", pending.toString(), ReportAmber); TransparencyMetric("Overdue", overdue.toString(), Color(0xFFE5484D)); TransparencyMetric("Bills", data.allMaintenance.size.toString(), ReportBlue) } }
+        if (data.allMaintenance.isNotEmpty()) SectionCard("3. Payment status") { data.allMaintenance.take(8).forEach { bill -> Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.SpaceBetween) { Column { Text("Flat ${bill.flatNo ?: "—"}", fontWeight = FontWeight.SemiBold); Text(bill.title ?: "Maintenance", style = MaterialTheme.typography.labelSmall) }; val settled = bill.remainingAmount.toMoneyDecimal() <= BigDecimal.ZERO; Text(if (settled) "Paid" else "Pending", color = if (settled) ReportGreen else ReportAmber, fontWeight = FontWeight.Bold) } } }
+        if (data.expenses.isNotEmpty()) SectionCard("4. Expense summary") { data.expenses.groupBy { it.category.orEmpty().ifBlank { "Other" } }.mapValues { it.value.sumOf { e -> e.amount.toMoneyDecimal() } }.forEach { (category, amount) -> Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), horizontalArrangement = Arrangement.SpaceBetween) { Text(category); Text(DashboardFormatters.money(amount), fontWeight = FontWeight.SemiBold) } }; Text("Total expenses ${DashboardFormatters.money(expenses)}", color = Color(0xFFE5484D), fontWeight = FontWeight.Bold) }
+        if (data.complaints.isNotEmpty()) SectionCard("5. Complaints summary") { Text("Total complaints: ${data.complaints.size}"); Text("Resolved: ${data.complaints.count { it.status.equals("resolved", true) }}", color = ReportGreen); Text("Open / in progress: ${data.complaints.count { !it.status.equals("resolved", true) }}", color = ReportAmber) }
+        Text("Society-wide values come from approved backend report records. Private resident contact details and payment proofs are hidden.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable private fun TransparencyMetric(label: String, value: String, color: Color) { Column(Modifier.fillMaxWidth(.24f).background(color.copy(alpha = .08f), RoundedCornerShape(8.dp)).padding(8.dp)) { Text(value, color = color, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium); Text(label, style = MaterialTheme.typography.labelSmall) } }
+
+/* Legacy resident report implementation retained below for shared chart/helper functions. */
+/*
+    val context = LocalContext.current
     var pendingCsv by remember { mutableStateOf<String?>(null) }
     val csvLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
@@ -302,6 +341,7 @@ fun ResidentReportsScreen(
         }
     }
 }
+*/
 
 private fun androidx.compose.foundation.lazy.LazyListScope.adminReportsContent(
     data: AdminReportsData,
