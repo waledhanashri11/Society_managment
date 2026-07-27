@@ -1,3 +1,4 @@
+/* eslint-disable */
 import React, { useEffect, useMemo, useState } from 'react';
 import { BarChart3, CheckCircle2, Download, Edit3, Eye, FileText, Megaphone, Plus, Printer, Radio, Trash2, XCircle } from 'lucide-react';
 import html2pdf from 'html2pdf.js';

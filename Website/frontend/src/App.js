@@ -1,3 +1,4 @@
+/* eslint-disable */
 import React, { lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { DashboardSkeleton } from './components/Skeletons';

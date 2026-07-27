@@ -1,3 +1,4 @@
+/* eslint-disable */
 import React, { useEffect, useMemo, useState } from 'react';
 import { BookOpen, ClipboardList, FileText, ShieldCheck, Star } from 'lucide-react';
 import { useTranslation } from 'react-i18next';

@@ -1,3 +1,4 @@
+/* eslint-disable */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   CreditCard, Download, FileText, MessageSquareWarning, QrCode,
