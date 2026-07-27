@@ -2988,7 +2988,12 @@ private fun MaintenancePaymentVerificationDto.proofImage(): String? {
     return listOfNotNull(
         screenshotUrl?.takeIf { it.isNotBlank() },
         screenshot?.takeIf { it.isNotBlank() },
-        screenshotPath?.takeIf { it.isNotBlank() }
+        screenshotPath?.takeIf { it.isNotBlank() },
+        // Older backend responses only expose has_screenshot and submissionId.
+        // Build the protected screenshot endpoint as a final fallback.
+        submissionId?.takeIf { !it.isNullOrBlank() && hasScreenshot == 1 }?.let {
+            "${BuildConfig.BASE_URL.trimEnd('/')}/api/maintenance/payments/$it/screenshot"
+        }
     ).firstOrNull()
 }
 

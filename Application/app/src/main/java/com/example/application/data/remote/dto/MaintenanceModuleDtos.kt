@@ -371,7 +371,7 @@ data class MaintenancePaymentVerificationDto(
     @SerializedName("flat_no") val flatNumber: String?,
     @SerializedName("bill_number") val billNumber: String?,
     @SerializedName("has_screenshot") val hasScreenshot: Int?,
-    @SerializedName(value = "screenshot_url", alternate = ["proofUrl"]) val screenshotUrl: String?,
+    @SerializedName(value = "screenshot_url", alternate = ["screenshotUrl", "proofUrl"]) val screenshotUrl: String?,
     @SerializedName(value = "screenshot", alternate = ["payment_proof", "payment_screenshot"]) val screenshot: String?,
     @SerializedName(value = "screenshot_path", alternate = ["proofPath", "payment_proof_path", "payment_screenshot_path"]) val screenshotPath: String?,
     @SerializedName("wing") val wing: String?,
