@@ -65,13 +65,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.application.data.repository.AdminDashboardData
+import com.example.application.R
 import com.example.application.ui.components.LanguageSelector
+import com.example.application.ui.components.localizedLabel
 import com.example.application.util.DashboardFormatters
 import com.example.application.viewmodel.AdminDashboardViewModel
 import com.example.application.viewmodel.SessionViewModel
@@ -161,11 +164,11 @@ private fun AdminHeader(adminName: String, onMenu: () -> Unit, onNotifications: 
             .padding(horizontal = 22.dp, vertical = 18.dp)
     ) {
         IconButton(onClick = onMenu, modifier = Modifier.align(Alignment.TopStart)) {
-            Icon(Icons.Filled.Menu, contentDescription = "Open admin menu", tint = Color.White, modifier = Modifier.size(34.dp))
+            Icon(Icons.Filled.Menu, contentDescription = stringResource(R.string.open_admin_menu), tint = Color.White, modifier = Modifier.size(34.dp))
         }
         Column(modifier = Modifier.align(Alignment.TopCenter).padding(top = 6.dp)) {
-            Text("Society Management", color = Color.White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            Text("System", color = Color.White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Text(stringResource(R.string.society_management), color = Color.White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Text(stringResource(R.string.system), color = Color.White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         }
         Row(
             modifier = Modifier.align(Alignment.TopEnd),
@@ -173,10 +176,10 @@ private fun AdminHeader(adminName: String, onMenu: () -> Unit, onNotifications: 
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onNotifications) {
-                Icon(Icons.Filled.Notifications, contentDescription = "Notifications", tint = Color.White, modifier = Modifier.size(30.dp))
+                Icon(Icons.Filled.Notifications, contentDescription = stringResource(R.string.notifications), tint = Color.White, modifier = Modifier.size(30.dp))
             }
             IconButton(onClick = onLogout) {
-                Icon(Icons.Filled.Logout, contentDescription = "Logout", tint = Color.White, modifier = Modifier.size(28.dp))
+                Icon(Icons.Filled.Logout, contentDescription = stringResource(R.string.logout), tint = Color.White, modifier = Modifier.size(28.dp))
             }
         }
         Row(
@@ -186,12 +189,12 @@ private fun AdminHeader(adminName: String, onMenu: () -> Unit, onNotifications: 
         ) {
             Surface(modifier = Modifier.size(76.dp), shape = CircleShape, color = Color.White.copy(alpha = 0.96f)) {
                 Box(contentAlignment = Alignment.Center) {
-                    Icon(Icons.Filled.Security, contentDescription = "Admin profile", tint = AdminBlue, modifier = Modifier.size(42.dp))
+                    Icon(Icons.Filled.Security, contentDescription = stringResource(R.string.admin), tint = AdminBlue, modifier = Modifier.size(42.dp))
                 }
             }
             Column {
                 Text(adminName.ifBlank { "Admin" }, color = Color.White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                Text("Super Admin", color = Color.White.copy(alpha = 0.82f), style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.super_admin), color = Color.White.copy(alpha = 0.82f), style = MaterialTheme.typography.titleMedium)
             }
         }
     }
@@ -213,10 +216,10 @@ private fun AdminDashboardBody(
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 24.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
-            SectionHeader("Overview", "View All") { onQuickAction("Reports") }
+            SectionHeader(stringResource(R.string.overview), stringResource(R.string.view_all)) { onQuickAction("Reports") }
             OverviewGrid(data, isLoading)
             TodayWorkCard(data = data, isLoading = isLoading, onQuickAction = onQuickAction)
-            Text("Quick Access", color = TextNavy, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text(stringResource(R.string.quick_access), color = TextNavy, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -412,7 +415,7 @@ private fun AdminBottomBar(selected: String, onSelected: (String) -> Unit) {
                 selected = selected == item,
                 onClick = { onSelected(item) },
                 icon = { Icon(imageVector = when (item) { "Dashboard" -> Icons.Filled.Dashboard; "Residents" -> Icons.Filled.Groups; "Payments" -> Icons.Filled.Payments; else -> Icons.Filled.MoreVert }, contentDescription = item, tint = if (selected == item) Color(0xFF006BFF) else Color(0xFF555B66)) },
-                label = { Text(item, color = if (selected == item) Color(0xFF006BFF) else TextNavy) }
+                label = { Text(localizedLabel(item), color = if (selected == item) Color(0xFF006BFF) else TextNavy) }
             )
         }
     }
@@ -422,9 +425,9 @@ private fun AdminBottomBar(selected: String, onSelected: (String) -> Unit) {
 private fun AdminDrawer(adminName: String, onAction: (String) -> Unit) {
     ModalDrawerSheet {
         Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Surface(modifier = Modifier.size(60.dp), shape = CircleShape, color = Color(0xFFEAF3FF)) { Box(contentAlignment = Alignment.Center) { Icon(Icons.Filled.Security, contentDescription = "Admin", tint = AdminBlue) } }
+            Surface(modifier = Modifier.size(60.dp), shape = CircleShape, color = Color(0xFFEAF3FF)) { Box(contentAlignment = Alignment.Center) { Icon(Icons.Filled.Security, contentDescription = stringResource(R.string.admin), tint = AdminBlue) } }
             Text(adminName, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-            Text("Super Admin", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.super_admin), color = MaterialTheme.colorScheme.onSurfaceVariant)
             LanguageSelector(showTitle = false, showHint = false)
         }
         listOf(
@@ -440,7 +443,7 @@ private fun AdminDrawer(adminName: String, onAction: (String) -> Unit) {
             AdminAction("NOC", "NOC Requests", Icons.Filled.Description, Color(0xFF16B6A4)),
             AdminAction("Logout", "Logout", Icons.Filled.Logout, Color(0xFFE53935))
         ).forEach { action ->
-            NavigationDrawerItem(label = { Text(action.label) }, selected = false, icon = { Icon(action.icon, contentDescription = action.label, tint = action.tint) }, onClick = { onAction(action.routeName) }, modifier = Modifier.padding(horizontal = 12.dp))
+            NavigationDrawerItem(label = { Text(localizedLabel(action.label)) }, selected = false, icon = { Icon(action.icon, contentDescription = localizedLabel(action.label), tint = action.tint) }, onClick = { onAction(action.routeName) }, modifier = Modifier.padding(horizontal = 12.dp))
         }
     }
 }

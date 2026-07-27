@@ -44,6 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -51,6 +52,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.application.R
 import com.example.application.data.local.datastore.UserSession
 import com.example.application.ui.components.AppRoleTheme
 import com.example.application.ui.components.BuildingIllustration
@@ -127,20 +129,20 @@ fun LoginScreen(
                 ) {
                     Icon(
                         imageVector = if (selectedRole == AppRoleTheme.Admin) Icons.Filled.AdminPanelSettings else Icons.Filled.Person,
-                        contentDescription = "Login role",
+                        contentDescription = stringResource(R.string.login_role),
                         tint = MaterialTheme.colorScheme.onPrimary,
                         modifier = Modifier.size(30.dp)
                     )
                 }
 
                 Text(
-                    text = if (selectedRole == AppRoleTheme.Admin) "Admin Login" else "Resident Login",
+                    text = if (selectedRole == AppRoleTheme.Admin) stringResource(R.string.admin_login) else stringResource(R.string.resident_login),
                     modifier = Modifier.padding(top = 18.dp),
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "Welcome back! Please login to continue",
+                    text = stringResource(R.string.login_welcome),
                     modifier = Modifier.padding(top = 6.dp, bottom = 20.dp),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -155,14 +157,14 @@ fun LoginScreen(
                     FilterChip(
                         selected = selectedRole == AppRoleTheme.Admin,
                         onClick = { selectedRole = AppRoleTheme.Admin },
-                        label = { Text("Admin") },
+                        label = { Text(stringResource(R.string.admin)) },
                         leadingIcon = { Icon(Icons.Filled.AdminPanelSettings, contentDescription = null, modifier = Modifier.size(18.dp)) },
                         modifier = Modifier.weight(1f)
                     )
                     FilterChip(
                         selected = selectedRole == AppRoleTheme.Resident,
                         onClick = { selectedRole = AppRoleTheme.Resident },
-                        label = { Text("Resident") },
+                        label = { Text(stringResource(R.string.resident)) },
                         leadingIcon = { Icon(Icons.Filled.Person, contentDescription = null, modifier = Modifier.size(18.dp)) },
                         modifier = Modifier.weight(1f)
                     )
@@ -177,14 +179,14 @@ fun LoginScreen(
                     value = uiState.email,
                     onValueChange = viewModel::onEmailChanged,
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Email") },
+                    label = { Text(stringResource(R.string.email)) },
                     isError = uiState.emailError != null,
                     supportingText = uiState.emailError?.let { { Text(it) } },
                     enabled = !uiState.isLoading,
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
                     leadingIcon = {
-                        Icon(Icons.Filled.Email, contentDescription = "Email")
+                        Icon(Icons.Filled.Email, contentDescription = stringResource(R.string.email))
                     }
                 )
 
@@ -194,7 +196,7 @@ fun LoginScreen(
                     value = uiState.password,
                     onValueChange = viewModel::onPasswordChanged,
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Password") },
+                    label = { Text(stringResource(R.string.password)) },
                     isError = uiState.passwordError != null,
                     supportingText = uiState.passwordError?.let { { Text(it) } },
                     enabled = !uiState.isLoading,
@@ -206,13 +208,13 @@ fun LoginScreen(
                     },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                     leadingIcon = {
-                        Icon(Icons.Filled.Lock, contentDescription = "Password")
+                        Icon(Icons.Filled.Lock, contentDescription = stringResource(R.string.password))
                     },
                     trailingIcon = {
                         IconButton(onClick = { passwordVisible = !passwordVisible }) {
                             Icon(
                                 imageVector = if (passwordVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
-                                contentDescription = if (passwordVisible) "Hide password" else "Show password",
+                                contentDescription = if (passwordVisible) stringResource(R.string.hide_password) else stringResource(R.string.show_password),
                                 tint = primary
                             )
                         }
@@ -224,7 +226,7 @@ fun LoginScreen(
                     horizontalArrangement = Arrangement.End
                 ) {
                     TextButton(onClick = onForgotPasswordClick, enabled = !uiState.isLoading) {
-                        Text("Forgot password?")
+                        Text(stringResource(R.string.forgot_password))
                     }
                 }
 
@@ -243,12 +245,12 @@ fun LoginScreen(
                             color = MaterialTheme.colorScheme.onPrimary
                         )
                         Text(
-                            text = "  Logging in..."
+                            text = "  ${stringResource(R.string.logging_in)}"
                         )
                     } else {
                         Icon(Icons.Filled.Login, contentDescription = null, modifier = Modifier.size(20.dp))
                         Spacer(Modifier.size(8.dp))
-                        Text("Login")
+                        Text(stringResource(R.string.login))
                     }
                 }
 
@@ -256,9 +258,9 @@ fun LoginScreen(
                     modifier = Modifier.padding(top = 18.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("New resident?")
+                    Text(stringResource(R.string.new_resident))
                     TextButton(onClick = onRegisterClick, enabled = !uiState.isLoading) {
-                        Text("Register")
+                        Text(stringResource(R.string.register))
                     }
                 }
             }

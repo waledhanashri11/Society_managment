@@ -1,8 +1,5 @@
 package com.example.application.ui.components
 
-import android.app.Activity
-import android.content.Context
-import android.content.ContextWrapper
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -73,8 +70,7 @@ fun LanguageSelector(
                     onClick = {
                         if (selected == option.code) return@FilterChip
                         selected = option.code
-                        LocaleHelper.saveLanguage(context, option.code)
-                        context.findActivity()?.recreate()
+                        LocaleHelper.setLanguage(context, option.code)
                     },
                     label = { Text(stringResource(option.labelRes)) }
                 )
@@ -87,13 +83,5 @@ fun LanguageSelector(
 fun LanguageSelectorCard(modifier: Modifier = Modifier) {
     Card(modifier = modifier.fillMaxWidth()) {
         LanguageSelector(modifier = Modifier.padding(18.dp))
-    }
-}
-
-private tailrec fun Context.findActivity(): Activity? {
-    return when (this) {
-        is Activity -> this
-        is ContextWrapper -> baseContext.findActivity()
-        else -> null
     }
 }

@@ -15,11 +15,8 @@ import com.example.application.util.LocaleHelper
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
-    override fun attachBaseContext(newBase: Context) {
-        super.attachBaseContext(LocaleHelper.wrap(newBase))
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
+        LocaleHelper.applySavedLanguage(this)
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         createNotificationChannels()

@@ -58,12 +58,17 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.application.R
 import com.example.application.data.remote.dto.MaintenanceBillDto
 import com.example.application.ui.components.LanguageSelector
+import com.example.application.ui.components.localizedLabel
+import com.example.application.ui.components.localizedPaymentStatus
 import com.example.application.util.DashboardFormatters
 import com.example.application.viewmodel.ResidentDashboardViewModel
 import com.example.application.viewmodel.SessionViewModel
@@ -105,8 +110,8 @@ fun ResidentDashboardScreen(
         Scaffold(
             topBar = {
                 ResidentDashboardTopBar(
-                    title = "Society Management System",
-                    subtitle = "Resident workspace",
+                    title = stringResource(R.string.society_management_system),
+                    subtitle = stringResource(R.string.resident_workspace),
                     residentName = data?.profile?.name,
                     onMenuClick = { scope.launch { drawerState.open() } },
                     onProfileClick = onProfileClick,
@@ -169,10 +174,10 @@ fun ResidentDashboardScreen(
                         item {
                             MetricGrid(
                                 listOf(
-                                    Triple("Outstanding", DashboardFormatters.money(data.totalDue), "${data.pendingBillCount} pending bills"),
-                                    Triple("Total Paid", DashboardFormatters.money(data.totalPaid), "${data.paidBillCount} paid bills"),
-                                    Triple("Complaints", data.totalComplaints.toString(), "${data.openComplaints} open"),
-                                    Triple("Resolved", data.resolvedComplaints.toString(), "complaints resolved")
+                                    Triple(stringResource(R.string.total_due), DashboardFormatters.money(data.totalDue), pluralStringResource(R.plurals.pending_bills, data.pendingBillCount, data.pendingBillCount)),
+                                    Triple(stringResource(R.string.status_paid), DashboardFormatters.money(data.totalPaid), "${data.paidBillCount} ${stringResource(R.string.status_paid).lowercase()}"),
+                                    Triple(stringResource(R.string.complaints), data.totalComplaints.toString(), data.openComplaints.toString()),
+                                    Triple(stringResource(R.string.status_approved), data.resolvedComplaints.toString(), stringResource(R.string.complaints))
                                 )
                             )
                         }
@@ -237,7 +242,7 @@ private fun ResidentDashboardTopBar(
             IconButton(onClick = onMenuClick) {
                 Icon(
                     imageVector = Icons.Filled.Menu,
-                    contentDescription = "Open menu",
+                    contentDescription = stringResource(R.string.open_menu),
                     tint = Color(0xFF0B5FFF)
                 )
             }
@@ -252,7 +257,7 @@ private fun ResidentDashboardTopBar(
             IconButton(onClick = onNotificationClick) {
                 Icon(
                     imageVector = Icons.Filled.Notifications,
-                    contentDescription = "Notifications",
+                    contentDescription = stringResource(R.string.notifications),
                     tint = Color(0xFF0B5FFF)
                 )
             }
@@ -307,9 +312,9 @@ private fun ResidentHeroCard(
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Text("Welcome back", color = Color.White.copy(alpha = 0.82f))
+            Text(stringResource(R.string.welcome_back), color = Color.White.copy(alpha = 0.82f))
             Text(residentName, style = MaterialTheme.typography.titleLarge, color = Color.White, fontWeight = FontWeight.Bold)
-            Text("Flat: $flat", color = Color.White.copy(alpha = 0.82f))
+            Text(stringResource(R.string.flat_label, flat), color = Color.White.copy(alpha = 0.82f))
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(22.dp),
@@ -323,9 +328,9 @@ private fun ResidentHeroCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.weight(1f)) {
-                        Text("Total Due", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(R.string.total_due), color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text(amount, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                        Text("Due Date: $dueDate", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(R.string.due_date, dueDate), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text(statusText, style = MaterialTheme.typography.bodySmall, color = if (canPay) Color(0xFFD64545) else Color(0xFFE58A00), fontWeight = FontWeight.SemiBold)
                     }
                     Surface(
@@ -339,7 +344,7 @@ private fun ResidentHeroCard(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(Icons.Filled.Payments, contentDescription = null, tint = if (canPay) Color.White else Color(0xFF59647A), modifier = Modifier.size(18.dp))
-                            Text(if (canPay) "Pay Now" else "View", color = if (canPay) Color.White else Color(0xFF59647A), fontWeight = FontWeight.Bold)
+                            Text(if (canPay) stringResource(R.string.pay_now) else stringResource(R.string.view), color = if (canPay) Color.White else Color(0xFF59647A), fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -351,7 +356,7 @@ private fun ResidentHeroCard(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ResidentQuickActions(onQuickAction: (String) -> Unit) {
-    SectionCard("Quick Actions") {
+    SectionCard(stringResource(R.string.quick_actions)) {
         FlowRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(18.dp),
@@ -384,7 +389,7 @@ private fun ResidentAction(label: String, icon: ImageVector, onClick: () -> Unit
                 Icon(icon, contentDescription = label, tint = Color(0xFF0B5FFF))
             }
         }
-        Text(label, style = MaterialTheme.typography.labelSmall)
+        Text(localizedLabel(label), style = MaterialTheme.typography.labelSmall)
     }
 }
 
@@ -401,8 +406,8 @@ private fun ResidentDrawer(
                     Text(residentName?.trim()?.firstOrNull()?.uppercaseChar()?.toString() ?: "R", color = Color.White, fontWeight = FontWeight.Bold)
                 }
             }
-            Text(residentName ?: "Resident", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text("Flat: ${flat ?: "-"}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(residentName ?: stringResource(R.string.resident), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(stringResource(R.string.flat_label, flat ?: "-"), color = MaterialTheme.colorScheme.onSurfaceVariant)
             LanguageSelector(showTitle = false, showHint = false)
         }
         listOf(
@@ -412,7 +417,7 @@ private fun ResidentDrawer(
             DrawerItem("Society Members", Icons.Filled.Groups)
         ).forEach { item ->
             NavigationDrawerItem(
-                label = { Text(item.label) },
+                label = { Text(localizedLabel(item.label)) },
                 selected = false,
                 icon = { Icon(item.icon, contentDescription = item.label) },
                 onClick = { onItemClick(item.label) },
@@ -443,7 +448,7 @@ private fun ResidentBottomNavigation(
                         tint = if (selected == item) Color(0xFF0B5FFF) else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 },
-                label = { Text(item, style = MaterialTheme.typography.labelSmall) }
+                label = { Text(localizedLabel(item), style = MaterialTheme.typography.labelSmall) }
             )
         }
     }
