@@ -24,6 +24,7 @@ data class AdminReportsUiState(
     val data: AdminReportsData? = null,
     val error: String? = null,
     val exportMessage: String? = null
+    ,val lastLoadedAt: Long? = null
 )
 
 data class ResidentReportsUiState(
@@ -61,7 +62,7 @@ class AdminReportsViewModel @Inject constructor(
             _state.update { it.copy(isLoading = it.data == null, isRefreshing = refresh && it.data != null, error = null) }
             when (val result = repository.getAdminReports(_state.value.filter, refresh)) {
                 is NetworkResult.Success -> _state.update {
-                    it.copy(isLoading = false, isRefreshing = false, data = result.data, error = null)
+                    it.copy(isLoading = false, isRefreshing = false, data = result.data, error = null, lastLoadedAt = System.currentTimeMillis())
                 }
                 is NetworkResult.Error -> _state.update {
                     it.copy(isLoading = false, isRefreshing = false, error = repository.messageFor(result.error))
