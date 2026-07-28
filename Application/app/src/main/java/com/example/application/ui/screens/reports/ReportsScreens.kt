@@ -198,8 +198,41 @@ private fun ScreenshotSummaryDashboard(report: FinancialReportDto) {
 }
 
 @Composable private fun ScreenshotBalanceCard(title:String,total:String?,bank:String?,cash:String?,color:Color,modifier:Modifier){ Card(modifier=modifier,colors=CardDefaults.cardColors(containerColor=color.copy(alpha=.045f)),shape=RoundedCornerShape(14.dp)){Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){Text(title,style=MaterialTheme.typography.labelMedium,color=Color(0xFF15204F));Text(DashboardFormatters.money(total.toMoneyDecimal()),fontWeight=FontWeight.Bold,color=Color(0xFF101C5C));Text("Bank: ${DashboardFormatters.money(bank.toMoneyDecimal())}",style=MaterialTheme.typography.labelSmall);Text("Cash: ${DashboardFormatters.money(cash.toMoneyDecimal())}",style=MaterialTheme.typography.labelSmall)}}}
-@Composable private fun ScreenshotAmountCard(title:String,value:String?,color:Color){Card(colors=CardDefaults.cardColors(containerColor=color.copy(alpha=.05f)),shape=RoundedCornerShape(14.dp)){Column(Modifier.fillMaxWidth().padding(14.dp),verticalArrangement=Arrangement.spacedBy(5.dp)){Text(title,style=MaterialTheme.typography.labelMedium,color=Color(0xFF15204F));Text(DashboardFormatters.money(value.toMoneyDecimal()),fontWeight=FontWeight.Bold,color=color)}}}
-@Composable private fun ScreenshotTextCard(title:String,value:String,color:Color){Card(colors=CardDefaults.cardColors(containerColor=color.copy(alpha=.05f)),shape=RoundedCornerShape(14.dp)){Column(Modifier.fillMaxWidth().padding(14.dp),verticalArrangement=Arrangement.spacedBy(5.dp)){Text(title,style=MaterialTheme.typography.labelMedium);Text(value,fontWeight=FontWeight.Bold,color=color)}}}
+@Composable
+private fun ScreenshotAmountCard(title: String, amountText: String?, color: Color) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = color.copy(alpha = .05f)),
+        shape = RoundedCornerShape(14.dp)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(5.dp)
+        ) {
+            Text(title, style = MaterialTheme.typography.labelMedium, color = Color(0xFF15204F))
+            Text(
+                DashboardFormatters.money(amountText.toMoneyDecimal()),
+                fontWeight = FontWeight.Bold,
+                color = color
+            )
+        }
+    }
+}
+
+@Composable
+private fun ScreenshotTextCard(title: String, displayText: String, color: Color) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = color.copy(alpha = .05f)),
+        shape = RoundedCornerShape(14.dp)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(5.dp)
+        ) {
+            Text(title, style = MaterialTheme.typography.labelMedium)
+            Text(displayText, fontWeight = FontWeight.Bold, color = color)
+        }
+    }
+}
 
 @Composable
 private fun MonthlyFinancialDialog(report: FinancialReportDto, year: Int, month: Int, onDismiss: () -> Unit) {
