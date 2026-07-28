@@ -99,3 +99,48 @@ data class ReportFilterState(
         get() = listOf(month, year, status).count { it.isNotBlank() }
 }
 
+data class FinancialSummaryDto(
+    val periodStart: String?, val periodEndExclusive: String?,
+    val bankOpening: String?, val cashOpening: String?, val totalOpening: String?,
+    val bankIncome: String?, val cashIncome: String?, val totalIncome: String?,
+    val bankExpenses: String?, val cashExpenses: String?, val totalExpenses: String?,
+    val bankClosing: String?, val cashClosing: String?, val totalClosing: String?,
+    val netAmount: String?
+)
+
+data class FinancialMonthDto(
+    val month: Int?, val year: Int?,
+    val bankOpening: String?, val cashOpening: String?, val totalOpening: String?,
+    val bankIncome: String?, val cashIncome: String?, val totalIncome: String?,
+    val bankExpenses: String?, val cashExpenses: String?, val totalExpenses: String?,
+    val bankClosing: String?, val cashClosing: String?, val totalClosing: String?, val netAmount: String?
+)
+
+data class FinancialCollectionDto(
+    val billsGenerated: Int?, val paid: Int?, val pending: Int?, val verificationPending: Int?,
+    val rejected: Int?, val overdue: Int?, val writtenOff: Int?, val paidAmount: String?,
+    val pendingAmount: String?, val billedAmount: String?, val writeOffAmount: String?, val collectionRate: String?
+)
+
+data class FinancialBreakdownDto(val category: String?, val accountType: String?, val amount: String?)
+
+data class FinancialTransactionDto(
+    val transactionDate: String?, val transactionType: String?, val description: String?,
+    val amount: String?, val paymentMethod: String?, val referenceNumber: String?,
+    val approvalStatus: String?, val approvedBy: String?, val runningBalance: String?
+)
+
+data class FlatPaymentReportDto(
+    val flatNo: String?, val residentName: String?, val month: Int?, val year: Int?,
+    val billAmount: String?, val paidAmount: String?, val pendingAmount: String?, val status: String?,
+    val paymentDate: String?, val paymentMethod: String?, val receiptNumber: String?, val verificationStatus: String?
+)
+
+data class FinancialReportDto(
+    val available: Boolean?, val reason: String?, val financialYear: String?,
+    val summary: FinancialSummaryDto?, val months: List<FinancialMonthDto>?,
+    val collection: FinancialCollectionDto?, val income: List<FinancialBreakdownDto>?,
+    val expenses: List<FinancialBreakdownDto>?,
+    val bankTransactions: List<FinancialTransactionDto>?, val cashTransactions: List<FinancialTransactionDto>?,
+    val flatPayments: List<FlatPaymentReportDto>?
+)

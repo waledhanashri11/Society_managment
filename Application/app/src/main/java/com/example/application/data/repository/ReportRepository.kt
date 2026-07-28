@@ -15,6 +15,7 @@ import com.example.application.data.remote.dto.ReportSummaryDto
 import com.example.application.data.remote.dto.ResidentExpenseReportDto
 import com.example.application.data.remote.dto.ResidentMaintenanceReportDto
 import com.example.application.data.remote.dto.SocietyReportSummaryDto
+import com.example.application.data.remote.dto.FinancialReportDto
 import com.example.application.util.AppError
 import com.example.application.util.NetworkResult
 import com.google.gson.Gson
@@ -49,6 +50,8 @@ class ReportRepository @Inject constructor(
         val monthlyCollection = safeWrappedList { reportsApi.getAdminMaintenanceReport("monthly-collection") }
         val pendingBills = safeWrappedList { reportsApi.getAdminMaintenanceReport("pending-bills") }
         val paidBills = safeWrappedList { reportsApi.getAdminMaintenanceReport("paid-bills") }
+        val startYear = filter.year.toIntOrNull() ?: java.time.LocalDate.now().let { if (it.monthValue >= 4) it.year else it.year - 1 }
+        val financial = safeDirect { reportsApi.getAdminAnnual("$startYear-${startYear + 1}") }
 
         if (bills is NetworkResult.Error && overview is NetworkResult.Error) return bills
 
@@ -60,6 +63,7 @@ class ReportRepository @Inject constructor(
             monthlyCollection = (monthlyCollection as? NetworkResult.Success)?.data.orEmpty(),
             pendingBills = (pendingBills as? NetworkResult.Success)?.data.orEmpty(),
             paidBills = (paidBills as? NetworkResult.Success)?.data.orEmpty(),
+            financial = (financial as? NetworkResult.Success)?.data,
             warnings = listOfNotNull(
                 if (expenses is NetworkResult.Error) messageFor(expenses.error) else null,
                 if (complaints is NetworkResult.Error) "Complaint report unavailable." else null,
@@ -87,6 +91,8 @@ class ReportRepository @Inject constructor(
         val members = safeList { reportsApi.getMembersMaintenanceReport(month, year, status) }
         val allMaintenance = safeList { reportsApi.getAllMaintenanceReport(month, year, status) }
         val complaints = safeList { communicationApi.getMyComplaints() }
+        val startYear = filter.year.toIntOrNull() ?: java.time.LocalDate.now().let { if (it.monthValue >= 4) it.year else it.year - 1 }
+        val transparency = safeDirect { reportsApi.getResidentTransparency("$startYear-${startYear + 1}") }
 
         if (mySummary is NetworkResult.Error && myMaintenance is NetworkResult.Error) return mySummary
 
@@ -98,6 +104,7 @@ class ReportRepository @Inject constructor(
             membersMaintenance = (members as? NetworkResult.Success)?.data.orEmpty(),
             allMaintenance = (allMaintenance as? NetworkResult.Success)?.data.orEmpty(),
             complaints = (complaints as? NetworkResult.Success)?.data.orEmpty(),
+            financial = (transparency as? NetworkResult.Success)?.data,
             warnings = listOfNotNull(
                 if (societySummary is NetworkResult.Error) "Society summary unavailable." else null,
                 if (expenses is NetworkResult.Error) "Expense report unavailable." else null,
@@ -116,6 +123,9 @@ class ReportRepository @Inject constructor(
         adminCacheKey = ""
         residentCacheKey = ""
     }
+
+    suspend fun getAdminMonthly(year: Int, month: Int): NetworkResult<FinancialReportDto> =
+        safeDirect { reportsApi.getAdminMonthly(year, month) }
 
     private fun AdminReportsData.filtered(filter: ReportFilterState): AdminReportsData {
         return copy(
@@ -240,7 +250,8 @@ data class AdminReportsData(
     val monthlyCollection: List<AdminReportRowDto>,
     val pendingBills: List<AdminReportRowDto>,
     val paidBills: List<AdminReportRowDto>,
-    val warnings: List<String>
+    val warnings: List<String>,
+    val financial: FinancialReportDto?
 )
 
 data class ResidentReportsData(
@@ -251,8 +262,8 @@ data class ResidentReportsData(
     val membersMaintenance: List<MembersMaintenanceReportDto>,
     val allMaintenance: List<ResidentMaintenanceReportDto>,
     val complaints: List<ComplaintDto>,
-    val warnings: List<String>
+    val warnings: List<String>,
+    val financial: FinancialReportDto?
 )
 
 private fun ReportFilterState.cacheKey(): String = "$month|$year|$status"
-

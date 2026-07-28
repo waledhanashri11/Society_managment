@@ -6,6 +6,7 @@ import com.example.application.data.remote.dto.ReportFilterState
 import com.example.application.data.repository.AdminReportsData
 import com.example.application.data.repository.ReportRepository
 import com.example.application.data.repository.ResidentReportsData
+import com.example.application.data.remote.dto.FinancialReportDto
 import com.example.application.util.NetworkResult
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -23,7 +24,9 @@ data class AdminReportsUiState(
     val filter: ReportFilterState = ReportFilterState(year = ""),
     val data: AdminReportsData? = null,
     val error: String? = null,
-    val exportMessage: String? = null
+    val exportMessage: String? = null,
+    val monthly: FinancialReportDto? = null,
+    val monthlyLoading: Boolean = false
     ,val lastLoadedAt: Long? = null
 )
 
@@ -75,6 +78,19 @@ class AdminReportsViewModel @Inject constructor(
     fun noteCsvExport() {
         _state.update { it.copy(exportMessage = "CSV export is available from the website. Android export needs a backend download endpoint or Storage Access Framework flow.") }
     }
+
+    fun loadMonthly(year: Int, month: Int) {
+        viewModelScope.launch {
+            _state.update { it.copy(monthlyLoading = true, error = null) }
+            when (val result = repository.getAdminMonthly(year, month)) {
+                is NetworkResult.Success -> _state.update { it.copy(monthlyLoading = false, monthly = result.data) }
+                is NetworkResult.Error -> _state.update { it.copy(monthlyLoading = false, error = repository.messageFor(result.error)) }
+                NetworkResult.Loading -> Unit
+            }
+        }
+    }
+
+    fun clearMonthly() = _state.update { it.copy(monthly = null) }
 }
 
 @HiltViewModel
