@@ -2,7 +2,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { 
-import { 
   FileText, SlidersHorizontal, Download, Printer, Edit2, RotateCcw,
   ReceiptIndianRupee, Landmark, TrendingUp, Info, Eye, X, CheckCircle2, FileCheck
 } from 'lucide-react';
