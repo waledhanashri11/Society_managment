@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Download, Eye, FileCheck2, Plus, Printer, RefreshCw, Search, Send, Upload, XCircle } from 'lucide-react';
+import { Eye, FileCheck2, Plus, Printer, RefreshCw, Send, Upload } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { nocAPI } from '../services/api';
 import { CardSkeleton, TableSkeleton } from '../components/Skeletons';
 
@@ -48,7 +49,8 @@ const getStatusBadgeStyle = (status) => {
   }
 };
 
-const ResidentNOCRequests = () => {
+function ResidentNOCRequests() {
+  const { t } = useTranslation();
   const [requests, setRequests] = useState([]);
   const [types, setTypes] = useState([]);
   const [filters, setFilters] = useState({ status: 'All', search: '' });
@@ -187,13 +189,20 @@ const ResidentNOCRequests = () => {
     }
     try {
       const response = await nocAPI.getPdf(request.id);
-      const url = window.URL.createObjectURL(new Blob([response.data], { type: 'text/html' }));
-      const printWin = window.open(url, '_blank');
-      if (!printWin) {
-        notify('Pop-up blocked. Please allow pop-ups to print NOC.');
+      let htmlText = '';
+      if (response.data instanceof Blob) {
+        htmlText = await response.data.text();
+      } else {
+        htmlText = String(response.data);
       }
+      const printWin = window.open('', '_blank', 'width=900,height=750');
+      if (!printWin) {
+        return notify('Pop-up blocked. Please allow pop-ups to print NOC.');
+      }
+      printWin.document.write(htmlText);
+      printWin.document.close();
     } catch (err) {
-      notify(err.response?.data?.message || 'PDF download failed');
+      notify(err.response?.data?.message || 'Could not print NOC certificate');
     }
   };
 
@@ -203,12 +212,17 @@ const ResidentNOCRequests = () => {
 
       <div className="portal-page-title">
         <div>
-          <h1>My NOC Applications</h1>
-          <p>Apply for society No Objection Certificates and track your application status.</p>
+          <h1>{t('noc.myNocTitle', 'My NOC Applications')}</h1>
+          <p>{t('noc.myNocSubtitle', 'Apply for society No Objection Certificates and track your application status.')}</p>
         </div>
-        <button className="portal-primary-btn" type="button" onClick={() => setShowForm(true)}>
-          <Plus size={16} /> Apply for NOC
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div className="portal-date-chip">
+            <FileCheck2 size={15} /> {t('noc.myNocTitle', 'NOC Desk')}
+          </div>
+          <button className="portal-primary-btn" style={{ background: 'linear-gradient(90deg, #087d40, #0ab35c)', boxShadow: '0 8px 18px rgba(8,125,64,.2)' }} type="button" onClick={() => setShowForm(true)}>
+            <Plus size={16} /> {t('noc.applyForNoc', 'Apply for NOC')}
+          </button>
+        </div>
       </div>
 
       {error && <div className="portal-error">{error}</div>}
@@ -224,24 +238,24 @@ const ResidentNOCRequests = () => {
         <>
           <div className="portal-kpis">
             <div className="portal-kpi">
-              <span>Total Requests</span>
+              <span>{t('noc.totalRequests', 'Total Requests')}</span>
               <strong>{summary.total}</strong>
-              <small>All NOC applications</small>
+              <small>{t('noc.allApplications', 'All NOC applications')}</small>
             </div>
             <div className="portal-kpi orange">
-              <span>Pending / Under Review</span>
+              <span>{t('noc.underReview', 'Pending / Under Review')}</span>
               <strong>{summary.pending}</strong>
-              <small>Processing by committee</small>
+              <small>{t('noc.beingProcessed', 'Processing by committee')}</small>
             </div>
             <div className="portal-kpi" style={{ borderLeft: '4px solid #a855f7' }}>
-              <span>Action Required</span>
+              <span>{t('noc.moreInfoRequired', 'Action Required')}</span>
               <strong style={{ color: '#7e22ce' }}>{summary.additional_info}</strong>
-              <small>Additional documents requested</small>
+              <small>{t('noc.awaitingResidentResponse', 'Additional documents requested')}</small>
             </div>
             <div className="portal-kpi green">
-              <span>Approved</span>
+              <span>{t('noc.approved', 'Approved')}</span>
               <strong>{summary.approved}</strong>
-              <small>Ready to download</small>
+              <small>{t('noc.certificatesGenerated', 'Ready to download')}</small>
             </div>
           </div>
 
@@ -330,8 +344,12 @@ const ResidentNOCRequests = () => {
                               </button>
                             )}
                             {['Approved', 'Completed'].includes(item.status) && (
-                              <button type="button" className="portal-primary-btn" style={{ padding: '4px 8px', fontSize: '10px' }} onClick={() => downloadPdf(item)}>
-                                <Printer size={12} /> Download PDF
+                              <button 
+                                type="button" 
+                                style={{ background: '#2563eb', color: '#ffffff', border: 'none', padding: '5px 10px', fontSize: '11px', fontWeight: '700', borderRadius: '6px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }} 
+                                onClick={() => downloadPdf(item)}
+                              >
+                                <Printer size={13} /> Print Certificate
                               </button>
                             )}
                           </div>
@@ -438,8 +456,12 @@ const ResidentNOCRequests = () => {
               <div className="portal-form-actions" style={{ marginTop: '20px' }}>
                 <button type="button" className="portal-light-btn" onClick={() => setSelected(null)}>Close</button>
                 {['Approved', 'Completed'].includes(selected.status) && (
-                  <button type="button" className="portal-primary-btn" onClick={() => downloadPdf(selected)}>
-                    <Printer size={14} /> Download Certificate PDF
+                  <button 
+                    type="button" 
+                    style={{ background: '#2563eb', color: '#ffffff', border: 'none', padding: '8px 14px', fontSize: '12px', fontWeight: '700', borderRadius: '8px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }} 
+                    onClick={() => downloadPdf(selected)}
+                  >
+                    <Printer size={14} /> Print Certificate
                   </button>
                 )}
               </div>

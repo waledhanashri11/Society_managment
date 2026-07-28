@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Download, Printer, QrCode, ReceiptIndianRupee } from 'lucide-react';
+import { CheckCircle2, Download, Printer, QrCode, ReceiptIndianRupee, XCircle, Clock, AlertTriangle } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { maintenanceAPI, settingsAPI } from '../services/api';
-import { CardSkeleton, TableSkeleton } from '../components/Skeletons';
+import { CardSkeleton } from '../components/Skeletons';
 import { downloadPaymentReceiptPdf, printPaymentReceipt, receiptAvailable, printWriteOffReceipt, downloadWriteOffReceiptPdf } from '../utils/paymentReceipt';
 
 const unwrap = (response) => response?.data?.data ?? response?.data ?? [];
@@ -10,10 +11,17 @@ const billDisplayAmount = (bill) => hasWriteOff(bill)
   ? bill.total_amount
   : (bill.remainingPayable !== undefined ? bill.remainingPayable : (bill.remaining_amount !== undefined ? bill.remaining_amount : bill.total_amount));
 const money = (value) => `₹ ${Number(value || 0).toLocaleString('en-IN')}`;
-const monthName = (month) => new Date(2026, Number(month || 1) - 1).toLocaleDateString('en-IN', { month: 'short' });
+
+const formatMonthDisplay = (month, year) => {
+  if (!month) return '—';
+  if (isNaN(Number(month))) return `${month} ${year || ''}`.trim();
+  return `${new Date(2026, Number(month) - 1).toLocaleDateString('en-IN', { month: 'short' })} ${year || ''}`.trim();
+};
+
 const fullDate = (value) => value ? new Date(value).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 
 const ResidentPaymentHistory = () => {
+  const { t } = useTranslation();
   const [bills, setBills] = useState([]);
   const [paymentSettings, setPaymentSettings] = useState({});
   const [loading, setLoading] = useState(true);
@@ -99,107 +107,60 @@ const ResidentPaymentHistory = () => {
     }
   };
 
-
-
   return (
     <div className="portal-module">
       {toast && <div className="resident-toast">{toast}</div>}
       <div className="portal-page-title">
         <div>
-          <h1>Payment History</h1>
-          <p>Track paid, pending and under-review maintenance payments.</p>
+          <h1>{t('payHistory.title', 'Payment History')}</h1>
+          <p>{t('payHistory.subtitle', 'Track paid, pending and under-review maintenance payments.')}</p>
+        </div>
+        <div className="portal-date-chip">
+          <ReceiptIndianRupee size={15} /> Payment Records
         </div>
       </div>
 
       {loading ? (
-        <>
-          <CardSkeleton count={3} />
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start mt-4">
-            <div className="lg:col-span-1 h-80 animate-pulse rounded-xl border border-slate-200 bg-white" />
-            <section className="portal-panel portal-table-card lg:col-span-2">
-              <TableSkeleton rows={5} columns={5} />
-            </section>
-          </div>
-        </>
+        <CardSkeleton count={4} />
       ) : (
         <>
-          <div className="portal-status-summary" style={{ marginBottom: 20 }}>
-            <div><span>Paid</span><strong>{summary.paid}</strong></div>
-            <div><span>Under Review</span><strong>{summary.review}</strong></div>
-            <div><span>Rejected</span><strong>{summary.rejected}</strong></div>
+          {/* Top KPI Cards */}
+          <div className="portal-kpis" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: '12px', marginBottom: '16px' }}>
+            <div className="portal-kpi green">
+              <span>{t('payHistory.paid', 'Paid Payments')}</span>
+              <strong>{summary.paid}</strong>
+              <small>Verified receipts</small>
+              <div className="portal-kpi-icon"><CheckCircle2 size={18} /></div>
+            </div>
+            <div className="portal-kpi" style={{ borderColor: '#bfdbfe' }}>
+              <span>{t('payHistory.underReview', 'Under Review')}</span>
+              <strong style={{ color: '#2563eb' }}>{summary.review}</strong>
+              <small>Admin verification</small>
+              <div className="portal-kpi-icon" style={{ color: '#2563eb', background: '#eff6ff' }}><Clock size={18} /></div>
+            </div>
+            <div className="portal-kpi orange">
+              <span>{t('payHistory.pending', 'Pending Dues')}</span>
+              <strong>{summary.pending}</strong>
+              <small>Unpaid bills</small>
+              <div className="portal-kpi-icon"><AlertTriangle size={18} /></div>
+            </div>
+            <div className="portal-kpi red">
+              <span>{t('payHistory.rejected', 'Rejected Payments')}</span>
+              <strong>{summary.rejected}</strong>
+              <small>Payment issues</small>
+              <div className="portal-kpi-icon"><XCircle size={18} /></div>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-            {/* Left Column: How to Pay Card */}
-            <section className="portal-panel lg:col-span-1 p-5 bg-white flex flex-col gap-5">
-              <div>
-                <h2 className="text-base font-black text-slate-900 border-b border-slate-100 pb-3 mb-2" style={{ fontSize: '13px' }}>How to Pay</h2>
-                <p className="text-xs text-slate-500">Scan QR and complete payment following the steps below.</p>
-              </div>
-
-              {/* QR Code and UPI Details Card */}
-              <div className="flex flex-col items-center p-4 bg-slate-50 rounded-xl border border-slate-200">
-                {paymentSettings.paymentQrImage ? (
-                  <img 
-                    src={paymentSettings.paymentQrImage} 
-                    alt="Society Payment QR Code" 
-                    className="w-48 h-48 object-contain bg-white border border-slate-100 rounded-lg p-2 shadow-sm"
-                  />
-                ) : (
-                  <div className="w-48 h-48 flex flex-col items-center justify-center gap-2 border border-dashed border-slate-300 rounded-lg bg-white text-slate-400">
-                    <QrCode size={38} />
-                    <span className="text-[10px] font-bold text-center px-2">Payment QR not uploaded yet</span>
-                  </div>
-                )}
-                
-                <strong className="mt-3 text-xs text-slate-800 text-center font-bold">
-                  {paymentSettings.societyName || 'Society Payment'}
-                </strong>
-                {paymentSettings.paymentUpiId && (
-                  <span className="mt-1 text-[11px] font-bold text-slate-600 bg-slate-100 px-3 py-1 rounded-full border border-slate-200 select-all" title="Click to select UPI ID">
-                    UPI ID: {paymentSettings.paymentUpiId}
-                  </span>
-                )}
-
-                <button 
-                  type="button" 
-                  onClick={downloadQrCode} 
-                  disabled={!paymentSettings.paymentQrImage}
-                  className="portal-primary-btn w-full mt-4 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <Download size={14} /> Download QR Code
-                </button>
-              </div>
-
-              {/* Instructions List */}
-              <div className="text-xs text-slate-700">
-                <h3 className="font-bold text-slate-900 mb-2" style={{ fontSize: '11px', textTransform: 'uppercase' }}>Steps to pay:</h3>
-                <ol className="list-decimal pl-4 space-y-2 font-semibold">
-                  <li>Download the QR Code or scan it using any UPI app such as Google Pay, PhonePe, Paytm, or another supported UPI app.</li>
-                  <li>Enter the exact maintenance amount shown on the maintenance bill.</li>
-                  <li>Complete the payment.</li>
-                  <li>Copy the UTR / Transaction ID from the successful payment.</li>
-                  <li>Upload the payment screenshot as payment proof.</li>
-                  <li>Enter the UTR / Transaction ID.</li>
-                  <li>Click "Submit Payment".</li>
-                </ol>
-              </div>
-
-              {/* Warning Message Box */}
-              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 flex gap-2 items-start font-medium">
-                <span className="shrink-0 font-bold">⚠️ Warning:</span>
-                <span>Please pay the exact amount mentioned in your maintenance bill and upload a clear payment screenshot after completing the transaction.</span>
-              </div>
-            </section>
-
-            {/* Right Column: Payment History Table */}
-            <section className="portal-panel portal-table-card lg:col-span-2">
+          <div style={{ display: 'grid', gap: '16px' }}>
+            {/* Payment History Table (Full Width) */}
+            <section className="portal-panel portal-table-card">
               <div className="portal-panel-head">
                 <div>
-                  <h2>Billing & Payment History</h2>
-                  <p>View previous invoices and generated payment receipts.</p>
+                  <h2>{t('payHistory.historyTitle', 'Billing & Payment History')}</h2>
+                  <p>{t('payHistory.historySubtitle', 'View previous invoices and generated payment receipts.')}</p>
                 </div>
-                <span className="text-[10px] font-bold text-slate-500">{bills.length} records</span>
+                <span className="portal-date-chip" style={{ fontSize: '10px' }}>{bills.length} Records</span>
               </div>
 
               {bills.length ? (
@@ -207,58 +168,74 @@ const ResidentPaymentHistory = () => {
                   <table className="portal-data-table">
                     <thead>
                       <tr>
-                        <th>Bill</th>
-                        <th>Amount</th>
-                        <th>Status</th>
-                        <th>Due Date</th>
-                        <th>Reason</th>
-                        <th>Rejected On</th>
-                        <th>Receipt</th>
+                        <th>{t('payHistory.colBill', 'BILL')}</th>
+                        <th>{t('payHistory.colAmount', 'AMOUNT')}</th>
+                        <th>{t('payHistory.colStatus', 'STATUS')}</th>
+                        <th>{t('payHistory.colDueDate', 'DUE DATE')}</th>
+                        <th>{t('payHistory.colReason', 'REJECTION REASON')}</th>
+                        <th style={{ textAlign: 'center' }}>{t('payHistory.colReceipt', 'RECEIPT & ACTIONS')}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {bills.map((bill) => (
                         <tr key={bill.id}>
-                          <td><strong>{monthName(bill.month)} {bill.year}</strong><div className="portal-muted-text">{bill.bill_number || `BILL-${bill.id}`}</div></td>
-                           <td><strong>{money(billDisplayAmount(bill))}</strong></td>
-                           <td>
-                             <span style={{ 
-                               borderRadius: '99px', 
-                               padding: '2px 6px', 
-                               fontSize: '9px', 
-                               fontWeight: '700',
-                               color: bill.payment_status === 'Paid' ? '#05783b' : (bill.payment_status === 'Overdue' ? '#b42318' : '#bd5b00'),
-                               background: bill.payment_status === 'Paid' ? '#e8f8ef' : (bill.payment_status === 'Overdue' ? '#fef3f2' : '#fff2e5'),
-                               display: 'inline-block',
-                               textTransform: 'uppercase',
-                               letterSpacing: '0.02em',
-                               verticalAlign: 'middle'
-                             }}>
-                               {bill.write_off_status || bill.payment_status}
-                             </span>
-                           </td>
+                          <td>
+                            <strong>{formatMonthDisplay(bill.month, bill.year)}</strong>
+                            <div className="portal-muted-text">{bill.bill_number || `BILL-${bill.id}`}</div>
+                          </td>
+                          <td><strong>{money(billDisplayAmount(bill))}</strong></td>
+                          <td>
+                            <span className={`portal-status ${bill.payment_status === 'Paid' ? 'resolved' : bill.payment_status === 'Overdue' ? 'rejected' : 'pending'}`}>
+                              {t(`statusLabel.${bill.payment_status}`, bill.write_off_status || bill.payment_status)}
+                            </span>
+                          </td>
                           <td>{fullDate(bill.due_date)}</td>
                           <td>
-                            {bill.rejection_reason ? (
-                              <span className="text-xs font-semibold text-red-700">{bill.rejection_reason}</span>
+                            {bill.rejection_reason || bill.rejectionReason || bill.remarks ? (
+                              <div style={{ color: '#b91c1c', fontWeight: '700', fontSize: '11px', background: '#fef2f2', border: '1px solid #fecaca', padding: '4px 8px', borderRadius: '6px', display: 'inline-block' }}>
+                                ⚠️ {bill.rejection_reason || bill.rejectionReason || bill.remarks}
+                              </div>
                             ) : (
-                              <span className="portal-muted-text">-</span>
+                              <span className="portal-muted-text">—</span>
                             )}
                           </td>
-                          <td>{bill.rejection_reason ? fullDate(bill.rejected_at) : <span className="portal-muted-text">-</span>}</td>
-                          <td>
+                          <td style={{ textAlign: 'center' }}>
                             {hasWriteOff(bill) ? (
-                              <div className="portal-row-actions">
-                                <button onClick={() => handlePrintWriteOffReceipt(bill)} title="Print Receipt"><Printer size={12} /> Print Receipt</button>
-                                <button onClick={() => handleDownloadWriteOffReceipt(bill)} title="Download PDF"><Download size={12} /> Download PDF</button>
+                              <div className="portal-row-actions" style={{ justifyContent: 'center', gap: '6px' }}>
+                                <button 
+                                  style={{ color: '#087d40', background: '#e8f8ef', border: '1px solid #bbf7d0', padding: '4px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '600' }}
+                                  onClick={() => handlePrintWriteOffReceipt(bill)} 
+                                  title="Print Receipt"
+                                >
+                                  <Printer size={12} /> {t('payHistory.printReceipt', 'Print Receipt')}
+                                </button>
+                                <button 
+                                  style={{ color: '#334155', background: '#ffffff', border: '1px solid #cbd5e1', padding: '4px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '600' }}
+                                  onClick={() => handleDownloadWriteOffReceipt(bill)} 
+                                  title="Download PDF"
+                                >
+                                  <Download size={12} /> {t('payHistory.downloadPdf', 'Download PDF')}
+                                </button>
                               </div>
                             ) : receiptAvailable(bill.payment_status) ? (
-                              <div className="portal-row-actions">
-                                <button onClick={() => printReceipt(bill)} title="Print Receipt"><Printer size={12} /> Print Receipt</button>
-                                <button onClick={() => downloadReceipt(bill)} title="Download PDF"><Download size={12} /> Download PDF</button>
+                              <div className="portal-row-actions" style={{ justifyContent: 'center', gap: '6px' }}>
+                                <button 
+                                  style={{ color: '#087d40', background: '#e8f8ef', border: '1px solid #bbf7d0', padding: '4px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '600' }}
+                                  onClick={() => printReceipt(bill)} 
+                                  title="Print Receipt"
+                                >
+                                  <Printer size={12} /> {t('payHistory.printReceipt', 'Print Receipt')}
+                                </button>
+                                <button 
+                                  style={{ color: '#334155', background: '#ffffff', border: '1px solid #cbd5e1', padding: '4px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '600' }}
+                                  onClick={() => downloadReceipt(bill)} 
+                                  title="Download PDF"
+                                >
+                                  <Download size={12} /> {t('payHistory.downloadPdf', 'Download PDF')}
+                                </button>
                               </div>
                             ) : (
-                              <span className="portal-muted-text">Not paid yet</span>
+                              <span className="portal-muted-text">{t('payHistory.notPaidYet', 'Not paid yet')}</span>
                             )}
                           </td>
                         </tr>
@@ -269,9 +246,73 @@ const ResidentPaymentHistory = () => {
               ) : (
                 <div className="portal-empty">
                   <ReceiptIndianRupee size={26} /><br />
-                  No payment history available yet.
+                  {t('payHistory.noHistory', 'No payment history available yet.')}
                 </div>
               )}
+            </section>
+
+            {/* Bottom Panel: How to Pay / QR Code Guide */}
+            <section className="portal-panel">
+              <div className="portal-panel-head">
+                <div>
+                  <h2>{t('payHistory.howToPay', 'Society Payment QR Code & Instructions')}</h2>
+                  <p>{t('payHistory.howToPayDesc', 'Scan official society QR code using any UPI app to settle dues.')}</p>
+                </div>
+              </div>
+              <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '24px', alignItems: 'center' }}>
+                {/* Left: QR Code Preview */}
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', padding: '16px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                  {paymentSettings.paymentQrImage ? (
+                    <img 
+                      src={paymentSettings.paymentQrImage} 
+                      alt="Society Payment QR Code" 
+                      style={{ width: '160px', height: '160px', objectFit: 'contain', background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '6px' }}
+                    />
+                  ) : (
+                    <div style={{ width: '160px', height: '160px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '2px dashed #cbd5e1', borderRadius: '8px', background: 'white', color: '#94a3b8', gap: '6px' }}>
+                      <QrCode size={36} />
+                      <span style={{ fontSize: '10px', fontWeight: 'bold', textAlign: 'center', padding: '0 8px' }}>{t('payHistory.qrNotUploaded', 'QR code not uploaded')}</span>
+                    </div>
+                  )}
+
+                  <strong style={{ fontSize: '12px', color: '#0f172a', fontWeight: '800' }}>
+                    {paymentSettings.societyName || 'Society Payment'}
+                  </strong>
+                  {paymentSettings.paymentUpiId && (
+                    <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#334155', background: 'white', padding: '4px 10px', borderRadius: '99px', border: '1px solid #cbd5e1' }}>
+                      UPI ID: {paymentSettings.paymentUpiId}
+                    </span>
+                  )}
+
+                  <button 
+                    type="button" 
+                    onClick={downloadQrCode} 
+                    disabled={!paymentSettings.paymentQrImage}
+                    className="portal-primary-btn"
+                    style={{ background: 'linear-gradient(90deg, #087d40, #0ab35c)', padding: '6px 14px', fontSize: '11px', width: '100%', marginTop: '4px' }}
+                  >
+                    <Download size={13} /> {t('payHistory.downloadQr', 'Download QR Code')}
+                  </button>
+                </div>
+
+                {/* Right: Instructions List */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <h3 style={{ margin: 0, fontSize: '12px', fontWeight: '800', color: '#0f172a', textTransform: 'uppercase' }}>
+                    {t('payHistory.stepsToPay', 'Steps to Pay via UPI:')}
+                  </h3>
+                  <ol style={{ margin: 0, paddingLeft: '18px', fontSize: '11px', color: '#475569', lineHeight: '1.8' }}>
+                    <li>{t('payHistory.step1', 'Download or scan the QR code using any UPI app (GPay, PhonePe, Paytm).')}</li>
+                    <li>{t('payHistory.step2', 'Enter the exact maintenance bill total amount.')}</li>
+                    <li>{t('payHistory.step3', 'Complete the transaction.')}</li>
+                    <li>{t('payHistory.step4', 'Copy the 12-digit UTR / Transaction reference number.')}</li>
+                    <li>{t('payHistory.step5', 'Go to Maintenance page to submit the payment with UTR and receipt screenshot.')}</li>
+                  </ol>
+
+                  <div style={{ padding: '10px 14px', background: '#fffbe6', border: '1px solid #ffe58f', borderRadius: '8px', fontSize: '11px', color: '#873800' }}>
+                    <strong>⚠️ {t('payHistory.warning', 'Important Notice:')}</strong> {t('payHistory.warningDesc', 'Please pay the exact amount mentioned in your maintenance bill to ensure automated verification.')}
+                  </div>
+                </div>
+              </div>
             </section>
           </div>
         </>

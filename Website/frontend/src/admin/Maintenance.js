@@ -9,10 +9,15 @@ import {
 import { useLocation } from 'react-router-dom';
 import { maintenanceAPI, settingsAPI } from '../services/api';
 import { printPaymentReceipt, receiptAvailable } from '../utils/paymentReceipt';
+import { useTranslation } from 'react-i18next';
 import './maintenance.css';
 
 const money = (value) => `₹${Number(value || 0).toLocaleString('en-IN')}`;
-const date = (value) => value ? new Date(value).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+const date = (value, locale = 'en-IN') => {
+  if (!value) return '—';
+  const targetLocale = locale === 'hi' ? 'hi-IN' : (locale === 'mr' ? 'mr-IN' : 'en-IN');
+  return new Date(value).toLocaleDateString(targetLocale, { day: '2-digit', month: 'short', year: 'numeric' });
+};
 const unwrap = (response, fallback = []) => response?.data?.data ?? response?.data ?? fallback;
 const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const shortMonths = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -26,10 +31,11 @@ const statusClass = (status = '') => {
   const key = status.toLowerCase().replace(/\s/g, '-');
   return `mm-status mm-status-${key}`;
 };
-const statusLabel = (status = '') => {
-  if (status === 'PARTIAL_WRITE_OFF') return 'Partial Write-off';
-  if (['WRITTEN_OFF', 'SETTLED'].includes(status)) return 'Written Off';
-  return status || 'Pending';
+const statusLabel = (status = '', t) => {
+  if (!t) return status || 'Pending';
+  if (status === 'PARTIAL_WRITE_OFF') return t('statusLabel.partialWriteOff', 'Partial Write-off');
+  if (['WRITTEN_OFF', 'SETTLED'].includes(status)) return t('statusLabel.writtenOff', 'Written Off');
+  return status ? t(`statusLabel.${status.toLowerCase()}`, status) : t('common.pending', 'Pending');
 };
 const cycleNumber = (year, month) => Number(year) * 12 + Number(month);
 const backendOrigin = (process.env.REACT_APP_API_URL || 'http://localhost:5000/api').replace(/\/api\/?$/, '').replace(/\/$/, '');
@@ -48,12 +54,14 @@ const paymentProofUrl = (payment) => fileUrl(paymentProofPath(payment));
 function Modal({ title, subtitle, onClose, children, wide = false }) {
   return (
     <div className="mm-modal-backdrop" role="presentation" onMouseDown={onClose}>
-      <div className={`mm-modal ${wide ? 'mm-modal-wide' : ''}`} role="dialog" aria-modal="true" onMouseDown={(e) => e.stopPropagation()}>
+      <div className={`mm-modal ${wide ? 'mm-modal-wide' : ''}`} role="dialog" aria-modal="true" onMouseDown={(e) => e.stopPropagation()} style={{ maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
         <div className="mm-modal-head">
           <div><h3>{title}</h3>{subtitle && <p>{subtitle}</p>}</div>
           <button className="mm-icon-btn" onClick={onClose} aria-label="Close"><X size={19} /></button>
         </div>
-        {children}
+        <div style={{ overflowY: 'auto', flex: 1, padding: '4px 0' }}>
+          {children}
+        </div>
       </div>
     </div>
   );
@@ -86,7 +94,13 @@ function MiniChart({ data }) {
   );
 }
 
-const Maintenance = () => {
+function Maintenance() {
+  const { t, i18n } = useTranslation();
+  const translateMonth = (monthNum) => {
+    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    const key = monthNames[monthNum - 1];
+    return t(`months.${key}`, key);
+  };
   const [tab, setTab] = useState('bills');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -122,6 +136,7 @@ const Maintenance = () => {
   const [customRejectionReason, setCustomRejectionReason] = useState('');
   const [selectedPaymentIds, setSelectedPaymentIds] = useState(new Set());
   const [viewingDetails, setViewingDetails] = useState(null);
+  const [activeActionDropdown, setActiveActionDropdown] = useState(null);
   const [zoomScale, setZoomScale] = useState(1);
   const [loadingScreenshot, setLoadingScreenshot] = useState(true);
 
@@ -479,6 +494,55 @@ const Maintenance = () => {
       printPaymentReceipt(await getReceipt(payment), paymentSettings);
     } catch (err) {
       notify(err.message === 'Popup blocked' ? 'Popup blocked. Allow popups to print receipt.' : 'Could not load receipt details');
+    }
+  };
+
+  const handlePrintBill = async (payment) => {
+    const billId = payment.bill_id || payment.billId || payment.id;
+    if (!billId) return notify('Bill ID is missing');
+    try {
+      const response = await maintenanceAPI.getBillById(billId);
+      const bill = response.data?.data?.bill || response.data?.bill || response.data?.data || response.data;
+      if (!bill) return notify('Bill details unavailable');
+
+      const itemsHtml = bill.items && bill.items.length > 0
+        ? bill.items.map(item => `<tr><th>${item.name}</th><td>₹${Number(item.amount || 0).toLocaleString('en-IN')}</td></tr>`).join('')
+        : '';
+        
+      const prevOutstandingHtml = Number(bill.previous_outstanding || 0) > 0
+        ? `<tr><th>Previous Outstanding</th><td>₹${Number(bill.previous_outstanding).toLocaleString('en-IN')}</td></tr>`
+        : '';
+
+      const html = `
+        <html><head><title>Maintenance Invoice - ${bill.bill_number || `BILL-${bill.id}`}</title><style>
+        body{font-family:Arial,sans-serif;padding:32px;color:#172033}.box{max-width:760px;margin:0 auto;border:1px solid #dfe5ee;border-radius:14px;padding:28px}
+        h1{margin:0;font-size:26px}.muted{color:#667085;margin-top:6px}table{width:100%;border-collapse:collapse;margin-top:24px}
+        td,th{border-bottom:1px solid #edf0f3;padding:12px;text-align:left}.total{font-size:22px;font-weight:800}.right{text-align:right}
+        </style></head><body><div class="box">
+        <h1>Maintenance Invoice</h1><div class="muted">${paymentSettings.societyName || 'Society Management System'}</div>
+        <table>
+        <tr><th>Bill No.</th><td>${bill.bill_number || `BILL-${bill.id}`}</td></tr>
+        <tr><th>Resident</th><td>${bill.resident_name || payment.resident_name || 'Resident'}</td></tr>
+        <tr><th>Flat</th><td>${bill.flat_no || payment.flat_no || ''}</td></tr>
+        <tr><th>Flat Type</th><td>${bill.flat_type_name || 'Not Assigned'}</td></tr>
+        <tr><th>Period</th><td>${months[(Number(bill.month || payment.month) || 1) - 1]} ${bill.year || payment.year || ''}</td></tr>
+        <tr><th>Due Date</th><td>${date(bill.due_date)}</td></tr>
+        <tr><th>Status</th><td>${bill.write_off_status || bill.payment_status || payment.payment_status}</td></tr>
+        <tr><th>Base Maintenance Charge</th><td>₹${Number(bill.amount || bill.total_amount || payment.amount || 0).toLocaleString('en-IN')}</td></tr>
+        ${itemsHtml}
+        <tr><th>Original Late Fee</th><td>₹${Number(bill.late_fee || bill.penalty_amount || 0).toLocaleString('en-IN')}</td></tr>
+        <tr><th>Original Total Bill</th><td>₹${Number(bill.total_amount || payment.amount || 0).toLocaleString('en-IN')}</td></tr>
+        ${Number(bill.paid_amount || 0) > 0 ? `<tr><th>Amount Paid</th><td>₹${Number(bill.paid_amount).toLocaleString('en-IN')}</td></tr>` : ''}
+        ${prevOutstandingHtml}
+        <tr><th class="total">Remaining Payable</th><td class="total">₹${Number(bill.remainingPayable !== undefined ? bill.remainingPayable : (bill.remaining_amount !== undefined ? bill.remaining_amount : bill.total_amount || payment.amount)).toLocaleString('en-IN')}</td></tr>
+        </table><p class="muted right">Generated on ${new Date().toLocaleString('en-IN')}</p>
+        </div><script>window.print();</script></body></html>`;
+      const docWindow = window.open('', '_blank', 'width=900,height=700');
+      if (!docWindow) return notify('Popup blocked. Allow popups to print bill.');
+      docWindow.document.write(html);
+      docWindow.document.close();
+    } catch (err) {
+      notify('Failed to load bill details');
     }
   };
 
@@ -943,38 +1007,70 @@ const Maintenance = () => {
     }
   };
 
+  const handleDeleteBill = async (bill) => {
+    const residentName = bill.resident_name || 'Resident';
+    const flatNo = bill.flat_no ? `Flat ${bill.flat_no}` : '';
+    const monthName = translateMonth(Number(bill.month) || 1);
+    const billLabel = `${residentName} (${flatNo} - ${monthName} ${bill.year})`;
+
+    if (!window.confirm(`Are you sure you want to delete the maintenance bill for ${billLabel}? This will also remove associated payment records.`)) {
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await maintenanceAPI.delete(bill.id);
+      notify('Maintenance bill deleted successfully');
+      await load();
+    } catch (err) {
+      console.error('Error deleting bill:', err);
+      notify(err.response?.data?.message || 'Could not delete maintenance bill');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleWriteOffClick = (bill) => {
     setWriteOffBill(bill);
+    const rem = Number(bill.remaining_due ?? bill.current_due ?? bill.remaining_amount ?? bill.total_amount ?? bill.amount ?? 0);
     setWriteOffForm({
       type: 'Maintenance',
-      amount: String(bill.remaining_amount || 0),
-      reason: ''
+      writeoffType: rem > 0 ? 'PARTIAL' : 'TOTAL',
+      amount: String(rem > 0 ? rem : bill.amount || 0),
+      reason: 'Management Approval',
+      remarks: ''
     });
-    setModal('write_off');
+    setModal('writeoff');
   };
 
   const submitWriteOff = async (e) => {
     e.preventDefault();
-    if (!writeOffForm.reason.trim()) {
+    if (!writeOffForm.reason || !writeOffForm.reason.trim()) {
       notify('A reason is mandatory for performing a write-off');
       return;
     }
-    
-    if (writeOffForm.type !== 'Full' && (!writeOffForm.amount || Number(writeOffForm.amount) <= 0)) {
+
+    const currentDue = Number(writeOffBill.remaining_due ?? writeOffBill.current_due ?? writeOffBill.remaining_amount ?? 0);
+    const totalBill = Number(writeOffBill.total_amount || writeOffBill.amount || 0);
+    const maxAllowed = currentDue > 0 ? currentDue : totalBill;
+    const amountToOff = writeOffForm.writeoffType === 'TOTAL' ? maxAllowed : Number(writeOffForm.amount);
+
+    if (!amountToOff || amountToOff <= 0) {
       notify('Please enter a valid write-off amount');
       return;
     }
 
-    if (!window.confirm(`Are you sure you want to approve this write-off (${writeOffForm.type}) of amount ₹${writeOffForm.type === 'Full' ? writeOffBill.remaining_amount : writeOffForm.amount}?`)) {
+    if (!window.confirm(`Are you sure you want to approve this write-off of amount ₹${amountToOff}?`)) {
       return;
     }
 
     setSaving(true);
     try {
       await maintenanceAPI.createWriteOff(writeOffBill.id, {
-        type: writeOffForm.type,
+        type: writeOffForm.writeoffType === 'TOTAL' ? 'Full' : 'Partial',
         reason: writeOffForm.reason,
-        amount: writeOffForm.type === 'Full' ? Number(writeOffBill.remaining_amount) : Number(writeOffForm.amount)
+        amount: amountToOff,
+        remarks: writeOffForm.remarks || ''
       });
       notify('Write-off applied successfully');
       setModal(null);
@@ -1036,12 +1132,12 @@ const Maintenance = () => {
   };
 
   const statCards = [
-    { label: 'Total Collected', value: money(calculatedStats.collected), note: 'Accumulated payments', icon: IndianRupee, tone: 'blue', up: true },
-    { label: 'Total Pending', value: money(calculatedStats.pending), note: 'Outstanding payments', icon: Wallet, tone: 'amber' },
-    { label: 'Written Off', value: money(calculatedStats.writtenOff), note: 'Admin approved adjustments', icon: ReceiptIndianRupee, tone: 'indigo' },
-    { label: 'Overdue Amount', value: money(calculatedStats.overdue), note: 'Grace period expired', icon: AlertCircle, tone: 'red' },
-    { label: 'Total Residents', value: calculatedStats.residents, note: 'Registered members', icon: Activity, tone: 'indigo', up: true },
-    { label: 'Collection Rate', value: `${calculatedStats.collectionPercentage || 0}%`, note: 'Overall performance', icon: TrendingUp, tone: 'green', up: true }
+    { label: t('maintenance.totalCollected'), value: money(calculatedStats.collected), note: t('maintenance.accumulated'), icon: IndianRupee, tone: 'blue', up: true },
+    { label: t('maintenance.totalPending'), value: money(calculatedStats.pending), note: t('maintenance.outstanding'), icon: Wallet, tone: 'amber' },
+    { label: t('maintenance.writtenOff'), value: money(calculatedStats.writtenOff), note: t('maintenance.adminApprovals'), icon: ReceiptIndianRupee, tone: 'indigo' },
+    { label: t('maintenance.overdueAmount'), value: money(calculatedStats.overdue), note: t('maintenance.graceExpired'), icon: AlertCircle, tone: 'red' },
+    { label: t('maintenance.totalResidents'), value: calculatedStats.residents, note: t('maintenance.registeredMembers'), icon: Activity, tone: 'indigo', up: true },
+    { label: t('maintenance.collectionRate'), value: `${calculatedStats.collectionPercentage || 0}%`, note: t('maintenance.overallPerformance'), icon: TrendingUp, tone: 'green', up: true }
   ];
 
   const hasChartData = useMemo(() => {
@@ -1053,23 +1149,23 @@ const Maintenance = () => {
       {toast && <div className="mm-toast"><CheckCircle2 size={18} />{toast}</div>}
       <div className="mm-page-head">
         <div>
-          <div className="mm-eyebrow">Finance & billing</div>
-          <h1>Maintenance management</h1>
-          <p>Track collections, bills, expenses and resident payments from one place.</p>
+          <div className="mm-eyebrow">{t('nav.maintenance')}</div>
+          <h1>{t('maintenance.title')}</h1>
+          <p>{t('maintenance.subtitle')}</p>
         </div>
         <div className="mm-head-actions">
-          <button className="mm-button mm-button-light" onClick={handleApplyPenalty} disabled={saving}><RefreshCcw size={17} className={saving ? 'spin' : ''} /> Check Overdue Penalties</button>
-          <button className="mm-button mm-button-light" onClick={exportCurrentView}><Download size={17} /> Export CSV</button>
-          <button className="mm-button mm-button-primary" onClick={() => setModal('generate')}><Plus size={18} /> Generate bills</button>
+          <button className="mm-button mm-button-light" onClick={handleApplyPenalty} disabled={saving}><RefreshCcw size={17} className={saving ? 'spin' : ''} /> {t('maintenance.checkOverdue')}</button>
+          <button className="mm-button mm-button-light" onClick={exportCurrentView}><Download size={17} /> {t('maintenance.exportCsv')}</button>
+          <button className="mm-button mm-button-primary" onClick={() => setModal('generate')}><Plus size={18} /> {t('maintenance.generateBills')}</button>
         </div>
       </div>
 
       <div className="mm-tabs" role="tablist">
         {[
-          ['overview', LayoutDashboard, 'Overview'], ['bills', ReceiptIndianRupee, 'Bills'],
-          ['settings', SlidersHorizontal, 'Settings'],
-          ['expenses', Wallet, 'Expenses'],
-          ['payments', CheckCircle2, 'Payments'], ['reports', FileBarChart, 'Reports']
+          ['overview', LayoutDashboard, t('maintenance.overview')], ['bills', ReceiptIndianRupee, t('maintenance.bills')],
+          ['settings', SlidersHorizontal, t('maintenance.settings')],
+          ['expenses', Wallet, t('maintenance.expenses')],
+          ['payments', CheckCircle2, t('maintenance.payments')], ['reports', FileBarChart, t('maintenance.reports')]
         ].map(([key, Icon, label]) => (
           <button key={key} className={tab === key ? 'active' : ''} onClick={() => setTab(key)}><Icon size={17} />{label}</button>
         ))}
@@ -1096,79 +1192,79 @@ const Maintenance = () => {
             {hasChartData ? (
               <section className="mm-panel mm-chart-panel">
                 <div className="mm-panel-head">
-                  <div><h2>Collection overview</h2><p>Paid and outstanding maintenance for the last 6 months</p></div>
+                  <div><h2>{t('maintenance.collectionOverview')}</h2><p>{t('maintenance.collectionSubtitle')}</p></div>
                   <button className="mm-select">Last 6 months <ChevronDown size={15} /></button>
                 </div>
-                <div className="mm-legend"><span><i className="paid" />Collected</span><span><i className="pending" />Outstanding</span></div>
+                <div className="mm-legend"><span><i className="paid" />{t('common.paid', 'Paid')}</span><span><i className="pending" />{t('common.pending', 'Pending')}</span></div>
                 <MiniChart data={chartData} />
               </section>
             ) : null}
 
             <section className="mm-panel mm-health">
-              <div className="mm-panel-head"><div><h2>Collection health</h2><p>Current billing cycle</p></div><Activity size={19} /></div>
+              <div className="mm-panel-head"><div><h2>{t('maintenance.collectionHealth')}</h2><p>{t('maintenance.currentBillingCycle')}</p></div><Activity size={19} /></div>
               <div className="mm-ring" style={{ '--progress': `${calculatedStats.collectionPercentage || 0}%` }}>
-                <div><strong>{calculatedStats.collectionPercentage || 0}%</strong><span>collected</span></div>
+                <div><strong>{calculatedStats.collectionPercentage || 0}%</strong><span>{t('maintenance.totalCollected')}</span></div>
               </div>
-              <div className="mm-health-row"><span><i className="dot green" />Paid/settled bills</span><strong>{bills.filter((b) => ['Paid', 'PAID', 'SETTLED', 'WRITTEN_OFF'].includes(b.payment_status || b.status)).length}</strong></div>
-              <div className="mm-health-row"><span><i className="dot amber" />Pending</span><strong>{bills.filter((b) => (b.payment_status || b.status) === 'Pending').length}</strong></div>
-              <div className="mm-health-row"><span><i className="dot red" />Overdue</span><strong>{bills.filter((b) => (b.payment_status || b.status) === 'Overdue').length}</strong></div>
+              <div className="mm-health-row"><span><i className="dot green" />{t('common.paid', 'Paid')}</span><strong>{bills.filter((b) => ['Paid', 'PAID', 'SETTLED', 'WRITTEN_OFF'].includes(b.payment_status || b.status)).length}</strong></div>
+              <div className="mm-health-row"><span><i className="dot amber" />{t('common.pending', 'Pending')}</span><strong>{bills.filter((b) => (b.payment_status || b.status) === 'Pending').length}</strong></div>
+              <div className="mm-health-row"><span><i className="dot red" />{t('common.overdue', 'Overdue')}</span><strong>{bills.filter((b) => (b.payment_status || b.status) === 'Overdue').length}</strong></div>
             </section>
           </div>
 
           <div className="mm-grid-lower">
             <section className="mm-panel">
-              <div className="mm-panel-head"><div><h2>Recent bills</h2><p>Latest resident invoices</p></div><button className="mm-text-button" onClick={() => setTab('bills')}>View all</button></div>
+              <div className="mm-panel-head"><div><h2>{t('maintenance.recentBills')}</h2><p>{t('maintenance.recentBills')}</p></div><button className="mm-text-button" onClick={() => setTab('bills')}>{t('common.viewAll')}</button></div>
               {bills.length ? <div className="mm-list">
                 {bills.slice(0, 5).map((bill) => (
                   <div className="mm-list-row" key={bill.id}>
                     <div className="mm-avatar">{(bill.resident_name || 'R').slice(0, 1)}</div>
-                    <div className="mm-list-main"><strong>{bill.resident_name || 'Resident'}</strong><span>Flat {bill.flat_no || '—'} · {bill.title}</span></div>
-                    <div className="mm-list-amount"><strong>{money(bill.total_amount)}</strong><span className={statusClass(bill.write_off_status || bill.payment_status || bill.status)}>{statusLabel(bill.write_off_status || bill.payment_status || bill.status)}</span></div>
+                    <div className="mm-list-main"><strong>{bill.resident_name || 'Resident'}</strong><span>{t('common.flat')} {bill.flat_no || '—'} · {translateMonth(bill.month)} {bill.year}</span></div>
+                    <div className="mm-list-amount"><strong>{money(bill.total_amount)}</strong><span className={statusClass(bill.write_off_status || bill.payment_status || bill.status)}>{statusLabel(bill.write_off_status || bill.payment_status || bill.status, t)}</span></div>
                   </div>
                 ))}
-              </div> : <Empty title="No maintenance bills generated yet" copy="Generate your first monthly billing cycle." />}
+              </div> : <Empty title={t('common.noData', 'No data available')} copy="" />}
             </section>
 
             <section className="mm-panel">
-              <div className="mm-panel-head"><div><h2>Top overdue flats</h2><p>Highest outstanding balances</p></div><AlertCircle size={18} /></div>
+              <div className="mm-panel-head"><div><h2>{t('maintenance.topOverdueFlats')}</h2><p>{t('maintenance.topOverdueFlats')}</p></div><AlertCircle size={18} /></div>
               {(dashboard.overdueFlats || []).length ? <div className="mm-overdue-list">
                 {dashboard.overdueFlats.map((item, index) => (
-                  <div key={`${item.flat}-${index}`}><span className="mm-rank">{index + 1}</span><div><strong>Flat {item.flat}</strong><small>{item.resident}</small></div><b>{money(item.amount)}</b></div>
+                  <div key={`${item.flat}-${index}`}><span className="mm-rank">{index + 1}</span><div><strong>{t('common.flat')} {item.flat}</strong><small>{item.resident}</small></div><b>{money(item.amount)}</b></div>
                 ))}
-              </div> : <Empty title="All caught up" copy="No overdue flats to show." />}
+              </div> : <Empty title={t('common.noData', 'No data available')} copy="" />}
             </section>
           </div>
         </>
       ) : tab === 'bills' ? (
         <section className="mm-panel mm-table-panel">
           <div className="mm-panel-head">
-            <div><h2>Maintenance bills</h2><p>{filteredBills.length} bills in this view</p></div>
-            <button className="mm-button mm-button-primary" onClick={() => setModal('generate')}><Plus size={17} /> Generate bills</button>
+            <div><h2>{t('maintenance.billsTitle')}</h2><p>{t('maintenance.billsInView', { count: filteredBills.length })}</p></div>
+            <button className="mm-button mm-button-primary" onClick={() => setModal('generate')}><Plus size={17} /> {t('maintenance.generateBills')}</button>
           </div>
           <div className="mm-toolbar">
-            <label className="mm-search"><Search size={17} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search resident name or flat..." /></label>
-            <label className="mm-filter"><Filter size={16} /><select value={status} onChange={(e) => setStatus(e.target.value)}><option>All</option><option>Paid</option><option>Pending</option><option>Partial</option><option>Under Review</option><option>Overdue</option><option>PARTIAL_WRITE_OFF</option><option>WRITTEN_OFF</option><option>SETTLED</option></select></label>
-            <label className="mm-filter"><select value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)}><option>All</option>{months.map((month, index) => <option key={month} value={index + 1}>{month}</option>)}</select></label>
-            <label className="mm-filter"><select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)}><option>All</option>{yearOptions.map((year) => <option key={year}>{year}</option>)}</select></label>
+            <label className="mm-search"><Search size={17} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t('maintenance.searchResidentFlat')} /></label>
+            <label className="mm-filter"><Filter size={16} /><select value={status} onChange={(e) => setStatus(e.target.value)}><option>{t('maintenance.all')}</option><option>Paid</option><option>Pending</option><option>Partial</option><option>Under Review</option><option>Overdue</option><option>PARTIAL_WRITE_OFF</option><option>WRITTEN_OFF</option><option>SETTLED</option></select></label>
+            <label className="mm-filter"><select value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)}><option>{t('maintenance.all')}</option>{months.map((month, index) => <option key={month} value={index + 1}>{translateMonth(index + 1)}</option>)}</select></label>
+            <label className="mm-filter"><select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)}><option>{t('maintenance.all')}</option>{yearOptions.map((year) => <option key={year}>{year}</option>)}</select></label>
           </div>
           <div className="mm-table-wrap">
             {filteredBills.length > 0 ? (
               <table className="mm-table">
                 <thead>
                   <tr>
-                    <th>Resident</th>
-                    <th>Flat</th>
-                    <th>Month</th>
-                    <th>Year</th>
-                    <th>Base Amount</th>
-                    <th>Penalty</th>
-                    <th>Total Amount</th>
-                    <th>Paid</th>
-                    <th>Write-off</th>
-                    <th>Remaining</th>
-                    <th>Due Date</th>
-                    <th>Status</th>
-                    <th>Actions</th>
+                    <th>{t('common.resident')}</th>
+                    <th>{t('common.flat')}</th>
+                    <th>{t('dashboard.month')}</th>
+                    <th>{t('maintenance.year')}</th>
+                    <th>{t('maintenance.baseAmount')}</th>
+                    <th>{t('maintenance.penalty')}</th>
+                    <th>{t('maintenance.totalAmount')}</th>
+                    <th>{t('common.paid', 'Paid')}</th>
+                    <th>{t('maintenance.writeOff')}</th>
+                    <th>{t('maintenance.remaining')}</th>
+                    <th>{t('common.dueDate', 'Due Date')}</th>
+                    <th>{t('common.status')}</th>
+                    <th>{t('common.actions')}</th>
                   </tr>
                 </thead>
                 <tbody>{filteredBills.map((bill) => {
@@ -1177,8 +1273,8 @@ const Maintenance = () => {
                   return (
                     <tr key={bill.id}>
                       <td><strong>{bill.resident_name || 'Resident'}</strong></td>
-                      <td>Flat {bill.flat_no || '—'}</td>
-                      <td>{months[(Number(bill.month) || 1) - 1]}</td>
+                      <td>{t('common.flat')} {bill.flat_no || '—'}</td>
+                      <td>{translateMonth(Number(bill.month) || 1)}</td>
                       <td>{bill.year}</td>
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -1198,7 +1294,7 @@ const Maintenance = () => {
                               }}
                               title={`Original Amount: ${money(bill.default_maintenance_amount)}\nDifference: ${money(Number(bill.final_maintenance_amount) - Number(bill.default_maintenance_amount))}\nEdited by: ${bill.edited_by_name || 'Admin'}\nReason: ${bill.custom_reason || 'N/A'}`}
                             >
-                              Custom
+                              {t('maintenance.custom')}
                             </span>
                           )}
                         </div>
@@ -1208,8 +1304,8 @@ const Maintenance = () => {
                       <td className="text-green-600 font-semibold">{money(bill.paid_amount)}</td>
                       <td className="text-blue-600 font-semibold">{money(bill.write_off_amount)}</td>
                       <td><strong>{money(remainingDue)}</strong></td>
-                      <td>{date(bill.due_date)}</td>
-                      <td><span className={statusClass(currentStatus)}>{statusLabel(currentStatus)}</span></td>
+                      <td>{date(bill.due_date, i18n.language)}</td>
+                      <td><span className={statusClass(currentStatus)}>{statusLabel(currentStatus, t)}</span></td>
                       <td>
                         <div className="mm-action-group">
                           <button
@@ -1225,25 +1321,38 @@ const Maintenance = () => {
                             }}
                             onClick={() => handleEditBill(bill)}
                           >
-                            Edit
+                            {t('common.edit')}
                           </button>
-                          {Number(bill.remaining_amount) > 0 && (
-                            <button
-                              className="mm-mini-action"
-                              style={{ 
-                                padding: '2px 8px', 
-                                fontSize: '11px', 
-                                backgroundColor: '#fee2e2', 
-                                color: '#b91c1c',
-                                border: 'none',
-                                borderRadius: '4px',
-                                cursor: 'pointer'
-                              }}
-                              onClick={() => handleWriteOffClick(bill)}
-                            >
-                              Write-Off
-                            </button>
-                          )}
+                          <button
+                            className="mm-mini-action"
+                            style={{ 
+                              padding: '2px 8px', 
+                              fontSize: '11px', 
+                              backgroundColor: '#fee2e2', 
+                              color: '#b91c1c',
+                              border: 'none',
+                              borderRadius: '4px',
+                              cursor: 'pointer'
+                            }}
+                            onClick={() => handleWriteOffClick(bill)}
+                          >
+                            {t('maintenance.writeOff')}
+                          </button>
+                          <button
+                            className="mm-mini-action"
+                            style={{ 
+                              padding: '2px 8px', 
+                              fontSize: '11px', 
+                              backgroundColor: '#fef2f2', 
+                              color: '#dc2626',
+                              border: 'none',
+                              borderRadius: '4px',
+                              cursor: 'pointer'
+                            }}
+                            onClick={() => handleDeleteBill(bill)}
+                          >
+                            {t('common.delete', 'Delete')}
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -1251,7 +1360,7 @@ const Maintenance = () => {
                 })}</tbody>
               </table>
             ) : (
-              <Empty title="No maintenance bills generated yet" copy="Try changing the search or status filter, or generate new bills." />
+              <Empty title={t('common.noData', 'No data available')} copy="" />
             )}
           </div>
         </section>
@@ -1259,41 +1368,41 @@ const Maintenance = () => {
         <section className="mm-panel" style={{ maxWidth: '600px', margin: '0 auto' }}>
           <div className="mm-panel-head">
             <div>
-              <h2>Monthly Maintenance Rules</h2>
-              <p>Configure the default title, fixed charge, due date, grace period, and late fee penalties.</p>
+              <h2>{t('maintenance.monthlyRules')}</h2>
+              <p>{t('maintenance.monthlyRulesSubtitle')}</p>
             </div>
           </div>
           <form onSubmit={submitSettings} className="mm-form p-4">
             <label className="mm-field mm-field-full">
-              <span>Maintenance Title</span>
+              <span>{t('maintenance.maintenanceTitle')}</span>
               <input required value={settingsForm.title} onChange={(e) => setSettingsForm({ ...settingsForm, title: e.target.value })} placeholder="e.g. Monthly Maintenance" />
             </label>
             <div className="mm-form-row">
               <label className="mm-field mm-field-full">
-                <span>Due Day of Month</span>
+                <span>{t('maintenance.dueDayOfMonth')}</span>
                 <input type="number" min="1" max="28" required value={settingsForm.due_day} onChange={(e) => setSettingsForm({ ...settingsForm, due_day: e.target.value })} placeholder="e.g. 10" />
               </label>
             </div>
             <div className="mm-form-row">
               <label className="mm-field">
-                <span>Late Fee Penalty Type</span>
+                <span>{t('maintenance.lateFeeType')}</span>
                 <select value={settingsForm.late_fee_type} onChange={(e) => setSettingsForm({ ...settingsForm, late_fee_type: e.target.value })}>
-                  <option value="fixed">Fixed Amount (₹)</option>
-                  <option value="percentage">Percentage (%)</option>
+                  <option value="fixed">{t('maintenance.fixedAmount')}</option>
+                  <option value="percentage">{t('maintenance.percentage')}</option>
                 </select>
               </label>
               <label className="mm-field">
-                <span>Penalty Rate / Value</span>
+                <span>{t('maintenance.penaltyRateValue')}</span>
                 <input type="number" min="0" required value={settingsForm.late_fee_value} onChange={(e) => setSettingsForm({ ...settingsForm, late_fee_value: e.target.value })} placeholder="e.g. 100 or 5" />
               </label>
             </div>
             <label className="mm-field mm-field-full">
-              <span>Grace Days</span>
+              <span>{t('maintenance.graceDays')}</span>
               <input type="number" min="0" required value={settingsForm.grace_days} onChange={(e) => setSettingsForm({ ...settingsForm, grace_days: e.target.value })} placeholder="e.g. 2" />
             </label>
             <div className="mm-form-actions">
               <button className="mm-button mm-button-primary" disabled={saving} style={{ width: '100%', marginTop: '12px' }}>
-                {saving ? 'Saving Rules...' : 'Save Configuration'}
+                {saving ? t('maintenance.savingRules') : t('maintenance.saveConfiguration')}
               </button>
             </div>
           </form>
@@ -1303,52 +1412,52 @@ const Maintenance = () => {
           <div className="mm-stat-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', marginBottom: '20px' }}>
             <article className="mm-stat">
               <div className="mm-stat-icon blue"><Activity size={20} /></div>
-              <div className="mm-stat-label">Total Payment Requests</div>
+              <div className="mm-stat-label">{t('maintenance.totalPaymentRequests')}</div>
               <div className="mm-stat-value">{paymentsStats.totalRequests}</div>
-              <div className="mm-stat-note">Submitted submissions</div>
+              <div className="mm-stat-note">{t('maintenance.submittedSubmissions')}</div>
             </article>
             <article className="mm-stat">
               <div className="mm-stat-icon amber"><AlertCircle size={20} /></div>
-              <div className="mm-stat-label">Pending Verification</div>
+              <div className="mm-stat-label">{t('maintenance.pendingVerification')}</div>
               <div className="mm-stat-value">{paymentsStats.pendingVerification}</div>
-              <div className="mm-stat-note">Awaiting admin review</div>
+              <div className="mm-stat-note">{t('maintenance.awaitingAdmin')}</div>
             </article>
             <article className="mm-stat">
               <div className="mm-stat-icon green"><CheckCircle2 size={20} /></div>
-              <div className="mm-stat-label">Approved Payments</div>
+              <div className="mm-stat-label">{t('maintenance.approvedPayments')}</div>
               <div className="mm-stat-value">{paymentsStats.approvedPayments}</div>
-              <div className="mm-stat-note">Successfully verified</div>
+              <div className="mm-stat-note">{t('maintenance.successfullyVerified')}</div>
             </article>
             <article className="mm-stat">
               <div className="mm-stat-icon red"><X size={20} /></div>
-              <div className="mm-stat-label">Rejected Payments</div>
+              <div className="mm-stat-label">{t('maintenance.rejectedPayments')}</div>
               <div className="mm-stat-value">{paymentsStats.rejectedPayments}</div>
-              <div className="mm-stat-note">Invalid submissions</div>
+              <div className="mm-stat-note">{t('maintenance.invalidSubmissions')}</div>
             </article>
             <article className="mm-stat">
               <div className="mm-stat-icon blue"><IndianRupee size={20} /></div>
-              <div className="mm-stat-label">Received This Month</div>
+              <div className="mm-stat-label">{t('maintenance.receivedThisMonth')}</div>
               <div className="mm-stat-value">{money(paymentsStats.totalReceivedThisMonth)}</div>
-              <div className="mm-stat-note">Current month collections</div>
+              <div className="mm-stat-note">{t('maintenance.currentMonthCollections')}</div>
             </article>
             <article className="mm-stat">
               <div className="mm-stat-icon red"><Wallet size={20} /></div>
-              <div className="mm-stat-label">Pending Collection</div>
+              <div className="mm-stat-label">{t('maintenance.pendingCollection')}</div>
               <div className="mm-stat-value">{money(paymentsStats.pendingCollection)}</div>
-              <div className="mm-stat-note">Unpaid dues total</div>
+              <div className="mm-stat-note">{t('maintenance.unpaidDuesTotal')}</div>
             </article>
           </div>
 
           <section className="mm-panel mm-table-panel" style={{ padding: '0', overflow: 'visible' }}>
             <div className="mm-panel-head" style={{ padding: '19px 19px 12px' }}>
               <div>
-                <h2>Payment Verification</h2>
-                <p>Review and verify resident payment requests instantly.</p>
+                <h2>{t('maintenance.paymentVerification')}</h2>
+                <p>{t('maintenance.paymentVerificationSubtitle')}</p>
               </div>
               <div className="mm-head-actions">
-                <button className="mm-button mm-button-light" onClick={printPaymentsReport}><Eye size={17} /> Print Report</button>
-                <button className="mm-button mm-button-light" onClick={exportPaymentsExcel}><Download size={17} /> Export Excel</button>
-                <button className="mm-button mm-button-light" onClick={exportPaymentsCsv}><Download size={17} /> Export CSV</button>
+                <button className="mm-button mm-button-light" onClick={printPaymentsReport}><Eye size={17} /> {t('maintenance.printReport')}</button>
+                <button className="mm-button mm-button-light" onClick={exportPaymentsExcel}><Download size={17} /> {t('maintenance.exportExcel')}</button>
+                <button className="mm-button mm-button-light" onClick={exportPaymentsCsv}><Download size={17} /> {t('maintenance.exportCsv')}</button>
               </div>
             </div>
 
@@ -1364,18 +1473,18 @@ const Maintenance = () => {
                         disabled={!pendingPayments.length}
                       />
                     </th>
-                    <th>Resident</th>
-                    <th>Flat No.</th>
-                    <th>Bill Number</th>
-                    <th>Bill Month</th>
-                    <th>Amount</th>
-                    <th>Payment Method</th>
-                    <th>Payment Date</th>
-                    <th>UTR Number</th>
-                    <th>Screenshot Thumbnail</th>
-                    <th>Status</th>
-                    <th>Submitted Date</th>
-                    <th>Actions</th>
+                    <th>{t('common.resident')}</th>
+                    <th>{t('maintenance.flatNoColumn')}</th>
+                    <th>{t('maintenance.billNumber')}</th>
+                    <th>{t('maintenance.billMonth')}</th>
+                    <th>{t('common.amount')}</th>
+                    <th>{t('maintenance.paymentMethod')}</th>
+                    <th>{t('maintenance.paymentDate')}</th>
+                    <th>{t('maintenance.utrNumber')}</th>
+                    <th>{t('maintenance.screenshotDocument')}</th>
+                    <th>{t('common.status')}</th>
+                    <th>{t('maintenance.submittedDate')}</th>
+                    <th>{t('common.actions')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1398,14 +1507,14 @@ const Maintenance = () => {
                         </td>
                         <td>
                           <strong>{payment.resident_name}</strong>
-                          <small>Reg: {date(payment.created_at)}</small>
+                          <small>Reg: {date(payment.created_at, i18n.language)}</small>
                         </td>
-                        <td>Flat {payment.flat_no}</td>
+                        <td>{t('common.flat')} {payment.flat_no}</td>
                         <td>{payment.bill_number || `BILL-${payment.bill_id}`}</td>
-                        <td>{months[(Number(payment.month) || 1) - 1]} {payment.year}</td>
+                        <td>{translateMonth(Number(payment.month) || 1)} {payment.year}</td>
                         <td><strong>{money(payment.amount)}</strong></td>
                         <td>{payment.payment_method}</td>
-                        <td>{date(payment.paid_at)}</td>
+                        <td>{date(payment.paid_at, i18n.language)}</td>
                         <td className="font-mono text-xs">{payment.utr_number || payment.transaction_id}</td>
                         <td>
                           {proofPath && !proofBroken ? (
@@ -1426,81 +1535,138 @@ const Maintenance = () => {
                                   loading="lazy"
                                   style={{ width: 48, height: 36, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--portal-line)', background: '#f8fafc', transition: 'transform 0.15s ease' }}
                                   onError={() => setBrokenProofs((current) => ({ ...current, [payment.id]: true }))}
-                                />
+                               />
                               </button>
                             </div>
                           ) : proofPath && proofBroken ? (
-                            <span className="text-xs text-red-500 font-semibold">Broken link</span>
+                            <span className="text-xs text-red-500 font-semibold">{t('maintenance.brokenLink', 'Broken link')}</span>
                           ) : (
-                            <span className="text-xs text-slate-400">No proof</span>
+                            <span className="text-xs text-slate-400">{t('maintenance.noProof', 'No proof')}</span>
                           )}
                         </td>
                         <td>
                           <span className={statusClass(currentPaymentStatus)}>
-                            {currentPaymentStatus}
+                            {statusLabel(currentPaymentStatus, t)}
                           </span>
                         </td>
-                        <td>{date(payment.created_at)}</td>
-                        <td>
-                          <div className="mm-action-group">
+                        <td>{date(payment.created_at, i18n.language)}</td>
+                        <td style={{ position: 'relative' }}>
+                          <div className="mm-action-dropdown-wrap">
                             <button
                               className="mm-mini-action"
-                              onClick={() => setViewingDetails(payment)}
-                              title="View Details"
+                              style={{ background: '#f8fafc', border: '1px solid #cbd5e1', fontWeight: '700', padding: '5px 10px', color: '#1e293b', gap: '4px' }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const payId = payment.payment_id || payment.id;
+                                setActiveActionDropdown(activeActionDropdown === payId ? null : payId);
+                              }}
                             >
-                              Details
+                              Actions <ChevronDown size={12} />
                             </button>
-                            
-                            {isPending && (
+
+                            {activeActionDropdown === (payment.payment_id || payment.id) && (
                               <>
-                                <button
-                                  className="mm-mini-action green"
-                                  onClick={() => handleApprovePayment(payment)}
-                                  disabled={saving}
-                                  title="Approve"
-                                >
-                                  Approve
-                                </button>
-                                <button
-                                  className="mm-mini-action red"
-                                  onClick={() => {
-                                    setRejectingPayment(payment);
-                                    setRejectionType('Invalid Screenshot');
-                                    setCustomRejectionReason('');
-                                  }}
-                                  disabled={saving}
-                                  title="Reject"
-                                >
-                                  Reject
-                                </button>
+                                <div style={{ position: 'fixed', inset: 0, zIndex: 90 }} onClick={() => setActiveActionDropdown(null)} />
+                                <div className="mm-action-dropdown-menu" style={{ zIndex: 100 }}>
+                                  <button
+                                    className="mm-action-dropdown-item"
+                                    onClick={() => {
+                                      setActiveActionDropdown(null);
+                                      setViewingDetails(payment);
+                                    }}
+                                  >
+                                    <Eye size={13} /> {t('common.details', 'View Details')}
+                                  </button>
+
+                                  <button
+                                    className="mm-action-dropdown-item"
+                                    onClick={() => {
+                                      setActiveActionDropdown(null);
+                                      handlePrintBill(payment);
+                                    }}
+                                  >
+                                    <FileText size={13} /> {t('common.viewBill', 'View Bill')}
+                                  </button>
+
+                                  {receiptAvailable(currentPaymentStatus) && (
+                                    <button
+                                      className="mm-action-dropdown-item"
+                                      onClick={() => {
+                                        setActiveActionDropdown(null);
+                                        handlePrintReceipt(payment);
+                                      }}
+                                    >
+                                      <Printer size={13} /> {t('common.printReceipt', 'Print Receipt')}
+                                    </button>
+                                  )}
+
+                                  {isPending && (
+                                    <>
+                                      <div className="mm-action-dropdown-divider" />
+                                      <button
+                                        className="mm-action-dropdown-item green"
+                                        onClick={() => {
+                                          setActiveActionDropdown(null);
+                                          handleApprovePayment(payment);
+                                        }}
+                                        disabled={saving}
+                                      >
+                                        <CheckCircle2 size={13} /> {t('common.approve', 'Approve Payment')}
+                                      </button>
+                                      <button
+                                        className="mm-action-dropdown-item red"
+                                        onClick={() => {
+                                          setActiveActionDropdown(null);
+                                          setRejectingPayment(payment);
+                                          setRejectionType('Invalid Screenshot');
+                                          setCustomRejectionReason('');
+                                        }}
+                                        disabled={saving}
+                                      >
+                                        <X size={13} /> {t('common.reject', 'Reject Payment')}
+                                      </button>
+                                    </>
+                                  )}
+
+                                  {String(currentPaymentStatus).toUpperCase() === 'REJECTED' && (
+                                    <>
+                                      <div className="mm-action-dropdown-divider" />
+                                      <button
+                                        className="mm-action-dropdown-item green"
+                                        onClick={() => {
+                                          setActiveActionDropdown(null);
+                                          handleApprovePayment(payment);
+                                        }}
+                                        disabled={saving}
+                                      >
+                                        <CheckCircle2 size={13} /> Approve Payment
+                                      </button>
+                                      <button
+                                        className="mm-action-dropdown-item red"
+                                        onClick={() => {
+                                          setActiveActionDropdown(null);
+                                          handleReconsiderPayment(payment);
+                                        }}
+                                        disabled={saving}
+                                      >
+                                        <RefreshCcw size={13} /> {t('common.reconsider', 'Reconsider')}
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
                               </>
                             )}
-                            
-                            {receiptAvailable(currentPaymentStatus) && (
-                              <button className="mm-mini-action blue" onClick={() => handlePrintReceipt(payment)} title="Print Receipt"><Printer size={13} /> Print Receipt</button>
-                            )}
-                              
-                              {currentPaymentStatus === 'Rejected' && (
-                                <button
-                                  className="mm-mini-action red"
-                                  onClick={() => handleReconsiderPayment(payment)}
-                                  disabled={saving}
-                                  title="Reconsider"
-                                >
-                                  Reconsider
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
+                          </div>
+                        </td>
+                      </tr>
                       );
                     })}
                   </tbody>
                 </table>
                 {!filteredPayments.length && (
                   <Empty 
-                    title="No payment submissions found" 
-                    copy="Try resetting your filters or waiting for resident submissions." 
+                    title={t('maintenance.noPaymentsFound')} 
+                    copy={t('maintenance.noPaymentsSubtitle')} 
                   />
                 )}
               </div>
@@ -1508,7 +1674,7 @@ const Maintenance = () => {
               {filteredPayments.length > 0 && (
                 <div className="mm-pagination">
                   <div className="mm-pagination-info">
-                    Showing {(currentPage - 1) * rowsPerPage + 1}–{Math.min(filteredPayments.length, currentPage * rowsPerPage)} of {filteredPayments.length} payments
+                    {t('common.showing', 'Showing')} {(currentPage - 1) * rowsPerPage + 1}–{Math.min(filteredPayments.length, currentPage * rowsPerPage)} {t('common.of', 'of')} {filteredPayments.length} {t('maintenance.payments')}
                   </div>
                   <div className="mm-pagination-controls">
                     <button
@@ -1516,14 +1682,14 @@ const Maintenance = () => {
                       disabled={currentPage === 1}
                       onClick={() => setCurrentPage(1)}
                     >
-                      First
+                      {t('pagination.first')}
                     </button>
                     <button
                       className="mm-pagination-page-btn"
                       disabled={currentPage === 1}
                       onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                     >
-                      Prev
+                      {t('pagination.previous')}
                     </button>
                     {Array.from({ length: totalPages }, (_, i) => {
                       const pNum = i + 1;
@@ -1548,18 +1714,18 @@ const Maintenance = () => {
                       disabled={currentPage === totalPages}
                       onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                     >
-                      Next
+                      {t('pagination.next')}
                     </button>
                     <button
                       className="mm-pagination-page-btn"
                       disabled={currentPage === totalPages}
                       onClick={() => setCurrentPage(totalPages)}
                     >
-                      Last
+                      {t('pagination.last')}
                     </button>
                   </div>
                   <div className="mm-pagination-limit">
-                    <span>Rows per page:</span>
+                    <span>{t('pagination.rowsPerPage')}</span>
                     <select value={rowsPerPage} onChange={(e) => setRowsPerPage(Number(e.target.value))}>
                       <option value={5}>5</option>
                       <option value={10}>10</option>
@@ -1573,21 +1739,21 @@ const Maintenance = () => {
           </>
       ) : tab === 'expenses' ? (
         <section className="mm-panel mm-table-panel">
-          <div className="mm-panel-head"><div><h2>Maintenance expenses</h2><p>Operational spending and vendor payments.</p></div><button className="mm-button mm-button-primary" onClick={() => setModal('expense')}><Plus size={17} /> Record expense</button></div>
-          <div className="mm-expense-summary"><div><span>Current month spend</span><strong>{money(expenseSummary.currentMonthSpend)}</strong></div><div><span>Transactions</span><strong>{expenseSummary.transactions}</strong></div><div><span>Pending approval</span><strong>{expenseSummary.pendingApproval}</strong></div></div>
-          <div className="mm-table-wrap"><table className="mm-table"><thead><tr><th>Expense</th><th>Category</th><th>Vendor</th><th>Date</th><th>Amount</th><th>Status</th><th>Action</th></tr></thead>
-            <tbody>{expenses.map((item) => <tr key={item.id}><td><strong>{item.expense_number}</strong><small>{item.description || 'Maintenance expense'}</small></td><td>{item.category}</td><td>{item.vendor}</td><td>{date(item.expense_date)}</td><td><strong>{money(item.amount)}</strong></td><td><span className={statusClass(item.status)}>{item.status}</span></td><td><button className="mm-delete-expense-btn" disabled={deletingExpenseId === item.id} onClick={() => setDeletingExpense(item)}>{deletingExpenseId === item.id ? <RefreshCcw className="spin" size={13} /> : <Trash2 size={13} />} Delete</button></td></tr>)}</tbody>
-          </table>{!expenses.length && <Empty title="No expenses recorded" copy="Record vendor bills and operational spending here." />}</div>
+          <div className="mm-panel-head"><div><h2>{t('maintenance.expensesTitle')}</h2><p>{t('maintenance.expensesSubtitle')}</p></div><button className="mm-button mm-button-primary" onClick={() => setModal('expense')}><Plus size={17} /> {t('maintenance.recordExpense')}</button></div>
+          <div className="mm-expense-summary"><div><span>{t('maintenance.currentMonthSpend')}</span><strong>{money(expenseSummary.currentMonthSpend)}</strong></div><div><span>{t('maintenance.transactions')}</span><strong>{expenseSummary.transactions}</strong></div><div><span>{t('maintenance.pendingApproval')}</span><strong>{expenseSummary.pendingApproval}</strong></div></div>
+          <div className="mm-table-wrap"><table className="mm-table"><thead><tr><th>{t('maintenance.expenseHeader')}</th><th>{t('maintenance.category')}</th><th>{t('maintenance.vendor')}</th><th>{t('maintenance.paymentDate')}</th><th>{t('common.amount')}</th><th>{t('common.status')}</th><th>{t('maintenance.action')}</th></tr></thead>
+            <tbody>{expenses.map((item) => <tr key={item.id}><td><strong>{item.expense_number}</strong><small>{item.description || t('maintenance.expensesTitle')}</small></td><td>{item.category}</td><td>{item.vendor}</td><td>{date(item.expense_date, i18n.language)}</td><td><strong>{money(item.amount)}</strong></td><td><span className={statusClass(item.status)}>{statusLabel(item.status, t)}</span></td><td><button className="mm-delete-expense-btn" disabled={deletingExpenseId === item.id} onClick={() => setDeletingExpense(item)}>{deletingExpenseId === item.id ? <RefreshCcw className="spin" size={13} /> : <Trash2 size={13} />} {t('common.delete', 'Delete')}</button></td></tr>)}</tbody>
+          </table>{!expenses.length && <Empty title={t('maintenance.noExpenses')} copy={t('maintenance.noExpensesSubtitle')} />}</div>
         </section>
       ) : (
         <section className="mm-panel">
-          <div className="mm-panel-head"><div><h2>Reports & exports</h2><p>Download clear, audit-ready financial reports.</p></div><button className="mm-button mm-button-light" onClick={exportCurrentView}><Download size={17} /> Export all CSV</button></div>
+          <div className="mm-panel-head"><div><h2>{t('maintenance.reportsExports')}</h2><p>{t('maintenance.reportsSubtitle')}</p></div><button className="mm-button mm-button-light" onClick={exportCurrentView}><Download size={17} /> {t('maintenance.exportAllCsv')}</button></div>
           <div className="mm-report-grid">{[
-            ['Monthly collection', 'Paid, pending and overdue bills for a selected month', TrendingUp],
-            ['Pending dues', 'Resident and flat-wise outstanding balances', AlertCircle],
-            ['Expense report', 'Category and vendor-wise expense analysis', Wallet],
-            ['Income statement', 'Collection against society maintenance spend', FileText]
-          ].map(([name, copy, Icon]) => <button key={name} onClick={() => exportReport(name)}><span><Icon size={20} /></span><strong>{name}</strong><small>{copy}</small><Download size={17} /></button>)}</div>
+            ['Monthly collection', t('maintenance.monthlyCollection'), t('maintenance.monthlyCollectionCopy'), TrendingUp],
+            ['Pending dues', t('maintenance.pendingDues'), t('maintenance.pendingDuesCopy'), AlertCircle],
+            ['Expense report', t('maintenance.expenseReport'), t('maintenance.expenseReportCopy'), Wallet],
+            ['Income statement', t('maintenance.incomeStatement'), t('maintenance.incomeStatementCopy'), FileText]
+          ].map(([key, name, copy, Icon]) => <button key={key} onClick={() => exportReport(key)}><span><Icon size={20} /></span><strong>{name}</strong><small>{copy}</small><Download size={17} /></button>)}</div>
         </section>
       )}
 
@@ -1666,19 +1832,27 @@ const Maintenance = () => {
           onClose={() => { if (!saving) { setModal(null); setWriteOffBill(null); } }}
         >
           {(() => {
-            const currentDue = Number(writeOffBill.remaining_due ?? writeOffBill.current_due ?? writeOffBill.remaining_amount ?? writeOffBill.total_amount ?? 0);
+            const currentDue = Number(writeOffBill.remaining_due ?? writeOffBill.current_due ?? writeOffBill.remaining_amount ?? 0);
+            const totalBill = Number(writeOffBill.total_amount || writeOffBill.amount || 0);
+            const maxAllowed = currentDue > 0 ? currentDue : totalBill;
             const typedAmount = Number(writeOffForm.amount || 0);
-            const writeOffAmount = writeOffForm.writeoffType === 'TOTAL' ? currentDue : typedAmount;
+            const writeOffAmount = writeOffForm.writeoffType === 'TOTAL' ? maxAllowed : typedAmount;
             const finalDue = Math.max(0, currentDue - writeOffAmount);
-            const canSubmit = currentDue > 0 && writeOffAmount > 0 && writeOffAmount <= currentDue;
+            const canSubmit = writeOffAmount > 0 && writeOffAmount <= maxAllowed;
             return (
               <form onSubmit={submitWriteOff} className="mm-form p-4">
-                <div className="rounded-lg p-4 mb-4 border text-sm" style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0', borderRadius: '8px', padding: '16px', marginBottom: '16px' }}>
-                  <div style={{ marginBottom: 8 }}><strong>Original Amount:</strong> {money(writeOffBill.original_amount || writeOffBill.amount)}</div>
-                  <div style={{ marginBottom: 8 }}><strong>Penalty:</strong> {money(writeOffBill.penalty_amount || writeOffBill.late_fee)}</div>
-                  <div style={{ marginBottom: 8 }}><strong>Paid:</strong> {money(writeOffBill.paid_amount)}</div>
+                <div className="rounded-lg p-4 mb-3 border text-sm" style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0', borderRadius: '8px', padding: '14px' }}>
+                  <div style={{ marginBottom: 6 }}><strong>Original Amount:</strong> {money(writeOffBill.original_amount || writeOffBill.amount)}</div>
+                  <div style={{ marginBottom: 6 }}><strong>Penalty:</strong> {money(writeOffBill.penalty_amount || writeOffBill.late_fee)}</div>
+                  <div style={{ marginBottom: 6 }}><strong>Paid:</strong> {money(writeOffBill.paid_amount)}</div>
                   <div><strong>Current Due:</strong> {money(currentDue)}</div>
                 </div>
+
+                {currentDue === 0 && (
+                  <div style={{ padding: '8px 12px', marginBottom: '12px', backgroundColor: '#fffbeb', border: '1px solid #fde68a', borderRadius: '6px', fontSize: '12px', color: '#b45309' }}>
+                    Note: This bill is marked as Paid (Current Due: ₹0). Applying a write-off will adjust the bill record.
+                  </div>
+                )}
 
                 <label className="mm-field mm-field-full">
                   <span>Write-off Type</span>
@@ -1691,7 +1865,7 @@ const Maintenance = () => {
                 {writeOffForm.writeoffType === 'PARTIAL' && (
                   <label className="mm-field mm-field-full">
                     <span>Write-off Amount</span>
-                    <input type="number" min="1" max={currentDue} required value={writeOffForm.amount} onChange={(e) => setWriteOffForm({ ...writeOffForm, amount: e.target.value })} />
+                    <input type="number" min="1" max={maxAllowed} required value={writeOffForm.amount} onChange={(e) => setWriteOffForm({ ...writeOffForm, amount: e.target.value })} />
                   </label>
                 )}
 
@@ -1704,16 +1878,15 @@ const Maintenance = () => {
 
                 <label className="mm-field mm-field-full">
                   <span>Admin Remarks (optional)</span>
-                  <textarea rows="3" value={writeOffForm.remarks} onChange={(e) => setWriteOffForm({ ...writeOffForm, remarks: e.target.value })} placeholder="Internal note for audit trail. Residents will not see this." />
+                  <textarea rows="2" value={writeOffForm.remarks} onChange={(e) => setWriteOffForm({ ...writeOffForm, remarks: e.target.value })} placeholder="Internal note for audit trail. Residents will not see this." />
                 </label>
 
-                <div className="rounded-lg p-4 border text-sm" style={{ backgroundColor: '#eef2ff', borderColor: '#c7d2fe', borderRadius: '8px', padding: '16px' }}>
-                  <div style={{ marginBottom: 8 }}><strong>Write-off:</strong> {money(writeOffAmount)}</div>
+                <div className="rounded-lg p-3 border text-sm" style={{ backgroundColor: '#eef2ff', borderColor: '#c7d2fe', borderRadius: '8px', padding: '12px', marginBottom: '14px' }}>
+                  <div style={{ marginBottom: 4 }}><strong>Write-off Amount:</strong> {money(writeOffAmount)}</div>
                   <div><strong>Final Due:</strong> {money(finalDue)}</div>
-                  <p style={{ margin: '8px 0 0', color: '#475467' }}>Resident side will only show the updated due amount/status, not the reason or remarks.</p>
                 </div>
 
-                <div className="mm-form-actions">
+                <div className="mm-form-actions" style={{ marginTop: '12px', paddingBottom: '8px' }}>
                   <button type="button" className="mm-button mm-button-light" disabled={saving} onClick={() => { setModal(null); setWriteOffBill(null); }}>Cancel</button>
                   <button type="submit" className="mm-button mm-button-primary" disabled={saving || !canSubmit}>{saving ? 'Saving...' : 'Apply Write-off'}</button>
                 </div>
@@ -1885,17 +2058,18 @@ const Maintenance = () => {
             </div>
             
             <label className="mm-field mm-field-full">
-              <span>Select Rejection Reason</span>
+              <span>Select Rejection Reason (Mandatory)</span>
               <select 
                 value={rejectionType} 
                 onChange={(e) => setRejectionType(e.target.value)}
                 required
               >
-                <option value="Invalid Screenshot">Invalid Screenshot</option>
-                <option value="Incorrect Amount">Incorrect Amount</option>
-                <option value="Duplicate Payment">Duplicate Payment</option>
-                <option value="Invalid UTR">Invalid UTR</option>
-                <option value="Other">Other (Write Custom Reason)</option>
+                <option value="Payment screenshot is blurry">Payment screenshot is blurry</option>
+                <option value="Wrong payment amount">Wrong payment amount</option>
+                <option value="Payment not received">Payment not received</option>
+                <option value="Wrong transaction ID">Wrong transaction ID</option>
+                <option value="Duplicate payment">Duplicate payment</option>
+                <option value="Other">Other (with custom text)</option>
               </select>
             </label>
 
@@ -2085,7 +2259,14 @@ const Maintenance = () => {
             )}
           </div>
           
-          <div className="mm-form-actions" style={{ padding: '0 20px 20px' }}>
+          <div className="mm-form-actions" style={{ padding: '0 20px 20px', gap: '8px' }}>
+            <button 
+              className="mm-button mm-button-primary" 
+              style={{ background: 'linear-gradient(90deg, #1769e0, #2f86ee)' }}
+              onClick={() => handlePrintBill(viewingDetails)}
+            >
+              <FileText size={14} /> View Maintenance Bill
+            </button>
             <button className="mm-button mm-button-light" onClick={() => setViewingDetails(null)}>Close</button>
           </div>
         </Modal>

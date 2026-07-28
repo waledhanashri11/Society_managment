@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
-  Bell, Building2, CalendarDays, ChevronDown, ClipboardList, CreditCard, FileBarChart, FileCheck2, FileText, History, Home, LogOut, Menu, Moon, Sun,
+  Bell, Building2, CalendarDays, ChevronDown, ClipboardList, CreditCard, FileBarChart, FileCheck2, FileText, Home, Languages, LogOut, Menu, Moon, Sun,
   Megaphone, MessageSquareWarning, Settings, UserCircle, Users, X
 } from 'lucide-react';
 import { getUser, logout } from '../utils/auth';
@@ -17,7 +17,6 @@ const adminLinks = [
   { to: '/admin/flats', labelKey: 'nav.flats', icon: Building2 },
   { to: '/admin/meetings', labelKey: 'nav.meetings', icon: CalendarDays },
   { to: '/admin/maintenance', labelKey: 'nav.maintenance', icon: ClipboardList },
-  { to: '/admin/write-off-history', labelKey: 'nav.writeOffHistory', icon: History },
   { to: '/admin/agm-report', labelKey: 'nav.agmReport', icon: FileText },
   { to: '/admin/complaints', labelKey: 'nav.complaints', icon: MessageSquareWarning },
   { to: '/admin/notices', labelKey: 'nav.notices', icon: Megaphone },
@@ -142,43 +141,31 @@ const AdminLayout = () => {
       {open && <button className="portal-scrim" onClick={() => setOpen(false)} aria-label="Close menu" />}
       <aside className={`portal-sidebar ${open ? 'is-open' : ''}`}>
         <div className="portal-brand">
-          <span className="portal-brand-mark"><Building2 size={21} /></span>
+          <span className="portal-brand-mark">{Building2 ? <Building2 size={21} /> : null}</span>
           <span><strong>{t('common.appName')}</strong><small>{settings.societyName || t('common.managementSystem')}</small></span>
-          <button className="portal-mobile-close" onClick={() => setOpen(false)}><X size={19} /></button>
+          <button className="portal-mobile-close" onClick={() => setOpen(false)}>{X ? <X size={19} /> : null}</button>
         </div>
         <div className="portal-nav-label">{t('nav.workspace')}</div>
         <nav className="portal-nav">
           {adminLinks.map(({ to, labelKey, icon: Icon, end }) => (
             <NavLink key={to} to={to} end={end} onClick={() => setOpen(false)}
               className={({ isActive }) => `portal-nav-link ${isActive ? 'active' : ''}`}>
-              <Icon size={17} /><span>{t(labelKey)}</span>
+              {Icon ? <Icon size={17} /> : null}<span>{t(labelKey)}</span>
             </NavLink>
           ))}
         </nav>
         <div className="portal-sidebar-foot">
-          <button className="portal-nav-link" onClick={handleLogout}><LogOut size={17} /><span>{t('nav.logout')}</span></button>
+          <button className="portal-nav-link" onClick={handleLogout}>{LogOut ? <LogOut size={17} /> : null}<span>{t('nav.logout')}</span></button>
         </div>
       </aside>
 
       <div className="portal-main">
         <header className="portal-topbar">
-          <button className="portal-menu-button" onClick={() => setOpen(true)}><Menu size={21} /></button>
+          <button className="portal-menu-button" onClick={() => setOpen(true)}>{Menu ? <Menu size={21} /> : null}</button>
           <div className="portal-breadcrumb">
             <span>{settings.societyName || t('common.societyManagement')}</span><small>{t('common.adminWorkspace')}</small>
           </div>
           <div className="portal-top-actions">
-            <LanguageSelector compact />
-            <button
-              type="button"
-              className="portal-theme-toggle"
-              onClick={cycleTheme}
-              aria-label={t('theme.toggle')}
-              aria-pressed={resolvedTheme === 'dark'}
-              title={t('theme.toggle')}
-            >
-              {resolvedTheme === 'dark' ? <Moon size={16} /> : <Sun size={16} />}
-              <span>{resolvedTheme === 'dark' ? t('theme.dark') : t('theme.light')}</span>
-            </button>
             <div className="portal-action-menu" onClick={(event) => event.stopPropagation()}>
               <button
                 className="portal-notification"
@@ -186,41 +173,45 @@ const AdminLayout = () => {
                 aria-expanded={activeMenu === 'notifications'}
                 onClick={() => toggleMenu('notifications')}
               >
-                <Bell size={18} />
+                {Bell ? <Bell size={18} /> : null}
                 {unreadCount > 0 && <span className="portal-notification-badge">{unreadCount}</span>}
               </button>
               {activeMenu === 'notifications' && (
                 <div className="portal-dropdown portal-notification-panel">
                   <div className="portal-dropdown-head">
-                    <strong>{t('notifications.title')}</strong>
-                    {unreadCount > 0 ? (
+                    <strong>{t('notifications.title', 'Notifications')}</strong>
+                    {notifications.length > 0 || unreadCount > 0 ? (
                       <button
+                        type="button"
                         onClick={markAllRead}
                         style={{
                           border: 0,
-                          padding: 0,
-                          color: 'var(--portal-blue)',
-                          background: 'transparent',
-                          fontSize: '9px',
+                          padding: '4px 10px',
+                          color: '#1769e0',
+                          background: '#eaf2ff',
+                          borderRadius: '6px',
+                          fontSize: '10px',
                           fontWeight: '700',
                           cursor: 'pointer',
                           width: 'auto',
-                          display: 'inline'
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px'
                         }}
                       >
-                        {t('notifications.markAllRead')}
+                        ✓ {t('notifications.markAllRead', 'Mark all read')}
                       </button>
                     ) : (
-                      <span>{t('notifications.read')}</span>
+                      <span>{t('notifications.read', 'All caught up')}</span>
                     )}
                   </div>
                   {notifications.length === 0 ? (
                     <div className="portal-dropdown-empty">{t('notifications.none')}</div>
                   ) : notifications.map((item) => {
-                    const Icon = item.type === 'complaints' ? MessageSquareWarning : item.type === 'notices' ? Megaphone : CreditCard;
+                    const NotifIcon = item.type === 'complaints' ? MessageSquareWarning : item.type === 'notices' ? Megaphone : CreditCard;
                     return (
                       <button key={item.id} onClick={() => handleNotificationClick(item)}>
-                        <Icon size={16} />
+                        {NotifIcon ? <NotifIcon size={16} /> : null}
                         <span><strong>{item.title}</strong><small>{item.message}</small></span>
                       </button>
                     );
@@ -244,7 +235,7 @@ const AdminLayout = () => {
                   )}
                 </span>
                 <div><strong>{settings.adminName || user?.name || 'Admin'}</strong><small>{user?.role === 'super_admin' ? 'Super Admin' : 'Administrator'}</small></div>
-                <ChevronDown size={15} />
+                {ChevronDown ? <ChevronDown size={15} /> : null}
               </button>
               {activeMenu === 'account' && (
                 <div className="portal-dropdown portal-account-panel">
@@ -258,17 +249,36 @@ const AdminLayout = () => {
                     </span>
                     <div><strong>{settings.adminName || user?.name || 'Admin'}</strong><small>{settings.email || user?.email || 'Admin account'}</small></div>
                   </div>
+                  {/* 1. My Profile */}
                   <button onClick={() => { navigate('/admin/settings'); closeMenus(); }}>
-                    <Settings size={16} />
-                    <span><strong>Account settings</strong><small>Edit profile and preferences</small></span>
+                    {UserCircle ? <UserCircle size={16} /> : null}
+                    <span><strong>{t('nav.myProfile', 'My Profile')}</strong><small>View admin profile details</small></span>
                   </button>
-                  <button onClick={() => { navigate('/admin'); closeMenus(); }}>
-                    <UserCircle size={16} />
-                    <span><strong>Admin dashboard</strong><small>Back to overview</small></span>
+                  {/* 2. Settings */}
+                  <button onClick={() => { navigate('/admin/settings'); closeMenus(); }}>
+                    {Settings ? <Settings size={16} /> : null}
+                    <span><strong>{t('nav.settings', 'Settings')}</strong><small>Edit profile & preferences</small></span>
                   </button>
+                  {/* 3. Language */}
+                  <div className="portal-dropdown-language-item">
+                    <div className="portal-dropdown-item-left">
+                      {Languages ? <Languages size={16} /> : null}
+                      <div>
+                        <strong>{t('language.label', 'Language')}</strong>
+                        <small>{t('language.select', 'Select language')}</small>
+                      </div>
+                    </div>
+                    {LanguageSelector ? <LanguageSelector compact showIcon={false} /> : null}
+                  </div>
+                  {/* 4. Dark Mode */}
+                  <button type="button" onClick={() => { cycleTheme(); }}>
+                    {resolvedTheme === 'dark' ? (Sun ? <Sun size={16} /> : null) : (Moon ? <Moon size={16} /> : null)}
+                    <span><strong>{t('theme.appearance', 'Dark Mode')}</strong><small>{resolvedTheme === 'dark' ? t('theme.darkModeOn', 'Dark Mode: ON') : t('theme.darkModeOff', 'Dark Mode: OFF')}</small></span>
+                  </button>
+                  {/* 5. Logout */}
                   <button className="danger" onClick={handleLogout}>
-                    <LogOut size={16} />
-                    <span><strong>Logout</strong><small>End this session</small></span>
+                    {LogOut ? <LogOut size={16} /> : null}
+                    <span><strong>{t('nav.logout', 'Logout')}</strong><small>End this session</small></span>
                   </button>
                 </div>
               )}

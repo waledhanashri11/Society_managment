@@ -17,11 +17,15 @@ const {
   getMembersMaintenanceReport,
   getAllMaintenanceReport,
   getAllComplaintsReport,
+  getResidentAccountReport,
+  getResidentTransparencyReport
 } = require('../controllers/residentController');
 
 router.get('/dashboard', auth, getDashboard);
 router.get('/members', auth, getMembers);
 router.put('/profile', auth, updateProfile);
+router.get('/reports/account-summary', auth, getResidentAccountReport);
+router.get('/reports/society-transparency', auth, getResidentTransparencyReport);
 router.get('/reports/my-summary', auth, getReportSummary);
 router.get('/reports/my-maintenance', auth, getReportMaintenance);
 router.get('/reports/society-summary', auth, getSocietyReportSummary);

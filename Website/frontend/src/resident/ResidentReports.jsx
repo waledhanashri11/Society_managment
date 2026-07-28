@@ -1,713 +1,441 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-
+import React, { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   AlertTriangle,
+  Calendar,
   CheckCircle2,
+  CreditCard,
   Download,
-  FileBarChart,
-  FileSpreadsheet,
-  IndianRupee,
+  FileText,
+  Landmark,
+  Lock,
   RefreshCw,
-  WalletCards
+  ShieldCheck,
+  User,
 } from 'lucide-react';
 
-import { residentAPI, flatTypeAPI } from '../services/api';
-import { CardSkeleton, TableSkeleton } from '../components/Skeletons';
+import { residentAPI } from '../services/api';
+import { CardSkeleton } from '../components/Skeletons';
 
-const unwrap = (response) => response?.data?.data ?? response?.data ?? [];
-const money = (value) => `Rs. ${Number(value || 0).toLocaleString('en-IN')}`;
-const fullDate = (value) =>
-  value
-    ? new Date(value).toLocaleDateString('en-IN', {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric'
-      })
-    : '-';
-const monthName = (month) =>
-  month
-    ? new Date(2026, Number(month) - 1).toLocaleDateString('en-IN', {
-        month: 'short'
-      })
-    : '-';
+const money = (value) => `₹ ${Number(value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const moneyShort = (value) => `₹ ${Number(value || 0).toLocaleString('en-IN')}`;
 
-const csvEscape = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
-const statusKey = (status) => String(status || '').toLowerCase().trim();
-
-const getOperationalStatus = (bill) => {
-  const remaining = Number(
-    bill.remaining_amount !== null && bill.remaining_amount !== undefined
-      ? bill.remaining_amount
-      : bill.total_amount || 0
-  );
-  if (remaining <= 0) return 'Paid';
-  const isOverdue = bill.due_date && new Date(bill.due_date) < new Date();
-  return isOverdue ? 'Overdue' : 'Pending';
+const formatDate = (dateStr) => {
+  if (!dateStr) return '—';
+  return new Date(dateStr).toLocaleDateString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric'
+  });
 };
 
-const ResidentReports = () => {
-  const currentYear = new Date().getFullYear();
+const getCurrentIndianFY = () => {
+  const now = new Date();
+  const m = now.getMonth() + 1;
+  const y = now.getFullYear();
+  const start = m >= 4 ? y : y - 1;
+  return `${start}-${start + 1}`;
+};
 
-  const [filters, setFilters] = useState({
-    month: '',
-    year: String(currentYear),
-    status: '',
-    flat_type: ''
-  });
-  const [flatTypes, setFlatTypes] = useState([]);
-
-  const [bills, setBills] = useState([]);
-  const [expenses, setExpenses] = useState([]);
+export default function ResidentReports() {
+  const { t } = useTranslation();
+  const [financialYear, setFinancialYear] = useState(getCurrentIndianFY());
+  const [activeTab, setActiveTab] = useState('myAccount'); // 'myAccount' | 'transparency'
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const load = async () => {
+  // Data states
+  const [accountData, setAccountData] = useState(null);
+  const [transparencyData, setTransparencyData] = useState(null);
+
+  const loadData = useCallback(async () => {
     setLoading(true);
     setError('');
-
     try {
-      const [billsRes, expensesRes, flatTypesRes] = await Promise.all([
-        residentAPI.getAllMaintenanceReport({ force: true }),
-        residentAPI.getReportExpenses({ force: true }),
-        flatTypeAPI.getAll({ force: true })
+      const [accRes, transRes] = await Promise.all([
+        residentAPI.getAccountSummaryReport({ financialYear }),
+        residentAPI.getSocietyTransparencyReport({ financialYear })
       ]);
 
-      setBills(unwrap(billsRes));
-      setExpenses(unwrap(expensesRes));
-      setFlatTypes(unwrap(flatTypesRes));
+      setAccountData(accRes.data?.data || accRes.data);
+      setTransparencyData(transRes.data?.data || transRes.data);
     } catch (err) {
-      console.error('Error fetching reports:', err);
-      setError(
-        err.response?.data?.message ||
-          'Could not load reports. Please make sure backend and database are running.'
-      );
+      console.error('Error fetching resident reports:', err);
+      setError(err.response?.data?.message || 'Could not load report data from server.');
     } finally {
       setLoading(false);
     }
-  };
+  }, [financialYear]);
 
   useEffect(() => {
-    load();
-  }, []);
+    loadData();
+  }, [loadData]);
 
-  const updateFilter = (event) => {
-    setFilters((current) => ({
-      ...current,
-      [event.target.name]: event.target.value
-    }));
+  const exportPdf = async () => {
+    try {
+      const html2pdf = (await import('html2pdf.js')).default;
+      const element = document.getElementById('resident-report-content');
+      if (!element) return alert('Report content not found');
+
+      const opt = {
+        margin: 8,
+        filename: `Resident_Report_${financialYear}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      };
+
+      await html2pdf().set(opt).from(element).save();
+    } catch (err) {
+      console.error('PDF export failed:', err);
+      window.print();
+    }
   };
 
-  const matchesMonthYear = useCallback((value, fallbackMonth, fallbackYear) => {
-    const date = value ? new Date(value) : null;
-
-    const hasValidDate = date && !Number.isNaN(date.getTime());
-
-    const rowMonth = hasValidDate
-      ? date.getMonth() + 1
-      : Number(fallbackMonth || 0);
-
-    const rowYear = hasValidDate
-      ? date.getFullYear()
-      : Number(fallbackYear || 0);
-
-    if (filters.month && Number(filters.month) !== rowMonth) return false;
-    if (filters.year && Number(filters.year) !== rowYear) return false;
-
-    return true;
-  }, [filters.month, filters.year]);
-
-  const filteredBills = useMemo(() => {
-    return bills.filter((bill) => {
-      if (
-        !matchesMonthYear(
-          bill.due_date || bill.payment_date,
-          bill.month,
-          bill.year
-        )
-      ) {
-        return false;
-      }
-
-      if (
-        filters.status &&
-        statusKey(getOperationalStatus(bill)) !== statusKey(filters.status)
-      ) {
-        return false;
-      }
-
-      if (
-        filters.flat_type &&
-        (bill.flat_type_name || 'Not Assigned').toLowerCase() !== filters.flat_type.toLowerCase()
-      ) {
-        return false;
-      }
-
-      return true;
-    });
-  }, [bills, filters.status, filters.flat_type, matchesMonthYear]);
-
-  const filteredExpenses = useMemo(() => {
-    return expenses.filter((expense) =>
-      matchesMonthYear(expense.expense_date || expense.date || expense.created_at)
-    );
-  }, [expenses, matchesMonthYear]);
-
-  const reports = useMemo(() => {
-    const totalBillable = filteredBills.reduce(
-      (sum, bill) => sum + Number(bill.total_amount || bill.amount || 0),
-      0
-    );
-
-    // Resident Portal Total Collection = Amount Paid + Approved Write-Off Amount
-    const totalCollection = filteredBills.reduce(
-      (sum, bill) => sum + Number(bill.paid_amount || 0) + Number(bill.write_off_amount || 0),
-      0
-    );
-
-    const pendingDues = filteredBills.reduce(
-      (sum, bill) =>
-        sum +
-        Number(
-          bill.remaining_amount !== null && bill.remaining_amount !== undefined
-            ? bill.remaining_amount
-            : bill.total_amount || 0
-        ),
-      0
-    );
-
-    const totalExpenses = filteredExpenses.reduce(
-      (sum, expense) => sum + Number(expense.amount || 0),
-      0
-    );
-
-    const paidBills = filteredBills.filter(
-      (bill) => getOperationalStatus(bill) === 'Paid'
-    ).length;
-
-    const pendingBills = filteredBills.filter(
-      (bill) => getOperationalStatus(bill) === 'Pending'
-    ).length;
-
-    const overdueBills = filteredBills.filter(
-      (bill) => getOperationalStatus(bill) === 'Overdue'
-    ).length;
-
-    return {
-      totalCollection,
-      pendingDues,
-      totalExpenses,
-      netBalance: totalCollection - totalExpenses,
-      collectionRate:
-        totalBillable > 0
-          ? Math.round((totalCollection / totalBillable) * 100)
-          : 0,
-      totalBills: filteredBills.length,
-      paidBills,
-      pendingBills,
-      overdueBills
-    };
-  }, [filteredBills, filteredExpenses]);
-
-  const downloadCsv = () => {
-    const rows = [
-      ['Society Operational Financial Reports'],
-      ['Total Collection', reports.totalCollection],
-      ['Pending Dues', reports.pendingDues],
-      ['Total Expenses', reports.totalExpenses],
-      ['Net Balance', reports.netBalance],
-      [],
-      ['Maintenance Bills'],
-      [
-        'Resident',
-        'Flat',
-        'Flat Type',
-        'Month',
-        'Year',
-        'Title',
-        'Base Amount',
-        'Penalty',
-        'Total Amount',
-        'Paid Amount',
-        'Remaining Amount',
-        'Due Date',
-        'Payment Date',
-        'Status'
-      ],
-      ...filteredBills.map((bill) => [
-        bill.resident_name,
-        bill.flat_no,
-        bill.flat_type_name || 'Not Assigned',
-        monthName(bill.month),
-        bill.year,
-        bill.title,
-        bill.amount,
-        bill.penalty_amount,
-        bill.total_amount,
-        bill.paid_amount,
-        bill.remaining_amount,
-        fullDate(bill.due_date),
-        fullDate(bill.payment_date),
-        getOperationalStatus(bill)
-      ]),
-      [],
-      ['Expenses'],
-      ['Expense Title', 'Category', 'Amount', 'Date', 'Description'],
-      ...filteredExpenses.map((expense) => [
-        expense.vendor || expense.expense_title || expense.expense_number,
-        expense.category,
-        expense.amount,
-        fullDate(expense.expense_date || expense.date),
-        expense.description
-      ])
-    ];
-
-    const csv = rows.map((row) => row.map(csvEscape).join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-
-    link.href = URL.createObjectURL(blob);
-    link.download = `resident-reports-${Date.now()}.csv`;
-    link.click();
-
-    URL.revokeObjectURL(link.href);
-  };
-
-  const downloadPdf = () => {
-    const html = `
-      <html>
-        <head>
-          <title>Society Operational Financial Reports</title>
-          <style>
-            body{font-family:Arial,sans-serif;padding:28px;color:#172033}
-            h1{margin:0 0 12px}
-            table{width:100%;border-collapse:collapse;margin:18px 0 28px;font-size:11px}
-            th,td{border:1px solid #dfe5ee;padding:7px;text-align:left}
-            th{background:#f3f6fa}
-          </style>
-        </head>
-        <body>
-          <h1>Society Operational Financial Reports</h1>
-          <h2>Maintenance Bills</h2>
-          <table>
-            <thead>
-              <tr>
-                <th>Resident</th>
-                <th>Flat</th>
-                <th>Flat Type</th>
-                <th>Month</th>
-                <th>Total</th>
-                <th>Paid</th>
-                <th>Remaining</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${filteredBills
-                .map(
-                  (bill) => `
-                    <tr>
-                      <td>${bill.resident_name || ''}</td>
-                      <td>${bill.flat_no || ''}</td>
-                      <td>${bill.flat_type_name || 'Not Assigned'}</td>
-                      <td>${monthName(bill.month)} ${bill.year || ''}</td>
-                      <td>${money(bill.total_amount)}</td>
-                      <td>${money(bill.paid_amount)}</td>
-                      <td>${money(bill.remaining_amount)}</td>
-                      <td>${getOperationalStatus(bill)}</td>
-                    </tr>
-                  `
-                )
-                .join('')}
-            </tbody>
-          </table>
-
-          <h2>Expenses</h2>
-          <table>
-            <thead>
-              <tr>
-                <th>Expense</th>
-                <th>Category</th>
-                <th>Amount</th>
-                <th>Date</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${filteredExpenses
-                .map(
-                  (expense) => `
-                    <tr>
-                      <td>${expense.vendor || expense.expense_title || ''}</td>
-                      <td>${expense.category || ''}</td>
-                      <td>${money(expense.amount)}</td>
-                      <td>${fullDate(expense.expense_date || expense.date)}</td>
-                    </tr>
-                  `
-                )
-                .join('')}
-            </tbody>
-          </table>
-
-          <script>window.print();</script>
-        </body>
-      </html>
-    `;
-
-    const printWindow = window.open('', '_blank', 'width=1000,height=750');
-
-    if (!printWindow) return;
-
-    printWindow.document.write(html);
-    printWindow.document.close();
-  };
-
-  if (loading) {
-    return (
-      <div className="portal-module">
-        <div className="portal-page-title">
-          <div>
-            <h1>Reports & Analytics</h1>
-            <p>Society-wide financial reports.</p>
-          </div>
-        </div>
-
-        <CardSkeleton count={4} />
-
-        <section className="portal-panel portal-table-card">
-          <TableSkeleton rows={5} columns={4} />
-        </section>
-      </div>
-    );
-  }
+  const accSummary = accountData?.summary || {};
+  const resident = accountData?.resident || {};
+  const transSummary = transparencyData?.summary || {};
 
   return (
-    <div className="portal-module">
-      <div className="portal-page-title">
+    <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto">
+      {/* Header */}
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-white dark:bg-slate-800 p-5 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700">
         <div>
-          <h1>Reports & Analytics</h1>
-          <p>Society-wide financial reports.</p>
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+            <FileText className="w-7 h-7 text-emerald-600 dark:text-emerald-400" />
+            Resident Account & Society Transparency Reports
+          </h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-1">
+            <ShieldCheck className="w-4 h-4 text-emerald-500 inline" />
+            Privacy-enforced report: Personal payment statement + Society financial transparency
+          </p>
         </div>
 
-        <div className="flex flex-wrap gap-2">
-          <button className="portal-light-btn" onClick={downloadPdf}>
-            <Download size={15} /> PDF
+        <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
+          {/* FY Picker */}
+          <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-700 px-3 py-2 rounded-xl text-sm font-semibold">
+            <Calendar className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+            <span className="text-slate-600 dark:text-slate-300">FY:</span>
+            <select
+              value={financialYear}
+              onChange={(e) => setFinancialYear(e.target.value)}
+              className="bg-transparent font-bold text-slate-900 dark:text-white border-none outline-none cursor-pointer"
+            >
+              {['2026-2027', '2025-2026', '2024-2025'].map((fy) => (
+                <option key={fy} value={fy} className="text-slate-900 dark:text-slate-900">
+                  {fy}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <button
+            onClick={loadData}
+            className="flex items-center gap-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 text-slate-700 dark:text-slate-200 px-4 py-2 rounded-xl text-sm font-semibold transition"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
           </button>
-          <button className="portal-light-btn" onClick={downloadCsv}>
-            <FileSpreadsheet size={15} /> CSV
+
+          <button
+            onClick={exportPdf}
+            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition shadow-sm"
+          >
+            <Download className="w-4 h-4" />
+            Export PDF
           </button>
         </div>
       </div>
 
       {error && (
-        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
-          {error}
+        <div className="bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 p-4 rounded-xl border border-rose-200 dark:border-rose-800 flex items-center gap-3">
+          <AlertTriangle className="w-5 h-5 flex-shrink-0" />
+          <span>{error}</span>
         </div>
       )}
 
-      <div className="mb-4 grid gap-3 rounded-xl border border-slate-200 bg-white p-4 md:grid-cols-5">
-        <label className="grid gap-1 text-xs font-bold uppercase text-slate-500">
-          Month
-          <select
-            name="month"
-            value={filters.month}
-            onChange={updateFilter}
-            className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-normal normal-case text-slate-900"
-          >
-            <option value="">All</option>
-            {Array.from({ length: 12 }, (_, i) => (
-              <option key={i + 1} value={i + 1}>
-                {monthName(i + 1)}
-              </option>
-            ))}
-          </select>
-        </label>
+      {/* Tabs */}
+      <div className="flex border-b border-slate-200 dark:border-slate-700 overflow-x-auto gap-2">
+        <button
+          onClick={() => setActiveTab('myAccount')}
+          className={`flex items-center gap-2 px-5 py-3 text-sm font-bold border-b-2 transition whitespace-nowrap ${
+            activeTab === 'myAccount'
+              ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20'
+              : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+          }`}
+        >
+          <User className="w-4 h-4" />
+          My Account Statement
+        </button>
 
-        <label className="grid gap-1 text-xs font-bold uppercase text-slate-500">
-          Year
-          <input
-            name="year"
-            type="number"
-            value={filters.year}
-            onChange={updateFilter}
-            className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-normal text-slate-900"
-          />
-        </label>
-
-        <label className="grid gap-1 text-xs font-bold uppercase text-slate-500">
-          Status
-          <select
-            name="status"
-            value={filters.status}
-            onChange={updateFilter}
-            className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-normal normal-case text-slate-900"
-          >
-            <option value="">All</option>
-            <option>Paid</option>
-            <option>Pending</option>
-            <option>Overdue</option>
-          </select>
-        </label>
-
-        <label className="grid gap-1 text-xs font-bold uppercase text-slate-500">
-          Flat Type
-          <select
-            name="flat_type"
-            value={filters.flat_type}
-            onChange={updateFilter}
-            className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-normal normal-case text-slate-900"
-          >
-            <option value="">All</option>
-            <option value="Not Assigned">Not Assigned</option>
-            {flatTypes.map((ft) => (
-              <option key={ft.id} value={ft.name}>
-                {ft.name}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <button className="portal-primary-btn self-end" onClick={load}>
-          <RefreshCw size={15} /> Refresh Data
+        <button
+          onClick={() => setActiveTab('transparency')}
+          className={`flex items-center gap-2 px-5 py-3 text-sm font-bold border-b-2 transition whitespace-nowrap ${
+            activeTab === 'transparency'
+              ? 'border-blue-600 text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-950/20'
+              : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+          }`}
+        >
+          <Landmark className="w-4 h-4" />
+          Society Financial Transparency
         </button>
       </div>
 
-      <div className="portal-kpis" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px', marginBottom: '20px' }}>
-        <div className="portal-kpi green">
-          <span>Total Collection</span>
-          <strong>{money(reports.totalCollection)}</strong>
-          <small>Revenue collected</small>
-          <div className="portal-kpi-icon">
-            <IndianRupee size={18} />
-          </div>
-        </div>
+      <div id="resident-report-content" className="space-y-6">
+        {loading ? (
+          <CardSkeleton count={4} />
+        ) : (
+          <>
+            {/* 1. MY ACCOUNT STATEMENT */}
+            {activeTab === 'myAccount' && (
+              <div className="space-y-6">
+                {/* Account Formula Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {/* Closing Dues */}
+                  <div className="bg-gradient-to-br from-emerald-600 to-teal-700 text-white p-5 rounded-2xl shadow-sm space-y-2">
+                    <div className="text-xs uppercase font-bold tracking-wider opacity-80">Closing Outstanding Dues</div>
+                    <div className="text-2xl font-extrabold">{money(accSummary.closingOutstanding)}</div>
+                    <div className="text-xs opacity-90 pt-1 border-t border-white/20 flex justify-between">
+                      <span>Resident: {resident.name || 'Resident'}</span>
+                      <span>Flat {resident.flatNo || '—'}</span>
+                    </div>
+                  </div>
 
-        <div className="portal-kpi orange">
-          <span>Pending Dues</span>
-          <strong>{money(reports.pendingDues)}</strong>
-          <small>Outstanding balance</small>
-          <div className="portal-kpi-icon">
-            <WalletCards size={18} />
-          </div>
-        </div>
+                  {/* Bills Generated */}
+                  <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 space-y-2">
+                    <div className="flex justify-between items-center text-xs font-bold text-slate-500 uppercase">
+                      <span>Bills Generated</span>
+                      <CreditCard className="w-4 h-4 text-blue-500" />
+                    </div>
+                    <div className="text-xl font-bold text-slate-900 dark:text-white">{money(accSummary.billsGenerated)}</div>
+                    <div className="text-xs text-slate-500 pt-1 border-t border-slate-100 dark:border-slate-700 flex justify-between">
+                      <span>Penalties:</span>
+                      <span className="font-semibold text-slate-800 dark:text-slate-200">{moneyShort(accSummary.totalPenalty)}</span>
+                    </div>
+                  </div>
 
-        <div className="portal-kpi red">
-          <span>Total Expenses</span>
-          <strong>{money(reports.totalExpenses)}</strong>
-          <small>Society expenditures</small>
-          <div className="portal-kpi-icon">
-            <AlertTriangle size={18} />
-          </div>
-        </div>
+                  {/* Approved Payments */}
+                  <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 space-y-2">
+                    <div className="flex justify-between items-center text-xs font-bold text-slate-500 uppercase">
+                      <span>Approved Payments</span>
+                      <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                    </div>
+                    <div className="text-xl font-bold text-emerald-600 dark:text-emerald-400">+{money(accSummary.approvedPayments)}</div>
+                    <div className="text-xs text-slate-500 pt-1 border-t border-slate-100 dark:border-slate-700 flex justify-between">
+                      <span>Verification Pending:</span>
+                      <span className="font-semibold text-amber-600">{accSummary.verificationPendingCount || 0} payments</span>
+                    </div>
+                  </div>
 
-        <div className="portal-kpi green">
-          <span>Net Balance</span>
-          <strong>{money(reports.netBalance)}</strong>
-          <small>Collection vs expenses</small>
-          <div className="portal-kpi-icon">
-            <CheckCircle2 size={18} />
-          </div>
-        </div>
+                  {/* Write-offs Approved */}
+                  <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 space-y-2">
+                    <div className="flex justify-between items-center text-xs font-bold text-slate-500 uppercase">
+                      <span>Approved Write-Offs</span>
+                      <FileText className="w-4 h-4 text-purple-500" />
+                    </div>
+                    <div className="text-xl font-bold text-purple-600 dark:text-purple-400">-{money(accSummary.approvedWriteOffs)}</div>
+                    <div className="text-xs text-slate-500 pt-1 border-t border-slate-100 dark:border-slate-700 flex justify-between">
+                      <span>Formula:</span>
+                      <span className="text-xs font-mono">Dues = Bills - Paid - WriteOff</span>
+                    </div>
+                  </div>
+                </div>
 
-        <div className="portal-kpi">
-          <span>Collection Rate</span>
-          <strong>{reports.collectionRate}%</strong>
-          <small>Billed vs collected ratio</small>
-          <div className="portal-kpi-icon">
-            <CheckCircle2 size={18} />
-          </div>
-        </div>
+                {/* Personal Maintenance Bills Table */}
+                <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
+                  <div className="p-5 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center">
+                    <h3 className="font-bold text-lg text-slate-900 dark:text-white">
+                      My Maintenance Bills Statement (FY {financialYear})
+                    </h3>
+                  </div>
 
-        <div className="portal-kpi green">
-          <span>Paid Bills</span>
-          <strong>{reports.paidBills}</strong>
-          <small>Completed payments</small>
-          <div className="portal-kpi-icon">
-            <CheckCircle2 size={18} />
-          </div>
-        </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm">
+                      <thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-600 dark:text-slate-400 text-xs font-bold uppercase">
+                        <tr>
+                          <th className="p-4">Bill Date / Period</th>
+                          <th className="p-4">Bill Amount</th>
+                          <th className="p-4 text-emerald-600">Paid Amount</th>
+                          <th className="p-4 text-purple-600">Write-Off</th>
+                          <th className="p-4 text-rose-600">Pending Amount</th>
+                          <th className="p-4">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-700/50">
+                        {(accountData?.bills || []).map((bill, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/30">
+                            <td className="p-4 font-semibold text-slate-900 dark:text-white">
+                              Month {bill.month} / {bill.year}
+                              <div className="text-xs font-normal text-slate-500">Due: {formatDate(bill.due_date)}</div>
+                            </td>
+                            <td className="p-4 font-semibold">{moneyShort(bill.bill_amount)}</td>
+                            <td className="p-4 text-emerald-600 font-semibold">{moneyShort(bill.paid_amount)}</td>
+                            <td className="p-4 text-purple-600 font-semibold">{moneyShort(bill.write_off_amount)}</td>
+                            <td className="p-4 text-rose-600 font-semibold">{moneyShort(bill.pending_amount)}</td>
+                            <td className="p-4">
+                              <span
+                                className={`px-2.5 py-1 rounded-full text-xs font-bold ${
+                                  String(bill.status).toLowerCase() === 'paid'
+                                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                                    : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                                }`}
+                              >
+                                {bill.status}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
 
-        <div className="portal-kpi orange">
-          <span>Pending Bills</span>
-          <strong>{reports.pendingBills}</strong>
-          <small>Awaiting transaction</small>
-          <div className="portal-kpi-icon">
-            <WalletCards size={18} />
-          </div>
-        </div>
+            {/* 2. SOCIETY FINANCIAL TRANSPARENCY */}
+            {activeTab === 'transparency' && (
+              <div className="space-y-6">
+                {/* Privacy Badge Banner */}
+                <div className="bg-blue-50 dark:bg-blue-950/40 text-blue-800 dark:text-blue-300 p-4 rounded-xl border border-blue-200 dark:border-blue-800 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <Lock className="w-5 h-5 flex-shrink-0 text-blue-600" />
+                    <span className="text-xs md:text-sm">
+                      <strong>Privacy Protected:</strong> Personal phone numbers, email addresses, bank accounts, UPI IDs, documents, and screenshots are strictly hidden to ensure security compliance.
+                    </span>
+                  </div>
+                </div>
 
-        <div className="portal-kpi red">
-          <span>Overdue Bills</span>
-          <strong>{reports.overdueBills}</strong>
-          <small>Past due date</small>
-          <div className="portal-kpi-icon">
-            <AlertTriangle size={18} />
-          </div>
-        </div>
+                {/* Society Summary Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 space-y-1">
+                    <div className="text-xs uppercase font-bold text-slate-500">Society Total Opening</div>
+                    <div className="text-xl font-bold text-slate-900 dark:text-white">{money(transSummary.totalOpening)}</div>
+                    <div className="text-xs text-slate-500 pt-1 border-t border-slate-100 dark:border-slate-700 flex justify-between">
+                      <span>Bank: {moneyShort(transSummary.bankOpening)}</span>
+                      <span>Cash: {moneyShort(transSummary.cashOpening)}</span>
+                    </div>
+                  </div>
+
+                  <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 space-y-1">
+                    <div className="text-xs uppercase font-bold text-emerald-600">Approved Society Income</div>
+                    <div className="text-xl font-bold text-emerald-600">{money(transSummary.totalIncome)}</div>
+                    <div className="text-xs text-slate-500 pt-1 border-t border-slate-100 dark:border-slate-700 flex justify-between">
+                      <span>Bank: {moneyShort(transSummary.bankIncome)}</span>
+                      <span>Cash: {moneyShort(transSummary.cashIncome)}</span>
+                    </div>
+                  </div>
+
+                  <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 space-y-1">
+                    <div className="text-xs uppercase font-bold text-rose-600">Approved Society Expense</div>
+                    <div className="text-xl font-bold text-rose-600">{money(transSummary.totalExpense)}</div>
+                    <div className="text-xs text-slate-500 pt-1 border-t border-slate-100 dark:border-slate-700 flex justify-between">
+                      <span>Bank: {moneyShort(transSummary.bankExpense)}</span>
+                      <span>Cash: {moneyShort(transSummary.cashExpense)}</span>
+                    </div>
+                  </div>
+
+                  <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 space-y-1">
+                    <div className="text-xs uppercase font-bold text-blue-600">Society Closing Balance</div>
+                    <div className="text-xl font-bold text-blue-600">{money(transSummary.totalClosing)}</div>
+                    <div className="text-xs text-slate-500 pt-1 border-t border-slate-100 dark:border-slate-700 flex justify-between">
+                      <span>Bank: {moneyShort(transSummary.bankClosing)}</span>
+                      <span>Cash: {moneyShort(transSummary.cashClosing)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Approved Expenses Transparency Table */}
+                <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
+                  <div className="p-5 border-b border-slate-200 dark:border-slate-700">
+                    <h3 className="font-bold text-lg text-slate-900 dark:text-white">
+                      Approved Society Expenses (Transparency View)
+                    </h3>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm">
+                      <thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-600 dark:text-slate-400 text-xs font-bold uppercase">
+                        <tr>
+                          <th className="p-3">Date</th>
+                          <th className="p-3">Category</th>
+                          <th className="p-3">Description</th>
+                          <th className="p-3">Vendor</th>
+                          <th className="p-3 text-rose-600">Amount</th>
+                          <th className="p-3">Account</th>
+                          <th className="p-3">Approved By</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-700/50">
+                        {(transparencyData?.approvedExpenses || []).map((exp, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/30">
+                            <td className="p-3 whitespace-nowrap text-slate-600 dark:text-slate-300">{formatDate(exp.expense_date)}</td>
+                            <td className="p-3 font-semibold text-slate-800 dark:text-slate-200">{exp.category}</td>
+                            <td className="p-3 text-slate-600 dark:text-slate-400 max-w-xs truncate">{exp.description}</td>
+                            <td className="p-3 text-slate-700 dark:text-slate-300">{exp.vendor}</td>
+                            <td className="p-3 font-bold text-rose-600">-{moneyShort(exp.amount)}</td>
+                            <td className="p-3 font-semibold text-xs text-blue-600">{exp.payment_account || 'BANK'}</td>
+                            <td className="p-3 text-xs text-slate-500">{exp.approved_by || 'Management'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Flat Payment Status Transparency Table */}
+                <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
+                  <div className="p-5 border-b border-slate-200 dark:border-slate-700">
+                    <h3 className="font-bold text-lg text-slate-900 dark:text-white">
+                      Flat Maintenance Collection Status (Sanitized View)
+                    </h3>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm">
+                      <thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-600 dark:text-slate-400 text-xs font-bold uppercase">
+                        <tr>
+                          <th className="p-3">Flat & Wing</th>
+                          <th className="p-3">Bill Month</th>
+                          <th className="p-3">Bill Amount</th>
+                          <th className="p-3 text-emerald-600">Paid Amount</th>
+                          <th className="p-3 text-rose-600">Pending Amount</th>
+                          <th className="p-3">Status</th>
+                          <th className="p-3">Payment Date</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-700/50">
+                        {(transparencyData?.flatPayments || []).map((row, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/30">
+                            <td className="p-3 font-bold text-slate-900 dark:text-white">
+                              Wing {row.wing} - {row.flat_no}
+                            </td>
+                            <td className="p-3 text-slate-600 dark:text-slate-300">Month {row.month}</td>
+                            <td className="p-3 font-semibold">{moneyShort(row.bill_amount)}</td>
+                            <td className="p-3 text-emerald-600 font-semibold">{moneyShort(row.paid_amount)}</td>
+                            <td className="p-3 text-rose-600 font-semibold">{moneyShort(row.pending_amount)}</td>
+                            <td className="p-3">
+                              <span
+                                className={`px-2.5 py-1 rounded-full text-xs font-bold ${
+                                  String(row.status).toLowerCase() === 'paid'
+                                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                                    : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                                }`}
+                              >
+                                {row.status}
+                              </span>
+                            </td>
+                            <td className="p-3 text-xs text-slate-500">{formatDate(row.payment_date)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
+        )}
       </div>
-
-      <section className="portal-panel mb-4">
-        <div className="portal-panel-head">
-          <div>
-            <h2>Society Annual Financial Summary</h2>
-            <p>Collection, expenses and bill status summary.</p>
-          </div>
-          <FileBarChart size={16} />
-        </div>
-
-        <div className="settings-status-grid">
-          <div>
-            <span>Total Society Collection</span>
-            <strong>{money(reports.totalCollection)}</strong>
-          </div>
-          <div>
-            <span>Total Society Expenses</span>
-            <strong>{money(reports.totalExpenses)}</strong>
-          </div>
-          <div>
-            <span>Net Balance</span>
-            <strong>{money(reports.netBalance)}</strong>
-          </div>
-          <div>
-            <span>Collection Rate</span>
-            <strong>{reports.collectionRate}%</strong>
-          </div>
-          <div>
-            <span>Paid Bills Count</span>
-            <strong>{reports.paidBills}</strong>
-          </div>
-          <div>
-            <span>Pending Bills Count</span>
-            <strong>{reports.pendingBills}</strong>
-          </div>
-          <div>
-            <span>Overdue Bills Count</span>
-            <strong>{reports.overdueBills}</strong>
-          </div>
-        </div>
-      </section>
-
-      <section className="portal-panel portal-table-card mb-4">
-        <div className="portal-panel-head">
-          <div>
-            <h2>Maintenance Report</h2>
-            <p>All resident maintenance bills.</p>
-          </div>
-        </div>
-
-        <div className="portal-table-wrap">
-          <table className="portal-data-table">
-            <thead>
-              <tr>
-                <th>Resident</th>
-                <th>Flat</th>
-                <th>Flat Type</th>
-                <th>Month</th>
-                <th>Year</th>
-                <th>Title</th>
-                <th>Base Amount</th>
-                <th>Penalty</th>
-                <th>Total</th>
-                <th>Paid</th>
-                <th>Remaining</th>
-                <th>Due Date</th>
-                <th>Payment Date</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {filteredBills.map((bill) => {
-                const opStatus = getOperationalStatus(bill);
-                return (
-                  <tr key={bill.id}>
-                    <td>
-                      <strong>{bill.resident_name || '-'}</strong>
-                    </td>
-                    <td>{bill.flat_no || '-'}</td>
-                    <td>
-                      <span style={{ fontWeight: '500', color: bill.flat_type_name ? '#1e293b' : '#94a3b8' }}>
-                        {bill.flat_type_name || 'Not Assigned'}
-                      </span>
-                    </td>
-                    <td>{monthName(bill.month)}</td>
-                    <td>{bill.year || '-'}</td>
-                    <td>{bill.title || 'Maintenance Bill'}</td>
-                    <td>{money(bill.amount)}</td>
-                    <td>{money(bill.penalty_amount)}</td>
-                    <td>{money(bill.total_amount)}</td>
-                    <td>{money(Number(bill.paid_amount || 0) + Number(bill.write_off_amount || 0))}</td>
-                    <td>{money(bill.remaining_amount)}</td>
-                    <td>{fullDate(bill.due_date)}</td>
-                    <td>{fullDate(bill.payment_date)}</td>
-                    <td>
-                      <span
-                        className={`portal-status ${statusKey(opStatus)}`}
-                      >
-                        {opStatus}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-
-          {!filteredBills.length && (
-            <div className="portal-empty">No report data found.</div>
-          )}
-        </div>
-      </section>
-
-      <section className="portal-panel portal-table-card mt-4">
-        <div className="portal-panel-head">
-          <div>
-            <h2>Expenses Report</h2>
-            <p>Society expense records.</p>
-          </div>
-        </div>
-
-        <div className="portal-table-wrap">
-          <table className="portal-data-table">
-            <thead>
-              <tr>
-                <th>Expense Title</th>
-                <th>Category</th>
-                <th>Amount</th>
-                <th>Date</th>
-                <th>Description</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {filteredExpenses.map((expense) => (
-                <tr key={expense.id}>
-                  <td>
-                    <strong>
-                      {expense.vendor ||
-                        expense.expense_title ||
-                        expense.expense_number ||
-                        '-'}
-                    </strong>
-                  </td>
-                  <td>{expense.category || '-'}</td>
-                  <td>{money(expense.amount)}</td>
-                  <td>{fullDate(expense.expense_date || expense.date)}</td>
-                  <td>
-                    {expense.description || (
-                      <span className="portal-muted-text">No description</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-
-          {!filteredExpenses.length && (
-            <div className="portal-empty">No report data found.</div>
-          )}
-        </div>
-      </section>
     </div>
   );
-};
-
-export default ResidentReports;
+}

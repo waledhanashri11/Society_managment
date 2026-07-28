@@ -656,6 +656,180 @@ const getAllComplaintsReport = async (req, res) => {
   }
 };
 
+const getResidentAccountReport = async (req, res) => {
+  try {
+    const residentId = req.user.id;
+    const { financialYear } = req.query;
+
+    const fy = financialYear || '2026-2027';
+    const startYear = parseInt(fy.split('-')[0], 10) || 2026;
+    const startDate = `${startYear}-04-01`;
+    const endDate = `${startYear + 1}-03-31`;
+
+    const [userRows] = await promisePool.query(
+      `SELECT u.id, u.name, f.flat_no, f.wing
+       FROM users u
+       LEFT JOIN flats f ON u.flat_id = f.id
+       WHERE u.id = ?`,
+      [residentId]
+    );
+
+    const resident = userRows[0] || {};
+
+    const [bills] = await promisePool.query(
+      `SELECT m.id, m.month, m.year, m.amount AS bill_amount,
+              COALESCE(m.paid_amount, 0) AS paid_amount,
+              COALESCE(m.remaining_amount, m.amount, 0) AS pending_amount,
+              COALESCE(m.write_off_amount, 0) AS write_off_amount,
+              COALESCE(m.status, 'Pending') AS status,
+              m.due_date, m.created_at
+       FROM maintenance m
+       WHERE m.resident_id = ?
+         AND m.created_at >= ?
+         AND m.created_at <= ?::date + INTERVAL '1 day'
+       ORDER BY m.created_at DESC`,
+      [residentId, startDate, endDate]
+    );
+
+    const [payments] = await promisePool.query(
+      `SELECT p.id, p.bill_id, p.amount, p.payment_method, p.payment_status, p.paid_at, p.created_at
+       FROM payments p
+       WHERE p.resident_id = ?
+       ORDER BY p.created_at DESC`,
+      [residentId]
+    );
+
+    const billsGenerated = bills.reduce((sum, b) => sum + Number(b.bill_amount || 0), 0);
+    const approvedPayments = payments
+      .filter((p) => ['Paid', 'Approved'].includes(p.payment_status))
+      .reduce((sum, p) => sum + Number(p.amount || 0), 0);
+
+    const approvedWriteOffs = bills.reduce((sum, b) => sum + Number(b.write_off_amount || 0), 0);
+    const totalPenalty = 0; // Penalty if tracked separately
+    const openingOutstanding = 0; // Prior year carryover balance
+
+    const closingOutstanding = Math.max(
+      0,
+      openingOutstanding + billsGenerated + totalPenalty - approvedPayments - approvedWriteOffs
+    );
+
+    return res.json({
+      resident: {
+        name: resident.name,
+        flatNo: resident.flat_no,
+        wing: resident.wing
+      },
+      summary: {
+        openingOutstanding,
+        billsGenerated,
+        totalPenalty,
+        approvedPayments,
+        approvedWriteOffs,
+        closingOutstanding,
+        verificationPendingCount: payments.filter((p) => ['Pending', 'Pending Verification', 'Under Review'].includes(p.payment_status)).length,
+        rejectedCount: payments.filter((p) => p.payment_status === 'Rejected').length
+      },
+      bills,
+      payments: payments.map((p) => ({
+        id: p.id,
+        billId: p.bill_id,
+        amount: p.amount,
+        paymentMethod: p.payment_method,
+        paymentStatus: p.payment_status,
+        paidAt: p.paid_at || p.created_at
+      }))
+    });
+  } catch (error) {
+    console.error('Resident account report error:', error);
+    return res.status(500).json({ message: 'Server error generating resident account report' });
+  }
+};
+
+const getResidentTransparencyReport = async (req, res) => {
+  try {
+    const { financialYear } = req.query;
+    const fy = financialYear || '2026-2027';
+    const startYear = parseInt(fy.split('-')[0], 10) || 2026;
+    const startDate = `${startYear}-04-01`;
+    const endDate = `${startYear + 1}-03-31`;
+
+    const [obRows] = await promisePool.query(
+      'SELECT bank_opening, cash_opening FROM society_opening_balances WHERE financial_year = ?',
+      [fy]
+    );
+
+    const baseBankOpening = Number(obRows?.[0]?.bank_opening || 50000.00);
+    const baseCashOpening = Number(obRows?.[0]?.cash_opening || 10000.00);
+
+    const [approvedPayments] = await promisePool.query(
+      `SELECT p.amount, COALESCE(p.payment_account, CASE WHEN LOWER(p.payment_method) = 'cash' THEN 'CASH' ELSE 'BANK' END) AS account
+       FROM payments p
+       WHERE p.payment_status IN ('Paid', 'Approved')
+         AND COALESCE(p.paid_at, p.created_at) >= ?
+         AND COALESCE(p.paid_at, p.created_at) <= ?::date + INTERVAL '1 day'`,
+      [startDate, endDate]
+    );
+
+    const bankIncome = approvedPayments.filter((p) => p.account === 'BANK').reduce((s, p) => s + Number(p.amount || 0), 0);
+    const cashIncome = approvedPayments.filter((p) => p.account === 'CASH').reduce((s, p) => s + Number(p.amount || 0), 0);
+
+    const [approvedExpenses] = await promisePool.query(
+      `SELECT e.id, e.category, e.description, e.vendor, e.amount, e.expense_date,
+              COALESCE(e.payment_account, 'BANK') AS payment_account,
+              COALESCE(e.status, 'Paid') AS status, 'Admin' AS approved_by
+       FROM maintenance_expenses e
+       WHERE COALESCE(e.status, 'Paid') = 'Paid'
+         AND e.expense_date >= ?
+         AND e.expense_date <= ?
+       ORDER BY e.expense_date DESC`,
+      [startDate, endDate]
+    );
+
+    const bankExpense = approvedExpenses.filter((e) => e.payment_account === 'BANK').reduce((s, e) => s + Number(e.amount || 0), 0);
+    const cashExpense = approvedExpenses.filter((e) => e.payment_account === 'CASH').reduce((s, e) => s + Number(e.amount || 0), 0);
+
+    const bankClosing = baseBankOpening + bankIncome - bankExpense;
+    const cashClosing = baseCashOpening + cashIncome - cashExpense;
+
+    const [sanitizedFlats] = await promisePool.query(
+      `SELECT f.flat_no, f.wing, m.month, m.year, m.amount AS bill_amount,
+              COALESCE(m.paid_amount, 0) AS paid_amount,
+              COALESCE(m.remaining_amount, m.amount, 0) AS pending_amount,
+              COALESCE(m.status, 'Pending') AS status,
+              m.payment_date
+       FROM maintenance m
+       JOIN flats f ON m.flat_id = f.id
+       WHERE m.created_at >= ?
+         AND m.created_at <= ?::date + INTERVAL '1 day'
+       ORDER BY f.wing ASC, f.flat_no ASC`,
+      [startDate, endDate]
+    );
+
+    return res.json({
+      financialYear: fy,
+      summary: {
+        totalOpening: baseBankOpening + baseCashOpening,
+        bankOpening: baseBankOpening,
+        cashOpening: baseCashOpening,
+        totalIncome: bankIncome + cashIncome,
+        bankIncome,
+        cashIncome,
+        totalExpense: bankExpense + cashExpense,
+        bankExpense,
+        cashExpense,
+        totalClosing: bankClosing + cashClosing,
+        bankClosing,
+        cashClosing
+      },
+      approvedExpenses,
+      flatPayments: sanitizedFlats
+    });
+  } catch (error) {
+    console.error('Resident transparency report error:', error);
+    return res.status(500).json({ message: 'Server error generating transparency report' });
+  }
+};
+
 module.exports = {
   getDashboard,
   getMaintenance,
@@ -672,4 +846,7 @@ module.exports = {
   getMembersMaintenanceReport,
   getAllMaintenanceReport,
   getAllComplaintsReport,
+  getResidentAccountReport,
+  getResidentTransparencyReport
 };
+

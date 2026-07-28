@@ -1,16 +1,15 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { 
   History, Printer, Download, Edit2, RotateCcw, 
-  X, ReceiptIndianRupee, SlidersHorizontal, Info 
+  X, ReceiptIndianRupee 
 } from 'lucide-react';
 import { maintenanceAPI, settingsAPI } from '../services/api';
 import { getUser } from '../utils/auth';
 import { printWriteOffReceipt, downloadWriteOffReceiptPdf } from '../utils/paymentReceipt';
+import { useTranslation } from 'react-i18next';
 import './maintenance.css';
 
 const money = (value) => `₹${Number(value || 0).toLocaleString('en-IN')}`;
-const dateStr = (value) => value ? new Date(value).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
-const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 function Modal({ title, subtitle, onClose, children }) {
   return (
@@ -27,8 +26,12 @@ function Modal({ title, subtitle, onClose, children }) {
 }
 
 export default function WriteOffHistoryScreen() {
-  const user = getUser();
-  const isSuperAdmin = user?.role === 'super_admin';
+  const { t } = useTranslation();
+  const translateMonth = (monthNum) => {
+    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    const key = monthNames[monthNum - 1];
+    return t(`months.${key}`, key);
+  };
 
   const [writeOffs, setWriteOffs] = useState([]);
   const [societySettings, setSocietySettings] = useState({});
@@ -176,18 +179,6 @@ export default function WriteOffHistoryScreen() {
     }
   };
 
-  const resetFilters = () => {
-    setFilters({
-      resident: '',
-      flat: '',
-      wing: '',
-      month: 'All',
-      type: 'All',
-      startDate: '',
-      endDate: ''
-    });
-  };
-
   return (
     <div className="mm-module" style={{ padding: '24px' }}>
       {toast && <div className="mm-toast" style={{ position: 'fixed', bottom: '20px', right: '20px', padding: '12px 24px', background: '#334155', color: '#fff', borderRadius: '8px', zIndex: 1000, boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}>{toast}</div>}
@@ -195,10 +186,10 @@ export default function WriteOffHistoryScreen() {
       <div className="mm-page-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
         <div>
           <h1 style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '26px', fontWeight: '800', color: '#1e293b' }}>
-            <History size={28} style={{ color: '#dc2626' }} /> Write-Off History
+            <History size={28} style={{ color: '#dc2626' }} /> {t('writeOff.title')}
           </h1>
           <p style={{ color: '#64748b', fontSize: '14px', marginTop: '4px' }}>
-            Track and manage all maintenance and penalty write-off approvals. Admins can reverse or edit records.
+            {t('writeOff.subtitle')}
           </p>
         </div>
       </div>
@@ -206,21 +197,21 @@ export default function WriteOffHistoryScreen() {
       {/* History Table */}
       <section className="mm-panel" style={{ border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden' }}>
         {loading ? (
-          <div style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>Loading write-off history...</div>
+          <div style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>{t('writeOff.loading')}</div>
         ) : writeOffs.length > 0 ? (
           <div style={{ overflowX: 'auto' }}>
             <table className="mm-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
               <thead>
                 <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0', color: '#64748b', fontWeight: '700', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>
-                  <th style={{ padding: '14px 16px' }}>Resident & Flat</th>
-                  <th style={{ padding: '14px 16px' }}>Billing Period</th>
-                  <th style={{ padding: '14px 16px' }}>Original Bill</th>
-                  <th style={{ padding: '14px 16px' }}>Amount Written-Off</th>
-                  <th style={{ padding: '14px 16px' }}>Amount Collected</th>
-                  <th style={{ padding: '14px 16px' }}>Type</th>
-                  <th style={{ padding: '14px 16px' }}>Approved By</th>
-                  <th style={{ padding: '14px 16px' }}>Reason</th>
-                  <th style={{ padding: '14px 16px', textAlign: 'right' }}>Actions</th>
+                  <th style={{ padding: '14px 16px' }}>{t('meetings.residentFlat')}</th>
+                  <th style={{ padding: '14px 16px' }}>{t('writeOff.billingPeriod')}</th>
+                  <th style={{ padding: '14px 16px' }}>{t('writeOff.originalBill')}</th>
+                  <th style={{ padding: '14px 16px' }}>{t('writeOff.amountWrittenOff')}</th>
+                  <th style={{ padding: '14px 16px' }}>{t('writeOff.amountCollected')}</th>
+                  <th style={{ padding: '14px 16px' }}>{t('meetings.type')}</th>
+                  <th style={{ padding: '14px 16px' }}>{t('writeOff.approvedBy')}</th>
+                  <th style={{ padding: '14px 16px' }}>{t('writeOff.reason')}</th>
+                  <th style={{ padding: '14px 16px', textAlign: 'right' }}>{t('meetings.actions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -228,9 +219,9 @@ export default function WriteOffHistoryScreen() {
                   <tr key={item.id} style={{ borderBottom: '1px solid #f1f5f9', color: '#334155' }}>
                     <td style={{ padding: '14px 16px' }}>
                       <strong>{item.resident_name}</strong>
-                      <div style={{ fontSize: '12px', color: '#64748b' }}>Flat {item.flat_no} · Wing {item.wing}</div>
+                      <div style={{ fontSize: '12px', color: '#64748b' }}>{t('common.flat')} {item.flat_no} · {t('common.wing', 'Wing')} {item.wing}</div>
                     </td>
-                    <td style={{ padding: '14px 16px' }}>{months[item.month - 1]} {item.year}</td>
+                    <td style={{ padding: '14px 16px' }}>{translateMonth(item.month)} {item.year}</td>
                     <td style={{ padding: '14px 16px', fontWeight: '500' }}>{money(item.bill_total)}</td>
                     <td style={{ padding: '14px 16px', fontWeight: '700', color: '#b91c1c' }}>{money(item.amount)}</td>
                     <td style={{ padding: '14px 16px', fontWeight: '700', color: '#15803d' }}>{money(item.bill_paid || 0)}</td>
@@ -245,20 +236,91 @@ export default function WriteOffHistoryScreen() {
                         backgroundColor: item.type === 'Full' ? '#fef2f2' : '#eff6ff',
                         color: item.type === 'Full' ? '#991b1b' : '#1d4ed8'
                       }}>
-                        {item.type}
+                        {t(item.type, item.type)}
                       </span>
                     </td>
                     <td style={{ padding: '14px 16px' }}>{item.admin_name}</td>
                     <td style={{ padding: '14px 16px', fontSize: '13px', fontStyle: 'italic', maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.reason}>
                       {item.reason}
                     </td>
-                    <td style={{ padding: '14px 16px', textAlign: 'right' }}>
-                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                        <button onClick={() => handlePrint(item)} title="Print Receipt" style={{ border: 'none', background: '#f1f5f9', padding: '6px', borderRadius: '4px', cursor: 'pointer', color: '#475569' }}><Printer size={15} /></button>
-                        <button onClick={() => handleDownload(item)} title="Download PDF" style={{ border: 'none', background: '#f1f5f9', padding: '6px', borderRadius: '4px', cursor: 'pointer', color: '#475569' }}><Download size={15} /></button>
-                        
-                        <button onClick={() => handleEditClick(item)} title="Edit Write-Off" style={{ border: 'none', background: '#fef3c7', padding: '6px', borderRadius: '4px', cursor: 'pointer', color: '#d97706' }}><Edit2 size={15} /></button>
-                        <button onClick={() => handleReverseClick(item)} title="Reverse Write-Off (Restore Balance)" style={{ border: 'none', background: '#fee2e2', padding: '6px', borderRadius: '4px', cursor: 'pointer', color: '#dc2626' }}><RotateCcw size={15} /></button>
+                    <td style={{ padding: '14px 16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', position: 'relative', zIndex: 5 }}>
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); handlePrint(item); }}
+                          title={t('common.print', 'Print Receipt')}
+                          style={{
+                            border: '1px solid #cbd5e1',
+                            background: '#f8fafc',
+                            padding: '7px 10px',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            color: '#334155',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          <Printer size={15} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); handleDownload(item); }}
+                          title={t('common.download', 'Download PDF')}
+                          style={{
+                            border: '1px solid #cbd5e1',
+                            background: '#f8fafc',
+                            padding: '7px 10px',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            color: '#334155',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          <Download size={15} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); handleEditClick(item); }}
+                          title={t('common.edit', 'Edit Write-Off')}
+                          style={{
+                            border: '1px solid #fde68a',
+                            background: '#fef3c7',
+                            padding: '7px 10px',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            color: '#d97706',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          <Edit2 size={15} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); handleReverseClick(item); }}
+                          title={t('common.reset', 'Reverse Write-Off')}
+                          style={{
+                            border: '1px solid #fecaca',
+                            background: '#fee2e2',
+                            padding: '7px 10px',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            color: '#dc2626',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          <RotateCcw size={15} />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -269,7 +331,7 @@ export default function WriteOffHistoryScreen() {
         ) : (
           <div style={{ padding: '60px', textAlign: 'center' }}>
             <ReceiptIndianRupee size={36} style={{ color: '#cbd5e1', marginBottom: '8px' }} />
-            <strong style={{ display: 'block', color: '#64748b' }}>No Write-Off Records Found</strong>
+            <strong style={{ display: 'block', color: '#64748b' }}>{t('writeOff.noRecords')}</strong>
           </div>
         )}
       </section>

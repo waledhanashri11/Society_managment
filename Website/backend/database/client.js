@@ -19,8 +19,8 @@ const useSsl = process.env.DATABASE_SSL !== 'false';
 const pool = new Pool({
   connectionString,
   ssl: useSsl ? { rejectUnauthorized: false } : false,
-  max: Number(process.env.DB_POOL_SIZE || 10),
-  idleTimeoutMillis: 30000,
+  max: 4,
+  idleTimeoutMillis: 2000,
   connectionTimeoutMillis: 10000,
 });
 

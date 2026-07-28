@@ -1,12 +1,14 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  Calendar, CalendarDays, CheckCircle2, Clock, DollarSign, Eye,
-  FileText, MapPin, Printer, QrCode, Send, X
+  Calendar, CalendarDays, DollarSign, Eye,
+  FileText, Printer, Send
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { meetingAPI } from '../services/api';
-import { CardSkeleton, TableSkeleton } from '../components/Skeletons';
+import { TableSkeleton } from '../components/Skeletons';
 
 const ResidentMeetings = () => {
+  const { t } = useTranslation();
   const [meetings, setMeetings] = useState([]);
   const [fines, setFines] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -54,11 +56,6 @@ const ResidentMeetings = () => {
     }
   };
 
-  const handleSelfMarkAttendance = async (m) => {
-    setSelectedMeeting(m);
-    setShowQrScanModal(true);
-  };
-
   const submitSelfAttendance = async (e) => {
     e.preventDefault();
     try {
@@ -103,30 +100,91 @@ const ResidentMeetings = () => {
     <div className="portal-module">
       <div className="portal-page-title">
         <div>
-          <h1>Society Meetings</h1>
-          <p>View upcoming society meetings, agendas, and minutes of meeting (MoM).</p>
+          <h1>{t('meetings.title', 'Society Meetings')}</h1>
+          <p>{t('meetings.subtitle', 'View upcoming society meetings, agendas, and minutes of meeting (MoM).')}</p>
+        </div>
+        <div className="portal-date-chip">
+          <CalendarDays size={15} /> {t('meetings.title', 'Meetings Desk')}
         </div>
       </div>
 
-      {/* Tabs */}
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+      {/* KPI Cards */}
+      <div className="portal-kpis" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: '12px', marginBottom: '16px' }}>
+        <div className="portal-kpi">
+          <span>Upcoming Meetings</span>
+          <strong>{upcomingMeetings.length}</strong>
+          <small>Scheduled society meetings</small>
+          <div className="portal-kpi-icon"><Calendar size={18} /></div>
+        </div>
+        <div className="portal-kpi green">
+          <span>Completed & MoM</span>
+          <strong>{pastMeetings.length}</strong>
+          <small>Official published records</small>
+          <div className="portal-kpi-icon"><FileText size={18} /></div>
+        </div>
+        <div className="portal-kpi orange">
+          <span>Absence Fines</span>
+          <strong>₹{fines.reduce((sum, f) => sum + Number(f.amount || 0), 0)}</strong>
+          <small>{fines.length} penalty notices</small>
+          <div className="portal-kpi-icon"><DollarSign size={18} /></div>
+        </div>
+      </div>
+
+      {/* Filter Tabs */}
+      <div className="portal-filters" style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
         <button
-          className={activeTab === 'upcoming' ? 'portal-primary-btn' : 'portal-light-btn'}
+          type="button"
+          className={`portal-light-btn ${activeTab === 'upcoming' ? 'active' : ''}`}
+          style={{
+            background: activeTab === 'upcoming' ? 'linear-gradient(90deg, #087d40, #0ab35c)' : '#ffffff',
+            color: activeTab === 'upcoming' ? 'white' : '#334155',
+            border: activeTab === 'upcoming' ? 'none' : '1px solid #cbd5e1',
+            boxShadow: activeTab === 'upcoming' ? '0 4px 12px rgba(8,125,64,.2)' : 'none',
+            fontWeight: '700',
+            borderRadius: '8px',
+            padding: '8px 16px',
+            fontSize: '11px',
+            cursor: 'pointer'
+          }}
           onClick={() => setActiveTab('upcoming')}
         >
-          Upcoming Meetings ({upcomingMeetings.length})
+          {t('meetings.upcomingTab', 'Upcoming Meetings')} ({upcomingMeetings.length})
         </button>
         <button
-          className={activeTab === 'past' ? 'portal-primary-btn' : 'portal-light-btn'}
+          type="button"
+          className={`portal-light-btn ${activeTab === 'past' ? 'active' : ''}`}
+          style={{
+            background: activeTab === 'past' ? 'linear-gradient(90deg, #087d40, #0ab35c)' : '#ffffff',
+            color: activeTab === 'past' ? 'white' : '#334155',
+            border: activeTab === 'past' ? 'none' : '1px solid #cbd5e1',
+            boxShadow: activeTab === 'past' ? '0 4px 12px rgba(8,125,64,.2)' : 'none',
+            fontWeight: '700',
+            borderRadius: '8px',
+            padding: '8px 16px',
+            fontSize: '11px',
+            cursor: 'pointer'
+          }}
           onClick={() => setActiveTab('past')}
         >
-          Completed Meetings & MoM ({pastMeetings.length})
+          {t('meetings.completedTab', 'Completed Meetings & MoM')} ({pastMeetings.length})
         </button>
         <button
-          className={activeTab === 'fines' ? 'portal-primary-btn' : 'portal-light-btn'}
+          type="button"
+          className={`portal-light-btn ${activeTab === 'fines' ? 'active' : ''}`}
+          style={{
+            background: activeTab === 'fines' ? 'linear-gradient(90deg, #087d40, #0ab35c)' : '#ffffff',
+            color: activeTab === 'fines' ? 'white' : '#334155',
+            border: activeTab === 'fines' ? 'none' : '1px solid #cbd5e1',
+            boxShadow: activeTab === 'fines' ? '0 4px 12px rgba(8,125,64,.2)' : 'none',
+            fontWeight: '700',
+            borderRadius: '8px',
+            padding: '8px 16px',
+            fontSize: '11px',
+            cursor: 'pointer'
+          }}
           onClick={() => setActiveTab('fines')}
         >
-          My Absence Fines ({fines.length})
+          {t('meetings.finesTab', 'My Absence Fines')} ({fines.length})
         </button>
       </div>
 
@@ -135,8 +193,8 @@ const ResidentMeetings = () => {
         <section className="portal-panel portal-table-card">
           <div className="portal-panel-head">
             <div>
-              <h2>Upcoming Society Meetings</h2>
-              <p>Schedule of upcoming general body and committee meetings.</p>
+              <h2>{t('meetings.upcomingTitle', 'Upcoming Society Meetings')}</h2>
+              <p>{t('meetings.upcomingSubtitle', 'Schedule of upcoming general body and committee meetings.')}</p>
             </div>
           </div>
           <div className="portal-table-wrap">
@@ -146,12 +204,12 @@ const ResidentMeetings = () => {
               <table className="portal-data-table">
                 <thead>
                   <tr>
-                    <th>Meeting Title</th>
-                    <th>Type</th>
-                    <th>Date & Time</th>
-                    <th>Venue</th>
-                    <th>Status</th>
-                    <th>Actions</th>
+                    <th>{t('meetings.tableMeetingTitle', 'Meeting Title')}</th>
+                    <th>{t('meetings.tableType', 'Type')}</th>
+                    <th>{t('meetings.tableDateTime', 'Date & Time')}</th>
+                    <th>{t('meetings.tableVenue', 'Venue')}</th>
+                    <th>{t('common.status', 'Status')}</th>
+                    <th style={{ textAlign: 'center' }}>{t('common.actions', 'Actions')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -160,22 +218,28 @@ const ResidentMeetings = () => {
                       <td>
                         <strong>{m.title}</strong>
                         {m.is_compulsory && <br />}
-                        {m.is_compulsory && <small className="portal-status overdue" style={{ fontSize: '9px', padding: '1px 5px' }}>Compulsory (Fine ₹{m.fine_amount})</small>}
+                        {m.is_compulsory && <small className="portal-status overdue" style={{ fontSize: '9px', padding: '1px 5px' }}>{t('meetings.compulsory', 'Compulsory')} ({t('meetings.fine', 'Fine')} ₹{m.fine_amount})</small>}
                       </td>
                       <td>{m.meeting_type}</td>
                       <td>
-                        <div>{new Date(m.meeting_date).toLocaleDateString()}</div>
-                        <small className="portal-muted-text">{m.start_time} - {m.end_time}</small>
+                        <div>{new Date(m.meeting_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
+                        <small className="portal-muted-text">{m.start_time || '10:00 AM'}{m.end_time ? ` - ${m.end_time}` : ''}</small>
                       </td>
                       <td>{m.venue}</td>
                       <td>
                         <span className="portal-status pending">
-                          Upcoming
+                          {t('statusLabel.upcoming', 'Upcoming')}
                         </span>
                       </td>
-                      <td>
-                        <div className="portal-row-actions">
-                          <button onClick={() => handleOpenDetail(m)} title="View Details"><Eye size={14} /> Details & Q&A</button>
+                      <td style={{ textAlign: 'center' }}>
+                        <div className="portal-row-actions" style={{ justifyContent: 'center' }}>
+                          <button 
+                            style={{ color: '#087d40', background: '#e8f8ef', border: '1px solid #bbf7d0', padding: '5px 12px', borderRadius: '6px', fontWeight: '700', fontSize: '11px' }}
+                            onClick={() => handleOpenDetail(m)} 
+                            title={t('meetings.viewDetails', 'View Details')}
+                          >
+                            <Eye size={13} /> {t('meetings.detailsQa', 'Details & Q&A')}
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -183,7 +247,7 @@ const ResidentMeetings = () => {
                 </tbody>
               </table>
             )}
-            {!loading && !upcomingMeetings.length && <div className="portal-empty">No upcoming society meetings scheduled at this time.</div>}
+            {!loading && !upcomingMeetings.length && <div className="portal-empty">{t('meetings.noUpcoming', 'No upcoming society meetings scheduled at this time.')}</div>}
           </div>
         </section>
       )}
@@ -193,8 +257,8 @@ const ResidentMeetings = () => {
         <section className="portal-panel portal-table-card">
           <div className="portal-panel-head">
             <div>
-              <h2>Completed Meetings & Minutes of Meeting (MoM)</h2>
-              <p>Review past meeting discussions, approved resolutions, decisions and official MoM reports.</p>
+              <h2>{t('meetings.completedTitle', 'Completed Meetings & Minutes of Meeting (MoM)')}</h2>
+              <p>{t('meetings.completedSubtitle', 'Review past meeting discussions, approved resolutions, decisions and official MoM reports.')}</p>
             </div>
           </div>
           <div className="portal-table-wrap">
@@ -204,12 +268,12 @@ const ResidentMeetings = () => {
               <table className="portal-data-table">
                 <thead>
                   <tr>
-                    <th>Meeting Title</th>
-                    <th>Type</th>
-                    <th>Date & Time</th>
-                    <th>Venue</th>
-                    <th>Status</th>
-                    <th>Actions</th>
+                    <th>{t('meetings.tableMeetingTitle', 'Meeting Title')}</th>
+                    <th>{t('meetings.tableType', 'Type')}</th>
+                    <th>{t('meetings.tableDateTime', 'Date & Time')}</th>
+                    <th>{t('meetings.tableVenue', 'Venue')}</th>
+                    <th>{t('common.status', 'Status')}</th>
+                    <th style={{ textAlign: 'center' }}>{t('common.actions', 'Actions')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -220,19 +284,23 @@ const ResidentMeetings = () => {
                       </td>
                       <td>{m.meeting_type}</td>
                       <td>
-                        <div>{new Date(m.meeting_date).toLocaleDateString()}</div>
-                        <small className="portal-muted-text">{m.start_time} - {m.end_time}</small>
+                        <div>{new Date(m.meeting_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
+                        <small className="portal-muted-text">{m.start_time || '10:00 AM'}{m.end_time ? ` - ${m.end_time}` : ''}</small>
                       </td>
                       <td>{m.venue}</td>
                       <td>
                         <span className="portal-status resolved">
-                          Completed
+                          {t('statusLabel.completed', 'Completed')}
                         </span>
                       </td>
-                      <td>
-                        <div className="portal-row-actions">
-                          <button className="portal-primary-btn" style={{ padding: '4px 10px', fontSize: '11px' }} onClick={() => handleOpenDetail(m)} title="View Minutes of Meeting">
-                            <FileText size={13} /> View MoM Report & Decisions
+                      <td style={{ textAlign: 'center' }}>
+                        <div className="portal-row-actions" style={{ justifyContent: 'center' }}>
+                          <button 
+                            style={{ color: '#087d40', background: '#e8f8ef', border: '1px solid #bbf7d0', padding: '5px 12px', borderRadius: '6px', fontWeight: '700', fontSize: '11px' }}
+                            onClick={() => handleOpenDetail(m)} 
+                            title={t('meetings.viewMomTitle', 'View Minutes of Meeting')}
+                          >
+                            <FileText size={13} /> {t('meetings.viewMomReport', 'View MoM Report & Decisions')}
                           </button>
                         </div>
                       </td>
@@ -241,20 +309,18 @@ const ResidentMeetings = () => {
                 </tbody>
               </table>
             )}
-            {!loading && !pastMeetings.length && <div className="portal-empty">No completed meetings recorded yet.</div>}
+            {!loading && !pastMeetings.length && <div className="portal-empty">{t('meetings.noCompleted', 'No completed meetings recorded yet.')}</div>}
           </div>
         </section>
       )}
-
-
 
       {/* FINES TAB */}
       {activeTab === 'fines' && (
         <section className="portal-panel portal-table-card">
           <div className="portal-panel-head">
             <div>
-              <h2>Absence Fines</h2>
-              <p>Fines for compulsory society meetings missed without prior approval.</p>
+              <h2>{t('meetings.finesTitle', 'Absence Fines')}</h2>
+              <p>{t('meetings.finesSubtitle', 'Fines for compulsory society meetings missed without prior approval.')}</p>
             </div>
           </div>
           <div className="portal-table-wrap">
@@ -264,12 +330,12 @@ const ResidentMeetings = () => {
               <table className="portal-data-table">
                 <thead>
                   <tr>
-                    <th>Meeting</th>
-                    <th>Reason</th>
-                    <th>Fine Amount</th>
-                    <th>Due Date</th>
-                    <th>Status</th>
-                    <th>Action</th>
+                    <th>{t('meetings.meeting', 'Meeting')}</th>
+                    <th>{t('meetings.reason', 'Reason')}</th>
+                    <th>{t('meetings.fineAmount', 'Fine Amount')}</th>
+                    <th>{t('meetings.dueDate', 'Due Date')}</th>
+                    <th>{t('common.status', 'Status')}</th>
+                    <th>{t('common.actions', 'Action')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -281,16 +347,16 @@ const ResidentMeetings = () => {
                       <td>{new Date(f.due_date).toLocaleDateString()}</td>
                       <td>
                         <span className={`portal-status ${f.status === 'Paid' ? 'resolved' : f.status === 'Waived' ? 'in_progress' : 'overdue'}`}>
-                          {f.status}
+                          {t(`statusLabel.${f.status === 'Paid' ? 'paid' : f.status === 'Waived' ? 'waived' : 'pending'}`, f.status)}
                         </span>
                       </td>
                       <td>
                         {f.status === 'Pending' && (
                           <button className="portal-primary-btn" style={{ padding: '4px 10px', fontSize: '10px' }} onClick={() => handlePayFine(f.id)}>
-                            Pay Fine
+                            {t('meetings.payFine', 'Pay Fine')}
                           </button>
                         )}
-                        {f.status === 'Paid' && <small className="portal-muted-text">Paid on {new Date(f.paid_at).toLocaleDateString()}</small>}
+                        {f.status === 'Paid' && <small className="portal-muted-text">{t('meetings.paidOn', 'Paid on')} {new Date(f.paid_at).toLocaleDateString()}</small>}
                         {f.status === 'Waived' && <small className="portal-muted-text">{f.waived_reason}</small>}
                       </td>
                     </tr>
@@ -298,7 +364,7 @@ const ResidentMeetings = () => {
                 </tbody>
               </table>
             )}
-            {!loading && !fines.length && <div className="portal-empty">No absence fines recorded on your account.</div>}
+            {!loading && !fines.length && <div className="portal-empty">{t('meetings.noFines', 'No absence fines recorded on your account.')}</div>}
           </div>
         </section>
       )}

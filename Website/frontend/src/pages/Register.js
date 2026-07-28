@@ -1,9 +1,14 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { Sun, Moon } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { authAPI } from '../services/api';
 import { setToken, setUser } from '../utils/auth';
+import LanguageSelector from '../components/LanguageSelector';
+import { useTheme } from '../utils/theme';
 
 const Register = () => {
+  const { t } = useTranslation();
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -14,6 +19,7 @@ const Register = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
+  const { resolvedTheme, cycleTheme } = useTheme();
   const navigate = useNavigate();
 
   const handleChange = (e) => {
@@ -56,14 +62,34 @@ const Register = () => {
 
   return (
     <div className="auth-container">
+      <div className="auth-topbar">
+        <LanguageSelector variant="dark" />
+        <button
+          type="button"
+          onClick={cycleTheme}
+          aria-label="Toggle theme"
+          className="landing-theme-toggle"
+          title={resolvedTheme === 'dark' ? t('theme.lightMode', 'Light Mode') : t('theme.darkMode', 'Dark Mode')}
+        >
+          {resolvedTheme === 'dark' ? (
+            <span className="flex items-center gap-1.5 text-xs font-bold text-amber-300">
+              <Sun size={15} /> {t('auth.lightMode', 'Light')}
+            </span>
+          ) : (
+            <span className="flex items-center gap-1.5 text-xs font-bold text-indigo-300">
+              <Moon size={15} /> {t('auth.darkMode', 'Dark')}
+            </span>
+          )}
+        </button>
+      </div>
       <div className="auth-card">
-        <h2>Register</h2>
+        <h2>{t('auth.register', 'Register')}</h2>
         <form onSubmit={handleSubmit}>
           {error && <div className="alert alert-danger">{error}</div>}
           {success && <div className="alert alert-success">{success}</div>}
           
           <div className="mb-3">
-            <label className="form-label">Full Name</label>
+            <label className="form-label">{t('auth.fullName', 'Full Name')}</label>
             <input
               type="text"
               className="form-control"
@@ -75,7 +101,7 @@ const Register = () => {
           </div>
 
           <div className="mb-3">
-            <label className="form-label">Email</label>
+            <label className="form-label">{t('auth.email', 'Email')}</label>
             <input
               type="email"
               className="form-control"
@@ -87,7 +113,7 @@ const Register = () => {
           </div>
 
           <div className="mb-3">
-            <label className="form-label">Password</label>
+            <label className="form-label">{t('auth.password', 'Password')}</label>
             <input
               type="password"
               className="form-control"
@@ -100,7 +126,7 @@ const Register = () => {
           </div>
 
           <div className="mb-3">
-            <label className="form-label">Phone</label>
+            <label className="form-label">{t('auth.phone', 'Phone')}</label>
             <input
               type="tel"
               className="form-control"
@@ -112,15 +138,15 @@ const Register = () => {
           </div>
 
           <div className="mb-3">
-            <label className="form-label">Role</label>
+            <label className="form-label">{t('auth.role', 'Role')}</label>
             <select
               className="form-control"
               name="role"
               value={formData.role}
               onChange={handleChange}
             >
-              <option value="resident">Resident</option>
-              <option value="admin">Admin</option>
+              <option value="resident">{t('auth.resident', 'Resident')}</option>
+              <option value="admin">{t('auth.admin', 'Admin')}</option>
             </select>
           </div>
 
@@ -129,11 +155,12 @@ const Register = () => {
             className="btn btn-primary w-100 font-bold"
             disabled={loading}
           >
-            Register
+            {loading ? t('auth.submitting', 'Submitting...') : t('auth.register', 'Register')}
           </button>
 
           <p className="text-center mt-3">
-            Already have an account? <Link to="/login">Login</Link>
+            {t('auth.alreadyHaveAccount', 'Already have an account?')}{' '}
+            <Link to="/login">{t('auth.login', 'Login')}</Link>
           </p>
         </form>
       </div>

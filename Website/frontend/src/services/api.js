@@ -201,14 +201,13 @@ export const maintenanceAPI = {
   getBillById: (id, config = {}) => cachedGet(`/maintenance/bills/${id}`, config),
   pay: (id, data) => mutate(api.put(`/maintenance/${id}/pay`, data), ['/maintenance', '/resident']),
   markBillPaid: (id, data) => mutate(api.put(`/maintenance/bills/${id}/mark-paid`, data), ['/maintenance', '/resident']),
-  createWriteOff: (id, data) => mutate(api.post(`/maintenance/${id}/writeoff`, data), ['/maintenance', '/resident']),
   getWriteOffs: (config = {}) => cachedGet('/maintenance/writeoffs', config),
   getWriteOffDashboard: (config = {}) => cachedGet('/maintenance/dashboard/writeoffs', config),
   getWriteOffReport: (config = {}) => cachedGet('/maintenance/reports/writeoffs', config),
   sendReminder: (id) => api.post(`/maintenance/bills/${id}/reminder`),
   submitPayment: (data) => mutate(api.post('/maintenance/payments', data), ['/maintenance', '/resident']),
   updatePayment: (id, data) => mutate(api.put(`/maintenance/payments/${id}`, data), ['/maintenance', '/resident']),
-  approvePayment: (id) => mutate(api.put(`/maintenance/payments/${id}/approve`), ['/maintenance', '/resident']),
+  approvePayment: (id, data) => mutate(api.put(`/maintenance/payments/${id}/approve`, data), ['/maintenance', '/resident']),
   rejectPayment: (id, data) => mutate(api.put(`/maintenance/payments/${id}/reject`, data), ['/maintenance', '/resident']),
   getPendingVerificationPayments: (config = {}) => cachedGet('/maintenance/payments/pending-verification', config),
   getPaymentHistory: (config = {}) => cachedGet('/maintenance/payments/history', config),
@@ -238,6 +237,11 @@ export const maintenanceAPI = {
   getWriteOffReceipt: (id, config = {}) => cachedGet(`/maintenance/bills/${id}/write-off-receipt`, config),
   reverseWriteOff: (id) => mutate(api.delete(`/maintenance/write-offs/${id}`), '/maintenance'),
   editWriteOff: (id, data) => mutate(api.put(`/maintenance/write-offs/${id}`, data), '/maintenance'),
+  getFinancialReport: (params = {}, config = {}) => api.get('/maintenance/reports/financial', { ...config, params }),
+  getBankLedger: (params = {}, config = {}) => api.get('/maintenance/reports/bank-ledger', { ...config, params }),
+  getCashLedger: (params = {}, config = {}) => api.get('/maintenance/reports/cash-ledger', { ...config, params }),
+  getFlatCollectionReport: (params = {}, config = {}) => api.get('/maintenance/reports/flat-collection', { ...config, params }),
+  saveOpeningBalance: (data) => mutate(api.put('/maintenance/reports/opening-balance', data), '/maintenance'),
 };
 
 export const complaintAPI = {
@@ -329,6 +333,8 @@ export const residentAPI = {
   getMembersMaintenanceReport: (params = {}, config = {}) => cachedGet('/resident/reports/members-maintenance', { ...config, params }),
   getAllMaintenanceReport: (params = {}, config = {}) => cachedGet('/resident/reports/all-maintenance', { ...config, params }),
   getComplaintsReport: (config = {}) => cachedGet('/resident/reports/complaints', config),
+  getAccountSummaryReport: (params = {}, config = {}) => api.get('/resident/reports/account-summary', { ...config, params }),
+  getSocietyTransparencyReport: (params = {}, config = {}) => api.get('/resident/reports/society-transparency', { ...config, params }),
 };
 
 export { api };

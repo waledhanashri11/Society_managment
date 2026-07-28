@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { authAPI } from '../services/api';
 
 const ForgotPassword = () => {
+  const { t } = useTranslation();
   const [email, setEmail] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -27,14 +29,14 @@ const ForgotPassword = () => {
   return (
     <div className="auth-container">
       <div className="auth-card">
-        <h2>Forgot Password</h2>
-        <p className="auth-helper">Enter your email and we will send a password reset link.</p>
+        <h2>{t('auth.forgotPasswordTitle', 'Forgot Password')}</h2>
+        <p className="auth-helper">{t('auth.forgotPasswordHelper', 'Enter your email and we will send a password reset link.')}</p>
         <form onSubmit={handleSubmit}>
           {error && <div className="alert alert-danger">{error}</div>}
           {message && <div className="alert alert-success">{message}</div>}
 
           <div className="mb-3">
-            <label className="form-label">Email</label>
+            <label className="form-label">{t('auth.email', 'Email')}</label>
             <input
               type="email"
               className="form-control"
@@ -45,11 +47,12 @@ const ForgotPassword = () => {
           </div>
 
           <button type="submit" className="btn btn-primary w-100" disabled={loading}>
-            Send Reset Link
+            {loading ? t('auth.submitting', 'Submitting...') : t('auth.sendResetLink', 'Send Reset Link')}
           </button>
 
           <p className="text-center mt-3">
-            Remember password? <Link to="/login">Login</Link>
+            {t('auth.rememberPassword', 'Remember password?')}{' '}
+            <Link to="/login">{t('auth.login', 'Login')}</Link>
           </p>
         </form>
       </div>

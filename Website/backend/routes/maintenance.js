@@ -35,9 +35,20 @@ const {
   getAGMReport,
   getWriteOffReceipt,
   reverseWriteOff,
-  editWriteOff
+  editWriteOff,
+  getFinancialAccountingReport,
+  getBankLedgerReport,
+  getCashLedgerReport,
+  getFlatCollectionReport,
+  saveOpeningBalance
 } = require('../controllers/maintenanceController');
 const moduleController = require('../controllers/maintenanceModuleController');
+
+router.get('/reports/financial', auth, adminAuth, getFinancialAccountingReport);
+router.get('/reports/bank-ledger', auth, adminAuth, getBankLedgerReport);
+router.get('/reports/cash-ledger', auth, adminAuth, getCashLedgerReport);
+router.get('/reports/flat-collection', auth, adminAuth, getFlatCollectionReport);
+router.put('/reports/opening-balance', auth, adminAuth, saveOpeningBalance);
 
 router.get('/settings', auth, adminAuth, getSettings);
 router.post('/settings', auth, adminAuth, saveSettings);

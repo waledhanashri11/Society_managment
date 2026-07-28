@@ -529,9 +529,14 @@ const generateNocHtml = (request, societyName) => {
     .print-btn{position:fixed;right:24px;top:24px;background:#1e3a8a;color:#fff;border:none;padding:10px 20px;border-radius:8px;font-weight:700;cursor:pointer;box-shadow:0 4px 12px rgba(30,58,138,0.3)}
     @media print{.print-btn{display:none}body{background:#fff;padding:0}.certificate{box-shadow:none;border:3px double #1e3a8a}}
   </style>
+  <script>
+    window.onload = function() {
+      setTimeout(function() { window.print(); }, 400);
+    };
+  </script>
 </head>
 <body>
-  <button class="print-btn" onclick="window.print()">🖨️ Print / Download PDF</button>
+  <button class="print-btn" onclick="window.print()">🖨️ Print / Save as PDF</button>
   <div class="certificate">
     <div class="header">
       <div>

@@ -10,7 +10,6 @@ import { useTranslation } from 'react-i18next';
 import { useLocalizedFormatters } from '../utils/formatters';
 
 const unwrap = (response) => response?.data?.data ?? response?.data ?? [];
-const money = (value) => `₹ ${Number(value || 0).toLocaleString('en-IN')}`;
 
 const AdminDashboard = () => {
   const { t } = useTranslation();
@@ -203,7 +202,7 @@ const AdminDashboard = () => {
                   <div className="portal-feed-item" key={item.id}>
                     <span className="portal-feed-icon"><MessageSquareWarning size={14} /></span>
                     <div className="portal-feed-main"><strong>{item.title}</strong><span>{item.user_name || item.resident_name || t('adminDashboard.residentRequest')}</span></div>
-                    <span className={`portal-status ${item.status}`}>{String(item.status).replace('_', ' ')}</span>
+                    <span className={`portal-status ${item.status}`}>{t(`complaintStatus.${item.status}`)}</span>
                   </div>
                 ))
               )
