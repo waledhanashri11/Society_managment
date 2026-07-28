@@ -2800,6 +2800,10 @@ private fun PaymentProofImage(
     contentScale: ContentScale = ContentScale.Crop
 ) {
     val dataBitmap = remember(image) { decodePaymentDataImage(image) }
+    val resolvedUrl = remember(image) { fullMediaUrl(image) }
+    var isLoading by remember(resolvedUrl) { mutableStateOf(!resolvedUrl.isNullOrBlank() && dataBitmap == null) }
+    var loadFailed by remember(resolvedUrl) { mutableStateOf(false) }
+
     if (dataBitmap != null) {
         Image(
             bitmap = dataBitmap.asImageBitmap(),
@@ -2808,12 +2812,51 @@ private fun PaymentProofImage(
             contentScale = contentScale
         )
     } else {
-        AsyncImage(
-            model = fullMediaUrl(image),
-            contentDescription = contentDescription,
-            modifier = modifier,
-            contentScale = contentScale
-        )
+        Box(modifier = modifier, contentAlignment = Alignment.Center) {
+            AsyncImage(
+                model = resolvedUrl,
+                contentDescription = contentDescription,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = contentScale,
+                onLoading = {
+                    isLoading = true
+                    loadFailed = false
+                },
+                onSuccess = {
+                    isLoading = false
+                    loadFailed = false
+                },
+                onError = {
+                    isLoading = false
+                    loadFailed = true
+                }
+            )
+
+            when {
+                resolvedUrl.isNullOrBlank() -> Text("No payment proof uploaded", textAlign = TextAlign.Center)
+                isLoading -> CircularProgressIndicator(modifier = Modifier.size(28.dp))
+                loadFailed -> Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.padding(12.dp)
+                ) {
+                    Icon(Icons.Filled.Warning, contentDescription = null, tint = Color(0xFFE58A00))
+                    Text(
+                        "Unable to load proof image",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        textAlign = TextAlign.Center
+                    )
+                    Text(
+                        resolvedUrl,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        maxLines = 2
+                    )
+                }
+            }
+        }
     }
 }
 

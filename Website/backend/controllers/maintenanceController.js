@@ -46,20 +46,36 @@ const getPaymentScreenshot = async (req, res) => {
     if (rows.length === 0) return res.status(404).send('Payment not found');
     
     const payment = rows[0];
-    if (payment.payment_proof && String(payment.payment_proof).startsWith('data:image/')) {
-      const match = String(payment.payment_proof).match(/^data:(image\/(?:png|jpeg|jpg|webp|gif));base64,(.+)$/);
+    const sendDataImage = (value) => {
+      if (!value || !String(value).startsWith('data:image/')) return false;
+      const match = String(value).match(/^data:(image\/(?:png|jpeg|jpg|webp|gif));base64,(.+)$/);
       if (match) {
         res.setHeader('Content-Type', match[1]);
-        return res.send(Buffer.from(match[2], 'base64'));
+        res.send(Buffer.from(match[2], 'base64'));
+        return true;
       }
-    }
+      return false;
+    };
+
+    if (sendDataImage(payment.payment_proof) || sendDataImage(payment.screenshot_url)) return;
     
     if (payment.screenshot_url) {
       const uploadRoot = path.resolve(__dirname, '..');
-      const cleanPath = String(payment.screenshot_url).replace(/\\/g, '/').replace(/^\/+/, '');
+      const rawUrl = String(payment.screenshot_url).trim();
+      if (/^https?:\/\//i.test(rawUrl)) {
+        const currentPath = `/api/maintenance/payments/${id}/screenshot`;
+        try {
+          const parsed = new URL(rawUrl);
+          if (parsed.pathname !== currentPath) return res.redirect(rawUrl);
+        } catch (_) {
+          return res.status(400).send('Invalid screenshot URL');
+        }
+      }
+
+      const cleanPath = rawUrl.replace(/\\/g, '/').replace(/^\/+/, '');
       const filePath = path.resolve(uploadRoot, cleanPath);
+      if (!filePath.startsWith(uploadRoot)) return res.status(400).send('Invalid screenshot path');
       if (fs.existsSync(filePath)) {
-        if (!filePath.startsWith(uploadRoot)) return res.status(400).send('Invalid screenshot path');
         return res.sendFile(filePath);
       }
     }
