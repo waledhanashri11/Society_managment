@@ -1,5 +1,6 @@
 package com.example.application.data.repository
 
+import com.example.application.data.local.datastore.SessionPreferences
 import com.example.application.data.remote.api.CommunicationApiService
 import com.example.application.data.remote.dto.AdminNotificationsResponse
 import com.example.application.data.remote.dto.ComplaintDto
@@ -7,7 +8,9 @@ import com.example.application.data.remote.dto.ComplaintSaveRequest
 import com.example.application.data.remote.dto.ComplaintUpdateRequest
 import com.example.application.data.remote.dto.ErrorResponse
 import com.example.application.data.remote.dto.NoticeDto
+import com.example.application.data.remote.dto.NoticePollSaveRequest
 import com.example.application.data.remote.dto.NoticeSaveRequest
+import com.example.application.data.remote.dto.NoticeVoteRequest
 import com.example.application.util.AppError
 import com.example.application.util.NetworkResult
 import com.google.gson.Gson
@@ -18,11 +21,13 @@ import java.net.UnknownHostException
 import javax.inject.Inject
 import javax.inject.Singleton
 import retrofit2.Response
+import kotlinx.coroutines.delay
 
 @Singleton
 class CommunicationRepository @Inject constructor(
     private val api: CommunicationApiService,
-    private val gson: Gson
+    private val gson: Gson,
+    private val sessionPreferences: SessionPreferences
 ) {
     private var adminComplaintsCache: List<ComplaintDto>? = null
     private var residentComplaintsCache: List<ComplaintDto>? = null
@@ -49,6 +54,14 @@ class CommunicationRepository @Inject constructor(
         return messageCall { api.updateComplaint(id, ComplaintUpdateRequest(status, reply)) }.also { if (it is NetworkResult.Success) clearComplaintCache() }
     }
 
+    suspend fun confirmResolved(id: String): NetworkResult<String> {
+        return messageCall { api.confirmResolved(id) }.also { if (it is NetworkResult.Success) clearComplaintCache() }
+    }
+
+    suspend fun reopenComplaint(id: String, comment: String): NetworkResult<String> {
+        return messageCall { api.reopenComplaint(id, mapOf("comment" to comment)) }.also { if (it is NetworkResult.Success) clearComplaintCache() }
+    }
+
     suspend fun deleteComplaint(id: String): NetworkResult<String> {
         return messageCall { api.deleteComplaint(id) }.also { if (it is NetworkResult.Success) clearComplaintCache() }
     }
@@ -60,21 +73,33 @@ class CommunicationRepository @Inject constructor(
 
     suspend fun getNotice(id: String) = safeCall { api.getNotice(id) }
 
-    suspend fun createNotice(title: String, description: String): NetworkResult<String> {
-        return messageCall { api.createNotice(NoticeSaveRequest(title, description)) }.also { if (it is NetworkResult.Success) noticesCache = null }
+    suspend fun createNotice(title: String, description: String, poll: NoticePollSaveRequest? = null): NetworkResult<String> {
+        return messageCall { api.createNotice(NoticeSaveRequest(title, description, poll)) }.also { if (it is NetworkResult.Success) noticesCache = null }
     }
 
     suspend fun deleteNotice(id: String): NetworkResult<String> {
         return messageCall { api.deleteNotice(id) }.also { if (it is NetworkResult.Success) noticesCache = null }
     }
 
+    suspend fun closePoll(id: String): NetworkResult<String> {
+        return messageCall { api.closePoll(id) }.also { if (it is NetworkResult.Success) noticesCache = null }
+    }
+
+    suspend fun voteNotice(id: String, optionIds: List<Int>): NetworkResult<String> {
+        return messageCall { api.voteNotice(id, NoticeVoteRequest(optionIds)) }.also { if (it is NetworkResult.Success) noticesCache = null }
+    }
+
     suspend fun getNotifications(refresh: Boolean = false): NetworkResult<AdminNotificationsResponse> {
         notificationsCache?.takeIf { !refresh }?.let { return NetworkResult.Success(it) }
-        return safeCall { api.getNotifications() }.also { if (it is NetworkResult.Success) notificationsCache = it.data }
+        return safeCall {
+            if (sessionPreferences.readSession()?.role?.lowercase() in setOf("admin", "super_admin")) api.getAdminNotifications() else api.getNotifications()
+        }.also { if (it is NetworkResult.Success) notificationsCache = it.data }
     }
 
     suspend fun markNotificationsRead(): NetworkResult<String> {
-        return messageCall { api.markNotificationsRead() }.also { if (it is NetworkResult.Success) notificationsCache = null }
+        return messageCall {
+            if (sessionPreferences.readSession()?.role?.lowercase() in setOf("admin", "super_admin")) api.markAdminNotificationsRead() else api.markNotificationsRead()
+        }.also { if (it is NetworkResult.Success) notificationsCache = null }
     }
 
     private fun clearComplaintCache() {
@@ -93,7 +118,11 @@ class CommunicationRepository @Inject constructor(
 
     private suspend fun <T> safeCall(call: suspend () -> Response<T>): NetworkResult<T> {
         return try {
-            val response = call()
+            var response = call()
+            if (response.code() == 502 || response.code() == 503) {
+                delay(900)
+                response = call()
+            }
             if (response.isSuccessful) {
                 response.body()?.let { NetworkResult.Success(it) }
                     ?: NetworkResult.Error(AppError.Unknown("Unable to read server response."))

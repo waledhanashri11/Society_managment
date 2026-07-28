@@ -36,7 +36,33 @@ data class SocietyRuleSaveRequest(
 data class SocietyRuleActionResponse(
     val id: String?,
     val message: String?,
-    val count: Int?
+    val count: Int?,
+    val version: Int? = null,
+    @SerializedName("rulesAccepted") val rulesAccepted: Boolean? = null,
+    @SerializedName("rulesAcceptedAt") val rulesAcceptedAt: String? = null
+)
+
+data class SocietyRulesMetaDto(
+    val version: Int?,
+    @SerializedName("rulesAccepted") val rulesAccepted: Boolean?,
+    @SerializedName("rulesAcceptedAt") val rulesAcceptedAt: String?,
+    @SerializedName("acceptedRulesVersion") val acceptedRulesVersion: Int?,
+    @SerializedName("needsAcceptance") val needsAcceptance: Boolean?,
+    val acceptance: SocietyRulesAcceptanceDto? = null
+)
+
+data class SocietyRulesAcceptanceDto(
+    val rulesAccepted: Boolean? = null,
+    val rulesAcceptedAt: String? = null,
+    val acceptedRulesVersion: Int? = null,
+    val needsAcceptance: Boolean? = null
+)
+
+data class SocietyRulesResponse(
+    val rules: List<SocietyRuleDto> = emptyList(),
+    val version: Int? = null,
+    val lastUpdated: String? = null,
+    val categories: List<String> = emptyList()
 )
 
 data class SocietyRuleAcknowledgementReportDto(

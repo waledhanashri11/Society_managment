@@ -52,6 +52,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -67,6 +68,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -84,6 +86,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.example.application.BuildConfig
 import com.example.application.data.remote.dto.ComplaintDto
+import com.example.application.data.remote.dto.NoticePollSaveRequest
 import com.example.application.data.remote.dto.NoticeDto
 import com.example.application.data.remote.dto.NotificationDto
 import com.example.application.ui.components.BasicAppTextField
@@ -146,6 +149,7 @@ fun ResidentComplaintsScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var showCreate by remember { mutableStateOf(false) }
+    var reopenTarget by remember { mutableStateOf<ComplaintDto?>(null) }
     var title by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
     var imageUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
@@ -204,7 +208,11 @@ fun ResidentComplaintsScreen(
                     }
                     items.isEmpty() -> item { EmptyState("No complaints", "Raise your first complaint.") }
                     else -> items(items, key = { it.id ?: it.title.orEmpty() }) { complaint ->
-                        ResidentComplaintCard(complaint)
+                        ResidentComplaintCard(
+                            complaint = complaint,
+                            onConfirmResolved = { complaint.id?.let(viewModel::confirmResolved) },
+                            onReopen = { reopenTarget = complaint }
+                        )
                     }
                 }
             }
@@ -251,6 +259,35 @@ fun ResidentComplaintsScreen(
             },
             confirmButton = {},
             dismissButton = { TextButton(onClick = { showCreate = false }) { Text("Close") } }
+        )
+    }
+    reopenTarget?.let { complaint ->
+        var comment by remember(complaint.id) { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { reopenTarget = null },
+            title = { Text("Reopen Complaint") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Tell the admin why this complaint still needs work.")
+                    OutlinedTextField(
+                        value = comment,
+                        onValueChange = { comment = it },
+                        label = { Text("Comment") },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 3
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        complaint.id?.let { viewModel.reopen(it, comment) }
+                        reopenTarget = null
+                    },
+                    enabled = comment.isNotBlank() && !state.submitting
+                ) { Text("Reopen") }
+            },
+            dismissButton = { TextButton(onClick = { reopenTarget = null }) { Text("Cancel") } }
         )
     }
 }
@@ -309,7 +346,11 @@ private fun ResidentComplaintFilterChips(selected: String, onSelected: (String) 
 }
 
 @Composable
-private fun ResidentComplaintCard(complaint: ComplaintDto) {
+private fun ResidentComplaintCard(
+    complaint: ComplaintDto,
+    onConfirmResolved: () -> Unit,
+    onReopen: () -> Unit
+) {
     val status = complaint.status.normalizedComplaintStatus()
     val colors = complaintStatusColors(status)
     val images = complaint.complaintImagesForDisplay()
@@ -358,6 +399,16 @@ private fun ResidentComplaintCard(complaint: ComplaintDto) {
                 }
                 complaint.reply?.takeIf { it.isNotBlank() }?.let { reply ->
                     ResidentAdminReply(reply = reply, resolved = status == "resolved", createdAt = complaint.createdAt)
+                }
+                if (status == "resolved") {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        Button(onClick = onConfirmResolved, modifier = Modifier.weight(1f)) {
+                            Text("Confirm Resolved")
+                        }
+                        OutlinedButton(onClick = onReopen, modifier = Modifier.weight(1f)) {
+                            Text("Reopen")
+                        }
+                    }
                 }
             }
             Icon(Icons.Filled.MoreVert, contentDescription = null, tint = Color(0xFF667085), modifier = Modifier.align(Alignment.Bottom))
@@ -519,16 +570,93 @@ fun NoticesScreen(onBack: () -> Unit, admin: Boolean, viewModel: NoticesViewMode
         }
         if (notices.isEmpty()) item { EmptyState("No notices", "Published notices will appear here.") }
         else items(notices, key = { it.id ?: it.title.orEmpty() }) { notice ->
-            NoticeCard(notice, admin = admin, onDelete = { notice.id?.let(viewModel::deleteNotice) })
+            NoticeCard(
+                notice = notice,
+                admin = admin,
+                onDelete = { notice.id?.let(viewModel::deleteNotice) },
+                onClosePoll = { notice.id?.let(viewModel::closePoll) },
+                onVote = { optionIds -> notice.id?.let { viewModel.vote(it, optionIds) } }
+            )
         }
     }
     if (showCreate) {
         SimpleDialog("Create Notice", { showCreate = false }) {
             var title by remember { mutableStateOf("") }
             var description by remember { mutableStateOf("") }
+            var pollEnabled by remember { mutableStateOf(false) }
+            var pollQuestion by remember { mutableStateOf("") }
+            var pollType by remember { mutableStateOf("yes_no") }
+            var pollStart by remember { mutableStateOf(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)) }
+            var pollEnd by remember { mutableStateOf(LocalDateTime.now().plusDays(7).format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)) }
+            var anonymous by remember { mutableStateOf(false) }
+            var allowChange by remember { mutableStateOf(true) }
+            var showEarly by remember { mutableStateOf(true) }
+            var mandatory by remember { mutableStateOf(false) }
+            val options = remember { mutableStateListOf("Yes", "No") }
             BasicAppTextField(title, { title = it }, "Title")
             BasicAppTextField(description, { description = it }, "Description")
-            Button(onClick = { viewModel.createNotice(title, description); showCreate = false }, modifier = Modifier.fillMaxWidth(), enabled = title.isNotBlank() && description.isNotBlank()) { Text("Publish Notice") }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = pollEnabled, onCheckedChange = { pollEnabled = it })
+                Text("Attach resident poll")
+            }
+            if (pollEnabled) {
+                BasicAppTextField(pollQuestion, { pollQuestion = it }, "Poll Question")
+                Text("Poll type", fontWeight = FontWeight.Bold)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("yes_no" to "Yes / No", "single_choice" to "Single choice", "multiple_choice" to "Multiple choice").forEach { (value, label) ->
+                        FilterChip(
+                            selected = pollType == value,
+                            onClick = {
+                                pollType = value
+                                if (value == "yes_no") {
+                                    options.clear()
+                                    options.addAll(listOf("Yes", "No"))
+                                } else if (options.size < 2) {
+                                    options.clear()
+                                    options.addAll(listOf("", ""))
+                                }
+                            },
+                            label = { Text(label) }
+                        )
+                    }
+                }
+                BasicAppTextField(pollStart, { pollStart = it }, "Start date-time")
+                BasicAppTextField(pollEnd, { pollEnd = it }, "End date-time")
+                Text("Poll options", fontWeight = FontWeight.Bold)
+                options.forEachIndexed { index, option ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        BasicAppTextField(option, { options[index] = it }, "Option ${index + 1}", modifier = Modifier.weight(1f), enabled = pollType != "yes_no")
+                        if (pollType != "yes_no" && options.size > 2) TextButton(onClick = { options.removeAt(index) }) { Text("Remove") }
+                    }
+                }
+                if (pollType != "yes_no" && options.size < 10) OutlinedButton(onClick = { options.add("") }, modifier = Modifier.fillMaxWidth()) { Text("Add Option") }
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = anonymous, onClick = { anonymous = !anonymous }, label = { Text("Anonymous") })
+                    FilterChip(selected = allowChange, onClick = { allowChange = !allowChange }, label = { Text("Allow vote change") })
+                    FilterChip(selected = showEarly, onClick = { showEarly = !showEarly }, label = { Text("Show results before end") })
+                    FilterChip(selected = mandatory, onClick = { mandatory = !mandatory }, label = { Text("Mandatory") })
+                }
+            }
+            Button(
+                onClick = {
+                    val poll = if (pollEnabled) NoticePollSaveRequest(
+                        enabled = true,
+                        question = pollQuestion.trim(),
+                        pollType = pollType,
+                        options = options.map { it.trim() }.filter { it.isNotBlank() }.ifEmpty { listOf("Yes", "No") },
+                        startAt = pollStart,
+                        endAt = pollEnd,
+                        anonymous = anonymous,
+                        allowVoteChange = allowChange,
+                        showResultsBeforeEnd = showEarly,
+                        mandatory = mandatory
+                    ) else null
+                    viewModel.createNotice(title, description, poll)
+                    showCreate = false
+                },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = title.isNotBlank() && description.isNotBlank() && (!pollEnabled || (pollQuestion.isNotBlank() && options.count { it.isNotBlank() } >= 2))
+            ) { Text("Publish Notice") }
         }
     }
 }
@@ -614,15 +742,66 @@ private fun ComplaintCard(complaint: ComplaintDto, admin: Boolean, onReply: () -
 }
 
 @Composable
-private fun NoticeCard(notice: NoticeDto, admin: Boolean, onDelete: () -> Unit) {
+private fun NoticeCard(
+    notice: NoticeDto,
+    admin: Boolean,
+    onDelete: () -> Unit,
+    onClosePoll: () -> Unit,
+    onVote: (List<Int>) -> Unit
+) {
+    var selectedOptions by remember(notice.id, notice.poll?.myVoteOptionIds) {
+        mutableStateOf(notice.poll?.myVoteOptionIds.orEmpty().toSet())
+    }
+    val poll = notice.poll
     ManagementCard {
         Text(notice.title ?: "Notice", fontWeight = FontWeight.Bold)
         Text(notice.description ?: "-", color = MaterialTheme.colorScheme.onSurfaceVariant)
         KeyValue("Created", DashboardFormatters.date(notice.createdAt))
+        if (poll != null) {
+            KeyValue("Poll Status", poll.status ?: notice.pollStatus ?: "Poll")
+            Text(poll.question ?: "Poll", fontWeight = FontWeight.SemiBold)
+            poll.options.orEmpty().forEach { option ->
+                val optionId = option.id
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Checkbox(
+                        checked = optionId != null && optionId in selectedOptions,
+                        onCheckedChange = { checked ->
+                            if (optionId == null) return@Checkbox
+                            selectedOptions = if (poll.pollType == "multiple_choice") {
+                                if (checked) selectedOptions + optionId else selectedOptions - optionId
+                            } else {
+                                setOf(optionId)
+                            }
+                        },
+                        enabled = !admin && poll.status == "Poll Active"
+                    )
+                    Text(option.optionText ?: "Option")
+                }
+            }
+            poll.results?.let { results ->
+                KeyValue("Votes Cast", "${results.votesCast ?: 0}/${results.totalEligible ?: 0}")
+                KeyValue("Participation", "${results.participationPercent ?: 0}%")
+                KeyValue("Winning Option", results.winningOption ?: "-")
+            }
+            if (!admin && poll.status == "Poll Active") {
+                Button(
+                    onClick = { onVote(selectedOptions.toList()) },
+                    enabled = selectedOptions.isNotEmpty(),
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text(if (poll.myVoteOptionIds.orEmpty().isEmpty()) "Submit Vote" else "Update Vote") }
+            }
+        }
         if (admin) TextButton(onClick = onDelete) {
             Icon(Icons.Filled.Delete, contentDescription = null)
             Spacer(Modifier.width(6.dp))
             Text("Delete")
+        }
+        if (admin && poll != null && poll.status != "Poll Closed") {
+            TextButton(onClick = onClosePoll) {
+                Icon(Icons.Filled.CheckCircle, contentDescription = null)
+                Spacer(Modifier.width(6.dp))
+                Text("Close Poll")
+            }
         }
     }
 }

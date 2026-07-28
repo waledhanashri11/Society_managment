@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.application.viewmodel.AdvancedFeaturesViewModel
+import com.example.application.util.ThemePreference
 
 @Composable
 fun AdminAdvancedFeaturesScreen(onBack: () -> Unit, viewModel: AdvancedFeaturesViewModel = hiltViewModel()) {
@@ -68,7 +69,7 @@ private fun AdvancedFeaturesScaffold(title: String, onBack: () -> Unit, vm: Adva
         snackbarHost = { SnackbarHost(snackbars) }
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            if (admin) AdminTools(vm) else ResidentTools(vm)
+            if (admin) AdminTools(vm, state) else ResidentTools(vm)
             if (state.loading) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) { CircularProgressIndicator() }
             if (state.content.isNotBlank()) ResultCard(state.title, state.content)
             Spacer(Modifier.height(24.dp))
@@ -77,10 +78,11 @@ private fun AdvancedFeaturesScaffold(title: String, onBack: () -> Unit, vm: Adva
 }
 
 @Composable
-private fun AdminTools(vm: AdvancedFeaturesViewModel) {
+private fun AdminTools(vm: AdvancedFeaturesViewModel, state: com.example.application.viewmodel.AdvancedUiState) {
     var flatId by remember { mutableStateOf("") }
     var residentId by remember { mutableStateOf("") }
     var recordId by remember { mutableStateOf("") }
+    var writeOffId by remember { mutableStateOf("") }
     var reason by remember { mutableStateOf("") }
     var categoryIds by remember { mutableStateOf("") }
     var flatIds by remember { mutableStateOf("") }
@@ -99,6 +101,21 @@ private fun AdminTools(vm: AdvancedFeaturesViewModel) {
         runCatching { paymentQrImage = uri.asDataUrl(context); paymentQrTouched = true }
             .onSuccess { Toast.makeText(context, "QR image selected", Toast.LENGTH_SHORT).show() }
             .onFailure { Toast.makeText(context, "Unable to read QR image", Toast.LENGTH_LONG).show() }
+    }
+    LaunchedEffect(state.title, state.content) {
+        if (state.title == "Society settings" && state.content.isNotBlank()) {
+            runCatching {
+                val json = org.json.JSONObject(state.content)
+                societyName = json.optString("societyName", societyName)
+                address = json.optString("address", address)
+                email = json.optString("email", email)
+                phone = json.optString("phone", phone)
+                paymentUpiId = json.optString("paymentUpiId", paymentUpiId)
+                paymentNote = json.optString("paymentNote", paymentNote)
+                paymentQrImage = json.optString("paymentQrImage", paymentQrImage)
+                paymentQrTouched = false
+            }
+        }
     }
 
     ToolSection("Society settings") {
@@ -136,20 +153,21 @@ private fun AdminTools(vm: AdvancedFeaturesViewModel) {
             )
         }
     }
+    ToolSection("Appearance") {
+        Text(
+            if (ThemePreference.darkTheme) "Dark theme is enabled." else "Light theme is enabled.",
+            style = MaterialTheme.typography.bodyMedium
+        )
+        WideAction(if (ThemePreference.darkTheme) "Switch to Light Theme" else "Switch to Dark Theme") {
+            ThemePreference.toggle(context)
+        }
+    }
     ToolSection("Flat ownership and history") {
         Field(flatId, { flatId = it }, "Flat ID")
         Field(residentId, { residentId = it }, "New resident ID (blank to unassign)")
         Field(reason, { reason = it }, "Transfer reason")
         ActionRow("Current resident", { vm.currentResident(flatId) }, "Transfer flat", { vm.transferFlat(flatId, residentId, reason) })
         ActionRow("Ownership history", { vm.flatHistory(flatId) }, "Transfer history", { vm.flatTransfers(flatId) })
-        WideAction("Maintenance history") { vm.flatMaintenance(flatId) }
-    }
-    ToolSection("Payment verification") {
-        Field(recordId, { recordId = it }, "Payment ID")
-        Field(reason, { reason = it }, "Rejection reason")
-        ActionRow("Pending payments", vm::pendingPayments, "Payment history", vm::paymentHistory)
-        ActionRow("Approve", { vm.approvePayment(recordId) }, "Reject", { vm.rejectPayment(recordId, reason) })
-        WideAction("Download receipt") { vm.downloadReceipt(recordId) }
     }
     ToolSection("Notifications") {
         ActionRow("Refresh notifications", vm::adminNotifications, "Mark all read", vm::readAllAdminNotifications)
@@ -161,19 +179,27 @@ private fun AdminTools(vm: AdvancedFeaturesViewModel) {
         ActionRow("Request details", { vm.nocDetails(recordId) }, "Create share link", { vm.shareNoc(recordId) })
         WideAction("Create NOC type") { vm.createNocType(nocType, "Created from Android") }
     }
-    ToolSection("Maintenance category assignments") {
-        Field(flatId, { flatId = it }, "Flat ID")
-        Field(flatIds, { flatIds = it }, "Flat IDs, comma separated")
-        Field(categoryIds, { categoryIds = it }, "Category IDs, comma separated")
-        ActionRow("All assignments", vm::residentCategories, "View flat", { vm.flatCategories(flatId) })
-        ActionRow("Save for flat", { vm.saveFlatCategories(flatId, categoryIds) }, "Bulk assign", { vm.bulkCategories(flatIds, categoryIds) })
-    }
     ToolSection("Reports") { WideAction("Complaint report", vm::complaintReport) }
+    ToolSection("Maintenance reports") {
+        Field(writeOffId, { writeOffId = it }, "Write-off ID")
+        ActionRow("Write-off history", vm::writeOffHistory, "AGM report", vm::agmReport)
+        WideAction("Reverse write-off") { vm.reverseWriteOff(writeOffId) }
+    }
 }
 
 @Composable
 private fun ResidentTools(vm: AdvancedFeaturesViewModel) {
     var id by remember { mutableStateOf("") }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    ToolSection("Appearance") {
+        Text(
+            if (ThemePreference.darkTheme) "Dark theme is enabled." else "Light theme is enabled.",
+            style = MaterialTheme.typography.bodyMedium
+        )
+        WideAction(if (ThemePreference.darkTheme) "Switch to Light Theme" else "Switch to Dark Theme") {
+            ThemePreference.toggle(context)
+        }
+    }
     ToolSection("My updates") {
         ActionRow("Visitors", vm::visitors, "Parcels", vm::parcels)
         WideAction("Recent activity", vm::activities)
@@ -191,11 +217,7 @@ private fun ResidentTools(vm: AdvancedFeaturesViewModel) {
         ActionRow("Summary", vm::nocSummary, "Available types", vm::nocTypes)
         WideAction("Request details") { vm.nocDetails(id) }
     }
-    ToolSection("Payments and reports") {
-        ActionRow("Payment history", vm::paymentHistory, "Complaint report", vm::complaintReport)
-        Field(id, { id = it }, "Payment ID")
-        WideAction("Download receipt") { vm.downloadReceipt(id) }
-    }
+    ToolSection("Reports") { WideAction("Complaint report", vm::complaintReport) }
 }
 
 @Composable private fun ToolSection(title: String, content: @Composable () -> Unit) = Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { Text(title, style = MaterialTheme.typography.titleMedium); content() } }

@@ -155,10 +155,10 @@ fun AppBottomNavigation(
             NavigationBarItem(
                 selected = selected == item,
                 onClick = { onSelected(item) },
-                icon = { Icon(iconForLabel(item), contentDescription = item) },
+                icon = { Icon(iconForLabel(item), contentDescription = localizedLabel(item)) },
                 label = {
                     Text(
-                        item,
+                        localizedLabel(item),
                         style = MaterialTheme.typography.labelSmall,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis

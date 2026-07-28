@@ -121,6 +121,30 @@ class AdminMaintenanceViewModel @Inject constructor(
         action { repository.applyWaiver(id, amount, reason, type, reference, date, note) }
     fun createWriteOff(id: String, type: String, amount: String?, reason: String, remarks: String?) =
         action { repository.createWriteOff(id, WriteOffRequest(type, amount?.ifBlank { null }, reason, remarks?.ifBlank { null })) }
+
+    suspend fun createWriteOffDirect(
+        id: String,
+        type: String,
+        amount: String?,
+        maintenanceAmount: String?,
+        penaltyAmount: String?,
+        reason: String,
+        remarks: String?
+    ): NetworkResult<String> {
+        return repository.createWriteOff(
+            id,
+            WriteOffRequest(
+                writeoffType = type,
+                amount = amount?.ifBlank { null },
+                maintenanceAmount = maintenanceAmount?.ifBlank { null },
+                penaltyAmount = penaltyAmount?.ifBlank { null },
+                reason = reason,
+                remarks = remarks?.ifBlank { null }
+            )
+        )
+    }
+
+    fun userMessageFor(error: com.example.application.util.AppError): String = repository.userMessageFor(error)
     fun updatePayment(id: String, status: String, reason: String? = null) = action {
         val normalizedStatus = when (status.trim().uppercase()) {
             "APPROVED", "APPROVE", "PAID" -> "Paid"

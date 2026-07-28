@@ -29,6 +29,8 @@ import javax.inject.Singleton
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import retrofit2.Response
+import kotlinx.coroutines.delay
+
 
 @Singleton
 class MaintenanceRepository @Inject constructor(
@@ -44,6 +46,7 @@ class MaintenanceRepository @Inject constructor(
             dashboard = null,
             bills = emptyList(),
             payments = emptyList(),
+            verifications = emptyList(),
             categories = emptyList(),
             expenses = emptyList(),
             settings = null,
@@ -67,7 +70,7 @@ class MaintenanceRepository @Inject constructor(
         val dashboardCall = async { safeApiCall { api.getDashboard() } }
         val billsCall = async { safeApiCall { api.getBills() } }
         val paymentsCall = async { safeApiCall { api.getPayments() } }
-        val pendingPaymentsCall = async { safeApiCall { api.getPendingVerificationPayments() } }
+        val pendingPaymentsCall = async { safeApiCall { api.getPaymentVerifications() } }
         val categoriesCall = async { safeApiCall { api.getCategories() } }
         val expensesCall = async { safeApiCall { api.getExpenses() } }
         val settingsCall = async { safeApiCall { api.getSettings() } }
@@ -91,10 +94,8 @@ class MaintenanceRepository @Inject constructor(
             adminSummary = null,
             dashboard = (dashboard as? NetworkResult.Success)?.data,
             bills = (bills as? NetworkResult.Success)?.data.orEmpty(),
-            payments = mergePayments(
-                (payments as? NetworkResult.Success)?.data.orEmpty(),
-                (pendingPayments as? NetworkResult.Success)?.data.orEmpty()
-            ),
+            payments = (payments as? NetworkResult.Success)?.data.orEmpty(),
+            verifications = (pendingPayments as? NetworkResult.Success)?.data.orEmpty(),
             categories = (categories as? NetworkResult.Success)?.data.orEmpty(),
             expenses = (expenses as? NetworkResult.Success)?.data.orEmpty(),
             settings = (settings as? NetworkResult.Success)?.data,
@@ -216,7 +217,11 @@ class MaintenanceRepository @Inject constructor(
 
     private suspend fun <T> messageCall(call: suspend () -> Response<ApiResponse<T>>): NetworkResult<String> {
         return try {
-            val response = call()
+            var response = call()
+            if (response.code() == 502 || response.code() == 503) {
+                delay(900)
+                response = call()
+            }
             if (response.isSuccessful && response.body()?.success != false) {
                 clearCaches()
                 NetworkResult.Success(response.body()?.message ?: "Saved successfully")
@@ -323,6 +328,7 @@ data class AdminMaintenanceData(
     val dashboard: com.example.application.data.remote.dto.MaintenanceDashboardDto?,
     val bills: List<com.example.application.data.remote.dto.MaintenanceBillDto>,
     val payments: List<com.example.application.data.remote.dto.MaintenancePaymentDto>,
+    val verifications: List<com.example.application.data.remote.dto.MaintenancePaymentVerificationDto>,
     val categories: List<com.example.application.data.remote.dto.MaintenanceCategoryDto>,
     val expenses: List<com.example.application.data.remote.dto.ExpenseDto>,
     val settings: com.example.application.data.remote.dto.MaintenanceSettingsDto?,

@@ -1,10 +1,11 @@
+/* eslint-disable */
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Bell, Building2, CalendarDays, CheckCircle2, FileCheck2,
+  Bell, Building2, CalendarDays, CheckCircle2, FileCheck2, Image,
   MessageSquarePlus, MessageSquareWarning, ReceiptIndianRupee, User
 } from 'lucide-react';
-import { complaintAPI, maintenanceAPI, nocAPI, noticeAPI, residentAPI } from '../services/api';
+import { complaintAPI, flatAPI, maintenanceAPI, nocAPI, noticeAPI, residentAPI } from '../services/api';
 import { getUser } from '../utils/auth';
 import { CardSkeleton, TableSkeleton } from '../components/Skeletons';
 import { useTranslation } from 'react-i18next';

@@ -164,16 +164,22 @@ const listExpenses = async (req, res) => {
 
 const createExpense = async (req, res) => {
   try {
-    const { category, vendor, amount, expenseDate, description, paymentMethod, status = 'Paid', invoiceUrl } = req.body;
+    const { category, vendor, amount, expenseDate, description, paymentMethod, accountType, status = 'Paid', invoiceUrl } = req.body;
     if (!category || !vendor || Number(amount) <= 0 || !expenseDate) {
       return respond(res, 400, 'Category, vendor, positive amount and date are required');
+    }
+    const normalizedAccount = String(accountType || (String(paymentMethod).toLowerCase() === 'cash' ? 'CASH' : 'BANK')).toUpperCase();
+    if (!['BANK', 'CASH'].includes(normalizedAccount)) return respond(res, 400, 'Account type must be BANK or CASH');
+    if (status === 'Paid') {
+      const balance = await require('./reportsController').balanceForAccount(normalizedAccount, expenseDate);
+      if (balance != null && Number(amount) > balance) return respond(res, 409, `Insufficient ${normalizedAccount.toLowerCase()} balance`);
     }
     const number = `EXP-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
     const [result] = await promisePool.query(
       `INSERT INTO maintenance_expenses
-       (expense_number, category, vendor, amount, expense_date, invoice_url, description, payment_method, status, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [number, category, vendor, amount, expenseDate, invoiceUrl || null, description || null, paymentMethod || 'Bank Transfer', status, req.user.id]
+       (expense_number, category, vendor, amount, expense_date, invoice_url, description, payment_method, account_type, status, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [number, category, vendor, amount, expenseDate, invoiceUrl || null, description || null, paymentMethod || 'Bank Transfer', normalizedAccount, status, req.user.id]
     );
     await audit(req.user.id, 'CREATE', 'EXPENSE', result.insertId, { number, amount });
     return respond(res, 201, 'Expense recorded', { id: result.insertId, expenseNumber: number });

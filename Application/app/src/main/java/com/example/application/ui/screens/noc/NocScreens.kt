@@ -64,11 +64,73 @@ import com.example.application.ui.components.EmptyState
 import com.example.application.ui.components.KeyValue
 import com.example.application.ui.components.RetryState
 import com.example.application.viewmodel.AdminNocViewModel
+import com.example.application.viewmodel.PublicNocViewModel
 import com.example.application.viewmodel.ResidentNocViewModel
 import java.io.ByteArrayOutputStream
 
 private val NocTypes = listOf("Address Proof", "Vehicle NOC", "Tenant NOC", "Sale/Transfer NOC", "Other")
-private val NocStatuses = listOf("All", "Pending", "Under Review", "Approved", "Rejected", "Cancelled")
+private val NocStatuses = listOf("All", "Submitted", "Under Review", "Additional Information Required", "Approved", "Completed", "Rejected", "Cancelled")
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun PublicNocCertificateScreen(
+    token: String,
+    onBack: () -> Unit,
+    viewModel: PublicNocViewModel = hiltViewModel()
+) {
+    val state by viewModel.state.collectAsStateWithLifecycle()
+
+    LaunchedEffect(token) {
+        if (token.isNotBlank()) viewModel.load(token)
+    }
+
+    Scaffold(
+        topBar = {
+            AppTopBar(
+                title = "Shared NOC Certificate",
+                subtitle = "Verify public NOC by token",
+                role = AppRoleTheme.Resident,
+                navigationIcon = Icons.Filled.ArrowBack,
+                navigationText = "Back",
+                onNavigationClick = onBack
+            )
+        }
+    ) { padding ->
+        Column(
+            Modifier.fillMaxSize().padding(padding).padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            OutlinedTextField(
+                value = state.token,
+                onValueChange = viewModel::setToken,
+                label = { Text("Share token or /share/noc link") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+            Button(onClick = { viewModel.load() }, enabled = !state.loading, modifier = Modifier.fillMaxWidth()) {
+                Text(if (state.loading) "Loading..." else "View Certificate")
+            }
+            state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            state.certificate?.let { certificate ->
+                val details = certificate.certificate
+                Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp)) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(certificate.society?.name ?: "Society Management System", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        Text("NOC Certificate", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                        KeyValue("Request number", details?.requestNumber ?: "-")
+                        KeyValue("Verification number", details?.verificationNumber ?: "-")
+                        KeyValue("Type", details?.nocType ?: "-")
+                        KeyValue("Purpose", details?.purpose ?: "-")
+                        KeyValue("Resident", details?.residentName ?: "-")
+                        KeyValue("Flat", listOfNotNull(details?.wing, details?.flatNo).joinToString("-").ifBlank { "-" })
+                        KeyValue("Issued", shortDate(details?.issueDate))
+                        KeyValue("Expires", shortDate(details?.expiryDate))
+                    }
+                }
+            }
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -78,6 +140,7 @@ fun ResidentNocScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var showCreate by remember { mutableStateOf(false) }
+    var uploadTarget by remember { mutableStateOf<NocRequestDto?>(null) }
     val context = LocalContext.current
 
     LaunchedEffect(state.certificateUri) {
@@ -123,7 +186,8 @@ fun ResidentNocScreen(
                     items = state.items,
                     modifier = Modifier.fillMaxSize(),
                     onCancel = { viewModel.cancel(it) },
-                    onDownload = { id, number -> viewModel.downloadCertificate(id, number) }
+                    onDownload = { id, number -> viewModel.downloadCertificate(id, number) },
+                    onUploadInfo = { uploadTarget = it }
                 )
             }
         }
@@ -136,6 +200,16 @@ fun ResidentNocScreen(
             onSubmit = { type, purpose, remarks, documentData ->
                 viewModel.createNoc(type, purpose, remarks, documentData)
                 showCreate = false
+            }
+        )
+    }
+    uploadTarget?.let { request ->
+        NocUploadInfoDialog(
+            submitting = state.submitting,
+            onDismiss = { uploadTarget = null },
+            onSubmit = { remarks, docs ->
+                viewModel.uploadInfo(request.id.orEmpty(), remarks, docs)
+                uploadTarget = null
             }
         )
     }
@@ -197,6 +271,14 @@ fun AdminNocScreen(
                         NocCard(
                             item = item,
                             admin = true,
+                            onReview = {
+                                reviewTarget = item
+                                reviewStatus = "Under Review"
+                            },
+                            onRequestInfo = {
+                                reviewTarget = item
+                                reviewStatus = "Additional Information Required"
+                            },
                             onApprove = {
                                 reviewTarget = item
                                 reviewStatus = "Approved"
@@ -204,6 +286,13 @@ fun AdminNocScreen(
                             onReject = {
                                 reviewTarget = item
                                 reviewStatus = "Rejected"
+                            },
+                            onComplete = {
+                                reviewTarget = item
+                                reviewStatus = "Completed"
+                            },
+                            onShare = {
+                                item.id?.let(viewModel::share)
                             }
                         )
                     }
@@ -232,7 +321,8 @@ private fun NocList(
     items: List<NocRequestDto>,
     modifier: Modifier = Modifier,
     onCancel: (String) -> Unit,
-    onDownload: (String, String?) -> Unit
+    onDownload: (String, String?) -> Unit,
+    onUploadInfo: (NocRequestDto) -> Unit
 ) {
     LazyColumn(
         modifier = modifier,
@@ -240,7 +330,13 @@ private fun NocList(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         items(items, key = { it.id ?: it.hashCode() }) { item ->
-            NocCard(item = item, admin = false, onCancel = { onCancel(item.id.orEmpty()) }, onDownload = { onDownload(item.id.orEmpty(), item.nocNumber) })
+            NocCard(
+                item = item,
+                admin = false,
+                onCancel = { onCancel(item.id.orEmpty()) },
+                onDownload = { onDownload(item.id.orEmpty(), item.nocNumber) },
+                onUploadInfo = { onUploadInfo(item) }
+            )
         }
     }
 }
@@ -250,9 +346,14 @@ private fun NocCard(
     item: NocRequestDto,
     admin: Boolean,
     onCancel: (() -> Unit)? = null,
+    onReview: (() -> Unit)? = null,
+    onRequestInfo: (() -> Unit)? = null,
     onApprove: (() -> Unit)? = null,
     onReject: (() -> Unit)? = null,
-    onDownload: (() -> Unit)? = null
+    onComplete: (() -> Unit)? = null,
+    onShare: (() -> Unit)? = null,
+    onDownload: (() -> Unit)? = null,
+    onUploadInfo: (() -> Unit)? = null
 ) {
     val status = item.status ?: "Pending"
     Card(
@@ -274,10 +375,16 @@ private fun NocCard(
             KeyValue("Created", shortDate(item.createdAt))
             item.nocNumber?.let { KeyValue("NOC number", it) }
             item.adminComments?.takeIf { it.isNotBlank() }?.let { KeyValue("Admin note", it) }
-            if (!admin && status in listOf("Draft", "Pending", "Under Review")) {
+            if (!admin && status in listOf("Draft", "Pending", "Submitted", "Under Review")) {
                 OutlinedButton(onClick = { onCancel?.invoke() }, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Filled.Cancel, contentDescription = null)
                     Text("Cancel Request", modifier = Modifier.padding(start = 8.dp))
+                }
+            }
+            if (!admin && status == "Additional Information Required") {
+                Button(onClick = { onUploadInfo?.invoke() }, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Filled.UploadFile, contentDescription = null)
+                    Text("Upload Requested Info", modifier = Modifier.padding(start = 8.dp))
                 }
             }
             if (!admin && status == "Approved") {
@@ -286,7 +393,15 @@ private fun NocCard(
                     Text("Download NOC Certificate", modifier = Modifier.padding(start = 8.dp))
                 }
             }
-            if (admin && status !in listOf("Approved", "Rejected", "Cancelled")) {
+            if (admin && status !in listOf("Approved", "Completed", "Rejected", "Cancelled")) {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(onClick = { onReview?.invoke() }, modifier = Modifier.weight(1f)) {
+                        Text("Review")
+                    }
+                    OutlinedButton(onClick = { onRequestInfo?.invoke() }, modifier = Modifier.weight(1f)) {
+                        Text("Need Info")
+                    }
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
                     Button(onClick = { onApprove?.invoke() }, modifier = Modifier.weight(1f)) {
                         Icon(Icons.Filled.Done, contentDescription = null)
@@ -295,6 +410,16 @@ private fun NocCard(
                     OutlinedButton(onClick = { onReject?.invoke() }, modifier = Modifier.weight(1f)) {
                         Icon(Icons.Filled.Cancel, contentDescription = null)
                         Text("Reject", modifier = Modifier.padding(start = 6.dp))
+                    }
+                }
+            }
+            if (admin && status == "Approved") {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(onClick = { onShare?.invoke() }, modifier = Modifier.weight(1f)) {
+                        Text("Share Link")
+                    }
+                    Button(onClick = { onComplete?.invoke() }, modifier = Modifier.weight(1f)) {
+                        Text("Complete")
                     }
                 }
             }
@@ -383,6 +508,67 @@ private fun CreateNocDialog(
 }
 
 @Composable
+private fun NocUploadInfoDialog(
+    submitting: Boolean,
+    onDismiss: () -> Unit,
+    onSubmit: (String, List<String>) -> Unit
+) {
+    val context = LocalContext.current
+    var remarks by remember { mutableStateOf("") }
+    var documentNames by remember { mutableStateOf<List<String>>(emptyList()) }
+    var documentData by remember { mutableStateOf<List<String>>(emptyList()) }
+    var localError by remember { mutableStateOf<String?>(null) }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
+        runCatching {
+            if (uris.size > 3) error("Please select up to 3 documents.")
+            val resolver = context.contentResolver
+            val encoded = uris.map { uri ->
+                val bytes = resolver.openInputStream(uri)?.use { input ->
+                    val output = ByteArrayOutputStream()
+                    input.copyTo(output)
+                    output.toByteArray()
+                } ?: ByteArray(0)
+                if (bytes.size > 5 * 1024 * 1024) error("Each document must be smaller than 5 MB.")
+                val mime = resolver.getType(uri) ?: "application/octet-stream"
+                "data:$mime;base64,${Base64.encodeToString(bytes, Base64.NO_WRAP)}"
+            }
+            documentNames = uris.map { it.lastPathSegment ?: "Selected document" }
+            documentData = encoded
+            localError = null
+        }.onFailure { localError = it.message ?: "Unable to read selected documents." }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Upload Requested Info") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = remarks,
+                    onValueChange = { remarks = it },
+                    label = { Text("Remarks") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 3
+                )
+                OutlinedButton(onClick = { picker.launch("*/*") }, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Filled.UploadFile, contentDescription = null)
+                    Text(if (documentNames.isEmpty()) "Select documents" else "${documentNames.size} document(s) selected", modifier = Modifier.padding(start = 8.dp))
+                }
+                if (documentNames.isNotEmpty()) Text(documentNames.joinToString("\n"), style = MaterialTheme.typography.bodySmall)
+                localError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onSubmit(remarks, documentData) },
+                enabled = !submitting && (remarks.isNotBlank() || documentData.isNotEmpty())
+            ) { Text(if (submitting) "Uploading..." else "Submit Info") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+@Composable
 private fun ReviewNocDialog(
     status: String,
     submitting: Boolean,
@@ -417,9 +603,9 @@ private fun ReviewNocDialog(
 @Composable
 private fun StatusChip(status: String) {
     val color = when (status) {
-        "Approved" -> Color(0xFF1B8F4D)
+        "Approved", "Completed" -> Color(0xFF1B8F4D)
         "Rejected", "Cancelled" -> Color(0xFFD14343)
-        "Under Review" -> Color(0xFF8A5A00)
+        "Under Review", "Additional Information Required" -> Color(0xFF8A5A00)
         else -> Color(0xFF0B5FFF)
     }
     AssistChip(onClick = {}, label = { Text(status, color = color) })

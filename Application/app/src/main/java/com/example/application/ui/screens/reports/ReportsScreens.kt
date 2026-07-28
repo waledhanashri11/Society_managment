@@ -10,10 +10,13 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -38,6 +41,7 @@ import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Report
 import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -56,10 +60,12 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
@@ -87,9 +93,12 @@ import com.example.application.ui.components.RetryState
 import com.example.application.util.DashboardFormatters
 import com.example.application.viewmodel.AdminReportsViewModel
 import com.example.application.viewmodel.ResidentReportsViewModel
+import com.example.application.data.remote.dto.FinancialReportDto
 import java.math.BigDecimal
 import java.io.File
 import java.time.LocalDate
+import java.time.YearMonth
+import java.time.format.DateTimeFormatter
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -99,83 +108,338 @@ fun AdminReportsScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    var tab by remember { mutableStateOf(0) }
+    var selectedYear by remember { mutableStateOf<String?>(null) }
+    var selectedMonth by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    var search by remember { mutableStateOf("") }
+    var statusFilter by remember { mutableStateOf("All") }
     var pendingCsv by remember { mutableStateOf<String?>(null) }
     val csvLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
-        val csv = pendingCsv.orEmpty()
-        runCatching {
-            context.contentResolver.openOutputStream(uri)?.use { output ->
-                output.write(csv.toByteArray(Charsets.UTF_8))
-            } ?: error("Unable to open selected file.")
-        }.onSuccess {
-            Toast.makeText(context, "Admin report CSV saved successfully", Toast.LENGTH_SHORT).show()
-        }.onFailure {
-            Toast.makeText(context, "CSV export failed: ${it.message}", Toast.LENGTH_LONG).show()
+        runCatching { context.contentResolver.openOutputStream(uri)?.use { it.write(pendingCsv.orEmpty().toByteArray()) } }
+            .onSuccess { Toast.makeText(context, "Report CSV saved", Toast.LENGTH_SHORT).show() }
+            .onFailure { Toast.makeText(context, "CSV export failed", Toast.LENGTH_LONG).show() }
+    }
+    val data = state.data
+    val currentFyStart = remember { LocalDate.now().let { if (it.monthValue >= 4) it.year else it.year - 1 } }
+    val currentFy = "$currentFyStart-${currentFyStart + 1}"
+    val years = remember(data, currentFy) { (listOf(currentFy) + data?.financialYears().orEmpty()).distinct().sortedDescending() }
+    val activeYear = selectedYear ?: years.first()
+    val periodData = remember(data, activeYear, search, statusFilter) { data?.forFinancialYear(activeYear)?.filtered(search, statusFilter) }
+    val previousYear = activeYear?.let { fy -> fy.substringBefore('-').toIntOrNull()?.minus(1)?.let { "$it-${it + 1}" } }
+    val previousData = remember(data, previousYear) { data?.forFinancialYear(previousYear) }
+    Scaffold(topBar = {
+        TopAppBar(title = { Column { Text("Reports", fontWeight = FontWeight.Bold); Text("Admin", style = MaterialTheme.typography.labelSmall) } }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, "Back") } }, actions = {
+            IconButton(onClick = { viewModel.load(refresh = true) }) { Icon(Icons.Filled.Refresh, "Refresh") }
+        })
+    }) { padding ->
+        LazyColumn(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            item {
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color(0xFFEAF1FF)).padding(4.dp)) {
+                    listOf("Monthly", "Annual").forEachIndexed { index, label ->
+                        FilterChip(selected = tab == index, onClick = { tab = index }, label = { Text(label) }, modifier = Modifier.weight(1f))
+                    }
+                }
+            }
+            state.error?.let { item { RetryState(it, onRetry = { viewModel.load(true) }) } }
+            if (state.isLoading && data == null) item { AppLoadingIndicator() }
+            else if (periodData == null) item { EmptyState("No report data", "No financial records are available yet.") }
+            else {
+                item {
+                    Text("Financial year", style = MaterialTheme.typography.labelMedium, color = ReportBlue)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
+                        years.forEach { year -> FilterChip(selected = year == activeYear, onClick = { selectedYear = year }, label = { Text(year) }) }
+                    }
+                }
+                item {
+                    OutlinedTextField(value = search, onValueChange = { search = it }, modifier = Modifier.fillMaxWidth(), singleLine = true, label = { Text("Search bills, residents or flats") }, leadingIcon = { Icon(Icons.Filled.FilterList, null) })
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) { listOf("All", "Paid", "Pending", "Overdue", "Rejected", "Written-off").forEach { FilterChip(selected = statusFilter == it, onClick = { statusFilter = it }, label = { Text(it) }) } }
+                    Text("Last refreshed: ${state.lastLoadedAt?.let { java.text.SimpleDateFormat("dd MMM yyyy, hh:mm a", java.util.Locale.getDefault()).format(java.util.Date(it)) } ?: "—"}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
+                }
+                item { ReferenceFinancialSummary(data?.financial) }
+                if (tab == 1) item { AnnualReportDashboard(periodData, previousData, onExport = { pendingCsv = periodData.toCsv(activeYear) + data?.financial.toFinancialCsv(); csvLauncher.launch("annual-report-$activeYear.csv") }, onPdf = { shareReportPdf(context, "Annual Report $activeYear", periodData.toCsv(activeYear) + data?.financial.toFinancialCsv()) }) }
+                item { ReferenceMonthlyTable(data?.financial, onMonth = { year, month -> selectedMonth = year to month; viewModel.loadMonthly(year, month) }) }
+                item { ReferenceBreakdowns(data?.financial) }
+                item { ReferenceCollectionSummary(data?.financial?.collection) }
+                if (periodData.bills.isNotEmpty()) {
+                    item { Text("Bill details", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = ReportBlue) }
+                    items(periodData.bills.take(50), key = { "detail-bill-${it.id}-${it.reportDate()}" }) { bill -> BillCard(bill) }
+                }
+                if (periodData.expenses.isNotEmpty()) {
+                    item { Text("Expense details", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = ReportBlue) }
+                    items(periodData.expenses.take(50), key = { "detail-expense-${it.id}-${it.expenseDate}" }) { expense -> AdminExpenseCard(expense) }
+                }
+            }
         }
     }
-    ReportScaffold(
-        title = "Admin Reports",
-        subtitle = "Financial, expense and complaint reports",
-        onBack = onBack,
-        isRefreshing = state.isRefreshing,
-        onRefresh = { viewModel.load(refresh = true) },
-        action = {
-            Row {
-                TextButton(onClick = {
-                    val csv = state.data?.let { buildAdminReportCsv(it, state.filter) }.orEmpty()
-                    if (csv.isBlank()) Toast.makeText(context, "No report data available", Toast.LENGTH_SHORT).show()
-                    else {
-                        pendingCsv = csv
-                        csvLauncher.launch("admin_report.csv")
-                    }
-                }) { Text("CSV") }
-                TextButton(onClick = {
-                    val csv = state.data?.let { buildAdminReportCsv(it, state.filter) }.orEmpty()
-                    if (csv.isBlank()) Toast.makeText(context, "No report data available", Toast.LENGTH_SHORT).show()
-                    else shareReportPdf(context, "Admin Reports", csv)
-                }) { Text("PDF") }
+    selectedMonth?.let { month -> state.monthly?.let { MonthlyFinancialDialog(it, month.first, month.second, onDismiss = { selectedMonth = null; viewModel.clearMonthly() }) } }
+}
+
+@Composable
+private fun ScreenshotSummaryDashboard(report: FinancialReportDto) {
+    val s = report.summary ?: return InfoCard(report.reason ?: "Financial report unavailable")
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            ScreenshotBalanceCard("Opening Balance", s.totalOpening, s.bankOpening, s.cashOpening, ReportBlue, Modifier.weight(1f))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                ScreenshotAmountCard("Total Income", s.totalIncome, ReportGreen)
+                ScreenshotAmountCard("Total Expenses", s.totalExpenses, Color(0xFFFF2538))
             }
-        },
-        showRefresh = false
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            ScreenshotBalanceCard("Closing Balance", s.totalClosing, s.bankClosing, s.cashClosing, Color(0xFF6D35E8), Modifier.weight(1f))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                val rate = report.collection?.collectionRate?.let { "$it%" } ?: "Unavailable"
+                ScreenshotTextCard("Collection Rate", rate, ReportGreen)
+                ScreenshotAmountCard("Pending Amount", report.collection?.pendingAmount, Color(0xFFFF5B15))
+            }
+        }
+    }
+}
+
+@Composable private fun ScreenshotBalanceCard(title:String,total:String?,bank:String?,cash:String?,color:Color,modifier:Modifier){ Card(modifier=modifier,colors=CardDefaults.cardColors(containerColor=color.copy(alpha=.045f)),shape=RoundedCornerShape(14.dp)){Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){Text(title,style=MaterialTheme.typography.labelMedium,color=Color(0xFF15204F));Text(DashboardFormatters.money(total.toMoneyDecimal()),fontWeight=FontWeight.Bold,color=Color(0xFF101C5C));Text("Bank: ${DashboardFormatters.money(bank.toMoneyDecimal())}",style=MaterialTheme.typography.labelSmall);Text("Cash: ${DashboardFormatters.money(cash.toMoneyDecimal())}",style=MaterialTheme.typography.labelSmall)}}}
+@Composable
+private fun ScreenshotAmountCard(title: String, amountText: String?, color: Color) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = color.copy(alpha = .05f)),
+        shape = RoundedCornerShape(14.dp)
     ) {
-        item {
-            ReportFilters(
-                filter = state.filter,
-                onMonth = viewModel::updateMonth,
-                onYear = viewModel::updateYear,
-                onStatus = viewModel::updateStatus,
-                onReset = viewModel::resetFilters
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(5.dp)
+        ) {
+            Text(title, style = MaterialTheme.typography.labelMedium, color = Color(0xFF15204F))
+            Text(
+                DashboardFormatters.money(amountText.toMoneyDecimal()),
+                fontWeight = FontWeight.Bold,
+                color = color
             )
         }
+    }
+}
 
-        state.error?.let { error ->
-            item { RetryState(message = error, onRetry = { viewModel.load(refresh = true) }, modifier = Modifier.padding(16.dp)) }
+@Composable
+private fun ReferenceFinancialSummary(report: FinancialReportDto?) {
+    val s = report?.summary
+    val c = report?.collection
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            ScreenshotBalanceCard("Opening Balance", s?.totalOpening ?: "0", s?.bankOpening ?: "0", s?.cashOpening ?: "0", ReportBlue, Modifier.weight(1f))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                ScreenshotAmountCard("Total Income", s?.totalIncome ?: "0", ReportGreen)
+                ScreenshotAmountCard("Total Expenses", s?.totalExpenses ?: "0", Color(0xFFFF2538))
+            }
         }
-
-        state.exportMessage?.let { message ->
-            item { InfoCard(message = message) }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            ScreenshotBalanceCard("Closing Balance", s?.totalClosing ?: "0", s?.bankClosing ?: "0", s?.cashClosing ?: "0", Color(0xFF6D35E8), Modifier.weight(1f))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                ScreenshotTextCard("Collection Rate", "${c?.collectionRate ?: "0"}%", ReportGreen)
+                ScreenshotAmountCard("Pending Amount", c?.pendingAmount ?: "0", Color(0xFFFF5B15))
+            }
         }
+    }
+}
 
-        when {
-            state.isLoading -> item { LoadingReportSkeleton() }
-            state.data == null -> item { EmptyState("No reports", "Report data is not available yet.", modifier = Modifier.padding(16.dp)) }
-            else -> adminReportsContent(
-                data = state.data!!,
-                onExportCsv = {
-                    val csv = buildAdminReportCsv(state.data!!, state.filter)
-                    if (csv.isBlank()) Toast.makeText(context, "No report data available", Toast.LENGTH_SHORT).show()
-                    else {
-                        pendingCsv = csv
-                        csvLauncher.launch("admin_report.csv")
-                    }
-                },
-                onExportPdf = {
-                    val csv = buildAdminReportCsv(state.data!!, state.filter)
-                    if (csv.isBlank()) Toast.makeText(context, "No report data available", Toast.LENGTH_SHORT).show()
-                    else shareReportPdf(context, "Admin Reports", csv)
+@Composable
+private fun ReferenceMonthlyTable(report: FinancialReportDto?, onMonth: (Int, Int) -> Unit) {
+    val months = report?.months.orEmpty()
+    Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Monthly Summary", fontWeight = FontWeight.Bold, color = ReportBlue)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                listOf("Month", "Opening", "Income", "Expense", "Closing").forEach { Text(it, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f)) }
+            }
+            HorizontalDivider()
+            if (months.isEmpty()) {
+                Text("No monthly records", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 12.dp))
+            } else months.forEach { row ->
+                Row(Modifier.fillMaxWidth().clickable { onMonth(row.year ?: return@clickable, row.month ?: return@clickable) }.padding(vertical = 7.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(row.month?.let { java.time.Month.of(it).name.take(3) } ?: "—", style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f))
+                    Text(DashboardFormatters.money(row.totalOpening.toMoneyDecimal()), style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f))
+                    Text(DashboardFormatters.money(row.totalIncome.toMoneyDecimal()), style = MaterialTheme.typography.labelSmall, color = ReportGreen, modifier = Modifier.weight(1f))
+                    Text(DashboardFormatters.money(row.totalExpenses.toMoneyDecimal()), style = MaterialTheme.typography.labelSmall, color = Color(0xFFFF2538), modifier = Modifier.weight(1f))
+                    Text(DashboardFormatters.money(row.totalClosing.toMoneyDecimal()), style = MaterialTheme.typography.labelSmall, color = ReportBlue, modifier = Modifier.weight(1f))
                 }
-            )
+                HorizontalDivider(color = Color(0xFFE9EDF5))
+            }
         }
+    }
+}
+
+@Composable
+private fun ReferenceBreakdowns(report: FinancialReportDto?) {
+    val income = report?.income.orEmpty()
+    val expenses = report?.expenses.orEmpty()
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        ReportBreakdownBlock("Income Breakdown", income.ifEmpty { listOf(com.example.application.data.remote.dto.FinancialBreakdownDto("No income", "BANK", "0")) }, ReportGreen)
+        ReportBreakdownBlock("Expense Breakdown", expenses.ifEmpty { listOf(com.example.application.data.remote.dto.FinancialBreakdownDto("No expenses", "BANK", "0")) }, Color(0xFFFF2538))
+    }
+}
+
+@Composable
+private fun ReferenceCollectionSummary(c: com.example.application.data.remote.dto.FinancialCollectionDto?) {
+    CollectionSummaryBlock(c ?: com.example.application.data.remote.dto.FinancialCollectionDto(0,0,0,0,0,0,0,"0","0","0","0","0"))
+}
+
+@Composable
+private fun ScreenshotTextCard(title: String, displayText: String, color: Color) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = color.copy(alpha = .05f)),
+        shape = RoundedCornerShape(14.dp)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(5.dp)
+        ) {
+            Text(title, style = MaterialTheme.typography.labelMedium)
+            Text(displayText, fontWeight = FontWeight.Bold, color = color)
+        }
+    }
+}
+
+@Composable
+private fun MonthlyFinancialDialog(report: FinancialReportDto, year: Int, month: Int, onDismiss: () -> Unit) {
+    val s = report.summary ?: return
+    var section by remember { mutableStateOf("Monthly") }
+    AlertDialog(onDismissRequest=onDismiss,confirmButton={TextButton(onClick=onDismiss){Text("Close")}},title={Text(YearMonth.of(year,month).format(DateTimeFormatter.ofPattern("MMMM yyyy")),fontWeight=FontWeight.Bold,color=Color(0xFF111B55))},text={
+        LazyColumn(verticalArrangement=Arrangement.spacedBy(10.dp)){
+            item { Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(6.dp)){listOf("Monthly","Bank","Cash","Collection").forEach{label->FilterChip(selected=section==label,onClick={section=label},label={Text(label)})}} }
+            if(section=="Monthly") {
+                item{ScreenshotBalanceCard("Opening Balance",s.totalOpening,s.bankOpening,s.cashOpening,ReportBlue,Modifier.fillMaxWidth())}
+                item{Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){Box(Modifier.weight(1f)){ScreenshotAmountCard("Total Income",s.totalIncome,ReportGreen)};Box(Modifier.weight(1f)){ScreenshotAmountCard("Total Expenses",s.totalExpenses,Color(0xFFFF2538))}}}
+                item{ScreenshotTextCard(if(s.netAmount.toMoneyDecimal().signum()>=0)"Net Surplus" else "Net Deficit",DashboardFormatters.money(s.netAmount.toMoneyDecimal()),ReportBlue)}
+                if(!report.income.isNullOrEmpty()) item{ReportBreakdownBlock("Income Breakdown",report.income,ReportGreen)}
+                if(!report.expenses.isNullOrEmpty()) item{ReportBreakdownBlock("Expense Breakdown",report.expenses,Color(0xFFFF2538))}
+                item{ScreenshotBalanceCard("Closing Balance",s.totalClosing,s.bankClosing,s.cashClosing,Color(0xFF6D35E8),Modifier.fillMaxWidth())}
+            } else if(section=="Bank" || section=="Cash") {
+                val bank=section=="Bank"; val rows=if(bank)report.bankTransactions.orEmpty() else report.cashTransactions.orEmpty()
+                item{AccountDetailSummary(section,s,bank)}
+                if(rows.isEmpty()) item{EmptyState("No transactions","No approved ${section.lowercase()} transactions exist for this month.")}
+                else items(rows){transaction->TransactionReportRow(transaction)}
+            } else {
+                item{CollectionSummaryBlock(report.collection)}
+                if(report.flatPayments.isNullOrEmpty()) item{EmptyState("No bills","No maintenance bills exist for this month.")}
+                else items(report.flatPayments){payment->FlatPaymentRow(payment)}
+            }
+        }
+    })
+}
+
+@Composable private fun ReportBreakdownBlock(title:String,rows:List<com.example.application.data.remote.dto.FinancialBreakdownDto>,color:Color){Card{Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){Text(title,fontWeight=FontWeight.Bold,color=ReportBlue);rows.groupBy{it.category?:"Other"}.forEach{(category,items)->KeyValue(category,DashboardFormatters.money(items.sumOf{it.amount.toMoneyDecimal()}))}}}}
+
+@Composable private fun AccountDetailSummary(title:String,s:com.example.application.data.remote.dto.FinancialSummaryDto,bank:Boolean){Card(colors=CardDefaults.cardColors(containerColor=if(bank)Color(0xFFF4F8FF) else Color(0xFFFFF8EF))){Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){Text("$title Account",fontWeight=FontWeight.Bold,color=ReportBlue);KeyValue("Opening Balance",DashboardFormatters.money((if(bank)s.bankOpening else s.cashOpening).toMoneyDecimal()));KeyValue("Total Income",DashboardFormatters.money((if(bank)s.bankIncome else s.cashIncome).toMoneyDecimal()));KeyValue("Total Expenses",DashboardFormatters.money((if(bank)s.bankExpenses else s.cashExpenses).toMoneyDecimal()));HorizontalDivider();KeyValue("Closing Balance",DashboardFormatters.money((if(bank)s.bankClosing else s.cashClosing).toMoneyDecimal()))}}}
+
+@Composable private fun TransactionReportRow(row:com.example.application.data.remote.dto.FinancialTransactionDto){val income=row.transactionType=="INCOME";Card{Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(4.dp)){Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text(row.description?:"Transaction",fontWeight=FontWeight.SemiBold);Text((if(income)"+ " else "− ")+DashboardFormatters.money(row.amount.toMoneyDecimal()),color=if(income)ReportGreen else Color(0xFFFF2538),fontWeight=FontWeight.Bold)};Text(DashboardFormatters.date(row.transactionDate),style=MaterialTheme.typography.labelSmall);if(!row.paymentMethod.isNullOrBlank())Text(row.paymentMethod,style=MaterialTheme.typography.labelSmall);if(!row.referenceNumber.isNullOrBlank())Text("Reference: ${row.referenceNumber}",style=MaterialTheme.typography.labelSmall);KeyValue("Running balance",DashboardFormatters.money(row.runningBalance.toMoneyDecimal()))}}}
+
+@Composable private fun CollectionSummaryBlock(c:com.example.application.data.remote.dto.FinancialCollectionDto?){if(c==null)return;Card{Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){Text("Collection Summary",fontWeight=FontWeight.Bold,color=ReportBlue);Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)){TransparencyMetric("Bills",(c.billsGenerated?:0).toString(),ReportBlue);TransparencyMetric("Paid",(c.paid?:0).toString(),ReportGreen);TransparencyMetric("Pending",(c.pending?:0).toString(),ReportAmber)};Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)){TransparencyMetric("Verify",(c.verificationPending?:0).toString(),ReportBlue);TransparencyMetric("Rejected",(c.rejected?:0).toString(),Color(0xFFFF2538));TransparencyMetric("Write-off",(c.writtenOff?:0).toString(),Color(0xFF6D35E8))};KeyValue("Paid amount",DashboardFormatters.money(c.paidAmount.toMoneyDecimal()));KeyValue("Pending amount",DashboardFormatters.money(c.pendingAmount.toMoneyDecimal()));c.collectionRate?.let{KeyValue("Collection rate","$it%")}}}}
+
+@Composable private fun FlatPaymentRow(p:com.example.application.data.remote.dto.FlatPaymentReportDto){Card{Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(5.dp)){Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text("Flat ${p.flatNo?:"--"}",fontWeight=FontWeight.Bold);ReportStatusPill(p.verificationStatus?:p.status)};if(!p.residentName.isNullOrBlank())Text(p.residentName,style=MaterialTheme.typography.labelSmall);KeyValue("Bill amount",DashboardFormatters.money(p.billAmount.toMoneyDecimal()));KeyValue("Paid amount",DashboardFormatters.money(p.paidAmount.toMoneyDecimal()));KeyValue("Pending amount",DashboardFormatters.money(p.pendingAmount.toMoneyDecimal()));if(!p.paymentMethod.isNullOrBlank())KeyValue("Payment mode",p.paymentMethod);if(!p.receiptNumber.isNullOrBlank())KeyValue("Receipt",p.receiptNumber)}}}
+
+private data class AdminPeriodReport(
+    val bills: List<MaintenanceBillDto>,
+    val expenses: List<ExpenseDto>,
+    val complaints: List<ComplaintDto>
+) {
+    val collected: BigDecimal get() = bills.filter { it.operationalReportStatus() == "Paid" }.sumOf { (it.paidAmount ?: "0").toMoneyDecimal() }
+    val expensesTotal: BigDecimal get() = expenses.sumOf { it.amount.toMoneyDecimal() }
+    val billed: BigDecimal get() = bills.sumOf { (it.totalAmount ?: it.amount ?: "0").toMoneyDecimal() }
+    val pending: BigDecimal get() = bills.filter { it.operationalReportStatus() != "Paid" }.sumOf { (it.remainingAmount ?: it.totalAmount ?: it.amount ?: "0").toMoneyDecimal() }
+    val net: BigDecimal get() = collected - expensesTotal
+}
+
+private fun AdminReportsData.financialYears(): List<String> {
+    val dates = bills.mapNotNull { it.reportDate() } + expenses.mapNotNull { it.expenseDate?.take(10) }
+    return dates.mapNotNull { runCatching { LocalDate.parse(it) }.getOrNull() }
+        .map { if (it.monthValue >= 4) "${it.year}-${it.year + 1}" else "${it.year - 1}-${it.year}" }.distinct().sortedDescending()
+}
+
+private fun AdminReportsData.forFinancialYear(year: String?): AdminPeriodReport {
+    if (year.isNullOrBlank()) return AdminPeriodReport(bills, expenses, complaints)
+    val start = year.substringBefore('-').toIntOrNull() ?: return AdminPeriodReport(emptyList(), emptyList(), emptyList())
+    fun inYear(value: String?): Boolean { val d = value?.take(10)?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: return false; return d >= LocalDate.of(start, 4, 1) && d <= LocalDate.of(start + 1, 3, 31) }
+    return AdminPeriodReport(bills.filter { inYear(it.reportDate()) }, expenses.filter { inYear(it.expenseDate) }, complaints.filter { inYear(it.createdAt) })
+}
+
+private fun AdminPeriodReport.months(): List<Pair<Int, Int>> = (bills.mapNotNull { it.reportDate()?.take(7) } + expenses.mapNotNull { it.expenseDate?.take(7) })
+    .mapNotNull { it.split('-').let { p -> if (p.size == 2) p[0].toIntOrNull()?.let { y -> p[1].toIntOrNull()?.let { m -> y to m } } else null } }.distinct()
+    .sortedWith(compareByDescending<Pair<Int, Int>> { it.first }.thenByDescending { it.second })
+
+private fun AdminPeriodReport.forMonth(year: Int, month: Int) = AdminPeriodReport(bills.filter { it.reportDate()?.take(7) == "%04d-%02d".format(year, month) }, expenses.filter { it.expenseDate?.take(7) == "%04d-%02d".format(year, month) }, complaints.filter { it.createdAt?.take(7) == "%04d-%02d".format(year, month) })
+private fun AdminPeriodReport.filtered(query: String, status: String): AdminPeriodReport {
+    val q = query.trim().lowercase()
+    fun match(b: MaintenanceBillDto): Boolean {
+        val text = listOf(b.title, b.residentName, b.flatNo, b.month, b.year).joinToString(" ").lowercase()
+        val statusMatch = when (status) { "Written-off" -> b.writeOffAmount.toMoneyDecimal() > BigDecimal.ZERO; "Rejected" -> b.paymentStatus.equals("rejected", true) || b.latestPaymentStatus.equals("rejected", true); else -> status == "All" || b.operationalReportStatus().equals(status, true) }
+        return (q.isBlank() || text.contains(q)) && statusMatch
+    }
+    return copy(bills = bills.filter(::match), expenses = expenses.filter { q.isBlank() || listOf(it.vendor, it.category, it.description, it.expenseNumber).joinToString(" ").lowercase().contains(q) })
+}
+
+private fun MaintenanceBillDto.reportDate(): String? = paymentDate ?: dueDate ?: year?.let { y -> month?.toIntOrNull()?.let { m -> "%04d-%02d-01".format(y.toIntOrNull() ?: return@let null, m) } }
+private fun MaintenanceBillDto.operationalReportStatus(): String { val remaining = (remainingAmount ?: totalAmount ?: amount ?: "0").toMoneyDecimal(); if (remaining <= BigDecimal.ZERO) return "Paid"; val due = dueDate?.take(10)?.let { runCatching { LocalDate.parse(it) }.getOrNull() }; return if (due != null && due.isBefore(LocalDate.now())) "Overdue" else "Pending" }
+
+@Composable private fun AnnualReportDashboard(report: AdminPeriodReport, previous: AdminPeriodReport?, onExport: () -> Unit, onPdf: () -> Unit) {
+    Card(colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FAFF))) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { Text("Annual summary", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = ReportBlue); Row { TextButton(onClick = onExport) { Icon(Icons.Filled.Download, null); Text("CSV") }; TextButton(onClick = onPdf) { Text("PDF") } } }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { ReportMetric("Collected", report.collected, ReportGreen, Modifier.weight(1f)); ReportMetric("Expenses", report.expensesTotal, Color(0xFFE5484D), Modifier.weight(1f)); ReportMetric("Net", report.net, ReportBlue, Modifier.weight(1f)) }
+        Text("${report.bills.size} bills · ${report.expenses.size} expenses · ${report.complaints.size} complaints", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        CollectionStatusGrid(report)
+        ExpenseBreakdown(report)
+        MonthlyTrend(report)
+        previous?.let { ComparisonCard(report, it) }
+    } }
+}
+
+@Composable private fun CollectionStatusGrid(report: AdminPeriodReport) { val statuses = listOf("Bills generated" to report.bills.size.toString(), "Paid" to report.bills.count { it.operationalReportStatus() == "Paid" }.toString(), "Pending" to report.bills.count { it.operationalReportStatus() == "Pending" }.toString(), "Overdue" to report.bills.count { it.operationalReportStatus() == "Overdue" }.toString(), "Verification pending" to report.bills.count { it.paymentStatus.equals("pending", true) || it.latestPaymentStatus.equals("pending", true) }.toString(), "Rejected" to report.bills.count { it.paymentStatus.equals("rejected", true) || it.latestPaymentStatus.equals("rejected", true) }.toString(), "Written-off" to report.bills.count { it.writeOffAmount.toMoneyDecimal() > BigDecimal.ZERO }.toString()); Column(verticalArrangement = Arrangement.spacedBy(6.dp)) { Text("Collection summary", fontWeight = FontWeight.Bold, color = ReportBlue); statuses.chunked(4).forEach { row -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) { row.forEach { (label, value) -> Column(Modifier.weight(1f).border(1.dp, Color(0xFFDCE6FA), RoundedCornerShape(8.dp)).padding(8.dp)) { Text(value, fontWeight = FontWeight.Bold, color = ReportBlue); Text(label, style = MaterialTheme.typography.labelSmall) } } } } } }
+
+@Composable private fun ExpenseBreakdown(report: AdminPeriodReport) { if (report.expenses.isEmpty()) return; val groups = report.expenses.groupBy { it.category.orEmpty().ifBlank { "Uncategorised" } }.mapValues { it.value.sumOf { e -> e.amount.toMoneyDecimal() } }.toList().sortedByDescending { it.second }; val max = groups.maxOfOrNull { it.second } ?: BigDecimal.ONE; Column(verticalArrangement = Arrangement.spacedBy(6.dp)) { Text("Expense breakdown", fontWeight = FontWeight.Bold, color = ReportBlue); groups.take(6).forEach { (name, amount) -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(name, style = MaterialTheme.typography.bodySmall); Text(DashboardFormatters.money(amount), fontWeight = FontWeight.SemiBold) }; LinearProgressIndicator(progress = { amount.divide(max, 3, java.math.RoundingMode.HALF_UP).toFloat() }, modifier = Modifier.fillMaxWidth().height(7.dp), color = Color(0xFFE58B2A), trackColor = Color(0xFFFFEBC8)) } } }
+
+@Composable private fun MonthlyTrend(report: AdminPeriodReport) { val months = report.months().sortedWith(compareBy<Pair<Int, Int>> { it.first }.thenBy { it.second }); if (months.isEmpty()) return; val values = months.map { report.forMonth(it.first, it.second).net }; val max = values.map { it.abs() }.maxOrNull()?.takeIf { it > BigDecimal.ZERO } ?: BigDecimal.ONE; Column(verticalArrangement = Arrangement.spacedBy(6.dp)) { Text("Monthly net trend", fontWeight = FontWeight.Bold, color = ReportBlue); months.takeLast(12).forEach { month -> val value = report.forMonth(month.first, month.second).net; Row(verticalAlignment = Alignment.CenterVertically) { Text(YearMonth.of(month.first, month.second).format(DateTimeFormatter.ofPattern("MMM")), modifier = Modifier.width(38.dp), style = MaterialTheme.typography.labelSmall); Box(Modifier.height(18.dp).fillMaxWidth(value.abs().divide(max, 3, java.math.RoundingMode.HALF_UP).toFloat().coerceAtLeast(.04f)), contentAlignment = Alignment.CenterStart) { Box(Modifier.fillMaxSize().background(if (value.signum() >= 0) ReportGreen else Color(0xFFE5484D), RoundedCornerShape(4.dp))) }; Spacer(Modifier.width(8.dp)); Text(DashboardFormatters.money(value), style = MaterialTheme.typography.labelSmall) } } } }
+
+@Composable
+private fun ComparisonCard(current: AdminPeriodReport, previous: AdminPeriodReport) {
+    fun percentage(now: BigDecimal, old: BigDecimal): String {
+        if (old.signum() == 0) return "--"
+        val change = now
+            .subtract(old)
+            .divide(old, 2, java.math.RoundingMode.HALF_UP)
+            .multiply(BigDecimal(100))
+            .setScale(0, java.math.RoundingMode.HALF_UP)
+        return "$change%"
+    }
+
+    Text(
+        text = "Year-on-year comparison",
+        fontWeight = FontWeight.Bold,
+        color = ReportBlue
+    )
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text("Income ${percentage(current.collected, previous.collected)}")
+        Text("Expenses ${percentage(current.expensesTotal, previous.expensesTotal)}")
+        Text("Net ${percentage(current.net, previous.net)}")
+    }
+}
+
+@Composable private fun ReportMetric(label: String, value: BigDecimal, color: Color, modifier: Modifier = Modifier) { Column(modifier.background(color.copy(alpha = .08f), RoundedCornerShape(10.dp)).padding(10.dp)) { Text(label, style = MaterialTheme.typography.labelSmall); Text(DashboardFormatters.money(value), color = color, fontWeight = FontWeight.Bold) } }
+
+@Composable private fun MonthlyReportRow(report: AdminPeriodReport, year: Int, month: Int, onClick: () -> Unit) { Card(onClick = onClick) { Row(Modifier.fillMaxWidth().padding(14.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { Column { Text(YearMonth.of(year, month).format(DateTimeFormatter.ofPattern("MMMM yyyy")), fontWeight = FontWeight.SemiBold); Text("${report.bills.size} bills · ${report.expenses.size} expenses", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }; Column(horizontalAlignment = Alignment.End) { Text("Net ${DashboardFormatters.money(report.net)}", color = if (report.net.signum() >= 0) ReportGreen else Color(0xFFE5484D), fontWeight = FontWeight.Bold); Text("Income ${DashboardFormatters.money(report.collected)}", style = MaterialTheme.typography.labelSmall) } } } }
+
+@Composable private fun MonthlyReportDetailsDialog(report: AdminPeriodReport, year: Int, month: Int, onDismiss: () -> Unit) { AlertDialog(onDismissRequest = onDismiss, confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }, title = { Text(YearMonth.of(year, month).format(DateTimeFormatter.ofPattern("MMMM yyyy")), color = ReportBlue, fontWeight = FontWeight.Bold) }, text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { Text("${YearMonth.of(year, month).atDay(1)} – ${YearMonth.of(year, month).atEndOfMonth()}", style = MaterialTheme.typography.bodySmall); ReportMetric("Income", report.collected, ReportGreen); ReportMetric("Expenses", report.expensesTotal, Color(0xFFE5484D)); ReportMetric("Net surplus / deficit", report.net, ReportBlue); HorizontalDivider(); Text("Collection: ${report.bills.count { it.operationalReportStatus() == "Paid" }} paid · ${report.bills.count { it.operationalReportStatus() == "Pending" }} pending · ${report.bills.count { it.operationalReportStatus() == "Overdue" }} overdue"); if (report.expenses.isNotEmpty()) Text("Expense categories: ${report.expenses.groupBy { it.category.orEmpty().ifBlank { "Uncategorised" } }.entries.joinToString { "${it.key} (${it.value.size})" }}") } }) }
+
+private fun AdminPeriodReport.toCsv(year: String): String = buildString { appendLine("Admin report,$year"); appendLine("Income,$collected"); appendLine("Expenses,$expensesTotal"); appendLine("Net,$net"); appendLine(); appendLine("Bills,Status,Total,Paid,Remaining"); bills.forEach { appendLine("${it.title.orEmpty()},${it.operationalReportStatus()},${it.totalAmount ?: it.amount ?: ""},${it.paidAmount ?: ""},${it.remainingAmount ?: ""}") }; appendLine(); appendLine("Expenses,Category,Amount,Date"); expenses.forEach { appendLine("${it.vendor ?: it.expenseNumber.orEmpty()},${it.category.orEmpty()},${it.amount.orEmpty()},${it.expenseDate.orEmpty()}") } }
+
+private fun FinancialReportDto?.toFinancialCsv(): String {
+    val s = this?.summary ?: return ""
+    return buildString {
+        appendLine(); appendLine("Bank and cash account summary")
+        appendLine("Metric,Bank,Cash,Total")
+        appendLine("Opening,${s.bankOpening.orEmpty()},${s.cashOpening.orEmpty()},${s.totalOpening.orEmpty()}")
+        appendLine("Approved income,${s.bankIncome.orEmpty()},${s.cashIncome.orEmpty()},${s.totalIncome.orEmpty()}")
+        appendLine("Approved expenses,${s.bankExpenses.orEmpty()},${s.cashExpenses.orEmpty()},${s.totalExpenses.orEmpty()}")
+        appendLine("Closing,${s.bankClosing.orEmpty()},${s.cashClosing.orEmpty()},${s.totalClosing.orEmpty()}")
     }
 }
 
@@ -186,6 +450,225 @@ fun ResidentReportsScreen(
     viewModel: ResidentReportsViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val data = state.data
+    val startYear = if (LocalDate.now().monthValue >= 4) LocalDate.now().year else LocalDate.now().year - 1
+    val financialYear = "$startYear-${startYear + 1}"
+    Scaffold(topBar = {
+        TopAppBar(title = { Column { Text("Society Reports", fontWeight = FontWeight.Bold); Text("Transparency · Trust · Together", style = MaterialTheme.typography.labelSmall) } }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, "Back") } }, actions = { IconButton(onClick = { viewModel.load(true) }) { Icon(Icons.Filled.Refresh, "Refresh") } })
+    }) { padding ->
+        LazyColumn(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { Column { Text("Financial year", color = ReportBlue, style = MaterialTheme.typography.labelMedium); Text("01 Apr $startYear – 31 Mar ${startYear + 1}", fontWeight = FontWeight.Bold) }; TextButton(onClick = { data?.let { shareReportPdf(context, "Society Report $financialYear", buildResidentReportCsv(it, state.filter)) } }) { Text("PDF") } } }
+            state.error?.let { item { RetryState(it, onRetry = { viewModel.load(true) }) } }
+            if (state.isLoading && data == null) item { AppLoadingIndicator() }
+            else if (data == null) item { EmptyState("No report data", "Society report data is not available yet.") }
+            else {
+                item { ReferenceFinancialSummary(data.financial) }
+                item { ReferenceMonthlyTable(data.financial, onMonth = { _, _ -> }) }
+                item { ReferenceBreakdowns(data.financial) }
+                item { ReferenceCollectionSummary(data.financial?.collection) }
+                item { ResidentPersonalAccount(data) }
+                item { ResidentPrivacyDisclaimer() }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ResidentPersonalAccount(data: ResidentReportsData) {
+    val billed = data.myMaintenance.sumOf { (it.totalAmount ?: it.amount).toMoneyDecimal() }
+    val paid = data.myMaintenance.sumOf { it.paidAmount.toMoneyDecimal() }
+    val pending = data.myMaintenance.sumOf { it.remainingAmount.toMoneyDecimal() }
+    val penalty = data.myMaintenance.sumOf { it.penaltyAmount.toMoneyDecimal() }
+    Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            Text("My Account", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = ReportBlue)
+            KeyValue("Bills Generated", DashboardFormatters.money(billed))
+            KeyValue("Total Paid", DashboardFormatters.money(paid))
+            KeyValue("Pending Amount", DashboardFormatters.money(pending))
+            KeyValue("Penalty", DashboardFormatters.money(penalty))
+            HorizontalDivider()
+            KeyValue("Paid Bills", data.myMaintenance.count { it.remainingAmount.toMoneyDecimal() <= BigDecimal.ZERO }.toString())
+            KeyValue("Pending Bills", data.myMaintenance.count { it.remainingAmount.toMoneyDecimal() > BigDecimal.ZERO }.toString())
+            KeyValue("Verification Pending", data.myMaintenance.count { it.status.orEmpty().contains("verification", true) || it.status.orEmpty().contains("review", true) }.toString())
+            if (data.myMaintenance.isEmpty()) Text("No personal billing records", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun ResidentPrivacyDisclaimer() {
+    Text(
+        "This report provides society-level financial transparency. Personal contact information, payment screenshots, banking details, private documents, and confidential notes are hidden.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(vertical = 8.dp)
+    )
+}
+
+@Composable
+private fun FinancialAccountsCard(report: FinancialReportDto) {
+    if (report.available != true || report.summary == null) {
+        InfoCard(report.reason ?: "Bank and cash accounting is unavailable for this period.")
+        return
+    }
+    val s = report.summary
+    Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFFF7FAFF))) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Bank & cash account summary", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = ReportBlue)
+            KeyValue("Opening balance", DashboardFormatters.money(s.totalOpening.toMoneyDecimal()))
+            KeyValue("Bank opening", DashboardFormatters.money(s.bankOpening.toMoneyDecimal()))
+            KeyValue("Cash opening", DashboardFormatters.money(s.cashOpening.toMoneyDecimal()))
+            HorizontalDivider()
+            KeyValue("Approved income", DashboardFormatters.money(s.totalIncome.toMoneyDecimal()))
+            KeyValue("Bank income", DashboardFormatters.money(s.bankIncome.toMoneyDecimal()))
+            KeyValue("Cash income", DashboardFormatters.money(s.cashIncome.toMoneyDecimal()))
+            KeyValue("Approved expenses", DashboardFormatters.money(s.totalExpenses.toMoneyDecimal()))
+            KeyValue("Bank expenses", DashboardFormatters.money(s.bankExpenses.toMoneyDecimal()))
+            KeyValue("Cash expenses", DashboardFormatters.money(s.cashExpenses.toMoneyDecimal()))
+            HorizontalDivider()
+            KeyValue("Closing balance", DashboardFormatters.money(s.totalClosing.toMoneyDecimal()))
+            KeyValue("Bank closing", DashboardFormatters.money(s.bankClosing.toMoneyDecimal()))
+            KeyValue("Cash closing", DashboardFormatters.money(s.cashClosing.toMoneyDecimal()))
+        }
+    }
+}
+
+@Composable
+private fun ResidentSocietyReportContent(data: ResidentReportsData) {
+    val summary = data.societySummary
+    val income = summary?.totalSocietyCollection.toMoneyDecimal() ?: data.allMaintenance.sumOf { it.paidAmount.toMoneyDecimal() }
+    val expenses = summary?.totalSocietyExpenses.toMoneyDecimal() ?: data.expenses.sumOf { it.amount.toMoneyDecimal() }
+    val net = summary?.netBalance.toMoneyDecimal() ?: income - expenses
+    val paid = summary?.paidBillsCount ?: data.allMaintenance.count { it.remainingAmount.toMoneyDecimal() <= BigDecimal.ZERO }
+    val pending = summary?.pendingBillsCount ?: data.allMaintenance.count { it.remainingAmount.toMoneyDecimal() > BigDecimal.ZERO }
+    val overdue = summary?.overdueBillsCount ?: 0
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        ResidentReportSectionCard("1. Society financial summary") {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                TransparencyMetric("Income", DashboardFormatters.money(income), ReportGreen)
+                TransparencyMetric("Expenses", DashboardFormatters.money(expenses), Color(0xFFE5484D))
+                TransparencyMetric("Net balance", DashboardFormatters.money(net), ReportBlue)
+            }
+            Text(
+                "${data.allMaintenance.size} maintenance records · ${data.expenses.size} expense records",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        ResidentReportSectionCard("2. Collection status") {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                TransparencyMetric("Paid", paid.toString(), ReportGreen)
+                TransparencyMetric("Pending", pending.toString(), ReportAmber)
+                TransparencyMetric("Overdue", overdue.toString(), Color(0xFFE5484D))
+                TransparencyMetric("Bills", data.allMaintenance.size.toString(), ReportBlue)
+            }
+        }
+
+        if (data.allMaintenance.isNotEmpty()) {
+            ResidentReportSectionCard("3. Payment status") {
+                data.allMaintenance.take(8).forEach { bill ->
+                    val settled = bill.remainingAmount.toMoneyDecimal() <= BigDecimal.ZERO
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Text("Flat ${bill.flatNo ?: "--"}", fontWeight = FontWeight.SemiBold)
+                            Text(bill.title ?: "Maintenance", style = MaterialTheme.typography.labelSmall)
+                        }
+                        Text(
+                            text = if (settled) "Paid" else "Pending",
+                            color = if (settled) ReportGreen else ReportAmber,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
+
+        if (data.expenses.isNotEmpty()) {
+            val groupedExpenses = data.expenses
+                .groupBy { it.category.orEmpty().ifBlank { "Other" } }
+                .mapValues { entry -> entry.value.sumOf { expense -> expense.amount.toMoneyDecimal() } }
+            ResidentReportSectionCard("4. Expense summary") {
+                groupedExpenses.forEach { (category, amount) ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(category)
+                        Text(DashboardFormatters.money(amount), fontWeight = FontWeight.SemiBold)
+                    }
+                }
+                Text(
+                    "Total expenses ${DashboardFormatters.money(expenses)}",
+                    color = Color(0xFFE5484D),
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+
+        if (data.complaints.isNotEmpty()) {
+            val resolvedCount = data.complaints.count { complaint ->
+                complaint.status.equals("resolved", ignoreCase = true)
+            }
+            ResidentReportSectionCard("5. Complaints summary") {
+                Text("Total complaints: ${data.complaints.size}")
+                Text("Resolved: $resolvedCount", color = ReportGreen)
+                Text("Open / in progress: ${data.complaints.size - resolvedCount}", color = ReportAmber)
+            }
+        }
+        Text("Society-wide values come from approved backend report records. Private resident contact details and payment proofs are hidden.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun ResidentReportSectionCard(
+    title: String,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FAFF))
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = ReportBlue
+            )
+            content()
+        }
+    }
+}
+
+@Composable
+private fun RowScope.TransparencyMetric(label: String, value: String, color: Color) {
+    Column(
+        modifier = Modifier
+            .weight(1f)
+            .background(color.copy(alpha = .08f), RoundedCornerShape(8.dp))
+            .padding(8.dp)
+    ) {
+        Text(value, color = color, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+        Text(label, style = MaterialTheme.typography.labelSmall)
+    }
+}
+
+/* Legacy resident report implementation retained below for shared chart/helper functions. */
+/*
     val context = LocalContext.current
     var pendingCsv by remember { mutableStateOf<String?>(null) }
     val csvLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
@@ -237,6 +720,7 @@ fun ResidentReportsScreen(
         }
     }
 }
+*/
 
 private fun androidx.compose.foundation.lazy.LazyListScope.adminReportsContent(
     data: AdminReportsData,
@@ -736,7 +1220,7 @@ private fun ResidentExpenseCard(expense: ResidentExpenseReportDto) {
 
 @Composable
 private fun MemberStatusCard(item: MembersMaintenanceReportDto) {
-    ReportItemCard(title = item.name ?: "Resident", status = item.maintenanceStatus) {
+    ReportItemCard(title = listOfNotNull(item.wing, item.flatNo).joinToString("-").ifBlank { "Flat" }, status = item.maintenanceStatus) {
         KeyValue("Flat", listOfNotNull(item.wing, item.flatNo).joinToString("-").ifBlank { "-" })
         KeyValue("Total Bills", (item.totalBills ?: 0).toString())
         KeyValue("Paid", DashboardFormatters.money(item.paidAmount.toMoneyDecimal()))
@@ -909,7 +1393,7 @@ private fun buildResidentReportCsv(data: ResidentReportsData, filter: ReportFilt
         )
     }
     rows += listOf(listOf("Selected period", "", "", listOf(filter.month, filter.year).filter { it.isNotBlank() }.joinToString("/")))
-    return rows.joinToString("\n") { row -> row.joinToString(",") { csvEscape(it) } }
+    return rows.joinToString("\n") { row -> row.joinToString(",") { csvEscape(it) } } + data.financial.toFinancialCsv()
 }
 
 private fun csvEscape(value: String): String {
@@ -944,18 +1428,24 @@ private fun createReportPdf(context: Context, title: String, csvContent: String)
     val pageInfo = PdfDocument.PageInfo.Builder(595, 842, 1).create()
     val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 18f; isFakeBoldText = true }
     val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 10.5f }
+    var pageNumber = 1
     var page = document.startPage(pageInfo)
     var canvas = page.canvas
     var y = 40f
-    fun newPage() {
+    fun finishCurrentPage() {
+        canvas.drawText("Page $pageNumber", 520f, 820f, paint)
         document.finishPage(page)
+    }
+    fun newPage() {
+        finishCurrentPage()
+        pageNumber += 1
         page = document.startPage(pageInfo)
         canvas = page.canvas
         y = 40f
     }
     canvas.drawText(title, 36f, y, titlePaint)
     y += 28f
-    canvas.drawText("Generated by Society Management Android App", 36f, y, paint)
+    canvas.drawText("Society Management System · Generated ${java.text.SimpleDateFormat("dd MMM yyyy, hh:mm a", java.util.Locale.getDefault()).format(java.util.Date())}", 36f, y, paint)
     y += 24f
     csvContent.lines().forEach { rawLine ->
         val printable = rawLine.replace(",", "  |  ").ifBlank { " " }
@@ -965,7 +1455,7 @@ private fun createReportPdf(context: Context, title: String, csvContent: String)
             y += 15f
         }
     }
-    document.finishPage(page)
+    finishCurrentPage()
     file.outputStream().use { document.writeTo(it) }
     document.close()
     file

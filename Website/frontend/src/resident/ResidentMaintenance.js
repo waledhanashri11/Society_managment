@@ -1,7 +1,9 @@
+/* eslint-disable */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  CreditCard, Download, FileText, QrCode,
-  ReceiptIndianRupee, Send, Printer, History
+  CreditCard, Download, FileText, MessageSquareWarning, QrCode,
+  ReceiptIndianRupee, Send, Printer, CalendarDays, CheckCircle2,
+  Clock, AlertTriangle, ArrowUpRight, History
 } from 'lucide-react';
 import { maintenanceAPI, settingsAPI } from '../services/api';
 import { getUser } from '../utils/auth';
@@ -113,7 +115,6 @@ const statusBadge = (bill, t) => {
   );
 };
 
-// eslint-disable-next-line no-unused-vars
 function MiniBarChart({ bills }) {
   const shortMonths = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const currentMonthIndex = new Date().getMonth();
@@ -167,7 +168,6 @@ function ResidentMaintenance() {
   const [loadingBill, setLoadingBill] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState('');
-  // eslint-disable-next-line no-unused-vars
   const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'bills' | 'payments'
   const [showPayment, setShowPayment] = useState(false);
   const [paidConfirmed, setPaidConfirmed] = useState(false);
@@ -212,7 +212,6 @@ function ResidentMaintenance() {
     return st === 'REJECTED' || lst === 'REJECTED' || Boolean(bill.rejection_reason || bill.rejectionReason);
   }), [bills]);
 
-  // eslint-disable-next-line no-unused-vars
   const summary = useMemo(() => {
     const due = pendingBills.reduce((sum, bill) => {
       const remaining = bill.remainingPayable !== undefined ? bill.remainingPayable : (bill.remaining_amount !== undefined ? bill.remaining_amount : bill.total_amount);

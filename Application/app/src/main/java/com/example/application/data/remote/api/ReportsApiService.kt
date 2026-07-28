@@ -7,11 +7,21 @@ import com.example.application.data.remote.dto.ReportSummaryDto
 import com.example.application.data.remote.dto.ResidentExpenseReportDto
 import com.example.application.data.remote.dto.ResidentMaintenanceReportDto
 import com.example.application.data.remote.dto.SocietyReportSummaryDto
+import com.example.application.data.remote.dto.FinancialReportDto
 import retrofit2.Response
 import retrofit2.http.GET
 import retrofit2.http.Query
 
 interface ReportsApiService {
+    @GET("api/reports/admin/annual")
+    suspend fun getAdminAnnual(@Query("financialYear") financialYear: String): Response<FinancialReportDto>
+
+    @GET("api/reports/admin/monthly")
+    suspend fun getAdminMonthly(@Query("year") year: Int, @Query("month") month: Int): Response<FinancialReportDto>
+
+    @GET("api/reports/resident/transparency")
+    suspend fun getResidentTransparency(@Query("financialYear") financialYear: String): Response<FinancialReportDto>
+
     @GET("api/maintenance/reports")
     suspend fun getAdminMaintenanceReport(
         @Query("type") type: String? = null
@@ -53,4 +63,3 @@ interface ReportsApiService {
         @Query("status") status: String? = null
     ): Response<List<ResidentMaintenanceReportDto>>
 }
-

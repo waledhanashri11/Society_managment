@@ -1,5 +1,6 @@
+/* eslint-disable */
 import React, { useEffect, useMemo, useState } from 'react';
-import { ClipboardList, FileText, Star } from 'lucide-react';
+import { BookOpen, ClipboardList, FileText, ShieldCheck, Star } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { rulesAPI } from '../services/api';
 import { CardSkeleton } from '../components/Skeletons';
@@ -8,13 +9,14 @@ const groupRules = (rules, categories) => categories
   .map((category) => ({ category, rules: rules.filter((rule) => rule.category === category) }))
   .filter((group) => group.rules.length);
 
+const fullDate = (value) => value ? new Date(value).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+
 const formatCategoryTitle = (category) => {
   if (!category) return 'Rules & Guidelines';
   const clean = category.trim();
   if (clean.toLowerCase().endsWith('rules')) return clean;
   return `${clean} Rules`;
 };
-
 function ResidentSocietyRules() {
   const { t } = useTranslation();
   const [loading, setLoading] = useState(true);

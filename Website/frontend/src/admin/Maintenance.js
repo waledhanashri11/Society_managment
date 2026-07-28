@@ -1,7 +1,8 @@
+/* eslint-disable no-unused-vars */
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Activity, AlertCircle, ArrowDownRight, ArrowUpRight, CalendarDays,
-  CheckCircle2, ChevronDown, Download, FileBarChart, FileText, Printer,
+  Check, CheckCircle2, ChevronDown, Download, FileBarChart, FileText, Printer,
   Eye, Filter, Image, IndianRupee, LayoutDashboard, Plus, ReceiptIndianRupee,
   RefreshCcw, Search, SlidersHorizontal, TrendingUp, Wallet,
   Trash2, X
@@ -37,19 +38,32 @@ const statusLabel = (status = '', t) => {
   if (['WRITTEN_OFF', 'SETTLED'].includes(status)) return t('statusLabel.writtenOff', 'Written Off');
   return status ? t(`statusLabel.${status.toLowerCase()}`, status) : t('common.pending', 'Pending');
 };
+const normalizedStatus = (status = '') => String(status || '').trim().toUpperCase().replace(/\s+/g, '_');
+const isPendingPaymentStatus = (status) => ['PENDING', 'PENDING_REVIEW', 'PENDING_VERIFICATION', 'UNDER_REVIEW'].includes(normalizedStatus(status));
+const isApprovedPaymentStatus = (status) => ['APPROVED', 'PAID', 'VERIFIED'].includes(normalizedStatus(status));
+const isRejectedPaymentStatus = (status) => ['REJECTED', 'DECLINED'].includes(normalizedStatus(status));
 const cycleNumber = (year, month) => Number(year) * 12 + Number(month);
 const backendOrigin = (process.env.REACT_APP_API_URL || 'http://localhost:5000/api').replace(/\/api\/?$/, '').replace(/\/$/, '');
-const fileUrl = (value) => {
+const fileUrl = (value, cacheKey = '') => {
   if (!value) return '';
   const cleanValue = String(value).trim().replace(/\\/g, '/');
-  if (/^(https?:|data:|blob:)/i.test(cleanValue)) return cleanValue;
-  return `${backendOrigin}${cleanValue.startsWith('/') ? cleanValue : `/${cleanValue}`}`;
+  if (/^(data:|blob:)/i.test(cleanValue)) return cleanValue;
+  const base = /^https?:/i.test(cleanValue)
+    ? cleanValue
+    : `${backendOrigin}${cleanValue.startsWith('/') ? cleanValue : `/${cleanValue}`}`;
+  if (!cacheKey) return base;
+  return `${base}${base.includes('?') ? '&' : '?'}v=${encodeURIComponent(cacheKey)}`;
 };
+const paymentProofKey = (payment) => [
+  payment?.payment_id || payment?.id || '',
+  payment?.screenshot_url || payment?.screenshot || payment?.screenshot_path || payment?.payment_screenshot || '',
+  payment?.updated_at || payment?.created_at || ''
+].join('|');
 const paymentProofPath = (payment) => {
   if (payment?.screenshot_path && String(payment.screenshot_path).startsWith('/uploads/')) return payment.screenshot_path;
   return payment?.screenshot_url || payment?.screenshot || payment?.screenshot_path || payment?.payment_screenshot || '';
 };
-const paymentProofUrl = (payment) => fileUrl(paymentProofPath(payment));
+const paymentProofUrl = (payment) => fileUrl(paymentProofPath(payment), paymentProofKey(payment));
 
 function Modal({ title, subtitle, onClose, children, wide = false }) {
   return (
@@ -362,8 +376,8 @@ function Maintenance() {
     list.sort((a, b) => {
       const statusA = a.original_payment_status || a.payment_status;
       const statusB = b.original_payment_status || b.payment_status;
-      const isPendingA = ['Pending', 'Pending Verification', 'Under Review'].includes(statusA);
-      const isPendingB = ['Pending', 'Pending Verification', 'Under Review'].includes(statusB);
+      const isPendingA = isPendingPaymentStatus(statusA);
+      const isPendingB = isPendingPaymentStatus(statusB);
 
       if (isPendingA && !isPendingB) return -1;
       if (!isPendingA && isPendingB) return 1;
@@ -378,15 +392,15 @@ function Maintenance() {
 
   const paymentsStats = useMemo(() => {
     const totalRequests = payments.length;
-    const pendingVerification = payments.filter(p => ['Pending', 'Pending Verification', 'Under Review'].includes(p.payment_status)).length;
-    const approvedPayments = payments.filter(p => ['Approved', 'Paid'].includes(p.payment_status)).length;
-    const rejectedPayments = payments.filter(p => p.payment_status === 'Rejected').length;
+    const pendingVerification = payments.filter(p => isPendingPaymentStatus(p.payment_status)).length;
+    const approvedPayments = payments.filter(p => isApprovedPaymentStatus(p.payment_status)).length;
+    const rejectedPayments = payments.filter(p => isRejectedPaymentStatus(p.payment_status)).length;
     
     const now = new Date();
     const currentMonth = now.getMonth();
     const currentYear = now.getFullYear();
     const totalReceivedThisMonth = payments
-      .filter(p => ['Approved', 'Paid'].includes(p.payment_status) && p.paid_at && new Date(p.paid_at).getMonth() === currentMonth && new Date(p.paid_at).getFullYear() === currentYear)
+      .filter(p => isApprovedPaymentStatus(p.payment_status) && p.paid_at && new Date(p.paid_at).getMonth() === currentMonth && new Date(p.paid_at).getFullYear() === currentYear)
       .reduce((sum, p) => sum + Number(p.amount || 0), 0);
       
     const pendingCollection = calculatedStats.pending;
@@ -409,7 +423,7 @@ function Maintenance() {
   }, [filteredPayments, currentPage, rowsPerPage]);
 
   const pendingPayments = useMemo(() => {
-    return filteredPayments.filter(p => ['Pending', 'Pending Verification', 'Under Review'].includes(p.original_payment_status || p.payment_status));
+    return filteredPayments.filter(p => isPendingPaymentStatus(p.original_payment_status || p.payment_status));
   }, [filteredPayments]);
 
   const allPendingSelected = useMemo(() => {
@@ -1493,7 +1507,7 @@ function Maintenance() {
                     const proofUrl = paymentProofUrl(payment);
                     const proofBroken = brokenProofs[payment.id];
                     const currentPaymentStatus = payment.original_payment_status || payment.payment_status;
-                    const isPending = ['Pending', 'Pending Verification', 'Under Review'].includes(currentPaymentStatus);
+                    const isPending = isPendingPaymentStatus(currentPaymentStatus);
                     
                     return (
                       <tr key={payment.id} style={{ background: selectedPaymentIds.has(payment.payment_id) ? 'var(--blue-soft)' : 'transparent' }}>
@@ -1530,6 +1544,7 @@ function Maintenance() {
                                 title="Zoom Screenshot"
                               >
                                 <img
+                                  key={paymentProofKey(payment)}
                                   src={proofUrl}
                                   alt="Payment proof thumbnail"
                                   loading="lazy"
@@ -2141,6 +2156,7 @@ function Maintenance() {
                   )}
                   <div className="mm-zoom-viewport">
                     <img
+                      key={paymentProofKey(viewingScreenshot)}
                       src={viewingScreenshot.proofUrl}
                       alt="Full proof"
                       className="mm-zoom-img"

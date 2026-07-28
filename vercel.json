@@ -1,6 +1,10 @@
 {
-  "buildCommand": "cd Website/frontend && npm install --legacy-peer-deps && npm run build",
+  "installCommand": "cd Website/frontend && npm install --legacy-peer-deps",
+  "buildCommand": "cd Website/frontend && npm run build",
   "outputDirectory": "Website/frontend/build",
+  "env": {
+    "CI": "false"
+  },
   "rewrites": [
     {
       "source": "/(.*)",

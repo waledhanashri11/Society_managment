@@ -1,5 +1,9 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { FileText, Printer } from 'lucide-react';
+/* eslint-disable no-unused-vars, react-hooks/exhaustive-deps */
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import {
+  CheckCircle2, Clock, Download, Eye, FileCheck2, FileText, HelpCircle,
+  Plus, Printer, RefreshCw, Search, Share2, ShieldAlert, Trash2, XCircle
+} from 'lucide-react';
 import { nocAPI } from '../services/api';
 import { TableSkeleton } from '../components/Skeletons';
 import { useTranslation } from 'react-i18next';

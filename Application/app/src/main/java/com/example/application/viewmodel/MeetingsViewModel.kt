@@ -16,7 +16,8 @@ import kotlinx.coroutines.launch
 data class MeetingsUiState(
     val loading: Boolean = false, val refreshing: Boolean = false, val submitting: Boolean = false,
     val meetings: List<MeetingDto> = emptyList(), val selected: MeetingDetailsDto? = null,
-    val attendance: List<MeetingAttendanceDto> = emptyList(), val query: String = "", val filter: String = "All",
+    val attendance: List<MeetingAttendanceDto> = emptyList(), val fines: List<MeetingFineDto> = emptyList(),
+    val comments: List<MeetingCommentDto> = emptyList(), val query: String = "", val filter: String = "All",
     val error: String? = null, val message: String? = null
 )
 
@@ -50,10 +51,25 @@ class MeetingsViewModel @Inject constructor(private val repository: MeetingsRepo
             NetworkResult.Loading -> Unit
         }
     }
-    fun markSelfPresent(id: String) = action { repository.saveAttendance(id, MeetingAttendanceSaveRequest(status = "Present")) }
+    fun loadFines() = viewModelScope.launch {
+        when (val result = repository.fines()) {
+            is NetworkResult.Success -> _state.update { it.copy(fines = result.data) }
+            is NetworkResult.Error -> _state.update { it.copy(error = repository.userMessageFor(result.error)) }
+            NetworkResult.Loading -> Unit
+        }
+    }
+    fun loadComments(id: String) = viewModelScope.launch {
+        when (val result = repository.comments(id)) {
+            is NetworkResult.Success -> _state.update { it.copy(comments = result.data) }
+            is NetworkResult.Error -> _state.update { it.copy(error = repository.userMessageFor(result.error)) }
+            NetworkResult.Loading -> Unit
+        }
+    }
+    fun markSelfPresent(id: String) = action { repository.selfAttendance(id) }
     fun saveAttendance(id: String, rows: List<MeetingAttendanceDto>) = action {
         repository.saveAttendance(id, MeetingAttendanceSaveRequest(rows.mapNotNull { row -> row.residentId?.let { MeetingAttendanceSaveItem(it, row.status ?: "Absent") } }))
     }
+    fun markAllPresent(id: String) = action { repository.markAllPresent(id) }
     fun saveAgenda(id: String, items: List<String>) = action { repository.agenda(id, MeetingAgendaSaveRequest(items.mapIndexed { index, text -> MeetingAgendaSaveItem(text, index) })) }
     fun saveReport(id: String, summary: String, discussion: String, decisions: String, remarks: String) = action { repository.report(id, MeetingReportSaveRequest(summary, discussion, decisions, remarks)) }
     fun createAction(request: MeetingActionSaveRequest) = action { repository.action(request) }
@@ -65,6 +81,10 @@ class MeetingsViewModel @Inject constructor(private val repository: MeetingsRepo
     fun createMeeting(request: MeetingSaveRequest) = action { repository.create(request) }
     fun updateMeeting(id: String, request: MeetingSaveRequest) = action { repository.update(id, request) }
     fun deleteMeeting(id: String) = action { repository.delete(id) }
+    fun duplicateMeeting(id: String) = action { repository.duplicate(id) }
+    fun payFine(id: String) = action { repository.payFine(id) }
+    fun waiveFine(id: String, reason: String) = action { repository.waiveFine(id, reason) }
+    fun addComment(id: String, text: String) = action { repository.addComment(id, text) }
     private fun action(block: suspend () -> NetworkResult<String>) = viewModelScope.launch {
         val selectedId = _state.value.selected?.id
         _state.update { it.copy(submitting = true, error = null, message = null) }

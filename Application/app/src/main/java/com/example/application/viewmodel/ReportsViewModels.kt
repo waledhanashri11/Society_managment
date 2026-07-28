@@ -6,6 +6,7 @@ import com.example.application.data.remote.dto.ReportFilterState
 import com.example.application.data.repository.AdminReportsData
 import com.example.application.data.repository.ReportRepository
 import com.example.application.data.repository.ResidentReportsData
+import com.example.application.data.remote.dto.FinancialReportDto
 import com.example.application.util.NetworkResult
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -18,10 +19,15 @@ import kotlinx.coroutines.launch
 data class AdminReportsUiState(
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
-    val filter: ReportFilterState = ReportFilterState(),
+    // Admin dashboard derives financial years locally from all available records.
+    // Keeping the API filter year empty prevents silently dropping the prior FY.
+    val filter: ReportFilterState = ReportFilterState(year = ""),
     val data: AdminReportsData? = null,
     val error: String? = null,
-    val exportMessage: String? = null
+    val exportMessage: String? = null,
+    val monthly: FinancialReportDto? = null,
+    val monthlyLoading: Boolean = false
+    ,val lastLoadedAt: Long? = null
 )
 
 data class ResidentReportsUiState(
@@ -59,7 +65,7 @@ class AdminReportsViewModel @Inject constructor(
             _state.update { it.copy(isLoading = it.data == null, isRefreshing = refresh && it.data != null, error = null) }
             when (val result = repository.getAdminReports(_state.value.filter, refresh)) {
                 is NetworkResult.Success -> _state.update {
-                    it.copy(isLoading = false, isRefreshing = false, data = result.data, error = null)
+                    it.copy(isLoading = false, isRefreshing = false, data = result.data, error = null, lastLoadedAt = System.currentTimeMillis())
                 }
                 is NetworkResult.Error -> _state.update {
                     it.copy(isLoading = false, isRefreshing = false, error = repository.messageFor(result.error))
@@ -72,6 +78,19 @@ class AdminReportsViewModel @Inject constructor(
     fun noteCsvExport() {
         _state.update { it.copy(exportMessage = "CSV export is available from the website. Android export needs a backend download endpoint or Storage Access Framework flow.") }
     }
+
+    fun loadMonthly(year: Int, month: Int) {
+        viewModelScope.launch {
+            _state.update { it.copy(monthlyLoading = true, error = null) }
+            when (val result = repository.getAdminMonthly(year, month)) {
+                is NetworkResult.Success -> _state.update { it.copy(monthlyLoading = false, monthly = result.data) }
+                is NetworkResult.Error -> _state.update { it.copy(monthlyLoading = false, error = repository.messageFor(result.error)) }
+                NetworkResult.Loading -> Unit
+            }
+        }
+    }
+
+    fun clearMonthly() = _state.update { it.copy(monthly = null) }
 }
 
 @HiltViewModel

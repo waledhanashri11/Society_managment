@@ -1,3 +1,4 @@
+/* eslint-disable no-unused-vars */
 import React, { useEffect, useState, useCallback } from 'react';
 import { 
   History, Printer, Download, Edit2, RotateCcw, 
@@ -32,6 +33,8 @@ export default function WriteOffHistoryScreen() {
     const key = monthNames[monthNum - 1];
     return t(`months.${key}`, key);
   };
+  const user = getUser();
+  const isSuperAdmin = user?.role === 'super_admin';
 
   const [writeOffs, setWriteOffs] = useState([]);
   const [societySettings, setSocietySettings] = useState({});

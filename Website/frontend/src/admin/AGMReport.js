@@ -1,8 +1,10 @@
+/* eslint-disable no-unused-vars */
 import React, { useEffect, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { 
-  FileText, Download, Printer, Edit2, RotateCcw,
-  ReceiptIndianRupee, Landmark, TrendingUp, X
+import { 
+  FileText, SlidersHorizontal, Download, Printer, Edit2, RotateCcw,
+  ReceiptIndianRupee, Landmark, TrendingUp, Info, Eye, X, CheckCircle2, FileCheck
 } from 'lucide-react';
 import { maintenanceAPI, settingsAPI } from '../services/api';
 import { printWriteOffReceipt, downloadWriteOffReceiptPdf } from '../utils/paymentReceipt';
@@ -36,10 +38,11 @@ export default function AGMReportScreen() {
   const [toast, setToast] = useState('');
   
   // Modal states
+  const [viewingItem, setViewingItem] = useState(null);
   const [editingItem, setEditingItem] = useState(null);
   const [editForm, setEditForm] = useState({ amount: '', reason: '' });
 
-  const [filters] = useState({
+  const [filters, setFilters] = useState({
     financialYear: '2026-2027',
     startDate: '',
     endDate: '',

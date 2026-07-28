@@ -23,12 +23,12 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.FilterChip
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -38,14 +38,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.example.application.ui.components.ErrorMessageCard
+import com.example.application.ui.components.LanguageSelectorCard
 import com.example.application.util.LocaleHelper
 import com.example.application.viewmodel.ProfileViewModel
 import com.example.application.viewmodel.SessionViewModel
@@ -167,7 +168,7 @@ fun ResidentProfileScreen(
 
         Spacer(Modifier.height(12.dp))
 
-        LanguageSettingsCard()
+        LanguageSelectorCard()
 
         Spacer(Modifier.height(12.dp))
         OutlinedButton(

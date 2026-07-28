@@ -5,7 +5,9 @@ import com.example.application.data.remote.dto.ApiResponse
 import com.example.application.data.remote.dto.CreateNocRequest
 import com.example.application.data.remote.dto.ErrorResponse
 import com.example.application.data.remote.dto.NocRequestDto
+import com.example.application.data.remote.dto.PublicNocCertificateDto
 import com.example.application.data.remote.dto.ReviewNocRequest
+import com.example.application.data.remote.dto.UploadNocInfoRequest
 import com.example.application.util.AppError
 import com.example.application.util.NetworkResult
 import com.google.gson.Gson
@@ -54,6 +56,8 @@ class NocRepository @Inject constructor(
         val call: suspend () -> Response<ApiResponse<Unit>> = when (status) {
             "Approved" -> { { api.approveNoc(id, ReviewNocRequest(comments)) } }
             "Rejected" -> { { api.rejectNoc(id, mapOf("reason" to comments, "remarks" to comments)) } }
+            "Additional Information Required" -> { { api.requestInfo(id, ReviewNocRequest(comments)) } }
+            "Completed" -> { { api.completeNoc(id) } }
             else -> { { api.markUnderReview(id, ReviewNocRequest(comments)) } }
         }
         return messageCall(call)
@@ -63,6 +67,56 @@ class NocRepository @Inject constructor(
                     adminCache = null
                 }
             }
+    }
+
+    suspend fun uploadInfo(id: String, documents: List<String>, remarks: String?): NetworkResult<String> {
+        return messageCall { api.uploadInfo(id, UploadNocInfoRequest(documents, remarks)) }
+            .also {
+                if (it is NetworkResult.Success) {
+                    residentCache = null
+                    adminCache = null
+                }
+            }
+    }
+
+    suspend fun generateShareLink(id: String): NetworkResult<String> {
+        return try {
+            val response = api.generateShareLink(id)
+            if (response.isSuccessful && response.body()?.success != false) {
+                val data = response.body()?.data.orEmpty()
+                NetworkResult.Success(data["shareUrl"] ?: data["url"] ?: data["link"] ?: response.body()?.message ?: "Share link generated")
+            } else {
+                NetworkResult.Error(mapHttpError(response.code(), parseErrorMessage(response.errorBody()?.string()) ?: response.body()?.message))
+            }
+        } catch (_: UnknownHostException) {
+            NetworkResult.Error(AppError.NoInternet)
+        } catch (_: SocketTimeoutException) {
+            NetworkResult.Error(AppError.Timeout)
+        } catch (_: IOException) {
+            NetworkResult.Error(AppError.NoInternet)
+        } catch (_: Exception) {
+            NetworkResult.Error(AppError.Unknown("Unable to generate share link."))
+        }
+    }
+
+    suspend fun getPublicCertificate(token: String): NetworkResult<PublicNocCertificateDto> {
+        return try {
+            val response = api.getPublicCertificate(token)
+            if (response.isSuccessful) {
+                response.body()?.let { NetworkResult.Success(it) }
+                    ?: NetworkResult.Error(AppError.Unknown("Certificate details are empty."))
+            } else {
+                NetworkResult.Error(mapHttpError(response.code(), parseErrorMessage(response.errorBody()?.string())))
+            }
+        } catch (_: UnknownHostException) {
+            NetworkResult.Error(AppError.NoInternet)
+        } catch (_: SocketTimeoutException) {
+            NetworkResult.Error(AppError.Timeout)
+        } catch (_: IOException) {
+            NetworkResult.Error(AppError.NoInternet)
+        } catch (_: Exception) {
+            NetworkResult.Error(AppError.Unknown("Unable to load the public NOC certificate."))
+        }
     }
 
     suspend fun downloadCertificate(id: String, requestNumber: String?): NetworkResult<String> {

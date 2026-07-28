@@ -309,7 +309,9 @@ data class WriteOffRequest(
     val writeoffType: String,
     val amount: String?,
     val reason: String,
-    val remarks: String? = null
+    val remarks: String? = null,
+    val maintenanceAmount: String? = null,
+    val penaltyAmount: String? = null
 )
 
 data class WriteOffResultDto(
@@ -345,3 +347,43 @@ data class PaymentSettingsDto(
     @SerializedName(value = "payment_note", alternate = ["paymentNote"])
     val paymentNote: String?
 )
+
+
+data class MaintenancePaymentVerificationDto(
+    @SerializedName(value = "id", alternate = ["submissionId", "submission_id"]) val submissionId: String?,
+    @SerializedName(value = "bill_id", alternate = ["billId"]) val billId: String?,
+    val title: String?,
+    @SerializedName(value = "month", alternate = ["billingMonth", "billing_month"]) val month: Int?,
+    @SerializedName(value = "year", alternate = ["billingYear", "billing_year"]) val year: Int?,
+    @SerializedName(value = "total_amount", alternate = ["billAmount"]) val billAmount: String?,
+    @SerializedName(value = "due_date", alternate = ["dueDate"]) val dueDate: String?,
+    @SerializedName(value = "amount", alternate = ["submittedAmount", "submitted_amount", "paidAmount", "paid_amount"]) val amount: String?,
+    @SerializedName(value = "payment_method", alternate = ["paymentMethod"]) val paymentMethod: String?,
+    @SerializedName(value = "transaction_id", alternate = ["transactionReference", "transaction_reference"]) val transactionReference: String?,
+    @SerializedName(value = "utr_number", alternate = ["utrNumber"]) val utrNumber: String?,
+    @SerializedName(value = "payment_status", alternate = ["verificationStatus", "verification_status"]) val verificationStatus: String?,
+    @SerializedName(value = "paid_at", alternate = ["paymentDate", "payment_date"]) val paymentDate: String?,
+    @SerializedName(value = "created_at", alternate = ["submittedAt", "submitted_at"]) val submittedAt: String?,
+    @SerializedName(value = "remarks", alternate = ["adminNote", "admin_note"]) val remarks: String?,
+    @SerializedName(value = "resident_note", alternate = ["residentNote"]) val residentNote: String?,
+    @SerializedName(value = "resident_id", alternate = ["residentId"]) val residentId: String?,
+    @SerializedName(value = "resident_name", alternate = ["residentName"]) val residentName: String?,
+    @SerializedName(value = "flat_no", alternate = ["flatNumber", "flat_number"]) val flatNumber: String?,
+    @SerializedName(value = "bill_number", alternate = ["billNumber"]) val billNumber: String?,
+    @SerializedName(value = "has_screenshot", alternate = ["hasScreenshot"]) val hasScreenshot: Int?,
+    @SerializedName(value = "screenshot_url", alternate = ["screenshotUrl", "proofUrl"]) val screenshotUrl: String?,
+    @SerializedName(value = "screenshot", alternate = ["payment_proof", "payment_screenshot"]) val screenshot: String?,
+    @SerializedName(value = "screenshot_path", alternate = ["proofPath", "payment_proof_path", "payment_screenshot_path"]) val screenshotPath: String?,
+    @SerializedName("wing") val wing: String?,
+    @SerializedName("resident_phone") val residentPhone: String?,
+    @SerializedName("resident_email") val residentEmail: String?,
+    @SerializedName("verified_at") val verifiedAt: String?,
+    @SerializedName("rejected_at") val rejectedAt: String?
+) {
+    // Compatibility accessors used by existing UI code
+    val billingMonth: Int? get() = month
+    val billingYear: Int? get() = year
+    val submittedAmount: String? get() = amount
+    val adminNote: String? get() = remarks
+    val penaltyAmount: String? get() = null
+}

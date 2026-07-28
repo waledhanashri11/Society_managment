@@ -4,6 +4,7 @@ import com.google.gson.JsonElement
 import okhttp3.ResponseBody
 import retrofit2.Response
 import retrofit2.http.Body
+import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.PUT
@@ -48,4 +49,7 @@ interface AdvancedApiService {
     @GET("api/maintenance/flats/{flatId}/categories") suspend fun getFlatCategories(@Path("flatId") flatId: String): Response<JsonElement>
     @PUT("api/maintenance/flats/{flatId}/categories") suspend fun saveFlatCategories(@Path("flatId") flatId: String, @Body body: Map<String, List<Int>>): Response<JsonElement>
     @POST("api/maintenance/resident-categories/bulk") suspend fun bulkAssignCategories(@Body body: Map<String, @JvmSuppressWildcards Any>): Response<JsonElement>
+    @GET("api/maintenance/write-offs") suspend fun getWriteOffHistory(): Response<JsonElement>
+    @GET("api/maintenance/agm-report") suspend fun getAgmReport(): Response<JsonElement>
+    @DELETE("api/maintenance/write-offs/{id}") suspend fun reverseWriteOff(@Path("id") id: String): Response<JsonElement>
 }

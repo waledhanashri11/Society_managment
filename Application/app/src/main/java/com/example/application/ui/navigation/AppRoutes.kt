@@ -33,6 +33,10 @@ sealed class AppRoute(val route: String) {
     data object AdminMaintenance : AppRoute("admin_maintenance")
     data object AdminPayments : AppRoute("admin_payment_verification")
     data object AdminReports : AppRoute("admin_reports")
+    data object AdminSettings : AppRoute("admin_settings")
+    data object AdminWriteOffHistory : AppRoute("admin_write_off_history")
+    data object AdminAgmReport : AppRoute("admin_agm_report")
+    data object AdminFlatTransfers : AppRoute("admin_flat_transfers")
     data object AdminNoc : AppRoute("admin_noc")
     data object AdminComplaints : AppRoute("admin_complaints")
     data object AdminNotices : AppRoute("admin_notices")
@@ -49,6 +53,9 @@ sealed class AppRoute(val route: String) {
     }
     data object ResidentReports : AppRoute("resident_reports")
     data object ResidentNoc : AppRoute("resident_noc")
+    data object PublicNoc : AppRoute("share/noc/{token}") {
+        fun createRoute(token: String) = "share/noc/$token"
+    }
     data object ResidentMembers : AppRoute("resident/members")
     data object ResidentComplaints : AppRoute("resident_complaints")
     data object ResidentNotices : AppRoute("resident_notices")

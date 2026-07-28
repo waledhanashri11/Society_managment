@@ -8,9 +8,15 @@ if (canonicalCwd !== process.cwd()) {
 }
 
 const reactScriptsBin = require.resolve('react-scripts/bin/react-scripts.js');
+const env = { ...process.env };
+
+if (process.argv.slice(2)[0] === 'build' && env.GENERATE_SOURCEMAP === undefined) {
+  env.GENERATE_SOURCEMAP = 'false';
+}
+
 const child = spawn(process.execPath, [reactScriptsBin, ...process.argv.slice(2)], {
   cwd: process.cwd(),
-  env: process.env,
+  env,
   stdio: 'inherit',
 });
 

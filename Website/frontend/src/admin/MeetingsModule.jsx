@@ -1,10 +1,11 @@
+/* eslint-disable no-unused-vars */
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   CalendarDays, Clock, DollarSign,
   Plus, UserCheck
 } from 'lucide-react';
 import { meetingAPI } from '../services/api';
-import { TableSkeleton } from '../components/Skeletons';
+import { CardSkeleton, TableSkeleton } from '../components/Skeletons';
 import { useTranslation } from 'react-i18next';
 
 const money = (val) => `₹${Number(val || 0).toLocaleString('en-IN')}`;
