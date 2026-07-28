@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -120,8 +121,10 @@ fun AdminReportsScreen(
             .onFailure { Toast.makeText(context, "CSV export failed", Toast.LENGTH_LONG).show() }
     }
     val data = state.data
-    val years = remember(data) { data?.financialYears().orEmpty() }
-    val activeYear = selectedYear ?: years.firstOrNull()
+    val currentFyStart = remember { LocalDate.now().let { if (it.monthValue >= 4) it.year else it.year - 1 } }
+    val currentFy = "$currentFyStart-${currentFyStart + 1}"
+    val years = remember(data, currentFy) { (listOf(currentFy) + data?.financialYears().orEmpty()).distinct().sortedDescending() }
+    val activeYear = selectedYear ?: years.first()
     val periodData = remember(data, activeYear, search, statusFilter) { data?.forFinancialYear(activeYear)?.filtered(search, statusFilter) }
     val previousYear = activeYear?.let { fy -> fy.substringBefore('-').toIntOrNull()?.minus(1)?.let { "$it-${it + 1}" } }
     val previousData = remember(data, previousYear) { data?.forFinancialYear(previousYear) }
@@ -140,7 +143,7 @@ fun AdminReportsScreen(
             }
             state.error?.let { item { RetryState(it, onRetry = { viewModel.load(true) }) } }
             if (state.isLoading && data == null) item { AppLoadingIndicator() }
-            else if (periodData == null || activeYear == null) item { EmptyState("No report data", "No financial records are available yet.") }
+            else if (periodData == null) item { EmptyState("No report data", "No financial records are available yet.") }
             else {
                 item {
                     Text("Financial year", style = MaterialTheme.typography.labelMedium, color = ReportBlue)
@@ -153,14 +156,11 @@ fun AdminReportsScreen(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) { listOf("All", "Paid", "Pending", "Overdue", "Rejected", "Written-off").forEach { FilterChip(selected = statusFilter == it, onClick = { statusFilter = it }, label = { Text(it) }) } }
                     Text("Last refreshed: ${state.lastLoadedAt?.let { java.text.SimpleDateFormat("dd MMM yyyy, hh:mm a", java.util.Locale.getDefault()).format(java.util.Date(it)) } ?: "—"}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
                 }
-                data?.financial?.let { financial -> item { ScreenshotSummaryDashboard(financial) } }
+                item { ReferenceFinancialSummary(data?.financial) }
                 if (tab == 1) item { AnnualReportDashboard(periodData, previousData, onExport = { pendingCsv = periodData.toCsv(activeYear) + data?.financial.toFinancialCsv(); csvLauncher.launch("annual-report-$activeYear.csv") }, onPdf = { shareReportPdf(context, "Annual Report $activeYear", periodData.toCsv(activeYear) + data?.financial.toFinancialCsv()) }) }
-                item { Text("Monthly reports", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = ReportBlue) }
-                val months = periodData.months()
-                if (months.isEmpty()) item { EmptyState("No monthly data", "No bills or expenses were recorded in this financial year.") }
-                else items(months, key = { "month-${it.first}-${it.second}" }) { month ->
-                    MonthlyReportRow(periodData.forMonth(month.first, month.second), month.first, month.second, onClick = { selectedMonth = month; viewModel.loadMonthly(month.first, month.second) })
-                }
+                item { ReferenceMonthlyTable(data?.financial, onMonth = { year, month -> selectedMonth = year to month; viewModel.loadMonthly(year, month) }) }
+                item { ReferenceBreakdowns(data?.financial) }
+                item { ReferenceCollectionSummary(data?.financial?.collection) }
                 if (periodData.bills.isNotEmpty()) {
                     item { Text("Bill details", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = ReportBlue) }
                     items(periodData.bills.take(50), key = { "detail-bill-${it.id}-${it.reportDate()}" }) { bill -> BillCard(bill) }
@@ -216,6 +216,69 @@ private fun ScreenshotAmountCard(title: String, amountText: String?, color: Colo
             )
         }
     }
+}
+
+@Composable
+private fun ReferenceFinancialSummary(report: FinancialReportDto?) {
+    val s = report?.summary
+    val c = report?.collection
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            ScreenshotBalanceCard("Opening Balance", s?.totalOpening ?: "0", s?.bankOpening ?: "0", s?.cashOpening ?: "0", ReportBlue, Modifier.weight(1f))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                ScreenshotAmountCard("Total Income", s?.totalIncome ?: "0", ReportGreen)
+                ScreenshotAmountCard("Total Expenses", s?.totalExpenses ?: "0", Color(0xFFFF2538))
+            }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            ScreenshotBalanceCard("Closing Balance", s?.totalClosing ?: "0", s?.bankClosing ?: "0", s?.cashClosing ?: "0", Color(0xFF6D35E8), Modifier.weight(1f))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                ScreenshotTextCard("Collection Rate", "${c?.collectionRate ?: "0"}%", ReportGreen)
+                ScreenshotAmountCard("Pending Amount", c?.pendingAmount ?: "0", Color(0xFFFF5B15))
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReferenceMonthlyTable(report: FinancialReportDto?, onMonth: (Int, Int) -> Unit) {
+    val months = report?.months.orEmpty()
+    Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Monthly Summary", fontWeight = FontWeight.Bold, color = ReportBlue)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                listOf("Month", "Opening", "Income", "Expense", "Closing").forEach { Text(it, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f)) }
+            }
+            HorizontalDivider()
+            if (months.isEmpty()) {
+                Text("No monthly records", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 12.dp))
+            } else months.forEach { row ->
+                Row(Modifier.fillMaxWidth().clickable { onMonth(row.year ?: return@clickable, row.month ?: return@clickable) }.padding(vertical = 7.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(row.month?.let { java.time.Month.of(it).name.take(3) } ?: "—", style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f))
+                    Text(DashboardFormatters.money(row.totalOpening.toMoneyDecimal()), style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f))
+                    Text(DashboardFormatters.money(row.totalIncome.toMoneyDecimal()), style = MaterialTheme.typography.labelSmall, color = ReportGreen, modifier = Modifier.weight(1f))
+                    Text(DashboardFormatters.money(row.totalExpenses.toMoneyDecimal()), style = MaterialTheme.typography.labelSmall, color = Color(0xFFFF2538), modifier = Modifier.weight(1f))
+                    Text(DashboardFormatters.money(row.totalClosing.toMoneyDecimal()), style = MaterialTheme.typography.labelSmall, color = ReportBlue, modifier = Modifier.weight(1f))
+                }
+                HorizontalDivider(color = Color(0xFFE9EDF5))
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReferenceBreakdowns(report: FinancialReportDto?) {
+    val income = report?.income.orEmpty()
+    val expenses = report?.expenses.orEmpty()
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        ReportBreakdownBlock("Income Breakdown", income.ifEmpty { listOf(com.example.application.data.remote.dto.FinancialBreakdownDto("No income", "BANK", "0")) }, ReportGreen)
+        ReportBreakdownBlock("Expense Breakdown", expenses.ifEmpty { listOf(com.example.application.data.remote.dto.FinancialBreakdownDto("No expenses", "BANK", "0")) }, Color(0xFFFF2538))
+    }
+}
+
+@Composable
+private fun ReferenceCollectionSummary(c: com.example.application.data.remote.dto.FinancialCollectionDto?) {
+    CollectionSummaryBlock(c ?: com.example.application.data.remote.dto.FinancialCollectionDto(0,0,0,0,0,0,0,"0","0","0","0","0"))
 }
 
 @Composable
@@ -400,11 +463,47 @@ fun ResidentReportsScreen(
             if (state.isLoading && data == null) item { AppLoadingIndicator() }
             else if (data == null) item { EmptyState("No report data", "Society report data is not available yet.") }
             else {
-                data.financial?.let { item { FinancialAccountsCard(it) } }
-                item { ResidentSocietyReportContent(data) }
+                item { ReferenceFinancialSummary(data.financial) }
+                item { ReferenceMonthlyTable(data.financial, onMonth = { _, _ -> }) }
+                item { ReferenceBreakdowns(data.financial) }
+                item { ReferenceCollectionSummary(data.financial?.collection) }
+                item { ResidentPersonalAccount(data) }
+                item { ResidentPrivacyDisclaimer() }
             }
         }
     }
+}
+
+@Composable
+private fun ResidentPersonalAccount(data: ResidentReportsData) {
+    val billed = data.myMaintenance.sumOf { (it.totalAmount ?: it.amount).toMoneyDecimal() }
+    val paid = data.myMaintenance.sumOf { it.paidAmount.toMoneyDecimal() }
+    val pending = data.myMaintenance.sumOf { it.remainingAmount.toMoneyDecimal() }
+    val penalty = data.myMaintenance.sumOf { it.penaltyAmount.toMoneyDecimal() }
+    Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            Text("My Account", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = ReportBlue)
+            KeyValue("Bills Generated", DashboardFormatters.money(billed))
+            KeyValue("Total Paid", DashboardFormatters.money(paid))
+            KeyValue("Pending Amount", DashboardFormatters.money(pending))
+            KeyValue("Penalty", DashboardFormatters.money(penalty))
+            HorizontalDivider()
+            KeyValue("Paid Bills", data.myMaintenance.count { it.remainingAmount.toMoneyDecimal() <= BigDecimal.ZERO }.toString())
+            KeyValue("Pending Bills", data.myMaintenance.count { it.remainingAmount.toMoneyDecimal() > BigDecimal.ZERO }.toString())
+            KeyValue("Verification Pending", data.myMaintenance.count { it.status.orEmpty().contains("verification", true) || it.status.orEmpty().contains("review", true) }.toString())
+            if (data.myMaintenance.isEmpty()) Text("No personal billing records", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun ResidentPrivacyDisclaimer() {
+    Text(
+        "This report provides society-level financial transparency. Personal contact information, payment screenshots, banking details, private documents, and confidential notes are hidden.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(vertical = 8.dp)
+    )
 }
 
 @Composable
