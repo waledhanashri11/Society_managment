@@ -340,5 +340,18 @@ export const residentAPI = {
   getSocietyTransparencyReport: (params = {}, config = {}) => api.get('/resident/reports/society-transparency', { ...config, params }),
 };
 
+export const monthlyReportAPI = {
+  getMonthlyReport: (params = {}, config = {}) => api.get('/reports/maintenance/monthly-report', { ...config, params }),
+  getDashboardSummary: (params = {}, config = {}) => api.get('/reports/maintenance/dashboard-summary', { ...config, params }),
+  get12MonthHistory: (params = {}, config = {}) => api.get('/reports/maintenance/12-month-history', { ...config, params }),
+  getPaymentModeReport: (params = {}, config = {}) => api.get('/reports/maintenance/payment-modes', { ...config, params }),
+  getResidentLedger: (params = {}, config = {}) => api.get('/reports/maintenance/resident-ledger', { ...config, params }),
+  applyWriteOff: (data) => api.post('/reports/maintenance/write-off', data),
+  approvePayment: (id) => api.put(`/reports/maintenance/payments/${id}/approve`),
+  rejectPayment: (id, data) => api.put(`/reports/maintenance/payments/${id}/reject`, data),
+  getPaymentReceipt: (id) => api.get(`/reports/maintenance/receipts/${id}`),
+};
+
 export { api };
 export default api;
+

@@ -3135,8 +3135,14 @@ const getFinancialAccountingReport = async (req, res) => {
       const monthCashOpening = currentCashBal;
       const monthTotalOpening = monthBankOpening + monthCashOpening;
 
-      const monthPayments = payments.filter((p) => Number(p.month) === mObj.monthNum && Number(p.year) === mObj.year);
-      const monthDirectPaid = directPaidBills.filter((b) => Number(b.month) === mObj.monthNum && Number(b.year) === mObj.year);
+      const isMatchYear = (y) => {
+        const ny = Number(y);
+        return ny === mObj.year || ny === fyInfo.startYear || ny === fyInfo.endYear;
+      };
+
+      const monthPayments = payments.filter((p) => Number(p.month) === mObj.monthNum && isMatchYear(p.year));
+      const monthDirectPaid = directPaidBills.filter((b) => Number(b.month) === mObj.monthNum && isMatchYear(b.year));
+      const monthExpenses = expenses.filter((e) => Number(e.month) === mObj.monthNum && isMatchYear(e.year));
 
       let bankIncome = monthPayments
         .filter((p) => p.payment_account === 'BANK' || String(p.payment_method || '').toLowerCase() !== 'cash')
@@ -3147,8 +3153,6 @@ const getFinancialAccountingReport = async (req, res) => {
       const cashIncome = monthPayments
         .filter((p) => p.payment_account === 'CASH' || String(p.payment_method || '').toLowerCase() === 'cash')
         .reduce((sum, p) => sum + Number(p.amount || 0), 0);
-
-      const monthExpenses = expenses.filter((e) => Number(e.month) === mObj.monthNum && Number(e.year) === mObj.year);
 
       const bankExpense = monthExpenses
         .filter((e) => (e.payment_account || 'BANK') === 'BANK')
