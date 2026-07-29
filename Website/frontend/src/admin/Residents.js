@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { CalendarDays, CheckCircle2, Edit3, Plus, ShieldCheck, Trash2, Users, XCircle } from 'lucide-react';
+import { CheckCircle2, Edit3, Plus, ShieldCheck, Trash2, Users, XCircle } from 'lucide-react';
 import { userAPI, flatAPI } from '../services/api';
 import { CardSkeleton, TableSkeleton } from '../components/Skeletons';
 import { useTranslation } from 'react-i18next';
@@ -30,7 +30,6 @@ const Residents = () => {
     }
   };
 
-  const occupiedFlats = useMemo(() => flats.filter((flat) => flat.owner_id).length, [flats]);
   const assignableFlats = useMemo(() => {
     return flats.filter((flat) => !flat.owner_id || Number(flat.owner_id) === Number(editingResident?.id));
   }, [flats, editingResident]);
@@ -115,9 +114,8 @@ const Residents = () => {
         </div>
       )}
 
-      {loading ? <CardSkeleton count={2} /> : <div className="portal-kpis">
+      {loading ? <CardSkeleton count={1} /> : <div className="portal-kpis">
         <div className="portal-kpi"><span>{t('adminDashboard.totalResidents')}</span><strong>{residents.length}</strong><small>{t('adminDashboard.approvedResidentAccounts')}</small><div className="portal-kpi-icon"><Users size={18} /></div></div>
-        <div className="portal-kpi green"><span>{t('adminDashboard.totalFlats')}</span><strong>{occupiedFlats}</strong><small>{t('residents.totalFlatsCount', { count: flats.length })}</small><div className="portal-kpi-icon"><CalendarDays size={18} /></div></div>
       </div>}
 
       <section className="portal-panel portal-table-card">

@@ -1268,12 +1268,47 @@ const updateMaintenance = async (req, res) => {
 const deleteMaintenance = async (req, res) => {
   try {
     const { id } = req.params;
+    await promisePool.query('DELETE FROM maintenance_writeoffs WHERE bill_id = ?', [id]);
+    await promisePool.query('DELETE FROM payment_maintenance WHERE maintenance_id = ?', [id]);
     await promisePool.query('DELETE FROM payments WHERE bill_id = ?', [id]);
     await promisePool.query('DELETE FROM maintenance WHERE id = ?', [id]);
     return sendResponse(res, 200, 'Maintenance deleted successfully');
   } catch (error) {
     console.error('Delete maintenance error:', error);
     return sendResponse(res, 500, 'Server error', null, ['Unable to delete maintenance']);
+  }
+};
+
+const deleteOrphanedMaintenance = async (req, res) => {
+  try {
+    await promisePool.query(
+      `DELETE FROM maintenance_writeoffs
+       WHERE bill_id IN (
+         SELECT id FROM maintenance
+         WHERE (flat_id IS NULL AND resident_id IS NULL)
+            OR (flat_id IS NOT NULL AND flat_id NOT IN (SELECT id FROM flats))
+            OR (resident_id IS NOT NULL AND resident_id NOT IN (SELECT id FROM users))
+       )`
+    );
+    await promisePool.query(
+      `DELETE FROM payments
+       WHERE bill_id IN (
+         SELECT id FROM maintenance
+         WHERE (flat_id IS NULL AND resident_id IS NULL)
+            OR (flat_id IS NOT NULL AND flat_id NOT IN (SELECT id FROM flats))
+            OR (resident_id IS NOT NULL AND resident_id NOT IN (SELECT id FROM users))
+       )`
+    );
+    const [result] = await promisePool.query(
+      `DELETE FROM maintenance
+       WHERE (flat_id IS NULL AND resident_id IS NULL)
+          OR (flat_id IS NOT NULL AND flat_id NOT IN (SELECT id FROM flats))
+          OR (resident_id IS NOT NULL AND resident_id NOT IN (SELECT id FROM users))`
+    );
+    return sendResponse(res, 200, 'Orphaned maintenance records cleaned up successfully', { deletedCount: result.affectedRows });
+  } catch (error) {
+    console.error('Delete orphaned maintenance error:', error);
+    return sendResponse(res, 500, 'Server error cleaning orphaned maintenance');
   }
 };
 
@@ -2422,13 +2457,24 @@ const createDetailedWriteOff = async (req, res) => {
     const { id } = req.params;
     const { type, reason, amount } = req.body;
 
-    if (!type || !reason || !['Maintenance', 'Penalty', 'Full'].includes(type)) {
+    const normalizedType = String(type || '').trim();
+    if (!normalizedType || !reason || !String(reason).trim()) {
       return sendResponse(res, 400, 'Type and reason are required');
     }
 
+    const mapType = (t) => {
+      const lower = t.toLowerCase();
+      if (lower.includes('full') || lower.includes('total')) return 'Full';
+      if (lower.includes('penalty')) return 'Penalty';
+      if (lower.includes('maintenance')) return 'Maintenance';
+      return 'Partial';
+    };
+
+    const targetType = mapType(normalizedType);
+
     const result = await processWriteOffTransaction(
       id,
-      type,
+      targetType,
       amount,
       null, // maintenanceAmount
       null, // penaltyAmount
@@ -3110,6 +3156,34 @@ const getFinancialAccountingReport = async (req, res) => {
 
     const pendingMaintenance = Number(pendingRows?.[0]?.total_pending || 0);
 
+    // Fetch month-wise write-off records for the financial year
+    const [writeOffRows] = await promisePool.query(
+      `SELECT 
+         EXTRACT(MONTH FROM w.created_at) AS month,
+         EXTRACT(YEAR FROM w.created_at) AS year,
+         SUM(CASE WHEN LOWER(COALESCE(w.writeoff_type, '')) = 'penalty' THEN COALESCE(w.amount, 0) ELSE 0 END) AS penalty_write_off,
+         SUM(CASE WHEN LOWER(COALESCE(w.writeoff_type, '')) != 'penalty' THEN COALESCE(w.amount, 0) ELSE 0 END) AS maintenance_write_off,
+         SUM(COALESCE(w.amount, 0)) AS total_write_off
+       FROM maintenance_writeoffs w
+       WHERE w.created_at >= ? AND w.created_at <= ?
+       GROUP BY EXTRACT(MONTH FROM w.created_at), EXTRACT(YEAR FROM w.created_at)`,
+      [`${fyInfo.startDate} 00:00:00`, `${fyInfo.endDate} 23:59:59`]
+    );
+
+    const [billWriteOffRows] = await promisePool.query(
+      `SELECT 
+         m.month,
+         m.year,
+         SUM(COALESCE(m.maintenance_write_off_amount, CASE WHEN COALESCE(m.write_off_amount, 0) > 0 AND (m.penalty_write_off_amount IS NULL OR m.penalty_write_off_amount = 0) THEN m.write_off_amount ELSE 0 END, 0)) AS maintenance_write_off,
+         SUM(COALESCE(m.penalty_write_off_amount, 0)) AS penalty_write_off,
+         SUM(COALESCE(m.write_off_amount, 0)) AS total_write_off
+       FROM maintenance m
+       WHERE COALESCE(m.write_off_amount, 0) > 0
+         AND m.created_at >= ? AND m.created_at <= ?
+       GROUP BY m.month, m.year`,
+      [`${fyInfo.startDate} 00:00:00`, `${fyInfo.endDate} 23:59:59`]
+    );
+
     const fyMonths = [
       { monthNum: 1, name: 'January', year: fyInfo.startYear },
       { monthNum: 2, name: 'February', year: fyInfo.startYear },
@@ -3165,6 +3239,20 @@ const getFinancialAccountingReport = async (req, res) => {
       const totalIncome = bankIncome + cashIncome;
       const totalExpense = bankExpense + cashExpense;
 
+      // Calculate write-offs for this month
+      const monthWriteOffs = writeOffRows.filter((w) => Number(w.month) === mObj.monthNum && isMatchYear(w.year));
+      const monthBillWO = billWriteOffRows.filter((w) => Number(w.month) === mObj.monthNum && isMatchYear(w.year));
+
+      let maintenanceWriteOff = monthWriteOffs.reduce((sum, w) => sum + Number(w.maintenance_write_off || 0), 0);
+      let penaltyWriteOff = monthWriteOffs.reduce((sum, w) => sum + Number(w.penalty_write_off || 0), 0);
+
+      if (maintenanceWriteOff === 0 && penaltyWriteOff === 0 && monthBillWO.length > 0) {
+        maintenanceWriteOff = monthBillWO.reduce((sum, w) => sum + Number(w.maintenance_write_off || 0), 0);
+        penaltyWriteOff = monthBillWO.reduce((sum, w) => sum + Number(w.penalty_write_off || 0), 0);
+      }
+
+      const totalWriteOff = maintenanceWriteOff + penaltyWriteOff;
+
       const bankClosing = monthBankOpening + bankIncome - bankExpense;
       const cashClosing = monthCashOpening + cashIncome - cashExpense;
       const totalClosing = bankClosing + cashClosing;
@@ -3198,6 +3286,9 @@ const getFinancialAccountingReport = async (req, res) => {
         bankExpense,
         cashExpense,
         totalExpense,
+        maintenanceWriteOff,
+        penaltyWriteOff,
+        totalWriteOff,
         bankClosing,
         cashClosing,
         totalClosing,
@@ -3214,6 +3305,10 @@ const getFinancialAccountingReport = async (req, res) => {
     const fyBankExpense = monthlyBreakdown.reduce((s, m) => s + m.bankExpense, 0);
     const fyCashExpense = monthlyBreakdown.reduce((s, m) => s + m.cashExpense, 0);
     const fyTotalExpense = fyBankExpense + fyCashExpense;
+
+    const fyMaintenanceWriteOff = monthlyBreakdown.reduce((s, m) => s + m.maintenanceWriteOff, 0);
+    const fyPenaltyWriteOff = monthlyBreakdown.reduce((s, m) => s + m.penaltyWriteOff, 0);
+    const fyTotalWriteOff = fyMaintenanceWriteOff + fyPenaltyWriteOff;
 
     const fyBankClosing = currentBankBal;
     const fyCashClosing = currentCashBal;
@@ -3234,6 +3329,9 @@ const getFinancialAccountingReport = async (req, res) => {
         totalExpense: fyTotalExpense,
         bankExpense: fyBankExpense,
         cashExpense: fyCashExpense,
+        maintenanceWriteOff: fyMaintenanceWriteOff,
+        penaltyWriteOff: fyPenaltyWriteOff,
+        totalWriteOff: fyTotalWriteOff,
         totalClosing: fyTotalClosing,
         bankClosing: fyBankClosing,
         cashClosing: fyCashClosing,
@@ -3505,6 +3603,7 @@ module.exports = {
   generateMaintenanceBills,
   updateMaintenance,
   deleteMaintenance,
+  deleteOrphanedMaintenance,
   getUserMaintenance,
   getAllBills,
   getBillById,

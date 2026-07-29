@@ -31,15 +31,21 @@ import {
   Receipt,
   FileCheck,
   Ban,
-  BookOpen
+  BookOpen,
+  Trash2
 } from 'lucide-react';
 
 import { maintenanceAPI, monthlyReportAPI } from '../services/api';
 import { CardSkeleton } from '../components/Skeletons';
 
-const money = (value) => `₹ ${Number(value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const moneyShort = (value) => `₹ ${Number(value || 0).toLocaleString('en-IN')}`;
+const money = (value) => `₹ ${Math.round(Number(value || 0)).toLocaleString('en-IN')}`;
+const moneyShort = (value) => `₹ ${Math.round(Number(value || 0)).toLocaleString('en-IN')}`;
 const num = (value) => Number(value || 0);
+
+const SafeIcon = ({ icon: Comp, size = 16, className, style, ...props }) => {
+  if (!Comp || (typeof Comp !== 'function' && typeof Comp !== 'object')) return null;
+  return <Comp size={size} className={className} style={style} {...props} />;
+};
 
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -79,23 +85,16 @@ const financialYearsList = [
   '2024-2025'
 ];
 
-const getStatusBadgeClass = (status) => {
-  switch (status) {
-    case 'PAID':
-      return 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800';
-    case 'ADVANCE_PAID':
-      return 'bg-teal-100 dark:bg-teal-950/60 text-teal-700 dark:text-teal-300 border-teal-200 dark:border-teal-800';
-    case 'PARTIALLY_PAID':
-      return 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800';
-    case 'VERIFICATION_PENDING':
-      return 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800';
-    case 'OVERDUE':
-      return 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800';
-    case 'WRITE_OFF':
-      return 'bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800';
-    default:
-      return 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-600';
-  }
+const getStatusBadgeClass = (status = '') => {
+  const s = String(status || '').toLowerCase();
+  if (s.includes('paid') && !s.includes('partially') && !s.includes('advance')) return 'portal-status paid';
+  if (s.includes('advance')) return 'portal-status paid';
+  if (s.includes('partially')) return 'portal-status in_progress';
+  if (s.includes('overdue')) return 'portal-status overdue';
+  if (s.includes('verification') || s.includes('review')) return 'portal-status pending_verification';
+  if (s.includes('write')) return 'portal-status fully_written_off';
+  if (s.includes('pending')) return 'portal-status pending';
+  return 'portal-status open';
 };
 
 export default function AdminReports() {
@@ -254,6 +253,28 @@ export default function AdminReports() {
     }
   };
 
+  const handleDeleteBill = async (billId) => {
+    if (!window.confirm('Are you sure you want to delete this maintenance bill permanently? This action cannot be undone.')) return;
+    try {
+      await maintenanceAPI.delete(billId);
+      alert('Maintenance bill deleted successfully!');
+      loadData();
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to delete maintenance bill');
+    }
+  };
+
+  const handleCleanupOrphaned = async () => {
+    if (!window.confirm('Are you sure you want to clean up all orphaned maintenance records (bills without assigned flats/residents)?')) return;
+    try {
+      const res = await maintenanceAPI.cleanupOrphaned();
+      alert(res.data?.message || 'Orphaned maintenance records cleaned up successfully!');
+      loadData();
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to clean up orphaned bills');
+    }
+  };
+
   const handleOpenWriteOffModal = (bill) => {
     setSelectedBillForWriteOff(bill);
     setWriteOffForm({
@@ -386,87 +407,67 @@ export default function AdminReports() {
   const summary = finData?.summary || {};
 
   return (
-    <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto">
+    <div className="portal-module" style={{ width: '100%' }}>
       {/* Top Action Bar */}
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-white dark:bg-slate-800 p-5 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700">
+      <div className="portal-page-title">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-            <Landmark className="w-7 h-7 text-blue-600 dark:text-blue-400" />
-            Society Financial & Monthly Maintenance Reports
-          </h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-            Comprehensive Month-Wise & Year-Wise Collection, Resident Ledger, Write-Off Audit & Verification System
+          <h1>Society Financial & Maintenance Reports</h1>
+          <p>
+            Comprehensive Month-Wise & Year-Wise Collection, Resident Ledger & Verification System
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'nowrap' }}>
           {/* Financial Year Picker */}
-          <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-700 px-3 py-2 rounded-xl text-sm font-semibold">
-            <Calendar className="w-4 h-4 text-slate-500 dark:text-slate-400" />
-            <span className="text-slate-600 dark:text-slate-300">FY:</span>
+          <div className="portal-date-chip" style={{ padding: '6px 8px' }}>
+            <Calendar size={13} />
+            <span>FY:</span>
             <select
               value={financialYear}
               onChange={(e) => setFinancialYear(e.target.value)}
-              className="bg-transparent font-bold text-slate-900 dark:text-white border-none outline-none cursor-pointer"
+              style={{ border: 0, outline: 'none', background: 'transparent', fontWeight: 700, cursor: 'pointer', fontSize: '11px' }}
             >
               {financialYearsList.map((fy) => (
-                <option key={fy} value={fy} className="text-slate-900 dark:text-slate-900">
+                <option key={fy} value={fy}>
                   {fy}
                 </option>
               ))}
             </select>
           </div>
 
-          <button
-            onClick={handleOpenEditOpening}
-            className="flex items-center gap-2 bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 text-blue-700 dark:text-blue-300 px-3.5 py-2 rounded-xl text-sm font-semibold border border-blue-200 dark:border-blue-800 transition shadow-sm"
-          >
-            <WalletCards className="w-4 h-4" />
-            Edit Opening Balance
+          <button onClick={handleOpenEditOpening} className="portal-light-btn" style={{ padding: '7px 10px', fontSize: '11px', whiteSpace: 'nowrap' }}>
+            <WalletCards size={14} /> Edit Opening Balance
           </button>
 
-          <button
-            onClick={loadData}
-            className="flex items-center gap-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 text-slate-700 dark:text-slate-200 px-4 py-2 rounded-xl text-sm font-semibold transition"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
+          <button onClick={loadData} className="portal-light-btn" style={{ padding: '7px 10px', fontSize: '11px', whiteSpace: 'nowrap' }}>
+            <RefreshCw size={14} className={loading ? 'spin' : ''} /> Refresh
           </button>
 
-          <button
-            onClick={exportMonthlyReportCsv}
-            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-sm transition"
-          >
-            <FileSpreadsheet className="w-4 h-4" />
-            Export Excel
+          <button onClick={exportMonthlyReportCsv} className="portal-light-btn" style={{ color: '#079447', padding: '7px 10px', fontSize: '11px', whiteSpace: 'nowrap' }}>
+            <FileSpreadsheet size={14} /> Export Excel
           </button>
 
-          <button
-            onClick={printReport}
-            className="flex items-center gap-2 bg-slate-800 dark:bg-slate-700 hover:bg-slate-900 text-white px-4 py-2 rounded-xl text-sm font-semibold transition"
-          >
-            <Printer className="w-4 h-4" />
-            Print / PDF
+          <button onClick={printReport} className="portal-primary-btn" style={{ padding: '7px 12px', fontSize: '11px', whiteSpace: 'nowrap' }}>
+            <Printer size={14} /> Print / PDF
           </button>
         </div>
       </div>
 
       {error && (
-        <div className="bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 p-4 rounded-xl border border-rose-200 dark:border-rose-800 flex items-center gap-3">
-          <AlertTriangle className="w-5 h-5 flex-shrink-0" />
+        <div className="portal-error">
+          <AlertTriangle size={18} />
           <span>{error}</span>
         </div>
       )}
 
-      {/* Navigation Tabs */}
-      <div className="flex border-b border-slate-200 dark:border-slate-700 overflow-x-auto custom-scrollbar gap-2 pb-2 pt-1">
+      {/* Navigation Tabs (Pill style matching Notices page) */}
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', overflowX: 'auto', paddingBottom: '4px' }}>
         {[
           { id: 'summary', label: 'Financial Accounting Summary', icon: WalletCards },
           { id: 'monthlyReport', label: 'Monthly Maintenance Report', icon: BarChart3 },
           { id: 'bankLedger', label: 'Bank Account Ledger', icon: Landmark },
           { id: 'cashLedger', label: 'Cash Account Ledger', icon: Wallet },
-          { id: 'flats', label: 'Flat Collection Status', icon: Building2 },
-          { id: 'writeoffs', label: 'Write-Offs & Penalties Audit', icon: FileText }
+          { id: 'flats', label: 'Flat Collection Status', icon: Building2 }
         ].map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -474,109 +475,119 @@ export default function AdminReports() {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-4 py-3 text-sm font-bold border-b-2 transition whitespace-nowrap ${
-                isActive
-                  ? 'border-blue-600 text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-950/20'
-                  : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-              }`}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '7px',
+                padding: '8px 15px',
+                borderRadius: '9999px',
+                fontSize: '12px',
+                fontWeight: 700,
+                border: 0,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                color: isActive ? '#ffffff' : '#475467',
+                background: isActive ? '#1473e6' : '#f2f4f7',
+                boxShadow: isActive ? '0 4px 14px rgba(20, 115, 230, 0.25)' : 'none',
+                transition: 'all 0.16s ease'
+              }}
             >
-              <Icon className="w-4 h-4" />
+              <SafeIcon icon={Icon} size={14} />
               {tab.label}
             </button>
           );
         })}
       </div>
 
-      <div id="admin-report-content" className="space-y-6">
+      <div id="admin-report-content" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
         {loading ? (
-          <CardSkeleton count={4} />
+          CardSkeleton && (typeof CardSkeleton === 'function' || typeof CardSkeleton === 'object') ? (
+            <CardSkeleton count={4} />
+          ) : (
+            <div className="portal-panel" style={{ padding: '20px', textAlign: 'center' }}>Loading reports...</div>
+          )
         ) : (
           <>
             {/* TAB 1: MONTHLY MAINTENANCE REPORT MODULE */}
             {activeTab === 'monthlyReport' && (
-              <div className="space-y-6">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                 {/* Multi-Filter Bar */}
-                <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-bold text-slate-900 dark:text-white text-base flex items-center gap-2">
-                      <Filter className="w-5 h-5 text-blue-600" />
-                      Report Multi-Filters
-                    </h3>
+                <div className="portal-panel">
+                  <div className="portal-panel-head">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Filter size={16} style={{ color: '#1473e6' }} />
+                      <h2>Report Multi-Filters</h2>
+                    </div>
                     <button
                       onClick={() => setMonthlyFilters({ month: 'All', year: '2026', wing: 'All', floor: 'All', flat: '', resident: '', status: 'All', search: '' })}
-                      className="text-xs text-blue-600 dark:text-blue-400 font-semibold hover:underline"
+                      className="portal-link-button"
                     >
                       Reset Filters
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3 text-xs font-semibold">
+                  <div className="portal-form-grid" style={{ gridTemplateColumns: 'minmax(100px, 1fr) minmax(85px, 0.8fr) minmax(100px, 1fr) minmax(100px, 1fr) minmax(150px, 1.3fr) minmax(95px, 1fr) minmax(180px, 2fr)', gap: '10px', padding: '14px 16px' }}>
                     {/* Month */}
-                    <div className="space-y-1">
-                      <label className="text-slate-500">Month</label>
+                    <label>
+                      Month
                       <select
                         value={monthlyFilters.month}
                         onChange={(e) => setMonthlyFilters({ ...monthlyFilters, month: e.target.value })}
-                        className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2 font-bold text-slate-900 dark:text-white"
                       >
                         <option value="All">All Months</option>
                         {MONTH_NAMES.map((m, idx) => (
                           <option key={m} value={idx + 1}>{m}</option>
                         ))}
                       </select>
-                    </div>
+                    </label>
 
                     {/* Year */}
-                    <div className="space-y-1">
-                      <label className="text-slate-500">Year</label>
+                    <label>
+                      Year
                       <select
                         value={monthlyFilters.year}
                         onChange={(e) => setMonthlyFilters({ ...monthlyFilters, year: e.target.value })}
-                        className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2 font-bold text-slate-900 dark:text-white"
                       >
                         {['2026', '2025', '2024', '2023'].map((y) => (
                           <option key={y} value={y}>{y}</option>
                         ))}
                       </select>
-                    </div>
+                    </label>
 
                     {/* Wing */}
-                    <div className="space-y-1">
-                      <label className="text-slate-500">Wing</label>
+                    <label>
+                      Wing
                       <select
                         value={monthlyFilters.wing}
                         onChange={(e) => setMonthlyFilters({ ...monthlyFilters, wing: e.target.value })}
-                        className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2 font-bold text-slate-900 dark:text-white"
                       >
                         <option value="All">All Wings</option>
                         {['A', 'B', 'C', 'D'].map((w) => (
                           <option key={w} value={w}>Wing {w}</option>
                         ))}
                       </select>
-                    </div>
+                    </label>
 
                     {/* Floor */}
-                    <div className="space-y-1">
-                      <label className="text-slate-500">Floor</label>
+                    <label>
+                      Floor
                       <select
                         value={monthlyFilters.floor}
                         onChange={(e) => setMonthlyFilters({ ...monthlyFilters, floor: e.target.value })}
-                        className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2 font-bold text-slate-900 dark:text-white"
                       >
                         <option value="All">All Floors</option>
                         {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((f) => (
                           <option key={f} value={f}>Floor {f}</option>
                         ))}
                       </select>
-                    </div>
+                    </label>
 
                     {/* Payment Status */}
-                    <div className="space-y-1">
-                      <label className="text-slate-500">Status</label>
+                    <label>
+                      Status
                       <select
                         value={monthlyFilters.status}
                         onChange={(e) => setMonthlyFilters({ ...monthlyFilters, status: e.target.value })}
-                        className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2 font-bold text-slate-900 dark:text-white"
                       >
                         <option value="All">All Statuses</option>
                         <option value="PAID">PAID</option>
@@ -587,215 +598,234 @@ export default function AdminReports() {
                         <option value="WRITE_OFF">WRITE_OFF</option>
                         <option value="ADVANCE_PAID">ADVANCE_PAID</option>
                       </select>
-                    </div>
+                    </label>
 
                     {/* Flat No */}
-                    <div className="space-y-1">
-                      <label className="text-slate-500">Flat No</label>
+                    <label>
+                      Flat No
                       <input
                         type="text"
                         placeholder="e.g. 101"
                         value={monthlyFilters.flat}
                         onChange={(e) => setMonthlyFilters({ ...monthlyFilters, flat: e.target.value })}
-                        className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2 font-bold text-slate-900 dark:text-white"
                       />
-                    </div>
+                    </label>
 
                     {/* Search Input */}
-                    <div className="space-y-1 col-span-2">
-                      <label className="text-slate-500">Search (Name / Mobile / Txn ID)</label>
-                      <div className="relative">
-                        <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
-                        <input
-                          type="text"
-                          placeholder="Search..."
-                          value={monthlyFilters.search}
-                          onChange={(e) => setMonthlyFilters({ ...monthlyFilters, search: e.target.value })}
-                          className="w-full pl-9 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2 font-bold text-slate-900 dark:text-white"
-                        />
-                      </div>
-                    </div>
+                    <label>
+                      Search (Name / Mobile / Txn ID)
+                      <input
+                        type="text"
+                        placeholder="Search..."
+                        value={monthlyFilters.search}
+                        onChange={(e) => setMonthlyFilters({ ...monthlyFilters, search: e.target.value })}
+                      />
+                    </label>
                   </div>
                 </div>
 
                 {/* KPI Financial Collection Summary */}
                 {dashboardSummary && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
-                    <div className="bg-blue-600 text-white p-4 rounded-2xl shadow-sm space-y-1">
-                      <div className="text-xs uppercase font-bold opacity-80">Expected Collection</div>
-                      <div className="text-xl font-extrabold">{moneyShort(dashboardSummary.expectedMaintenance)}</div>
-                      <div className="text-[11px] opacity-80">SUM(All Payable)</div>
-                    </div>
+                  <div className="portal-kpis notice-kpis" style={{ gridTemplateColumns: 'repeat(6, minmax(0, 1fr))', gap: '8px' }}>
+                    <article className="portal-kpi" style={{ padding: '12px 10px' }}>
+                      <span style={{ fontSize: '9px', fontWeight: 700, paddingRight: '22px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>EXPECTED COLLECTION</span>
+                      <strong>{moneyShort(dashboardSummary.expectedMaintenance)}</strong>
+                      <small style={{ color: '#687588' }}>SUM(All Payable)</small>
+                      <div className="portal-kpi-icon" style={{ width: 26, height: 26, top: 10, right: 8 }}><IndianRupee size={14} /></div>
+                    </article>
 
-                    <div className="bg-emerald-600 text-white p-4 rounded-2xl shadow-sm space-y-1">
-                      <div className="text-xs uppercase font-bold opacity-80">Total Collection</div>
-                      <div className="text-xl font-extrabold">{moneyShort(dashboardSummary.totalCollection)}</div>
-                      <div className="text-[11px] opacity-80">Approved Payments Only</div>
-                    </div>
+                    <article className="portal-kpi green" style={{ padding: '12px 10px' }}>
+                      <span style={{ fontSize: '9px', fontWeight: 700, paddingRight: '22px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>TOTAL COLLECTION</span>
+                      <strong>{moneyShort(dashboardSummary.totalCollection)}</strong>
+                      <small>Approved Payments Only</small>
+                      <div className="portal-kpi-icon" style={{ width: 26, height: 26, top: 10, right: 8 }}><CheckCircle2 size={14} /></div>
+                    </article>
 
-                    <div className="bg-amber-600 text-white p-4 rounded-2xl shadow-sm space-y-1">
-                      <div className="text-xs uppercase font-bold opacity-80">Pending Collection</div>
-                      <div className="text-xl font-extrabold">{moneyShort(dashboardSummary.pendingCollection)}</div>
-                      <div className="text-[11px] opacity-80">Expected - Total</div>
-                    </div>
+                    <article className="portal-kpi orange" style={{ padding: '12px 10px' }}>
+                      <span style={{ fontSize: '9px', fontWeight: 700, paddingRight: '22px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>PENDING COLLECTION</span>
+                      <strong>{moneyShort(dashboardSummary.pendingCollection)}</strong>
+                      <small style={{ color: '#dd6b20' }}>Expected - Total</small>
+                      <div className="portal-kpi-icon" style={{ width: 26, height: 26, top: 10, right: 8 }}><Clock size={14} /></div>
+                    </article>
 
-                    <div className="bg-rose-600 text-white p-4 rounded-2xl shadow-sm space-y-1">
-                      <div className="text-xs uppercase font-bold opacity-80">Overdue Collection</div>
-                      <div className="text-xl font-extrabold">{moneyShort(dashboardSummary.overdueCollection)}</div>
-                      <div className="text-[11px] opacity-80">Due Date Crossed</div>
-                    </div>
+                    <article className="portal-kpi red" style={{ padding: '12px 10px' }}>
+                      <span style={{ fontSize: '9px', fontWeight: 700, paddingRight: '22px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>OVERDUE COLLECTION</span>
+                      <strong>{moneyShort(dashboardSummary.overdueCollection)}</strong>
+                      <small style={{ color: '#e33d33' }}>Due Date Crossed</small>
+                      <div className="portal-kpi-icon" style={{ width: 26, height: 26, top: 10, right: 8 }}><AlertTriangle size={14} /></div>
+                    </article>
 
-                    <div className="bg-teal-600 text-white p-4 rounded-2xl shadow-sm space-y-1">
-                      <div className="text-xs uppercase font-bold opacity-80">Advance Collection</div>
-                      <div className="text-xl font-extrabold">{moneyShort(dashboardSummary.advanceCollection)}</div>
-                      <div className="text-[11px] opacity-80">Overpaid Balances</div>
-                    </div>
+                    <article className="portal-kpi green" style={{ padding: '12px 10px' }}>
+                      <span style={{ fontSize: '9px', fontWeight: 700, paddingRight: '22px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>ADVANCE COLLECTION</span>
+                      <strong>{moneyShort(dashboardSummary.advanceCollection)}</strong>
+                      <small>Overpaid Balances</small>
+                      <div className="portal-kpi-icon" style={{ width: 26, height: 26, top: 10, right: 8 }}><Wallet size={14} /></div>
+                    </article>
 
-                    <div className="bg-indigo-600 text-white p-4 rounded-2xl shadow-sm space-y-1">
-                      <div className="text-xs uppercase font-bold opacity-80">Collection %</div>
-                      <div className="text-xl font-extrabold">{dashboardSummary.collectionPercentage}%</div>
-                      <div className="text-[11px] opacity-80">Efficiency Ratio</div>
-                    </div>
+                    <article className="portal-kpi" style={{ padding: '12px 10px' }}>
+                      <span style={{ fontSize: '9px', fontWeight: 700, paddingRight: '22px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>COLLECTION %</span>
+                      <strong>{dashboardSummary.collectionPercentage}%</strong>
+                      <small style={{ color: '#1473e6' }}>Efficiency Ratio</small>
+                      <div className="portal-kpi-icon" style={{ width: 26, height: 26, top: 10, right: 8 }}><TrendingUp size={14} /></div>
+                    </article>
                   </div>
                 )}
 
-                {/* 12 Month History Chart / Summary Table */}
-                {history12Month.length > 0 && (
-                  <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-4">
-                    <h4 className="font-bold text-slate-900 dark:text-white text-sm">Monthly Collection History (Last 12 Months)</h4>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left text-xs text-slate-600 dark:text-slate-300">
-                        <thead className="bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-bold uppercase">
+                {/* 12 Month History Table */}
+                <div className="portal-panel portal-table-card">
+                  <div className="portal-panel-head">
+                    <div>
+                      <h2>Monthly Collection History (Last 12 Months)</h2>
+                      <p>12-month expected vs collected maintenance history</p>
+                    </div>
+                  </div>
+                  <div className="portal-table-wrap">
+                    <table className="portal-data-table">
+                      <thead>
+                        <tr>
+                          <th>Month / Year</th>
+                          <th>Expected Collection</th>
+                          <th>Collected Amount</th>
+                          <th>Pending Amount</th>
+                          <th>Status Visual</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {history12Month.length === 0 ? (
                           <tr>
-                            <th className="p-3">Month / Year</th>
-                            <th className="p-3">Expected Collection</th>
-                            <th className="p-3">Collected Amount</th>
-                            <th className="p-3">Pending Amount</th>
-                            <th className="p-3">Status Visual</th>
+                            <td colSpan="5" className="portal-empty">
+                              No 12-month collection history recorded yet.
+                            </td>
                           </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-                          {history12Month.map((h, idx) => {
+                        ) : (
+                          history12Month.map((h, idx) => {
                             const rate = h.expectedCollection > 0 ? (h.collectedAmount / h.expectedCollection) * 100 : 0;
                             return (
-                              <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-750">
-                                <td className="p-3 font-bold text-slate-900 dark:text-white">{formatMonthName(h.month)} {h.year}</td>
-                                <td className="p-3 font-bold">{money(h.expectedCollection)}</td>
-                                <td className="p-3 font-bold text-emerald-600">{money(h.collectedAmount)}</td>
-                                <td className="p-3 font-bold text-rose-600">{money(h.pendingAmount)}</td>
-                                <td className="p-3">
-                                  <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2 overflow-hidden">
-                                    <div className="bg-emerald-500 h-2 rounded-full" style={{ width: `${Math.min(100, rate)}%` }}></div>
+                              <tr key={idx}>
+                                <td><strong>{formatMonthName(h.month)} {h.year}</strong></td>
+                                <td><strong>{money(h.expectedCollection)}</strong></td>
+                                <td style={{ color: '#079447', fontWeight: 700 }}>{money(h.collectedAmount)}</td>
+                                <td style={{ color: '#dc2626', fontWeight: 700 }}>{money(h.pendingAmount)}</td>
+                                <td>
+                                  <div style={{ width: '100%', background: '#e5eaf0', borderRadius: 99, height: 8, overflow: 'hidden' }}>
+                                    <div style={{ background: '#079447', height: 8, borderRadius: 99, width: `${Math.min(100, rate)}%` }}></div>
                                   </div>
                                 </td>
                               </tr>
                             );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
+                          })
+                        )}
+                      </tbody>
+                    </table>
                   </div>
-                )}
+                </div>
 
                 {/* Filtered Monthly Maintenance Table */}
-                <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-sm">
-                  <div className="p-4 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-900">
-                    <h4 className="font-bold text-slate-900 dark:text-white text-sm">
-                      Filtered Maintenance Records ({monthlyReportData.length})
-                    </h4>
+                <div className="portal-panel portal-table-card">
+                  <div className="portal-panel-head">
+                    <div>
+                      <h2>Filtered Maintenance Records ({monthlyReportData.length})</h2>
+                      <p>Detailed flat maintenance billing, collections, and write-off status</p>
+                    </div>
                   </div>
 
                   {monthlyReportData.length === 0 ? (
-                    <div className="p-8 text-center text-slate-500 text-sm">
+                    <div className="portal-empty">
                       No matching maintenance records found for selected filters.
                     </div>
                   ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left text-xs">
-                        <thead className="bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-bold uppercase">
+                    <div className="portal-table-wrap">
+                      <table className="portal-data-table">
+                        <thead>
                           <tr>
-                            <th className="p-3">Flat & Wing</th>
-                            <th className="p-3">Resident</th>
-                            <th className="p-3">Month</th>
-                            <th className="p-3">Maintenance</th>
-                            <th className="p-3">Penalty</th>
-                            <th className="p-3">Discount</th>
-                            <th className="p-3">Write-Off</th>
-                            <th className="p-3">Total Payable</th>
-                            <th className="p-3">Paid Amount</th>
-                            <th className="p-3">Outstanding</th>
-                            <th className="p-3">Status</th>
-                            <th className="p-3 text-center">Actions</th>
+                            <th>Resident</th>
+                            <th>Month</th>
+                            <th>Maintenance</th>
+                            <th>Penalty</th>
+                            <th>Discount</th>
+                            <th>Write-Off</th>
+                            <th>Total Payable</th>
+                            <th>Paid Amount</th>
+                            <th>Outstanding</th>
+                            <th>Status</th>
+                            <th>Actions</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-100 dark:divide-slate-700 text-slate-700 dark:text-slate-300">
+                        <tbody>
                           {monthlyReportData.map((row) => (
-                            <tr key={row.bill_id} className="hover:bg-slate-50 dark:hover:bg-slate-750 transition">
-                              <td className="p-3 font-bold text-slate-900 dark:text-white">
-                                {row.wing ? `Wing ${row.wing} - ${row.flat_no}` : row.flat_no}
+                            <tr key={row.bill_id}>
+                              <td>
+                                <strong>{row.resident_name || (row.wing ? `Wing ${row.wing} - ${row.flat_no}` : (row.flat_no || '—'))}</strong>
+                                <small style={{ display: 'block', color: '#687588' }}>
+                                  {row.wing ? `Wing ${row.wing} - ${row.flat_no}` : (row.resident_phone || '')}
+                                </small>
                               </td>
-                              <td className="p-3 font-semibold">
-                                <div>{row.resident_name || '—'}</div>
-                                <div className="text-[10px] text-slate-400">{row.resident_phone || ''}</div>
-                              </td>
-                              <td className="p-3 font-medium">{formatMonthName(row.month)} {row.year}</td>
-                              <td className="p-3">{money(row.maintenance_amount)}</td>
-                              <td className="p-3 text-amber-600">{money(row.penalty)}</td>
-                              <td className="p-3 text-emerald-600">{money(row.discount_amount)}</td>
-                              <td className="p-3 text-purple-600">{money(row.write_off_amount)}</td>
-                              <td className="p-3 font-bold text-slate-900 dark:text-white">{money(row.total_payable)}</td>
-                              <td className="p-3 font-bold text-emerald-600">{money(row.paid_amount)}</td>
-                              <td className="p-3 font-bold text-rose-600">{money(row.outstanding_amount)}</td>
-                              <td className="p-3">
-                                <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold border ${getStatusBadgeClass(row.calculated_status)}`}>
+                              <td>{formatMonthName(row.month)} {row.year}</td>
+                              <td>{money(row.maintenance_amount)}</td>
+                              <td style={{ color: '#dd6b20' }}>{money(row.penalty)}</td>
+                              <td style={{ color: '#079447' }}>{money(row.discount_amount)}</td>
+                              <td style={{ color: '#7a5af8' }}>{money(row.write_off_amount)}</td>
+                              <td><strong>{money(row.total_payable)}</strong></td>
+                              <td style={{ color: '#079447', fontWeight: 700 }}>{money(row.paid_amount)}</td>
+                              <td style={{ color: '#dc2626', fontWeight: 700 }}>{money(row.outstanding_amount)}</td>
+                              <td>
+                                <span className={getStatusBadgeClass(row.calculated_status)}>
                                   {row.calculated_status}
                                 </span>
                               </td>
-                              <td className="p-3 text-center space-x-1">
-                                {row.latest_payment_id && (
+                              <td>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                   <button
-                                    onClick={() => handleOpenReceipt(row.latest_payment_id)}
-                                    title="View Receipt"
-                                    className="p-1.5 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100"
+                                    onClick={() => handleOpenReceipt(row.latest_payment_id || row.bill_id)}
+                                    className="portal-icon-btn"
+                                    title="View Receipt / Details"
+                                    style={{ width: 26, height: 26, borderRadius: 6, background: '#eaf3ff', border: '1px solid #c7d7ea', color: '#1473e6', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
                                   >
-                                    <Receipt className="w-3.5 h-3.5" />
+                                    <Receipt size={13} />
                                   </button>
-                                )}
 
-                                {row.calculated_status === 'VERIFICATION_PENDING' && row.latest_payment_id && (
-                                  <>
+                                  {row.latest_payment_id && (
                                     <button
                                       onClick={() => handleApprovePayment(row.latest_payment_id)}
-                                      title="Approve Payment Proof"
-                                      className="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-100"
+                                      className="portal-icon-btn"
+                                      title="Approve Payment"
+                                      style={{ width: 26, height: 26, borderRadius: 6, background: '#e6f4ea', border: '1px solid #b7e1cd', color: '#079447', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
                                     >
-                                      <FileCheck className="w-3.5 h-3.5" />
+                                      <CheckCircle2 size={13} />
                                     </button>
+                                  )}
+
+                                  {row.latest_payment_id && (
                                     <button
                                       onClick={() => handleOpenRejectModal(row)}
-                                      title="Reject Payment Proof"
-                                      className="p-1.5 bg-rose-50 text-rose-600 rounded-lg hover:bg-rose-100"
+                                      className="portal-icon-btn"
+                                      title="Reject Payment"
+                                      style={{ width: 26, height: 26, borderRadius: 6, background: '#fce8e6', border: '1px solid #f5c2c0', color: '#dc2626', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
                                     >
-                                      <Ban className="w-3.5 h-3.5" />
+                                      <XCircle size={13} />
                                     </button>
-                                  </>
-                                )}
+                                  )}
 
-                                <button
-                                  onClick={() => handleOpenWriteOffModal(row)}
-                                  title="Apply Write-Off"
-                                  className="p-1.5 bg-purple-50 text-purple-600 rounded-lg hover:bg-purple-100"
-                                >
-                                  <FileText className="w-3.5 h-3.5" />
-                                </button>
+                                  <button
+                                    onClick={() => handleOpenWriteOffModal(row)}
+                                    className="portal-icon-btn"
+                                    title="Write-Off Bill"
+                                    style={{ width: 26, height: 26, borderRadius: 6, background: '#f3e8ff', border: '1px solid #e9d5ff', color: '#7a5af8', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                                  >
+                                    <FileText size={13} />
+                                  </button>
 
-                                <button
-                                  onClick={() => handleOpenLedger(row.resident_id, row.resident_name)}
-                                  title="View Resident Ledger"
-                                  className="p-1.5 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200"
-                                >
-                                  <BookOpen className="w-3.5 h-3.5" />
-                                </button>
+                                  {row.resident_id && (
+                                    <button
+                                      onClick={() => handleOpenLedger(row.resident_id, row.resident_name)}
+                                      className="portal-icon-btn"
+                                      title="Resident Ledger"
+                                      style={{ width: 26, height: 26, borderRadius: 6, background: '#f1f5f9', border: '1px solid #cbd5e1', color: '#475467', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                                    >
+                                      <BookOpen size={13} />
+                                    </button>
+                                  )}
+                                </div>
                               </td>
                             </tr>
                           ))}
@@ -809,93 +839,144 @@ export default function AdminReports() {
 
             {/* TAB 2: FINANCIAL ACCOUNTING SUMMARY */}
             {activeTab === 'summary' && (
-              <div className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <div className="bg-gradient-to-br from-blue-600 to-indigo-700 text-white p-5 rounded-2xl shadow-sm space-y-2">
-                    <div className="text-xs uppercase font-bold opacity-80">Total Closing Balance</div>
-                    <div className="text-2xl font-extrabold">{money(summary.totalClosing)}</div>
-                  </div>
-                  <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2">
-                    <div className="text-xs uppercase font-bold text-slate-500">Bank Closing Balance</div>
-                    <div className="text-2xl font-extrabold text-slate-900 dark:text-white">{money(summary.bankClosing)}</div>
-                  </div>
-                  <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2">
-                    <div className="text-xs uppercase font-bold text-slate-500">Cash Closing Balance</div>
-                    <div className="text-2xl font-extrabold text-slate-900 dark:text-white">{money(summary.cashClosing)}</div>
-                  </div>
-                  <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2">
-                    <div className="text-xs uppercase font-bold text-slate-500">Net Surplus / Deficit</div>
-                    <div className={`text-2xl font-extrabold ${summary.netAmount >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                <div className="portal-kpis">
+                  <article className="portal-kpi">
+                    <span>TOTAL CLOSING BALANCE</span>
+                    <strong>{money(summary.totalClosing)}</strong>
+                    <small style={{ color: '#687588' }}>Total Financial Closing</small>
+                    <div className="portal-kpi-icon"><WalletCards size={17} /></div>
+                  </article>
+
+                  <article className="portal-kpi">
+                    <span>BANK CLOSING BALANCE</span>
+                    <strong>{money(summary.bankClosing)}</strong>
+                    <small style={{ color: '#687588' }}>Bank Account Balance</small>
+                    <div className="portal-kpi-icon"><Landmark size={17} /></div>
+                  </article>
+
+                  <article className="portal-kpi green">
+                    <span>CASH CLOSING BALANCE</span>
+                    <strong>{money(summary.cashClosing)}</strong>
+                    <small>Cash Account Balance</small>
+                    <div className="portal-kpi-icon"><Wallet size={17} /></div>
+                  </article>
+
+                  <article className={`portal-kpi ${summary.netAmount >= 0 ? 'green' : 'red'}`}>
+                    <span>NET SURPLUS / DEFICIT</span>
+                    <strong style={{ color: summary.netAmount >= 0 ? '#079447' : '#dc2626' }}>
                       {money(summary.netAmount)}
-                    </div>
-                  </div>
+                    </strong>
+                    <small>{summary.netAmount >= 0 ? 'Net Surplus' : 'Net Deficit'}</small>
+                    <div className="portal-kpi-icon"><TrendingUp size={17} /></div>
+                  </article>
                 </div>
 
                 {/* MONTH-WISE ACCOUNTING BREAKDOWN TABLE */}
-                <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-sm space-y-3 p-5">
-                  <div className="flex justify-between items-center pb-2 border-b border-slate-100 dark:border-slate-700">
-                    <h4 className="font-bold text-slate-900 dark:text-white text-sm flex items-center gap-2">
-                      <Calendar className="w-4 h-4 text-blue-600" />
-                      Month-Wise Financial Accounting Breakdown (FY {financialYear})
-                    </h4>
-                    <button
-                      onClick={handleOpenEditOpening}
-                      className="text-xs bg-blue-50 text-blue-600 px-3 py-1.5 rounded-lg font-bold hover:bg-blue-100"
-                    >
-                      Edit Opening Balance
+                <div className="portal-panel portal-table-card">
+                  <div className="portal-panel-head">
+                    <div>
+                      <h2>Month-Wise Financial Accounting Breakdown (FY {financialYear})</h2>
+                      <p>Month-by-month opening balance, income, expenses, and closing balances</p>
+                    </div>
+                    <button onClick={handleOpenEditOpening} className="portal-light-btn">
+                      <WalletCards size={15} /> Edit Opening Balance
                     </button>
                   </div>
 
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs">
-                      <thead className="bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-bold uppercase">
+                  <div className="portal-table-wrap">
+                    <table className="portal-data-table">
+                      <thead>
                         <tr>
-                          <th className="p-3">Month</th>
-                          <th className="p-3">Opening</th>
-                          <th className="p-3">Bank Income</th>
-                          <th className="p-3">Cash Income</th>
-                          <th className="p-3">Total Income</th>
-                          <th className="p-3">Bank Expense</th>
-                          <th className="p-3">Cash Expense</th>
-                          <th className="p-3">Total Expenses</th>
-                          <th className="p-3">Net Surplus</th>
-                          <th className="p-3">Closing</th>
+                          <th>Month</th>
+                          <th>Opening</th>
+                          <th>Bank Income</th>
+                          <th>Cash Income</th>
+                          <th>Total Income</th>
+                          <th>Bank Expense</th>
+                          <th>Cash Expense</th>
+                          <th>Total Expenses</th>
+                          <th>Maintenance Write-Off</th>
+                          <th>Penalty Write-Off</th>
+                          <th>Total Write-Off</th>
+                          <th>Net Surplus</th>
+                          <th>Closing</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-100 dark:divide-slate-700 text-slate-700 dark:text-slate-300">
+                      <tbody>
                         {((finData?.months || finData?.monthlyBreakdown || []).length === 0) ? (
                           <tr>
-                            <td colSpan="10" className="p-6 text-center text-slate-500">
+                            <td colSpan="13" className="portal-empty">
                               No monthly financial accounting data available for FY {financialYear}.
                             </td>
                           </tr>
                         ) : (
                           (finData?.months || finData?.monthlyBreakdown || []).map((m, idx) => {
                             const monthName = formatMonthName(m.month || m.monthNum);
-                            const net = num(m.netAmount || (num(m.totalIncome) - num(m.totalExpenses)));
+                            const net = num(m.netAmount || (num(m.totalIncome) - num(m.totalExpense || m.totalExpenses)));
+                            const maintWO = num(m.maintenanceWriteOff);
+                            const penaltyWO = num(m.penaltyWriteOff);
+                            const totalWO = num(m.totalWriteOff !== undefined ? m.totalWriteOff : (maintWO + penaltyWO));
+
                             return (
                               <tr
                                 key={idx}
                                 onClick={() => setSelectedMonth(m)}
-                                className="hover:bg-blue-50/50 dark:hover:bg-slate-750 cursor-pointer transition"
+                                style={{ cursor: 'pointer' }}
                               >
-                                <td className="p-3 font-bold text-blue-600 dark:text-blue-400 underline">{monthName}</td>
-                                <td className="p-3 font-medium">{money(m.totalOpening)}</td>
-                                <td className="p-3 text-emerald-600">{money(m.bankIncome)}</td>
-                                <td className="p-3 text-emerald-600">{money(m.cashIncome)}</td>
-                                <td className="p-3 font-bold text-emerald-600">{money(m.totalIncome)}</td>
-                                <td className="p-3 text-rose-600">{money(m.bankExpenses || m.bankExpense)}</td>
-                                <td className="p-3 text-rose-600">{money(m.cashExpenses || m.cashExpense)}</td>
-                                <td className="p-3 font-bold text-rose-600">{money(m.totalExpenses)}</td>
-                                <td className={`p-3 font-bold ${net >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                <td><strong style={{ color: '#1473e6' }}>{monthName}</strong></td>
+                                <td>{money(m.totalOpening)}</td>
+                                <td style={{ color: '#079447', fontWeight: 600 }}>{money(m.bankIncome)}</td>
+                                <td style={{ color: '#079447', fontWeight: 600 }}>{money(m.cashIncome)}</td>
+                                <td style={{ color: '#079447', fontWeight: 700 }}>{money(m.totalIncome)}</td>
+                                <td style={{ color: '#dc2626', fontWeight: 600 }}>{money(m.bankExpenses || m.bankExpense)}</td>
+                                <td style={{ color: '#dc2626', fontWeight: 600 }}>{money(m.cashExpenses || m.cashExpense)}</td>
+                                <td style={{ color: '#dc2626', fontWeight: 700 }}>{money(m.totalExpenses || m.totalExpense)}</td>
+                                <td style={{ color: maintWO > 0 ? '#079447' : 'inherit', fontWeight: maintWO > 0 ? 600 : 'normal' }}>
+                                  {money(maintWO)}
+                                </td>
+                                <td style={{ color: penaltyWO > 0 ? '#079447' : 'inherit', fontWeight: penaltyWO > 0 ? 600 : 'normal' }}>
+                                  {money(penaltyWO)}
+                                </td>
+                                <td style={{ color: totalWO > 0 ? '#079447' : 'inherit', fontWeight: totalWO > 0 ? 700 : 'normal' }}>
+                                  {money(totalWO)}
+                                </td>
+                                <td style={{ color: net >= 0 ? '#079447' : '#dc2626', fontWeight: 700 }}>
                                   {money(net)}
                                 </td>
-                                <td className="p-3 font-extrabold text-slate-900 dark:text-white">{money(m.totalClosing)}</td>
+                                <td><strong>{money(m.totalClosing)}</strong></td>
                               </tr>
                             );
                           })
                         )}
                       </tbody>
+                      {finData?.summary && (
+                        <tfoot>
+                          <tr style={{ background: '#f8fafc', fontWeight: 700, borderTop: '2px solid #cbd5e1' }}>
+                            <td style={{ color: '#1e293b' }}>TOTAL</td>
+                            <td>—</td>
+                            <td style={{ color: '#079447' }}>{money(summary.bankIncome)}</td>
+                            <td style={{ color: '#079447' }}>{money(summary.cashIncome)}</td>
+                            <td style={{ color: '#079447' }}>{money(summary.totalIncome)}</td>
+                            <td style={{ color: '#dc2626' }}>{money(summary.bankExpense)}</td>
+                            <td style={{ color: '#dc2626' }}>{money(summary.cashExpense)}</td>
+                            <td style={{ color: '#dc2626' }}>{money(summary.totalExpense)}</td>
+                            <td style={{ color: num(summary.maintenanceWriteOff) > 0 ? '#079447' : 'inherit' }}>
+                              {money(summary.maintenanceWriteOff)}
+                            </td>
+                            <td style={{ color: num(summary.penaltyWriteOff) > 0 ? '#079447' : 'inherit' }}>
+                              {money(summary.penaltyWriteOff)}
+                            </td>
+                            <td style={{ color: num(summary.totalWriteOff) > 0 ? '#079447' : 'inherit' }}>
+                              {money(summary.totalWriteOff)}
+                            </td>
+                            <td style={{ color: (num(summary.totalIncome) - num(summary.totalExpense)) >= 0 ? '#079447' : '#dc2626' }}>
+                              {money(num(summary.totalIncome) - num(summary.totalExpense))}
+                            </td>
+                            <td><strong>{money(summary.totalClosing)}</strong></td>
+                          </tr>
+                        </tfoot>
+                      )}
                     </table>
                   </div>
                 </div>
@@ -904,29 +985,34 @@ export default function AdminReports() {
 
             {/* TAB 3: BANK ACCOUNT LEDGER */}
             {activeTab === 'bankLedger' && (
-              <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700">
-                <h3 className="font-bold text-slate-900 dark:text-white mb-4">Bank Account Transaction Ledger</h3>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-bold uppercase">
+              <div className="portal-panel portal-table-card">
+                <div className="portal-panel-head">
+                  <div>
+                    <h2>Bank Account Transaction Ledger</h2>
+                    <p>All recorded bank income and expenditure transactions</p>
+                  </div>
+                </div>
+                <div className="portal-table-wrap">
+                  <table className="portal-data-table">
+                    <thead>
                       <tr>
-                        <th className="p-3">Date</th>
-                        <th className="p-3">Type</th>
-                        <th className="p-3">Description</th>
-                        <th className="p-3">Amount</th>
-                        <th className="p-3">Balance</th>
+                        <th>Date</th>
+                        <th>Type</th>
+                        <th>Description</th>
+                        <th>Amount</th>
+                        <th>Balance</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                    <tbody>
                       {(bankLedger?.transactions || []).map((t, i) => (
                         <tr key={i}>
-                          <td className="p-3">{formatDate(t.transaction_date)}</td>
-                          <td className="p-3 font-bold">{t.transaction_type}</td>
-                          <td className="p-3">{t.description}</td>
-                          <td className={`p-3 font-bold ${t.transaction_type === 'INCOME' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                          <td>{formatDate(t.transaction_date)}</td>
+                          <td><strong>{t.transaction_type}</strong></td>
+                          <td>{t.description}</td>
+                          <td style={{ color: t.transaction_type === 'INCOME' ? '#079447' : '#dc2626', fontWeight: 700 }}>
                             {money(t.amount)}
                           </td>
-                          <td className="p-3 font-bold">{money(t.runningBalance)}</td>
+                          <td><strong>{money(t.runningBalance)}</strong></td>
                         </tr>
                       ))}
                     </tbody>
@@ -937,29 +1023,34 @@ export default function AdminReports() {
 
             {/* TAB 4: CASH ACCOUNT LEDGER */}
             {activeTab === 'cashLedger' && (
-              <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700">
-                <h3 className="font-bold text-slate-900 dark:text-white mb-4">Cash Account Transaction Ledger</h3>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-bold uppercase">
+              <div className="portal-panel portal-table-card">
+                <div className="portal-panel-head">
+                  <div>
+                    <h2>Cash Account Transaction Ledger</h2>
+                    <p>All recorded cash income and expense transactions</p>
+                  </div>
+                </div>
+                <div className="portal-table-wrap">
+                  <table className="portal-data-table">
+                    <thead>
                       <tr>
-                        <th className="p-3">Date</th>
-                        <th className="p-3">Type</th>
-                        <th className="p-3">Description</th>
-                        <th className="p-3">Amount</th>
-                        <th className="p-3">Balance</th>
+                        <th>Date</th>
+                        <th>Type</th>
+                        <th>Description</th>
+                        <th>Amount</th>
+                        <th>Balance</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                    <tbody>
                       {(cashLedger?.transactions || []).map((t, i) => (
                         <tr key={i}>
-                          <td className="p-3">{formatDate(t.transaction_date)}</td>
-                          <td className="p-3 font-bold">{t.transaction_type}</td>
-                          <td className="p-3">{t.description}</td>
-                          <td className={`p-3 font-bold ${t.transaction_type === 'INCOME' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                          <td>{formatDate(t.transaction_date)}</td>
+                          <td><strong>{t.transaction_type}</strong></td>
+                          <td>{t.description}</td>
+                          <td style={{ color: t.transaction_type === 'INCOME' ? '#079447' : '#dc2626', fontWeight: 700 }}>
                             {money(t.amount)}
                           </td>
-                          <td className="p-3 font-bold">{money(t.runningBalance)}</td>
+                          <td><strong>{money(t.runningBalance)}</strong></td>
                         </tr>
                       ))}
                     </tbody>
@@ -970,62 +1061,34 @@ export default function AdminReports() {
 
             {/* TAB 5: FLAT COLLECTION STATUS */}
             {activeTab === 'flats' && (
-              <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-4">
-                <h3 className="font-bold text-slate-900 dark:text-white">Flat Maintenance Collection Summary</h3>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-bold uppercase">
+              <div className="portal-panel portal-table-card">
+                <div className="portal-panel-head">
+                  <div>
+                    <h2>Flat Maintenance Collection Summary</h2>
+                    <p>Flat-wise billing and payment status summary</p>
+                  </div>
+                </div>
+                <div className="portal-table-wrap">
+                  <table className="portal-data-table">
+                    <thead>
                       <tr>
-                        <th className="p-3">Flat No</th>
-                        <th className="p-3">Resident Name</th>
-                        <th className="p-3">Month/Year</th>
-                        <th className="p-3">Bill Amount</th>
-                        <th className="p-3">Paid Amount</th>
-                        <th className="p-3">Status</th>
+                        <th>Flat No</th>
+                        <th>Resident Name</th>
+                        <th>Month/Year</th>
+                        <th>Bill Amount</th>
+                        <th>Paid Amount</th>
+                        <th>Status</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                    <tbody>
                       {flatReport.map((f, idx) => (
                         <tr key={idx}>
-                          <td className="p-3 font-bold">{f.flat_no}</td>
-                          <td className="p-3">{f.resident_name || '—'}</td>
-                          <td className="p-3">{f.month}/{f.year}</td>
-                          <td className="p-3 font-bold">{money(f.total_amount || f.amount)}</td>
-                          <td className="p-3 font-bold text-emerald-600">{money(f.paid_amount)}</td>
-                          <td className="p-3 font-bold">{f.status}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            {/* TAB 6: WRITE-OFFS & PENALTIES AUDIT */}
-            {activeTab === 'writeoffs' && (
-              <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-4">
-                <h3 className="font-bold text-slate-900 dark:text-white">Write-Off Audit Log History</h3>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-bold uppercase">
-                      <tr>
-                        <th className="p-3">Date</th>
-                        <th className="p-3">Bill ID</th>
-                        <th className="p-3">Type</th>
-                        <th className="p-3">Amount</th>
-                        <th className="p-3">Reason</th>
-                        <th className="p-3">Approved By</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-                      {writeOffs.map((w) => (
-                        <tr key={w.id}>
-                          <td className="p-3">{formatDate(w.created_at)}</td>
-                          <td className="p-3 font-bold">#{w.bill_id}</td>
-                          <td className="p-3 font-bold text-purple-600">{w.writeoff_type}</td>
-                          <td className="p-3 font-bold">{money(w.amount)}</td>
-                          <td className="p-3">{w.reason}</td>
-                          <td className="p-3">{w.admin_name || 'Admin'}</td>
+                          <td><strong>{f.flat_no}</strong></td>
+                          <td>{f.resident_name || '—'}</td>
+                          <td>{f.month}/{f.year}</td>
+                          <td><strong>{money(f.total_amount || f.amount)}</strong></td>
+                          <td style={{ color: '#079447', fontWeight: 700 }}>{money(f.paid_amount)}</td>
+                          <td><span className={getStatusBadgeClass(f.status)}>{f.status}</span></td>
                         </tr>
                       ))}
                     </tbody>
@@ -1039,31 +1102,31 @@ export default function AdminReports() {
 
       {/* WRITE-OFF MODAL */}
       {showWriteOffModal && selectedBillForWriteOff && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl max-w-md w-full p-6 space-y-4 border border-slate-200 dark:border-slate-700">
-            <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-700 pb-3">
-              <h3 className="font-bold text-lg text-slate-900 dark:text-white">Apply Write-Off</h3>
-              <button onClick={() => setShowWriteOffModal(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
-              </button>
+        <div className="portal-modal-backdrop" onMouseDown={() => setShowWriteOffModal(false)}>
+          <div className="portal-modal" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="portal-modal-head">
+              <div>
+                <h3>Apply Write-Off</h3>
+                <p>Flat #{selectedBillForWriteOff.flat_no} - Bill #{selectedBillForWriteOff.bill_id}</p>
+              </div>
+              <button type="button" onClick={() => setShowWriteOffModal(false)}>×</button>
             </div>
 
-            <form onSubmit={handleSubmitWriteOff} className="space-y-4 text-xs font-semibold">
-              <div>
-                <label className="text-slate-500">Write-Off Type</label>
+            <form onSubmit={handleSubmitWriteOff} className="portal-form">
+              <label>
+                Write-Off Type
                 <select
                   value={writeOffForm.writeoff_type}
                   onChange={(e) => setWriteOffForm({ ...writeOffForm, writeoff_type: e.target.value })}
-                  className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 font-bold"
                 >
                   <option value="Maintenance">Maintenance Write-Off</option>
                   <option value="Penalty">Penalty Write-Off</option>
                   <option value="Full">Full Write-Off</option>
                 </select>
-              </div>
+              </label>
 
-              <div>
-                <label className="text-slate-500">Write-Off Amount (₹)</label>
+              <label>
+                Write-Off Amount (₹)
                 <input
                   type="number"
                   step="0.01"
@@ -1071,16 +1134,14 @@ export default function AdminReports() {
                   required
                   value={writeOffForm.amount}
                   onChange={(e) => setWriteOffForm({ ...writeOffForm, amount: e.target.value })}
-                  className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 font-bold"
                 />
-              </div>
+              </label>
 
-              <div>
-                <label className="text-slate-500">Reason</label>
+              <label className="portal-field-full">
+                Reason
                 <select
                   value={writeOffForm.reason}
                   onChange={(e) => setWriteOffForm({ ...writeOffForm, reason: e.target.value })}
-                  className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 font-bold"
                 >
                   <option value="Billing Error">Billing Error</option>
                   <option value="Financial Assistance">Financial Assistance</option>
@@ -1088,31 +1149,30 @@ export default function AdminReports() {
                   <option value="Management Approval">Management Approval</option>
                   <option value="Other">Other</option>
                 </select>
-              </div>
+              </label>
 
-              <div>
-                <label className="text-slate-500">Remarks</label>
+              <label className="portal-field-full">
+                Remarks
                 <textarea
                   rows="2"
                   value={writeOffForm.remarks}
                   onChange={(e) => setWriteOffForm({ ...writeOffForm, remarks: e.target.value })}
                   placeholder="Optional audit remarks..."
-                  className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 font-medium"
                 />
-              </div>
+              </label>
 
-              <div className="flex justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-700">
+              <div className="portal-form-actions">
                 <button
                   type="button"
                   onClick={() => setShowWriteOffModal(false)}
-                  className="bg-slate-100 dark:bg-slate-700 px-4 py-2 rounded-xl text-slate-700 dark:text-slate-200 font-bold"
+                  className="portal-light-btn"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={submittingWriteOff}
-                  className="bg-purple-600 hover:bg-purple-700 text-white px-5 py-2 rounded-xl font-bold"
+                  className="portal-primary-btn"
                 >
                   {submittingWriteOff ? 'Applying...' : 'Apply Write-Off'}
                 </button>
@@ -1124,40 +1184,41 @@ export default function AdminReports() {
 
       {/* REJECT PAYMENT MODAL */}
       {showRejectModal && selectedPaymentForReject && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl max-w-md w-full p-6 space-y-4 border border-slate-200 dark:border-slate-700">
-            <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-700 pb-3">
-              <h3 className="font-bold text-lg text-slate-900 dark:text-white">Reject Payment Verification</h3>
-              <button onClick={() => setShowRejectModal(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
-              </button>
+        <div className="portal-modal-backdrop" onMouseDown={() => setShowRejectModal(false)}>
+          <div className="portal-modal" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="portal-modal-head">
+              <div>
+                <h3>Reject Payment Verification</h3>
+                <p>Payment #{selectedPaymentForReject.latest_payment_id}</p>
+              </div>
+              <button type="button" onClick={() => setShowRejectModal(false)}>×</button>
             </div>
 
-            <form onSubmit={handleSubmitReject} className="space-y-4 text-xs font-semibold">
-              <div>
-                <label className="text-slate-500">Rejection Reason</label>
+            <form onSubmit={handleSubmitReject} className="portal-form">
+              <label className="portal-field-full">
+                Rejection Reason
                 <textarea
                   rows="3"
                   required
                   value={rejectionReason}
                   onChange={(e) => setRejectionReason(e.target.value)}
-                  placeholder="Explain why this payment proof is rejected..."
-                  className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 font-medium"
+                  placeholder="Provide detailed reason for rejecting this payment proof..."
                 />
-              </div>
+              </label>
 
-              <div className="flex justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-700">
+              <div className="portal-form-actions">
                 <button
                   type="button"
                   onClick={() => setShowRejectModal(false)}
-                  className="bg-slate-100 dark:bg-slate-700 px-4 py-2 rounded-xl text-slate-700 dark:text-slate-200 font-bold"
+                  className="portal-light-btn"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={submittingReject}
-                  className="bg-rose-600 hover:bg-rose-700 text-white px-5 py-2 rounded-xl font-bold"
+                  className="portal-primary-btn"
+                  style={{ background: '#dc2626' }}
                 >
                   {submittingReject ? 'Rejecting...' : 'Confirm Rejection'}
                 </button>
@@ -1169,43 +1230,45 @@ export default function AdminReports() {
 
       {/* RECEIPT MODAL */}
       {showReceiptModal && receiptData && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl max-w-lg w-full p-6 space-y-4 border border-slate-200 dark:border-slate-700">
-            <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-700 pb-3">
-              <h3 className="font-bold text-lg text-slate-900 dark:text-white">Maintenance Payment Receipt</h3>
-              <button onClick={() => setShowReceiptModal(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
-              </button>
+        <div className="portal-modal-backdrop" onMouseDown={() => setShowReceiptModal(false)}>
+          <div className="portal-modal" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="portal-modal-head">
+              <div>
+                <h3>Maintenance Payment Receipt</h3>
+                <p>Receipt #{receiptData.receiptNumber}</p>
+              </div>
+              <button type="button" onClick={() => setShowReceiptModal(false)}>×</button>
             </div>
 
-            <div id="payment-receipt-printable" className="p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 space-y-3 text-xs">
-              <div className="text-center border-b border-slate-200 dark:border-slate-700 pb-3 space-y-1">
-                <h4 className="font-extrabold text-sm text-slate-900 dark:text-white">{receiptData.societyName}</h4>
-                <p className="text-[10px] text-slate-500">Official Maintenance Payment Receipt</p>
-                <p className="font-mono text-blue-600 font-bold">Receipt #{receiptData.receiptNumber}</p>
+            <div id="payment-receipt-printable" style={{ padding: '20px' }}>
+              <div style={{ textAlign: 'center', borderBottom: '1px solid #e5eaf0', paddingBottom: '12px', marginBottom: '12px' }}>
+                <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 800 }}>{receiptData.societyName}</h4>
+                <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#687588' }}>Official Maintenance Payment Receipt</p>
+                <p style={{ margin: '4px 0 0', fontFamily: 'monospace', color: '#1473e6', fontWeight: 700 }}>Receipt #{receiptData.receiptNumber}</p>
               </div>
 
-              <div className="grid grid-cols-2 gap-2 text-slate-700 dark:text-slate-300">
-                <div><span className="text-slate-400">Resident Name:</span> <strong className="block text-slate-900 dark:text-white">{receiptData.residentName}</strong></div>
-                <div><span className="text-slate-400">Flat Number:</span> <strong className="block text-slate-900 dark:text-white">{receiptData.flatNumber}</strong></div>
-                <div><span className="text-slate-400">Month / Year:</span> <strong className="block text-slate-900 dark:text-white">{receiptData.maintenanceMonthYear}</strong></div>
-                <div><span className="text-slate-400">Payment Date:</span> <strong className="block text-slate-900 dark:text-white">{receiptData.paymentDate}</strong></div>
-                <div><span className="text-slate-400">Payment Mode:</span> <strong className="block text-slate-900 dark:text-white">{receiptData.paymentMode}</strong></div>
-                <div><span className="text-slate-400">Transaction ID:</span> <strong className="block text-slate-900 dark:text-white">{receiptData.transactionId}</strong></div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontSize: '12px', marginBottom: '14px' }}>
+                <div><span style={{ color: '#687588' }}>Resident Name:</span> <strong style={{ display: 'block' }}>{receiptData.residentName}</strong></div>
+                <div><span style={{ color: '#687588' }}>Flat Number:</span> <strong style={{ display: 'block' }}>{receiptData.flatNumber}</strong></div>
+                <div><span style={{ color: '#687588' }}>Month / Year:</span> <strong style={{ display: 'block' }}>{receiptData.maintenanceMonthYear}</strong></div>
+                <div><span style={{ color: '#687588' }}>Payment Date:</span> <strong style={{ display: 'block' }}>{receiptData.paymentDate}</strong></div>
+                <div><span style={{ color: '#687588' }}>Payment Mode:</span> <strong style={{ display: 'block' }}>{receiptData.paymentMode}</strong></div>
+                <div><span style={{ color: '#687588' }}>Transaction ID:</span> <strong style={{ display: 'block' }}>{receiptData.transactionId}</strong></div>
               </div>
 
-              <div className="p-3 bg-emerald-100 dark:bg-emerald-950/60 rounded-xl flex justify-between items-center text-emerald-800 dark:text-emerald-200 font-extrabold text-sm">
+              <div style={{ padding: '12px 16px', background: '#e8f8ef', borderRadius: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#05783b', fontWeight: 800, fontSize: '14px' }}>
                 <span>AMOUNT PAID:</span>
                 <span>{money(receiptData.amountPaid)}</span>
               </div>
             </div>
 
-            <div className="flex justify-end gap-3 pt-2">
+            <div className="portal-form-actions" style={{ padding: '0 20px 20px' }}>
               <button
+                type="button"
                 onClick={() => window.print()}
-                className="bg-slate-800 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2"
+                className="portal-primary-btn"
               >
-                <Printer className="w-4 h-4" /> Print Receipt
+                <Printer size={15} /> Print Receipt
               </button>
             </div>
           </div>
@@ -1214,44 +1277,42 @@ export default function AdminReports() {
 
       {/* RESIDENT LEDGER MODAL */}
       {showLedgerModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl max-w-2xl w-full p-6 space-y-4 border border-slate-200 dark:border-slate-700">
-            <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-700 pb-3">
+        <div className="portal-modal-backdrop" onMouseDown={() => setShowLedgerModal(false)}>
+          <div className="portal-modal" style={{ maxWidth: '640px' }} onMouseDown={(e) => e.stopPropagation()}>
+            <div className="portal-modal-head">
               <div>
-                <h3 className="font-bold text-lg text-slate-900 dark:text-white">Resident Ledger Account</h3>
-                <p className="text-xs text-slate-500">Resident: {ledgerResidentName}</p>
+                <h3>Resident Ledger Account</h3>
+                <p>Resident: {ledgerResidentName}</p>
               </div>
-              <button onClick={() => setShowLedgerModal(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
-              </button>
+              <button type="button" onClick={() => setShowLedgerModal(false)}>×</button>
             </div>
 
             {loadingLedger ? (
-              <div className="p-6 text-center text-xs">Loading ledger transactions...</div>
+              <div className="portal-empty">Loading ledger transactions...</div>
             ) : ledgerData.length === 0 ? (
-              <div className="p-6 text-center text-xs text-slate-500">No ledger transactions recorded yet.</div>
+              <div className="portal-empty">No ledger transactions recorded yet.</div>
             ) : (
-              <div className="overflow-x-auto max-h-96">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-bold uppercase sticky top-0">
+              <div className="portal-table-wrap" style={{ maxHeight: '380px' }}>
+                <table className="portal-data-table">
+                  <thead>
                     <tr>
-                      <th className="p-3">Date</th>
-                      <th className="p-3">Type</th>
-                      <th className="p-3">Notes</th>
-                      <th className="p-3">Debit (Dr)</th>
-                      <th className="p-3">Credit (Cr)</th>
-                      <th className="p-3">Balance</th>
+                      <th>Date</th>
+                      <th>Type</th>
+                      <th>Notes</th>
+                      <th>Debit (Dr)</th>
+                      <th>Credit (Cr)</th>
+                      <th>Balance</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                  <tbody>
                     {ledgerData.map((l) => (
                       <tr key={l.id}>
-                        <td className="p-3">{formatDate(l.created_at)}</td>
-                        <td className="p-3 font-bold">{l.transaction_type}</td>
-                        <td className="p-3 text-slate-500">{l.notes || '—'}</td>
-                        <td className="p-3 font-bold text-rose-600">{l.debit > 0 ? money(l.debit) : '—'}</td>
-                        <td className="p-3 font-bold text-emerald-600">{l.credit > 0 ? money(l.credit) : '—'}</td>
-                        <td className="p-3 font-bold">{money(l.balance)}</td>
+                        <td>{formatDate(l.created_at)}</td>
+                        <td><strong>{l.transaction_type}</strong></td>
+                        <td style={{ color: '#687588' }}>{l.notes || '—'}</td>
+                        <td style={{ color: '#dc2626', fontWeight: 700 }}>{l.debit > 0 ? money(l.debit) : '—'}</td>
+                        <td style={{ color: '#079447', fontWeight: 700 }}>{l.credit > 0 ? money(l.credit) : '—'}</td>
+                        <td><strong>{money(l.balance)}</strong></td>
                       </tr>
                     ))}
                   </tbody>
@@ -1264,25 +1325,19 @@ export default function AdminReports() {
 
       {/* EDIT OPENING BALANCE MODAL */}
       {showEditOpeningModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl max-w-md w-full p-6 space-y-4 border border-slate-200 dark:border-slate-700">
-            <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-700 pb-3">
+        <div className="portal-modal-backdrop" onMouseDown={() => setShowEditOpeningModal(false)}>
+          <div className="portal-modal" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="portal-modal-head">
               <div>
-                <h3 className="font-bold text-lg text-slate-900 dark:text-white">
-                  Set Financial Year Opening Balance
-                </h3>
-                <p className="text-xs text-slate-500">Financial Year: {financialYear}</p>
+                <h3>Set Financial Year Opening Balance</h3>
+                <p>Financial Year: {financialYear}</p>
               </div>
-              <button onClick={() => setShowEditOpeningModal(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
-              </button>
+              <button type="button" onClick={() => setShowEditOpeningModal(false)}>×</button>
             </div>
 
-            <form onSubmit={handleSaveOpening} className="space-y-4 text-sm">
-              <div className="space-y-1">
-                <label className="text-xs font-bold uppercase text-slate-600 dark:text-slate-400">
-                  Bank Account Starting Opening Balance (₹)
-                </label>
+            <form onSubmit={handleSaveOpening} className="portal-form">
+              <label className="portal-field-full">
+                Bank Account Starting Opening Balance (₹)
                 <input
                   type="number"
                   step="0.01"
@@ -1291,14 +1346,11 @@ export default function AdminReports() {
                   value={openingForm.bankOpening}
                   onChange={(e) => setOpeningForm({ ...openingForm, bankOpening: e.target.value })}
                   placeholder="e.g. 0.00"
-                  className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3 font-semibold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500"
                 />
-              </div>
+              </label>
 
-              <div className="space-y-1">
-                <label className="text-xs font-bold uppercase text-slate-600 dark:text-slate-400">
-                  Cash Account Starting Opening Balance (₹)
-                </label>
+              <label className="portal-field-full">
+                Cash Account Starting Opening Balance (₹)
                 <input
                   type="number"
                   step="0.01"
@@ -1307,26 +1359,25 @@ export default function AdminReports() {
                   value={openingForm.cashOpening}
                   onChange={(e) => setOpeningForm({ ...openingForm, cashOpening: e.target.value })}
                   placeholder="e.g. 0.00"
-                  className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3 font-semibold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500"
                 />
-              </div>
+              </label>
 
-              <p className="text-xs text-slate-500">
+              <p className="portal-muted portal-field-full">
                 Saving will automatically recalculate all monthly opening, closing, and surplus/deficit balances for FY {financialYear}.
               </p>
 
-              <div className="flex justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-700">
+              <div className="portal-form-actions">
                 <button
                   type="button"
                   onClick={() => setShowEditOpeningModal(false)}
-                  className="bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 text-slate-700 dark:text-slate-200 px-4 py-2 rounded-xl text-xs font-bold"
+                  className="portal-light-btn"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={savingOpening}
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-xl text-xs font-bold shadow-sm flex items-center gap-2"
+                  className="portal-primary-btn"
                 >
                   {savingOpening ? 'Saving...' : 'Save Opening Balances'}
                 </button>

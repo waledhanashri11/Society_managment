@@ -8,6 +8,7 @@ const {
   generateMaintenanceBills,
   updateMaintenance,
   deleteMaintenance,
+  deleteOrphanedMaintenance,
   getUserMaintenance,
   getAllBills,
   getBillById,
@@ -52,6 +53,7 @@ router.get('/reports/cash-ledger', auth, adminAuth, getCashLedgerReport);
 router.get('/reports/flat-collection', auth, adminAuth, getFlatCollectionReport);
 router.put('/reports/opening-balance', auth, adminAuth, saveOpeningBalance);
 
+router.delete('/cleanup-orphaned', auth, adminAuth, deleteOrphanedMaintenance);
 router.get('/settings', auth, adminAuth, getSettings);
 router.post('/settings', auth, adminAuth, saveSettings);
 router.post('/apply-penalty', auth, adminAuth, applyPenalty);

@@ -6,6 +6,35 @@ const normalizeStatus = (status) => {
   return normalized === 'all' ? null : normalized;
 };
 
+const sanitizeForResident = (data) => {
+  if (data === null || data === undefined) return data;
+  if (Array.isArray(data)) return data.map(sanitizeForResident);
+  if (typeof data === 'object') {
+    const cleaned = {};
+    for (const [key, val] of Object.entries(data)) {
+      if (
+        /write_?off/i.test(key) ||
+        /written_?off/i.test(key) ||
+        key === 'approvedWriteOffs' ||
+        key === 'writeOffs'
+      ) {
+        continue;
+      }
+      let value = sanitizeForResident(val);
+      if (
+        (key === 'status' || key === 'payment_status' || key === 'paymentStatus' || key === 'calculated_status') &&
+        typeof value === 'string' &&
+        /write_?off|written_?off/i.test(value)
+      ) {
+        value = value === value.toUpperCase() ? 'PAID' : 'Paid';
+      }
+      cleaned[key] = value;
+    }
+    return cleaned;
+  }
+  return data;
+};
+
 const addMonthYearFilters = (where, params, dateExpression, month, year) => {
   if (month) {
     where.push(`EXTRACT(MONTH FROM ${dateExpression}) = ?`);
@@ -114,7 +143,7 @@ const getDashboard = async (req, res) => {
       [userId]
     );
 
-    return res.json({
+    return res.json(sanitizeForResident({
       user: {
         id: user.id,
         name: user.name,
@@ -145,7 +174,7 @@ const getDashboard = async (req, res) => {
         total_activities: Number(activityCountRows[0]?.total_activities || 0),
       },
       currentBill: currentBillRows[0] || null,
-    });
+    }));
   } catch (error) {
     console.error('Resident dashboard error:', error);
     res.status(500).json({ message: 'Server error' });
@@ -160,9 +189,6 @@ const getMaintenance = async (req, res) => {
               m.amount AS "maintenanceAmount", m.amount AS maintenance_amount,
               m.penalty_amount AS "penaltyAmount", m.penalty_amount AS penalty_amount,
               m.total_amount AS "originalAmount", m.total_amount AS original_amount,
-              m.maintenance_write_off_amount AS "maintenanceWrittenOff", m.maintenance_write_off_amount AS maintenance_written_off,
-              m.penalty_write_off_amount AS "penaltyWrittenOff", m.penalty_write_off_amount AS penalty_written_off,
-              m.write_off_amount AS "totalWrittenOff", m.write_off_amount AS total_written_off,
               m.remaining_amount AS "remainingPayable", m.remaining_amount AS remaining_payable,
               m.status AS payment_status, f.flat_no
        FROM maintenance m
@@ -171,7 +197,7 @@ const getMaintenance = async (req, res) => {
        ORDER BY m.created_at DESC`,
       [userId]
     );
-    res.json(maintenance);
+    res.json(sanitizeForResident(maintenance));
   } catch (error) {
     console.error('Resident maintenance error:', error);
     res.status(500).json({ message: 'Server error' });
@@ -374,9 +400,6 @@ const getReportMaintenance = async (req, res) => {
               m.amount AS "maintenanceAmount", m.amount AS maintenance_amount,
               ${reportColumns.penalty === '0' ? '0' : `m.${reportColumns.penalty}`} AS "penaltyAmount", ${reportColumns.penalty === '0' ? '0' : `m.${reportColumns.penalty}`} AS penalty_amount,
               ${reportColumns.total === 'amount' ? 'm.amount' : `m.${reportColumns.total}`} AS "originalAmount", ${reportColumns.total === 'amount' ? 'm.amount' : `m.${reportColumns.total}`} AS total_amount,
-              m.maintenance_write_off_amount AS "maintenanceWrittenOff", m.maintenance_write_off_amount AS maintenance_written_off,
-              m.penalty_write_off_amount AS "penaltyWrittenOff", m.penalty_write_off_amount AS penalty_written_off,
-              m.write_off_amount AS "totalWrittenOff", m.write_off_amount AS total_written_off,
               ${reportColumns.remaining.includes('CASE') ? reportColumns.remaining.replace(/\bstatus\b/g, 'm.status').replace(/\bamount\b/g, 'm.amount') : `m.${reportColumns.remaining}`} AS "remainingPayable", ${reportColumns.remaining.includes('CASE') ? reportColumns.remaining.replace(/\bstatus\b/g, 'm.status').replace(/\bamount\b/g, 'm.amount') : `m.${reportColumns.remaining}`} AS remaining_amount,
               ${reportColumns.paid.includes('CASE') ? reportColumns.paid.replace(/\bstatus\b/g, 'm.status').replace(/\bamount\b/g, 'm.amount') : `m.${reportColumns.paid}`} AS paid_amount,
               m.due_date,
@@ -389,7 +412,7 @@ const getReportMaintenance = async (req, res) => {
       params
     );
 
-    res.json(rows);
+    res.json(sanitizeForResident(rows));
   } catch (error) {
     console.error('Resident maintenance report error:', error);
     res.status(500).json({ message: 'Server error' });
@@ -613,9 +636,7 @@ const getAllMaintenanceReport = async (req, res) => {
               m.due_date,
               ${reportColumns.paymentDate === 'NULL' ? 'NULL' : `m.${reportColumns.paymentDate}`} AS payment_date,
               m.status AS payment_status,
-              m.status,
-              m.write_off_amount,
-              m.write_off_status
+              m.status
        FROM maintenance m
        JOIN users u
          ON u.id = m.resident_id
@@ -628,7 +649,7 @@ const getAllMaintenanceReport = async (req, res) => {
       params
     );
 
-    res.json(rows);
+    res.json(sanitizeForResident(rows));
   } catch (error) {
     console.error('Resident all maintenance report error:', error);
     res.status(500).json({ message: 'Server error' });
@@ -680,7 +701,6 @@ const getResidentAccountReport = async (req, res) => {
       `SELECT m.id, m.month, m.year, m.amount AS bill_amount,
               COALESCE(m.paid_amount, 0) AS paid_amount,
               COALESCE(m.remaining_amount, m.amount, 0) AS pending_amount,
-              COALESCE(m.write_off_amount, 0) AS write_off_amount,
               COALESCE(m.status, 'Pending') AS status,
               m.due_date, m.created_at
        FROM maintenance m
@@ -704,16 +724,12 @@ const getResidentAccountReport = async (req, res) => {
       .filter((p) => ['Paid', 'Approved'].includes(p.payment_status))
       .reduce((sum, p) => sum + Number(p.amount || 0), 0);
 
-    const approvedWriteOffs = bills.reduce((sum, b) => sum + Number(b.write_off_amount || 0), 0);
     const totalPenalty = 0; // Penalty if tracked separately
     const openingOutstanding = 0; // Prior year carryover balance
 
-    const closingOutstanding = Math.max(
-      0,
-      openingOutstanding + billsGenerated + totalPenalty - approvedPayments - approvedWriteOffs
-    );
+    const closingOutstanding = bills.reduce((sum, b) => sum + Number(b.pending_amount || 0), 0);
 
-    return res.json({
+    return res.json(sanitizeForResident({
       resident: {
         name: resident.name,
         flatNo: resident.flat_no,
@@ -724,7 +740,6 @@ const getResidentAccountReport = async (req, res) => {
         billsGenerated,
         totalPenalty,
         approvedPayments,
-        approvedWriteOffs,
         closingOutstanding,
         verificationPendingCount: payments.filter((p) => ['Pending', 'Pending Verification', 'Under Review'].includes(p.payment_status)).length,
         rejectedCount: payments.filter((p) => p.payment_status === 'Rejected').length
@@ -738,7 +753,7 @@ const getResidentAccountReport = async (req, res) => {
         paymentStatus: p.payment_status,
         paidAt: p.paid_at || p.created_at
       }))
-    });
+    }));
   } catch (error) {
     console.error('Resident account report error:', error);
     return res.status(500).json({ message: 'Server error generating resident account report' });
@@ -793,19 +808,23 @@ const getResidentTransparencyReport = async (req, res) => {
 
     const [sanitizedFlats] = await promisePool.query(
       `SELECT f.flat_no, f.wing, m.month, m.year, m.amount AS bill_amount,
+              COALESCE(m.penalty_amount, m.penalty, 0) AS penalty_amount,
               COALESCE(m.paid_amount, 0) AS paid_amount,
               COALESCE(m.remaining_amount, m.amount, 0) AS pending_amount,
-              COALESCE(m.status, 'Pending') AS status,
-              m.payment_date
+              CASE WHEN LOWER(COALESCE(m.status, '')) LIKE '%write%' OR LOWER(COALESCE(m.status, '')) LIKE '%written%' THEN 'Paid' ELSE COALESCE(m.status, 'Pending') END AS status,
+              COALESCE(m.payment_date, p.paid_at, (CASE WHEN LOWER(COALESCE(m.status, '')) IN ('paid', 'partially paid', 'partially_paid') THEN m.updated_at ELSE NULL END)) AS payment_date
        FROM maintenance m
        JOIN flats f ON m.flat_id = f.id
+       LEFT JOIN LATERAL (
+         SELECT COALESCE(paid_at, created_at) AS paid_at FROM payments WHERE bill_id = m.id AND payment_status IN ('Approved', 'PAID', 'Paid') ORDER BY id DESC LIMIT 1
+       ) p ON true
        WHERE m.created_at >= ?
          AND m.created_at <= ?::date + INTERVAL '1 day'
        ORDER BY f.wing ASC, f.flat_no ASC`,
       [startDate, endDate]
     );
 
-    return res.json({
+    return res.json(sanitizeForResident({
       financialYear: fy,
       summary: {
         totalOpening: baseBankOpening + baseCashOpening,
@@ -823,7 +842,7 @@ const getResidentTransparencyReport = async (req, res) => {
       },
       approvedExpenses,
       flatPayments: sanitizedFlats
-    });
+    }));
   } catch (error) {
     console.error('Resident transparency report error:', error);
     return res.status(500).json({ message: 'Server error generating transparency report' });

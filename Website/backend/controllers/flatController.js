@@ -211,6 +211,10 @@ const deleteFlat = async (req, res) => {
 
     await connection.beginTransaction();
     await connection.query('UPDATE users SET flat_id = NULL WHERE flat_id = ?', [id]);
+    await connection.query('DELETE FROM maintenance_writeoffs WHERE flat_id = ? OR bill_id IN (SELECT id FROM maintenance WHERE flat_id = ?)', [id, id]);
+    await connection.query('DELETE FROM payment_maintenance WHERE maintenance_id IN (SELECT id FROM maintenance WHERE flat_id = ?)', [id]);
+    await connection.query('DELETE FROM payments WHERE bill_id IN (SELECT id FROM maintenance WHERE flat_id = ?)', [id]);
+    await connection.query('DELETE FROM maintenance WHERE flat_id = ?', [id]);
     await connection.query('DELETE FROM flats WHERE id = ?', [id]);
     await connection.commit();
 

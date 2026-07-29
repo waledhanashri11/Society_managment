@@ -301,6 +301,11 @@ const deleteUser = async (req, res) => {
 
     await releaseResidentFlat(connection, id, users[0].flat_id);
     await connection.query('UPDATE flats SET current_resident_id = NULL, status = ? WHERE current_resident_id = ?', ['Available', id]);
+    await connection.query('DELETE FROM maintenance_writeoffs WHERE resident_id = ? OR bill_id IN (SELECT id FROM maintenance WHERE resident_id = ?)', [id, id]);
+    await connection.query('DELETE FROM payment_maintenance WHERE maintenance_id IN (SELECT id FROM maintenance WHERE resident_id = ?)', [id]);
+    await connection.query('DELETE FROM payments WHERE resident_id = ? OR bill_id IN (SELECT id FROM maintenance WHERE resident_id = ?)', [id, id]);
+    await connection.query('DELETE FROM ledger_transactions WHERE resident_id = ?', [id]);
+    await connection.query('DELETE FROM maintenance WHERE resident_id = ?', [id]);
     await connection.query('DELETE FROM users WHERE id = ?', [id]);
 
     await connection.commit();

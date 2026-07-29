@@ -112,6 +112,7 @@ const Flats = () => {
     try {
       const payload = {
         ...formData,
+        wing: formData.wing || 'A',
         flat_type_id: formData.flat_type_id || null
       };
       if (editingFlat) await flatAPI.update(editingFlat.id, payload);
@@ -400,7 +401,6 @@ const Flats = () => {
                 <thead>
                   <tr>
                     <th>{t('flats.flatNo')}</th>
-                    <th>{t('common.wing', 'Wing')}</th>
                     <th>{t('common.floor')}</th>
                     <th>{t('flats.flatType')}</th>
                     <th>{t('common.status')}</th>
@@ -413,7 +413,6 @@ const Flats = () => {
                   {flats.map((flat) => (
                     <tr key={flat.id}>
                       <td><strong>{t('common.flat')} {flat.flat_no}</strong></td>
-                      <td>{flat.wing || 'A'}</td>
                       <td>{flat.floor_no}</td>
                       <td>
                         <span style={{ fontWeight: '500', color: flat.flat_type_name ? '#1e293b' : '#94a3b8' }}>
@@ -488,10 +487,9 @@ const Flats = () => {
       {showModal && (
         <div className="portal-modal-backdrop" onMouseDown={() => setShowModal(false)}>
           <div className="portal-modal" onMouseDown={(event) => event.stopPropagation()}>
-            <div className="portal-modal-head"><div><h3>{editingFlat ? 'Edit Flat details' : 'Add Flat Unit'}</h3><p>Configure wing, property classifications, and assigned owners.</p></div><button onClick={() => setShowModal(false)}>x</button></div>
+            <div className="portal-modal-head"><div><h3>{editingFlat ? 'Edit Flat details' : 'Add Flat Unit'}</h3><p>Configure property classifications and assigned owners.</p></div><button onClick={() => setShowModal(false)}>x</button></div>
             <form onSubmit={handleSubmit} className="portal-form">
               <label><span>Flat Number</span><input name="flat_no" value={formData.flat_no} onChange={handleChange} required /></label>
-              <label><span>Wing</span><input name="wing" value={formData.wing} onChange={handleChange} required /></label>
               <label><span>Floor Number</span><input type="number" name="floor_no" value={formData.floor_no} onChange={handleChange} required /></label>
               
               <label>
@@ -564,7 +562,7 @@ const Flats = () => {
           <div className="portal-modal" style={{ maxWidth: '850px', width: '95%', maxHeight: '90vh', overflowY: 'auto' }} onMouseDown={(event) => event.stopPropagation()}>
             <div className="portal-modal-head">
               <div>
-                <h3>Transfer Flat {selectedFlatForTransfer.wing}-{selectedFlatForTransfer.flat_no}</h3>
+                <h3>Transfer Flat {selectedFlatForTransfer.flat_no}</h3>
                 <p>Verify history and assign a new active resident.</p>
               </div>
               <button onClick={() => setShowTransferModal(false)}>x</button>

@@ -58,6 +58,29 @@ const getMonthlyReport = async (req, res) => {
     const userRole = req.user?.role;
     const userId = req.user?.id;
 
+    // Auto-cleanup any orphaned maintenance records (bills pointing to deleted flats or deleted residents)
+    await promisePool.query(`
+      DELETE FROM maintenance_writeoffs
+      WHERE bill_id IN (
+        SELECT id FROM maintenance
+        WHERE (flat_id IS NOT NULL AND flat_id NOT IN (SELECT id FROM flats))
+           OR (resident_id IS NOT NULL AND resident_id NOT IN (SELECT id FROM users))
+      )
+    `);
+    await promisePool.query(`
+      DELETE FROM payments
+      WHERE bill_id IN (
+        SELECT id FROM maintenance
+        WHERE (flat_id IS NOT NULL AND flat_id NOT IN (SELECT id FROM flats))
+           OR (resident_id IS NOT NULL AND resident_id NOT IN (SELECT id FROM users))
+      )
+    `);
+    await promisePool.query(`
+      DELETE FROM maintenance
+      WHERE (flat_id IS NOT NULL AND flat_id NOT IN (SELECT id FROM flats))
+         OR (resident_id IS NOT NULL AND resident_id NOT IN (SELECT id FROM users))
+    `);
+
     let whereClause = [];
     let params = [];
 
@@ -138,7 +161,9 @@ const getMonthlyReport = async (req, res) => {
         p.screenshot_url,
         p.rejection_reason,
         p.receipt_number,
-        p.paid_at
+        p.paid_at,
+        COALESCE(w.writeoff_type, CASE WHEN COALESCE(m.write_off_amount, 0) > 0 THEN 'Partial Write-off' ELSE NULL END) AS write_off_method,
+        w.reason AS write_off_reason
       FROM maintenance m
       LEFT JOIN flats f ON f.id = m.flat_id
       LEFT JOIN users u ON u.id = m.resident_id
@@ -148,6 +173,12 @@ const getMonthlyReport = async (req, res) => {
         WHERE bill_id = m.id
         ORDER BY created_at DESC LIMIT 1
       ) p ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT writeoff_type, reason, remarks
+        FROM maintenance_writeoffs
+        WHERE bill_id = m.id
+        ORDER BY created_at DESC LIMIT 1
+      ) w ON TRUE
       ${whereStr}
       ORDER BY m.year DESC, m.month DESC, f.wing ASC, f.flat_no ASC
     `;

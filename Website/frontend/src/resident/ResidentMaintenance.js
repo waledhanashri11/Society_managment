@@ -7,7 +7,6 @@ import {
 } from 'lucide-react';
 import { maintenanceAPI, settingsAPI } from '../services/api';
 import { getUser } from '../utils/auth';
-import { printWriteOffReceipt } from '../utils/paymentReceipt';
 import { TableSkeleton } from '../components/Skeletons';
 import { useTranslation } from 'react-i18next';
 import '../admin/maintenance.css';
@@ -27,9 +26,6 @@ const SUPPORT_PARTIAL_PAYMENTS = true;
 const formatStatusLabel = (st, t) => {
   if (!st) return '';
   const key = {
-    'WRITTEN_OFF': 'writtenOff', 'Written Off': 'writtenOff', 'written_off': 'writtenOff',
-    'PARTIAL_WRITE_OFF': 'partialWriteOff', 'Partial Write-off': 'partialWriteOff',
-    'Partially Written Off': 'partiallyWrittenOff',
     'Occupied': 'occupied', 'occupied': 'occupied',
     'Vacant': 'vacant', 'vacant': 'vacant',
     'Assigned': 'assigned', 'assigned': 'assigned',
@@ -110,7 +106,7 @@ const statusBadge = (bill, t) => {
         verticalAlign: 'middle'
       }}
     >
-      {formatStatusLabel(bill.write_off_status || label, t)}
+      {formatStatusLabel(label, t)}
     </span>
   );
 };
@@ -205,7 +201,6 @@ function ResidentMaintenance() {
   const pendingBills = useMemo(() => bills.filter((bill) => bill.payment_status !== 'Paid'), [bills]);
   const paidBills = useMemo(() => bills.filter((bill) => bill.payment_status === 'Paid'), [bills]);
   const overdueBills = useMemo(() => bills.filter((bill) => bill.payment_status === 'Overdue'), [bills]);
-  const writeOffBills = useMemo(() => bills.filter((bill) => Number(bill.write_off_amount || 0) > 0), [bills]);
   const rejectedBills = useMemo(() => bills.filter((bill) => {
     const st = String(bill.payment_status || '').toUpperCase();
     const lst = String(bill.latest_payment_status || '').toUpperCase();
@@ -218,20 +213,18 @@ function ResidentMaintenance() {
       return sum + Number(remaining || 0);
     }, 0);
     const paid = paidBills.reduce((sum, bill) => sum + Number(bill.paid_amount || bill.total_amount || 0), 0);
-    const writtenOff = writeOffBills.reduce((sum, bill) => sum + Number(bill.write_off_amount || 0), 0);
     const overdue = overdueBills.reduce((sum, bill) => sum + Number(bill.remaining_amount || bill.total_amount || 0), 0);
-    const totalBilled = due + paid + writtenOff;
+    const totalBilled = due + paid;
     const collectionPercentage = totalBilled > 0 ? Math.round((paid / totalBilled) * 100) : 0;
 
     return {
       due,
       paid,
-      writtenOff,
       overdue,
       collectionPercentage,
       underReview: bills.filter((bill) => ['Under Review', 'Pending Verification'].includes(bill.payment_status)).length
     };
-  }, [bills, paidBills, pendingBills, overdueBills, writeOffBills]);
+  }, [bills, paidBills, pendingBills, overdueBills]);
 
   const openPayment = async (bill = pendingBills[0]) => {
     if (!bill) return notify('No pending bill to pay');
@@ -349,13 +342,12 @@ function ResidentMaintenance() {
       <tr><th>Flat Type</th><td>${bill.flat_type_name || 'Not Assigned'}</td></tr>
       <tr><th>Period</th><td>${formatMonthDisplay(bill.month, bill.year)}</td></tr>
       <tr><th>Due Date</th><td>${fullDate(bill.due_date)}</td></tr>
-      <tr><th>Status</th><td>${bill.write_off_status || bill.payment_status}</td></tr>
+      <tr><th>Status</th><td>${bill.payment_status}</td></tr>
       <tr><th>Base Maintenance Charge</th><td>${money(bill.amount)}</td></tr>
       ${itemsHtml}
       <tr><th>Original Late Fee</th><td>${money(bill.late_fee || bill.penalty_amount)}</td></tr>
       <tr><th>Original Total Bill</th><td>${money(bill.total_amount)}</td></tr>
-      ${Number(bill.maintenance_write_off_amount || 0) > 0 ? `<tr><th style="color:#b91c1c;">Maintenance Written Off</th><td style="color:#b91c1c;">-${money(bill.maintenance_write_off_amount)}</td></tr>` : ''}
-      ${Number(bill.penalty_write_off_amount || 0) > 0 ? `<tr><th style="color:#b91c1c;">Penalty Written Off</th><td style="color:#b91c1c;">-${money(bill.penalty_write_off_amount)}</td></tr>` : ''}
+      ${Number(bill.write_off_amount || bill.writeoff_amount || 0) > 0 ? `<tr><th style="color:#7a5af8;">Write-Off Discount</th><td style="color:#7a5af8;font-weight:bold;">- ${money(bill.write_off_amount || bill.writeoff_amount)}</td></tr>` : ''}
       ${Number(bill.paid_amount || 0) > 0 ? `<tr><th>Amount Paid</th><td>${money(bill.paid_amount)}</td></tr>` : ''}
       ${prevOutstandingHtml}
       <tr><th class="total">Remaining Payable</th><td class="total">${money(Number(bill.remainingPayable !== undefined ? bill.remainingPayable : bill.remaining_amount) + Number(bill.previous_outstanding || 0))}</td></tr>
@@ -374,16 +366,6 @@ function ResidentMaintenance() {
       printDocument(type, fullBill);
     } catch (err) {
       notify('Failed to load bill details for printing');
-    }
-  };
-
-  const handlePrintWriteOffReceipt = async (bill) => {
-    try {
-      const response = await maintenanceAPI.getWriteOffReceipt(bill.id);
-      const receiptData = response.data?.data || response.data || {};
-      printWriteOffReceipt(receiptData, societySettings);
-    } catch (err) {
-      notify('Failed to load write-off receipt for printing');
     }
   };
 
@@ -456,7 +438,7 @@ function ResidentMaintenance() {
         <div>
           <div className="mm-eyebrow">MAINTENANCE</div>
           <h1>{t('resMaint.title', 'Maintenance Bills')}</h1>
-          <p>{t('resMaint.subtitle', 'Track your maintenance dues, invoices, write-offs, and payment receipts.')}</p>
+          <p>{t('resMaint.subtitle', 'Track your maintenance dues, invoices, and payment receipts.')}</p>
         </div>
         <div className="mm-head-actions">
           <button className="mm-button mm-button-primary" style={{ background: 'linear-gradient(90deg, #087d40, #0ab35c)', border: 'none' }} onClick={() => openPayment()}>
@@ -479,19 +461,32 @@ function ResidentMaintenance() {
                   <tr>
                     <th>Month</th>
                     <th>Bill Amount</th>
+                    <th>Write-Off</th>
+                    <th>Final Payable</th>
                     <th>Status</th>
                     <th style={{ textAlign: 'center' }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {bills.map((bill) => (
-                    <tr key={bill.id}>
-                      <td>
-                        <strong>{formatMonthDisplay(bill.month, bill.year)}</strong>
-                        <div className="portal-muted-text">{bill.bill_number || `BILL-${bill.id}`}</div>
-                      </td>
-                      <td><strong>{money(bill.total_amount)}</strong></td>
-                      <td>{statusBadge(bill, t)}</td>
+                  {bills.map((bill) => {
+                    const writeOffAmt = Number(bill.write_off_amount || bill.writeoff_amount || 0);
+                    const remainingAmt = Number(bill.remainingPayable !== undefined ? bill.remainingPayable : (bill.remaining_amount !== undefined ? bill.remaining_amount : bill.total_amount));
+                    return (
+                      <tr key={bill.id}>
+                        <td>
+                          <strong>{formatMonthDisplay(bill.month, bill.year)}</strong>
+                          <div className="portal-muted-text">{bill.bill_number || `BILL-${bill.id}`}</div>
+                        </td>
+                        <td><strong>{money(bill.total_amount)}</strong></td>
+                        <td>
+                          {writeOffAmt > 0 ? (
+                            <strong style={{ color: '#7a5af8' }}>- {money(writeOffAmt)}</strong>
+                          ) : (
+                            <span className="portal-muted-text">—</span>
+                          )}
+                        </td>
+                        <td><strong style={{ color: '#1e3a8a' }}>{money(remainingAmt)}</strong></td>
+                        <td>{statusBadge(bill, t)}</td>
                       <td style={{ textAlign: 'center' }}>
                         <div className="portal-row-actions" style={{ justifyContent: 'center', gap: '6px' }}>
                           {String(bill.payment_status || '').toUpperCase() !== 'PAID' && (
@@ -516,14 +511,6 @@ function ResidentMaintenance() {
                               <Download size={13} /> Receipt
                             </button>
                           )}
-                          {Number(bill.write_off_amount || 0) > 0 && (
-                            <button 
-                              style={{ color: '#334155', background: '#ffffff', border: '1px solid #cbd5e1', padding: '4px 8px', borderRadius: '6px', fontWeight: '600', fontSize: '11px' }}
-                              onClick={() => handlePrintWriteOffReceipt(bill)}
-                            >
-                              <Printer size={13} /> W/O Receipt
-                            </button>
-                          )}
                           <button 
                             style={{ color: '#4f46e5', background: '#eef2ff', border: '1px solid #c7d2fe', padding: '4px 8px', borderRadius: '6px', fontWeight: '600', fontSize: '11px' }}
                             onClick={() => setTimelineBill(bill)}
@@ -532,8 +519,9 @@ function ResidentMaintenance() {
                           </button>
                         </div>
                       </td>
-                    </tr>
-                  ))}
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -645,6 +633,13 @@ function ResidentMaintenance() {
                         <span>{t('resMaint.originalBill', 'Original Bill Total')}:</span>
                         <strong>{money(selectedBill.total_amount)}</strong>
                       </div>
+
+                      {Number(selectedBill.write_off_amount || selectedBill.writeoff_amount || 0) > 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#7a5af8', fontWeight: 600 }}>
+                          <span>{t('resMaint.writeOffDiscount', 'Write-Off Discount')}:</span>
+                          <strong>- {money(selectedBill.write_off_amount || selectedBill.writeoff_amount)}</strong>
+                        </div>
+                      )}
 
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span>{t('resMaint.amountPaid', 'Paid Amount')}:</span>

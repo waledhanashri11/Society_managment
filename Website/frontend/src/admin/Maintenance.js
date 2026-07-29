@@ -546,6 +546,7 @@ function Maintenance() {
         ${itemsHtml}
         <tr><th>Original Late Fee</th><td>₹${Number(bill.late_fee || bill.penalty_amount || 0).toLocaleString('en-IN')}</td></tr>
         <tr><th>Original Total Bill</th><td>₹${Number(bill.total_amount || payment.amount || 0).toLocaleString('en-IN')}</td></tr>
+        ${Number(bill.write_off_amount || bill.writeoff_amount || 0) > 0 ? `<tr><th style="color:#7a5af8;">Write-Off Discount</th><td style="color:#7a5af8;font-weight:bold;">- ₹${Number(bill.write_off_amount || bill.writeoff_amount).toLocaleString('en-IN')}</td></tr>` : ''}
         ${Number(bill.paid_amount || 0) > 0 ? `<tr><th>Amount Paid</th><td>₹${Number(bill.paid_amount).toLocaleString('en-IN')}</td></tr>` : ''}
         ${prevOutstandingHtml}
         <tr><th class="total">Remaining Payable</th><td class="total">₹${Number(bill.remainingPayable !== undefined ? bill.remainingPayable : (bill.remaining_amount !== undefined ? bill.remaining_amount : bill.total_amount || payment.amount)).toLocaleString('en-IN')}</td></tr>
