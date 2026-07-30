@@ -20,7 +20,7 @@ const Residents = () => {
   const fetchData = async () => {
     try {
       const [usersRes, flatsRes] = await Promise.all([userAPI.getAll(), flatAPI.getAll()]);
-      setResidents(usersRes.data.filter((user) => user.role === 'resident'));
+      setResidents(usersRes.data.filter((user) => String(user.role).toLowerCase() === 'resident'));
       setFlats(flatsRes.data);
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -31,7 +31,10 @@ const Residents = () => {
   };
 
   const assignableFlats = useMemo(() => {
-    return flats.filter((flat) => !flat.owner_id || Number(flat.owner_id) === Number(editingResident?.id));
+    return flats.filter((flat) => {
+      const residentId = flat.current_resident_id || flat.owner_id;
+      return !residentId || Number(residentId) === Number(editingResident?.id) || flat.status === 'Available';
+    });
   }, [flats, editingResident]);
 
   const handleAdd = () => {
@@ -107,7 +110,7 @@ const Residents = () => {
         <button className="portal-primary-btn" onClick={handleAdd}><Plus size={17} /> {t('residents.addResident', 'Add Resident')}</button>
       </div>
 
-      {message.text && (
+      {!showModal && message.text && (
         <div className={`mb-4 flex items-center gap-2 rounded-lg border px-4 py-3 text-sm font-semibold ${message.type === 'success' ? 'border-green-200 bg-green-50 text-green-700' : 'border-red-200 bg-red-50 text-red-700'}`}>
           {message.type === 'success' ? <CheckCircle2 size={18} /> : <XCircle size={18} />}
           {message.text}
@@ -158,6 +161,12 @@ const Residents = () => {
               <button onClick={() => setShowModal(false)}>×</button>
             </div>
             <form onSubmit={handleSubmit} className="portal-form">
+              {message.text && (
+                <div style={{ gridColumn: '1 / -1', marginBottom: '12px', padding: '10px 14px', borderRadius: '8px', fontSize: '13px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: message.type === 'success' ? '#f0fdf4' : '#fef2f2', color: message.type === 'success' ? '#15803d' : '#b91c1c', border: `1px solid ${message.type === 'success' ? '#bbf7d0' : '#fecaca'}` }}>
+                  {message.type === 'success' ? <CheckCircle2 size={16} /> : <XCircle size={16} />}
+                  {message.text}
+                </div>
+              )}
               <label><span>Name</span><input name="name" value={formData.name} onChange={handleChange} required /></label>
               <label><span>Email</span><input type="email" name="email" value={formData.email} onChange={handleChange} required /></label>
               <label><span>Phone</span><input type="tel" name="phone" value={formData.phone} onChange={handleChange} placeholder="Resident phone" /></label>

@@ -8,7 +8,7 @@ import {
   Trash2, X
 } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
-import { maintenanceAPI, settingsAPI } from '../services/api';
+import { maintenanceAPI, settingsAPI, userAPI, flatAPI } from '../services/api';
 import { printPaymentReceipt, receiptAvailable } from '../utils/paymentReceipt';
 import { useTranslation } from 'react-i18next';
 import './maintenance.css';
@@ -37,6 +37,26 @@ const statusLabel = (status = '', t) => {
   if (status === 'PARTIAL_WRITE_OFF') return t('statusLabel.partialWriteOff', 'Partial Write-off');
   if (['WRITTEN_OFF', 'SETTLED'].includes(status)) return t('statusLabel.writtenOff', 'Written Off');
   return status ? t(`statusLabel.${status.toLowerCase()}`, status) : t('common.pending', 'Pending');
+};
+const resolveBillStatus = (bill) => {
+  if (!bill) return 'Pending';
+  const remainingDue = Number(bill.remaining_due ?? bill.current_due ?? bill.remaining_amount ?? 0);
+  const paidAmt = Number(bill.paid_amount || 0);
+  const writeOffAmt = Number(bill.write_off_amount || 0);
+
+  if (remainingDue <= 0 && paidAmt > 0) {
+    return 'Paid';
+  }
+  if (remainingDue <= 0 && writeOffAmt > 0 && paidAmt === 0) {
+    return bill.write_off_status || 'WRITTEN_OFF';
+  }
+  if (remainingDue > 0 && paidAmt > 0) {
+    return 'Partial';
+  }
+  if (remainingDue > 0 && writeOffAmt > 0) {
+    return bill.write_off_status || 'PARTIAL_WRITE_OFF';
+  }
+  return bill.payment_status || bill.status || bill.write_off_status || 'Pending';
 };
 const normalizedStatus = (status = '') => String(status || '').trim().toUpperCase().replace(/\s+/g, '_');
 const isPendingPaymentStatus = (status) => ['PENDING', 'PENDING_REVIEW', 'PENDING_VERIFICATION', 'UNDER_REVIEW'].includes(normalizedStatus(status));
@@ -162,6 +182,165 @@ function Maintenance() {
   const [cycleForm, setCycleForm] = useState({ month: current.getMonth() + 1, year: current.getFullYear() });
   const [settingsForm, setSettingsForm] = useState({ title: 'Monthly Maintenance', fixed_amount: '', due_day: 10, late_fee_type: 'fixed', late_fee_value: '', grace_days: 2 });
   const [expenseForm, setExpenseForm] = useState({ category: 'Repairs', vendor: '', amount: '', expenseDate: new Date().toISOString().slice(0, 10), paymentMethod: 'Bank Transfer', status: 'Paid', description: '' });
+
+  // Manual Bill States
+  const [manualBillForm, setManualBillForm] = useState({
+    residentId: '',
+    flatId: '',
+    flatNo: '',
+    wing: '',
+    month: current.getMonth() + 1,
+    year: current.getFullYear(),
+    amount: '',
+    optionalCharges: '',
+    dueDate: '',
+    title: 'Monthly Maintenance',
+    notes: ''
+  });
+  const [manualResidents, setManualResidents] = useState([]);
+  const [manualFlats, setManualFlats] = useState([]);
+  const [manualError, setManualError] = useState('');
+
+  const handleOpenManualBill = async () => {
+    setManualError('');
+    const now = new Date();
+    const defaultMonth = now.getMonth() + 1;
+    const defaultYear = now.getFullYear();
+    const defaultDueDate = `${defaultYear}-${String(defaultMonth).padStart(2, '0')}-10`;
+
+    setManualBillForm({
+      residentId: '',
+      flatId: '',
+      flatNo: '',
+      wing: '',
+      month: defaultMonth,
+      year: defaultYear,
+      amount: settings?.fixed_amount ? String(settings.fixed_amount) : '',
+      optionalCharges: '',
+      dueDate: defaultDueDate,
+      title: 'Monthly Maintenance',
+      notes: ''
+    });
+
+    setModal('manual_bill');
+
+    try {
+      const [usersRes, flatsRes] = await Promise.all([
+        userAPI.getAll(),
+        flatAPI.getAll()
+      ]);
+      const residentUsers = unwrap(usersRes, []).filter(
+        (u) => String(u.role).toLowerCase() === 'resident'
+      );
+      const allFlats = unwrap(flatsRes, []);
+      setManualResidents(residentUsers);
+      setManualFlats(allFlats);
+    } catch (err) {
+      console.error('Error loading residents for manual bill:', err);
+    }
+  };
+
+  const handleManualResidentChange = (residentId) => {
+    setManualError('');
+    const resId = Number(residentId);
+    const resident = manualResidents.find((r) => Number(r.id) === resId);
+
+    let flatId = '';
+    let flatNo = '';
+    let wing = '';
+    let targetAmount = manualBillForm.amount;
+
+    if (resident) {
+      const flat = manualFlats.find(
+        (f) => Number(f.current_resident_id) === resId || Number(f.id) === Number(resident.flat_id)
+      );
+      if (flat) {
+        flatId = flat.id;
+        flatNo = flat.flat_no || '';
+        wing = flat.wing || '';
+        if (flat.maintenance_charge && Number(flat.maintenance_charge) > 0) {
+          targetAmount = String(flat.maintenance_charge);
+        }
+      }
+    }
+
+    setManualBillForm((prev) => ({
+      ...prev,
+      residentId,
+      flatId,
+      flatNo,
+      wing,
+      amount: targetAmount || prev.amount || (settings?.fixed_amount ? String(settings.fixed_amount) : '')
+    }));
+  };
+
+  const submitManualBill = async (e) => {
+    e.preventDefault();
+    setManualError('');
+
+    if (!manualBillForm.residentId) {
+      setManualError('Please select a resident.');
+      return;
+    }
+    if (!manualBillForm.flatId) {
+      setManualError('The selected resident does not have an assigned flat. Please assign a flat to this resident first.');
+      return;
+    }
+
+    const baseAmt = Number(manualBillForm.amount || 0);
+    const extraAmt = Number(manualBillForm.optionalCharges || 0);
+    const totalAmt = baseAmt + extraAmt;
+
+    if (totalAmt <= 0) {
+      setManualError('Total bill amount must be greater than zero.');
+      return;
+    }
+
+    const isDuplicate = bills.some(
+      (b) =>
+        (Number(b.resident_id || b.user_id) === Number(manualBillForm.residentId)) &&
+        Number(b.month) === Number(manualBillForm.month) &&
+        Number(b.year) === Number(manualBillForm.year)
+    );
+
+    if (isDuplicate) {
+      const monthName = months[manualBillForm.month - 1] || manualBillForm.month;
+      setManualError(`A maintenance bill already exists for this resident for ${monthName} ${manualBillForm.year}.`);
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const payload = {
+        title: manualBillForm.title || 'Monthly Maintenance',
+        residentId: Number(manualBillForm.residentId),
+        flatId: Number(manualBillForm.flatId),
+        month: Number(manualBillForm.month),
+        year: Number(manualBillForm.year),
+        amount: baseAmt,
+        optionalCharges: extraAmt,
+        dueDate: manualBillForm.dueDate,
+        notes: manualBillForm.notes || ''
+      };
+
+      if (maintenanceAPI.createManualBill) {
+        await maintenanceAPI.createManualBill(payload);
+      } else {
+        await maintenanceAPI.create(payload);
+      }
+
+      setModal(null);
+      setToast('Manual maintenance bill created successfully!');
+      setTimeout(() => setToast(''), 4000);
+      await load();
+    } catch (err) {
+      console.error('Error creating manual bill:', err);
+      const serverMsg = err.response?.data?.message || err.message || 'Error creating manual bill.';
+      setManualError(serverMsg);
+    } finally {
+      setSaving(false);
+    }
+  };
   const location = useLocation();
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -843,7 +1022,7 @@ function Maintenance() {
         write_off_amount: Number(bill.write_off_amount || 0),
         remaining_amount: Number(bill.remaining_due ?? bill.current_due ?? bill.remaining_amount ?? 0),
         due_date: date(bill.due_date),
-        status: statusLabel(bill.payment_status || bill.status || '')
+        status: statusLabel(resolveBillStatus(bill), t)
       };
     });
   };
@@ -1172,6 +1351,7 @@ function Maintenance() {
           <button className="mm-button mm-button-light" onClick={handleApplyPenalty} disabled={saving}><RefreshCcw size={17} className={saving ? 'spin' : ''} /> {t('maintenance.checkOverdue')}</button>
           <button className="mm-button mm-button-light" onClick={exportCurrentView}><Download size={17} /> {t('maintenance.exportCsv')}</button>
           <button className="mm-button mm-button-primary" onClick={() => setModal('generate')}><Plus size={18} /> {t('maintenance.generateBills')}</button>
+          <button className="mm-button mm-button-primary" style={{ backgroundColor: '#2563eb' }} onClick={handleOpenManualBill}><FileText size={18} /> {t('maintenance.createManualBill', 'Create Manual Bill')}</button>
         </div>
       </div>
 
@@ -1283,7 +1463,7 @@ function Maintenance() {
                   </tr>
                 </thead>
                 <tbody>{filteredBills.map((bill) => {
-                  const currentStatus = bill.write_off_status || bill.payment_status || bill.status;
+                  const currentStatus = resolveBillStatus(bill);
                   const remainingDue = bill.remaining_due ?? bill.current_due ?? bill.remaining_amount;
                   return (
                     <tr key={bill.id}>
@@ -1773,19 +1953,105 @@ function Maintenance() {
         </section>
       )}
 
+      {modal === 'manual_bill' && (
+        <Modal title="Create Manual Bill" subtitle="Create an individual maintenance bill for a specific resident." onClose={() => setModal(null)}>
+          <form onSubmit={submitManualBill} className="mm-form">
+            {manualError && (
+              <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 p-3 mb-4 text-xs flex items-center gap-2" style={{ backgroundColor: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', borderRadius: '0.5rem', padding: '0.75rem', marginBottom: '1rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <AlertCircle size={16} />
+                <span>{manualError}</span>
+              </div>
+            )}
+
+            <div className="mm-form-row">
+              <label className="mm-field" style={{ gridColumn: '1 / -1' }}>
+                <span>Resident *</span>
+                <select value={manualBillForm.residentId} onChange={(e) => handleManualResidentChange(e.target.value)} required>
+                  <option value="">-- Select Resident --</option>
+                  {manualResidents.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name} ({r.email}) {r.flat_no ? `— Flat ${r.flat_no}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            {manualBillForm.residentId && manualBillForm.flatNo && (
+              <div className="mb-3 p-2.5 rounded-md bg-blue-50 text-blue-800 text-xs flex items-center justify-between" style={{ backgroundColor: '#eff6ff', color: '#1e40af', padding: '8px 12px', borderRadius: '6px', fontSize: '12px', marginBottom: '12px' }}>
+                <span>Assigned Flat: <strong>Flat {manualBillForm.flatNo}</strong> {manualBillForm.wing ? `(Wing ${manualBillForm.wing})` : ''}</span>
+              </div>
+            )}
+
+            <div className="mm-form-row">
+              <label className="mm-field">
+                <span>Billing Month *</span>
+                <select value={manualBillForm.month} onChange={(e) => setManualBillForm({ ...manualBillForm, month: Number(e.target.value) })}>
+                  {months.map((month, index) => (
+                    <option value={index + 1} key={month}>{month}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="mm-field">
+                <span>Billing Year *</span>
+                <input type="number" min="2020" max="2099" value={manualBillForm.year} onChange={(e) => setManualBillForm({ ...manualBillForm, year: Number(e.target.value) })} required />
+              </label>
+            </div>
+
+            <div className="mm-form-row">
+              <label className="mm-field">
+                <span>Maintenance Amount (₹) *</span>
+                <input type="number" min="0" step="any" placeholder="e.g. 1200" value={manualBillForm.amount} onChange={(e) => setManualBillForm({ ...manualBillForm, amount: e.target.value })} required />
+              </label>
+              <label className="mm-field">
+                <span>Optional Charges (₹)</span>
+                <input type="number" min="0" step="any" placeholder="e.g. 200 (extra/penalty)" value={manualBillForm.optionalCharges} onChange={(e) => setManualBillForm({ ...manualBillForm, optionalCharges: e.target.value })} />
+              </label>
+            </div>
+
+            <div className="mm-form-row">
+              <label className="mm-field">
+                <span>Due Date *</span>
+                <input type="date" value={manualBillForm.dueDate} onChange={(e) => setManualBillForm({ ...manualBillForm, dueDate: e.target.value })} required />
+              </label>
+              <label className="mm-field">
+                <span>Bill Title</span>
+                <input type="text" placeholder="e.g. Monthly Maintenance" value={manualBillForm.title} onChange={(e) => setManualBillForm({ ...manualBillForm, title: e.target.value })} />
+              </label>
+            </div>
+
+            <div className="mm-form-row">
+              <label className="mm-field" style={{ gridColumn: '1 / -1' }}>
+                <span>Notes / Remarks (Optional)</span>
+                <textarea rows="2" placeholder="Optional details or breakdown notes..." value={manualBillForm.notes} onChange={(e) => setManualBillForm({ ...manualBillForm, notes: e.target.value })} />
+              </label>
+            </div>
+
+            <div className="p-3 my-2 rounded-lg bg-slate-100 flex items-center justify-between" style={{ backgroundColor: '#f1f5f9', padding: '12px', borderRadius: '8px', margin: '8px 0 16px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontWeight: 600, fontSize: '13px', color: '#475467' }}>Total Bill Amount:</span>
+              <strong style={{ fontSize: '18px', color: '#0284c7' }}>{money((Number(manualBillForm.amount) || 0) + (Number(manualBillForm.optionalCharges) || 0))}</strong>
+            </div>
+
+            {manualError && (
+              <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 p-3 mb-4 text-xs flex items-center gap-2" style={{ backgroundColor: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', borderRadius: '0.5rem', padding: '0.75rem', marginBottom: '1rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <AlertCircle size={16} />
+                <span>{manualError}</span>
+              </div>
+            )}
+
+            <div className="mm-form-actions">
+              <button type="button" className="mm-button mm-button-light" onClick={() => setModal(null)} disabled={saving}>Cancel</button>
+              <button type="submit" className="mm-button mm-button-primary" disabled={saving}>{saving ? 'Creating Bill...' : 'Create Manual Bill'}</button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
       {modal === 'generate' && (
         <Modal title="Generate Monthly Bills" subtitle="Generate a billing record for all assigned resident flats automatically." onClose={() => setModal(null)}>
           <form onSubmit={submitCycle} className="mm-form">
             {settings ? (
               <>
-                <div className="rounded-lg bg-slate-50 p-4 mb-4 border border-slate-100 text-sm">
-                  <div className="mb-2"><strong>Default Title:</strong> {settings.title}</div>
-                  <div className="mb-2"><strong>Fixed Charge:</strong> {money(settings.fixed_amount)}</div>
-                  <div className="mb-2"><strong>Due Date Rule:</strong> {settings.due_day}th day of month</div>
-                  <div className="mb-2"><strong>Late Fee Penalty:</strong> {settings.late_fee_value}{settings.late_fee_type === 'percentage' ? '%' : ' ₹'} (grace: {settings.grace_days} days)</div>
-                  <hr className="my-2 border-slate-200" style={{ borderColor: '#e2e8f0' }} />
-                  <div className="font-semibold text-indigo-600" style={{ color: '#4f46e5', fontWeight: 600 }}>Next Billing Month: {nextPendingMonthDetails?.label}</div>
-                </div>
                 {validateGenerationCycle() && (
                   <div className="rounded-lg bg-amber-50 border border-amber-200 text-amber-800 p-3 mb-4 text-xs flex items-center gap-2" style={{ backgroundColor: '#fffbeb', border: '1px solid #fef3c7', color: '#92400e', borderRadius: '0.5rem', padding: '0.75rem', marginBottom: '1rem', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                     <AlertCircle size={16} />

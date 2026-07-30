@@ -407,7 +407,7 @@ export default function AdminReports() {
   const summary = finData?.summary || {};
 
   return (
-    <div className="portal-module" style={{ width: '100%' }}>
+    <div className="portal-module reports-module" style={{ width: '100%' }}>
       {/* Top Action Bar */}
       <div className="portal-page-title">
         <div>
@@ -680,7 +680,7 @@ export default function AdminReports() {
                     </div>
                   </div>
                   <div className="portal-table-wrap">
-                    <table className="portal-data-table">
+                    <table className="portal-data-table portal-data-table-wide">
                       <thead>
                         <tr>
                           <th>Month / Year</th>
@@ -735,7 +735,7 @@ export default function AdminReports() {
                     </div>
                   ) : (
                     <div className="portal-table-wrap">
-                      <table className="portal-data-table">
+                      <table className="portal-data-table portal-data-table-wide">
                         <thead>
                           <tr>
                             <th>Resident</th>
@@ -885,7 +885,7 @@ export default function AdminReports() {
                   </div>
 
                   <div className="portal-table-wrap">
-                    <table className="portal-data-table">
+                    <table className="portal-data-table portal-data-table-wide">
                       <thead>
                         <tr>
                           <th>Month</th>

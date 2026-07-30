@@ -43,7 +43,8 @@ const {
   getBankLedgerReport,
   getCashLedgerReport,
   getFlatCollectionReport,
-  saveOpeningBalance
+  saveOpeningBalance,
+  createManualBill
 } = require('../controllers/maintenanceController');
 const moduleController = require('../controllers/maintenanceModuleController');
 
@@ -77,6 +78,7 @@ router.get('/disputes', auth, adminAuth, moduleController.listDisputes);
 router.get('/', auth, adminAuth, getAllMaintenance);
 router.post('/', auth, adminAuth, createMaintenance);
 router.post('/generate', auth, adminAuth, generateMaintenanceBills);
+router.post('/manual', auth, adminAuth, createManualBill);
 router.get('/bills', auth, adminAuth, getAllBills);
 router.get('/bills/:id', auth, getBillById);
 router.put('/bills/:id/mark-paid', auth, adminAuth, markBillPaid);

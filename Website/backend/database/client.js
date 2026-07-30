@@ -1,6 +1,38 @@
 const path = require('path');
 const dotenv = require('dotenv');
 const { Pool } = require('pg');
+const dns = require('dns');
+
+const originalLookup = dns.lookup;
+const resolver = new dns.Resolver();
+try {
+  resolver.setServers(['8.8.8.8', '1.1.1.1', '8.8.4.4']);
+} catch (e) {}
+
+dns.lookup = (hostname, options, callback) => {
+  if (typeof options === 'function') {
+    callback = options;
+    options = {};
+  }
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return originalLookup(hostname, options, callback);
+  }
+  originalLookup(hostname, options, (err, address, family) => {
+    if (err && (err.code === 'ENOTFOUND' || err.code === 'EAI_AGAIN')) {
+      resolver.resolve4(hostname, (resErr, addresses) => {
+        if (!resErr && addresses && addresses.length > 0) {
+          if (options && options.all) {
+            return callback(null, addresses.map((a) => ({ address: a, family: 4 })));
+          }
+          return callback(null, addresses[0], 4);
+        }
+        return callback(err, address, family);
+      });
+    } else {
+      return callback(err, address, family);
+    }
+  });
+};
 
 dotenv.config({ path: path.resolve(__dirname, '..', '.env') });
 
@@ -19,9 +51,11 @@ const useSsl = process.env.DATABASE_SSL !== 'false';
 const pool = new Pool({
   connectionString,
   ssl: useSsl ? { rejectUnauthorized: false } : false,
-  max: 4,
-  idleTimeoutMillis: 2000,
-  connectionTimeoutMillis: 10000,
+  max: 10,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 15000,
+  keepAlive: true,
+  keepAliveInitialDelayMillis: 10000,
 });
 
 const normalizeSql = (sql) => {
@@ -101,8 +135,19 @@ const promisePool = {
 };
 
 const initDatabase = async () => {
-  await pool.query('SELECT 1');
-  console.log('PostgreSQL database connection established');
+  let attempts = 0;
+  while (attempts < 3) {
+    try {
+      await pool.query('SELECT 1');
+      console.log('PostgreSQL database connection established');
+      break;
+    } catch (err) {
+      attempts++;
+      console.warn(`Database connection attempt ${attempts} failed: ${err.message}`);
+      if (attempts >= 3) throw err;
+      await new Promise((res) => setTimeout(res, 2000));
+    }
+  }
 
   const fs = require('fs/promises');
   const path = require('path');

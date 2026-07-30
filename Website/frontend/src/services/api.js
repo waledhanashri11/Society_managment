@@ -198,6 +198,7 @@ export const maintenanceAPI = {
   delete: (id) => mutate(api.delete(`/maintenance/${id}`), ['/maintenance', '/reports']),
   cleanupOrphaned: () => mutate(api.delete('/maintenance/cleanup-orphaned'), ['/maintenance', '/reports']),
   generateBills: (data) => mutate(api.post('/maintenance/generate', data), '/maintenance'),
+  createManualBill: (data) => mutate(api.post('/maintenance/manual', data), '/maintenance'),
   getBills: (config = {}) => cachedGet('/maintenance/bills', config),
   getBillById: (id, config = {}) => cachedGet(`/maintenance/bills/${id}`, config),
   pay: (id, data) => mutate(api.put(`/maintenance/${id}/pay`, data), ['/maintenance', '/resident']),

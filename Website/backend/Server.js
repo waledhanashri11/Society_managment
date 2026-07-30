@@ -97,23 +97,24 @@ app.get('/', (req, res) => {
 const PORT = process.env.PORT || 5000;
 
 const startServer = async () => {
+  const server = app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+
+  server.on('error', (error) => {
+    if (error.code === 'EADDRINUSE') {
+      console.error(`Port ${PORT} is already in use. Stop the existing backend process or run this server on another port.`);
+      process.exit(1);
+    }
+
+    console.error('Server error:', error);
+    process.exit(1);
+  });
+
   try {
     await initDatabase();
-    const server = app.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
-    });
-
-    server.on('error', (error) => {
-      if (error.code === 'EADDRINUSE') {
-        console.error(`Port ${PORT} is already in use. Stop the existing backend process or run this server on another port.`);
-        process.exit(1);
-      }
-
-      console.error('Server error:', error);
-      process.exit(1);
-    });
   } catch (error) {
-    console.error('Error starting server:', error);
+    console.warn('Database initialization warning (server continues running):', error.message);
   }
 };
 
