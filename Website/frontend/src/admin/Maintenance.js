@@ -415,13 +415,17 @@ function Maintenance() {
 
   const nextPendingMonthDetails = useMemo(() => {
     const billsList = Array.isArray(bills) ? bills : [];
-    const generatedCycles = Array.from(
-      new Set(
-        billsList
-          .filter((bill) => bill && bill.year && bill.month && bill.resident_id && bill.flat_id)
-          .map((bill) => Number(bill.year) * 12 + Number(bill.month))
-      )
-    ).sort((a, b) => b - a);
+    const activeResCount = manualResidents.length > 0 ? manualResidents.length : 1;
+
+    const cycleCounts = {};
+    billsList.forEach((bill) => {
+      if (bill && bill.year && bill.month && (bill.resident_id || bill.user_id) && bill.flat_id) {
+        const c = Number(bill.year) * 12 + Number(bill.month);
+        cycleCounts[c] = (cycleCounts[c] || 0) + 1;
+      }
+    });
+
+    const cycles = Object.keys(cycleCounts).map(Number).sort((a, b) => b - a);
 
     const now = new Date();
     const nowYear = now.getFullYear();
@@ -429,24 +433,27 @@ function Maintenance() {
     const nowCycle = nowYear * 12 + nowMonth;
 
     let nextCycle;
-    if (!generatedCycles.length) {
+    if (!cycles.length) {
       nextCycle = nowCycle;
     } else {
-      nextCycle = generatedCycles[0] + 1;
+      const partiallyGenerated = cycles.filter((c) => cycleCounts[c] < activeResCount).sort((a, b) => a - b);
+      if (partiallyGenerated.length > 0) {
+        nextCycle = partiallyGenerated[0];
+      } else {
+        nextCycle = cycles[0] + 1;
+      }
     }
 
     const nextYear = Math.floor((nextCycle - 1) / 12);
     const nextMonth = nextCycle - (nextYear * 12);
-    const isFuture = nextCycle > nowCycle;
 
     return {
       month: nextMonth,
       year: nextYear,
       cycle: nextCycle,
-      isFuture,
       label: months[nextMonth - 1] ? `${months[nextMonth - 1]} ${nextYear}` : `${nextMonth} ${nextYear}`
     };
-  }, [bills]);
+  }, [bills, manualResidents]);
 
   useEffect(() => {
     if (modal === 'generate' && nextPendingMonthDetails) {
@@ -1113,47 +1120,51 @@ function Maintenance() {
       return 'Invalid selected month or year.';
     }
 
-    const billsList = Array.isArray(bills) ? bills : [];
-    const generatedCycles = Array.from(
-      new Set(
-        billsList
-          .filter((bill) => bill && bill.year && bill.month && (bill.resident_id || bill.user_id) && bill.flat_id)
-          .map((bill) => cycleNumber(bill.year, bill.month))
-      )
-    ).sort((a, b) => b - a);
+    const { count } = getCycleGenerationInfo(cycleForm.month, cycleForm.year);
+    const activeResidentCount = manualResidents.length > 0 ? manualResidents.length : 1;
 
-    if (!generatedCycles.length) {
+    // Only block if ALL active residents already have bills for this selected month & year
+    if (count > 0 && activeResidentCount > 0 && count >= activeResidentCount) {
+      const monthName = months[cycleForm.month - 1] || cycleForm.month;
+      return `Maintenance bills for ${monthName} ${cycleForm.year} have already been generated for all residents.`;
+    }
+
+    const billsList = Array.isArray(bills) ? bills : [];
+    const cycleCounts = {};
+    billsList.forEach((bill) => {
+      if (bill && bill.year && bill.month && (bill.resident_id || bill.user_id) && bill.flat_id) {
+        const c = Number(bill.year) * 12 + Number(bill.month);
+        cycleCounts[c] = (cycleCounts[c] || 0) + 1;
+      }
+    });
+
+    const cycles = Object.keys(cycleCounts).map(Number).sort((a, b) => b - a);
+    if (!cycles.length) {
       return '';
     }
 
     const selectedCycle = cycleNumber(cycleForm.year, cycleForm.month);
-    const { count } = getCycleGenerationInfo(cycleForm.month, cycleForm.year);
-    const activeResidentCount = manualResidents.length || 1;
+    const latestCycle = cycles[0]; // Highest cycle with any bill in system
+    const fullyGenerated = cycles.filter((c) => cycleCounts[c] >= activeResidentCount);
+    const latestFullCycle = fullyGenerated.length > 0 ? fullyGenerated[0] : latestCycle;
+    const nextPendingCycle = latestFullCycle > 0 ? latestFullCycle + 1 : 0;
 
-    const latestCycle = generatedCycles[0];
-    const nextPendingCycle = latestCycle + 1;
+    // 1. Block generating past/previous months (e.g. March when August/September exists)
+    if (selectedCycle < latestCycle && count >= activeResidentCount) {
+      const monthName = months[cycleForm.month - 1] || cycleForm.month;
+      return `Maintenance bills for ${monthName} ${cycleForm.year} have already been generated for all residents.`;
+    }
 
-    // Block generating past/previous months
-    if (selectedCycle < nextPendingCycle) {
-      if (count > 0 && activeResidentCount > 0 && count >= activeResidentCount) {
-        const monthName = months[cycleForm.month - 1] || cycleForm.month;
-        return `Maintenance bills for ${monthName} ${cycleForm.year} have already been generated for all residents.`;
-      }
+    if (selectedCycle < latestCycle && count === 0) {
       return 'Previous months cannot be generated.';
     }
 
-    // Block generating future months if previous pending month has not been generated
-    if (selectedCycle > nextPendingCycle) {
+    // 2. Block generating future months if previous pending month has not been generated
+    if (nextPendingCycle > 0 && selectedCycle > nextPendingCycle && count < activeResidentCount) {
       const nextPendingYear = Math.floor((nextPendingCycle - 1) / 12);
       const nextPendingMonth = nextPendingCycle - (nextPendingYear * 12);
       const nextPendingMonthName = months[nextPendingMonth - 1] || nextPendingMonth;
       return `${nextPendingMonthName} ${nextPendingYear} maintenance has not been generated yet. Please generate ${nextPendingMonthName} ${nextPendingYear} first.`;
-    }
-
-    // Only block if ALL active residents already have bills for this cycle
-    if (count > 0 && activeResidentCount > 0 && count >= activeResidentCount) {
-      const monthName = months[cycleForm.month - 1] || cycleForm.month;
-      return `Maintenance bills for ${monthName} ${cycleForm.year} have already been generated for all residents.`;
     }
 
     return '';
