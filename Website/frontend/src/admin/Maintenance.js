@@ -360,7 +360,7 @@ function Maintenance() {
     const requests = [
       maintenanceAPI.getBills(), maintenanceAPI.getDashboard(),
       maintenanceAPI.getCategories(), maintenanceAPI.getExpenses(), maintenanceAPI.getPayments(),
-      maintenanceAPI.getSettings(), settingsAPI.getPayment()
+      maintenanceAPI.getSettings(), settingsAPI.getPayment(), userAPI.getAll()
     ];
     const results = await Promise.allSettled(requests);
     if (results[0].status === 'fulfilled') setBills(unwrap(results[0].value));
@@ -369,6 +369,12 @@ function Maintenance() {
     if (results[4].status === 'fulfilled') setPayments(unwrap(results[4].value));
     if (results[5].status === 'fulfilled') setSettings(unwrap(results[5].value, null));
     if (results[6].status === 'fulfilled') setPaymentSettings(results[6].value.data?.data ?? results[6].value.data ?? {});
+    if (results[7].status === 'fulfilled') {
+      const residentUsers = unwrap(results[7].value, []).filter(
+        (u) => String(u.role).toLowerCase() === 'resident'
+      );
+      setManualResidents(residentUsers);
+    }
     if (results.every((result) => result.status === 'rejected')) setError('The maintenance service is unavailable. Start the backend and refresh this page.');
     setLoading(false);
   };
@@ -1094,47 +1100,60 @@ function Maintenance() {
 
 
 
-  const validateGenerationCycle = () => {
+  const getCycleGenerationInfo = (month, year) => {
     const billsList = Array.isArray(bills) ? bills : [];
-    const generatedCycles = Array.from(
-      new Set(
-        billsList
-          .filter((bill) => bill && bill.year && bill.month && bill.resident_id && bill.flat_id)
-          .map((bill) => cycleNumber(bill.year, bill.month))
-      )
-    ).sort((a, b) => b - a);
+    const billsForCycle = billsList.filter(
+      (b) => Number(b.month) === Number(month) && Number(b.year) === Number(year)
+    );
+    return { count: billsForCycle.length };
+  };
 
+  const validateGenerationCycle = () => {
     if (!cycleForm || !cycleForm.year || !cycleForm.month) {
       return 'Invalid selected month or year.';
     }
 
-    const selectedCycle = cycleNumber(cycleForm.year, cycleForm.month);
+    const billsList = Array.isArray(bills) ? bills : [];
+    const generatedCycles = Array.from(
+      new Set(
+        billsList
+          .filter((bill) => bill && bill.year && bill.month && (bill.resident_id || bill.user_id) && bill.flat_id)
+          .map((bill) => cycleNumber(bill.year, bill.month))
+      )
+    ).sort((a, b) => b - a);
 
-    // Previous months are blocked only after the first bill exists.
     if (!generatedCycles.length) {
       return '';
     }
 
+    const selectedCycle = cycleNumber(cycleForm.year, cycleForm.month);
+    const { count } = getCycleGenerationInfo(cycleForm.month, cycleForm.year);
+    const activeResidentCount = manualResidents.length || 1;
+
     const latestCycle = generatedCycles[0];
     const nextPendingCycle = latestCycle + 1;
 
-    if (selectedCycle === nextPendingCycle) {
-      return '';
-    }
-
+    // Block generating past/previous months
     if (selectedCycle < nextPendingCycle) {
-      if (generatedCycles.includes(selectedCycle)) {
+      if (count > 0 && activeResidentCount > 0 && count >= activeResidentCount) {
         const monthName = months[cycleForm.month - 1] || cycleForm.month;
-        return `Maintenance bills for ${monthName} ${cycleForm.year} have already been generated.`;
+        return `Maintenance bills for ${monthName} ${cycleForm.year} have already been generated for all residents.`;
       }
       return 'Previous months cannot be generated.';
     }
 
+    // Block generating future months if previous pending month has not been generated
     if (selectedCycle > nextPendingCycle) {
       const nextPendingYear = Math.floor((nextPendingCycle - 1) / 12);
       const nextPendingMonth = nextPendingCycle - (nextPendingYear * 12);
       const nextPendingMonthName = months[nextPendingMonth - 1] || nextPendingMonth;
-      return `${nextPendingMonthName} ${nextPendingYear} maintenance has not been generated yet. Please generate ${nextPendingMonthName} first.`;
+      return `${nextPendingMonthName} ${nextPendingYear} maintenance has not been generated yet. Please generate ${nextPendingMonthName} ${nextPendingYear} first.`;
+    }
+
+    // Only block if ALL active residents already have bills for this cycle
+    if (count > 0 && activeResidentCount > 0 && count >= activeResidentCount) {
+      const monthName = months[cycleForm.month - 1] || cycleForm.month;
+      return `Maintenance bills for ${monthName} ${cycleForm.year} have already been generated for all residents.`;
     }
 
     return '';
@@ -2052,6 +2071,12 @@ function Maintenance() {
           <form onSubmit={submitCycle} className="mm-form">
             {settings ? (
               <>
+                {getCycleGenerationInfo(cycleForm.month, cycleForm.year).count > 0 && !validateGenerationCycle() && (
+                  <div className="rounded-lg bg-amber-50 border border-amber-200 text-amber-800 p-3 mb-4 text-xs flex items-center gap-2" style={{ backgroundColor: '#fffbeb', border: '1px solid #fef3c7', color: '#92400e', borderRadius: '0.5rem', padding: '0.75rem', marginBottom: '1rem', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <AlertCircle size={16} />
+                    <span>Note: {getCycleGenerationInfo(cycleForm.month, cycleForm.year).count} resident(s) already have a bill for {months[cycleForm.month - 1]} {cycleForm.year}. Generating will automatically skip existing ones and create bills for all remaining residents.</span>
+                  </div>
+                )}
                 {validateGenerationCycle() && (
                   <div className="rounded-lg bg-amber-50 border border-amber-200 text-amber-800 p-3 mb-4 text-xs flex items-center gap-2" style={{ backgroundColor: '#fffbeb', border: '1px solid #fef3c7', color: '#92400e', borderRadius: '0.5rem', padding: '0.75rem', marginBottom: '1rem', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                     <AlertCircle size={16} />

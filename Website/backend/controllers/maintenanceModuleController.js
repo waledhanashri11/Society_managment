@@ -174,17 +174,31 @@ const createExpense = async (req, res) => {
       const balance = await require('./reportsController').balanceForAccount(normalizedAccount, expenseDate);
       if (balance != null && Number(amount) > balance) return respond(res, 409, `Insufficient ${normalizedAccount.toLowerCase()} balance`);
     }
+
+    // Ensure created_by is a valid existing user ID
+    let validUserId = req.user?.id || null;
+    if (validUserId) {
+      const [uRows] = await promisePool.query('SELECT id FROM users WHERE id = ?', [validUserId]);
+      if (!uRows.length) {
+        const [adminRows] = await promisePool.query("SELECT id FROM users WHERE role = 'admin' LIMIT 1");
+        validUserId = adminRows[0]?.id || null;
+      }
+    }
+
     const number = `EXP-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
     const [result] = await promisePool.query(
       `INSERT INTO maintenance_expenses
        (expense_number, category, vendor, amount, expense_date, invoice_url, description, payment_method, account_type, status, created_by)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [number, category, vendor, amount, expenseDate, invoiceUrl || null, description || null, paymentMethod || 'Bank Transfer', normalizedAccount, status, req.user.id]
+      [number, category, vendor, amount, expenseDate, invoiceUrl || null, description || null, paymentMethod || 'Bank Transfer', normalizedAccount, status, validUserId]
     );
-    await audit(req.user.id, 'CREATE', 'EXPENSE', result.insertId, { number, amount });
-    return respond(res, 201, 'Expense recorded', { id: result.insertId, expenseNumber: number });
+    if (validUserId) {
+      await audit(validUserId, 'CREATE', 'EXPENSE', result.insertId || result.id, { number, amount });
+    }
+    return respond(res, 201, 'Expense recorded', { id: result.insertId || result.id, expenseNumber: number });
   } catch (error) {
-    return respond(res, 500, 'Unable to create expense');
+    console.error('Create expense error:', error);
+    return respond(res, 500, error.message || 'Unable to create expense');
   }
 };
 

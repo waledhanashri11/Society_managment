@@ -465,8 +465,9 @@ export default function AdminReports() {
         {[
           { id: 'summary', label: 'Financial Accounting Summary', icon: WalletCards },
           { id: 'monthlyReport', label: 'Monthly Maintenance Report', icon: BarChart3 },
+          { id: 'expenses', label: 'Expense Report', icon: Wallet },
           { id: 'bankLedger', label: 'Bank Account Ledger', icon: Landmark },
-          { id: 'cashLedger', label: 'Cash Account Ledger', icon: Wallet },
+          { id: 'cashLedger', label: 'Cash Account Ledger', icon: WalletCards },
           { id: 'flats', label: 'Flat Collection Status', icon: Building2 }
         ].map((tab) => {
           const Icon = tab.icon;
@@ -862,6 +863,13 @@ export default function AdminReports() {
                     <div className="portal-kpi-icon"><Wallet size={17} /></div>
                   </article>
 
+                  <article className="portal-kpi red">
+                    <span>TOTAL EXPENSES</span>
+                    <strong style={{ color: '#dc2626' }}>{money(summary.totalExpenses)}</strong>
+                    <small style={{ color: '#dc2626' }}>Total Operational Expenses</small>
+                    <div className="portal-kpi-icon"><Wallet size={17} /></div>
+                  </article>
+
                   <article className={`portal-kpi ${summary.netAmount >= 0 ? 'green' : 'red'}`}>
                     <span>NET SURPLUS / DEFICIT</span>
                     <strong style={{ color: summary.netAmount >= 0 ? '#079447' : '#dc2626' }}>
@@ -978,6 +986,104 @@ export default function AdminReports() {
                         </tfoot>
                       )}
                     </table>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB: EXPENSE REPORT */}
+            {activeTab === 'expenses' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                <div className="portal-kpis">
+                  <article className="portal-kpi red">
+                    <span>TOTAL EXPENSES</span>
+                    <strong style={{ color: '#dc2626' }}>
+                      {money(expensesList.reduce((acc, curr) => acc + Number(curr.amount || 0), 0))}
+                    </strong>
+                    <small style={{ color: '#dc2626' }}>Total Operational Spent</small>
+                    <div className="portal-kpi-icon"><Wallet size={17} /></div>
+                  </article>
+
+                  <article className="portal-kpi">
+                    <span>BANK EXPENSES</span>
+                    <strong>
+                      {money(expensesList.filter(e => String(e.account_type || e.payment_method).toUpperCase().includes('BANK')).reduce((acc, curr) => acc + Number(curr.amount || 0), 0))}
+                    </strong>
+                    <small style={{ color: '#687588' }}>Bank Account Expenses</small>
+                    <div className="portal-kpi-icon"><Landmark size={17} /></div>
+                  </article>
+
+                  <article className="portal-kpi green">
+                    <span>CASH EXPENSES</span>
+                    <strong>
+                      {money(expensesList.filter(e => String(e.account_type || e.payment_method).toUpperCase().includes('CASH')).reduce((acc, curr) => acc + Number(curr.amount || 0), 0))}
+                    </strong>
+                    <small>Cash Account Expenses</small>
+                    <div className="portal-kpi-icon"><Wallet size={17} /></div>
+                  </article>
+
+                  <article className="portal-kpi">
+                    <span>EXPENSE TRANSACTIONS</span>
+                    <strong>{expensesList.length}</strong>
+                    <small style={{ color: '#687588' }}>Recorded Expense Count</small>
+                    <div className="portal-kpi-icon"><Receipt size={17} /></div>
+                  </article>
+                </div>
+
+                <div className="portal-panel portal-table-card">
+                  <div className="portal-panel-head">
+                    <div>
+                      <h2>Society Maintenance Expenses Report</h2>
+                      <p>Detailed breakdown of all recorded operational expenses and vendor payments</p>
+                    </div>
+                  </div>
+
+                  <div className="portal-table-wrap">
+                    {expensesList.length ? (
+                      <table className="portal-data-table">
+                        <thead>
+                          <tr>
+                            <th>Expense #</th>
+                            <th>Date</th>
+                            <th>Category</th>
+                            <th>Vendor</th>
+                            <th>Account / Mode</th>
+                            <th>Amount</th>
+                            <th>Status</th>
+                            <th>Description</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {expensesList.map((exp, i) => (
+                            <tr key={exp.id || i}>
+                              <td><strong>{exp.expense_number || `EXP-${exp.id}`}</strong></td>
+                              <td>{formatDate(exp.expense_date)}</td>
+                              <td><span className="portal-badge" style={{ backgroundColor: '#f1f5f9', color: '#334155', padding: '3px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 600 }}>{exp.category || 'General'}</span></td>
+                              <td><strong>{exp.vendor || '—'}</strong></td>
+                              <td>
+                                <span style={{ fontWeight: 600, color: String(exp.account_type || exp.payment_method).toUpperCase() === 'CASH' ? '#16a34a' : '#2563eb' }}>
+                                  {exp.account_type || exp.payment_method || 'Bank'}
+                                </span>
+                              </td>
+                              <td style={{ color: '#dc2626', fontWeight: 700 }}>
+                                {money(exp.amount)}
+                              </td>
+                              <td>
+                                <span className={`portal-status ${String(exp.status).toLowerCase() === 'paid' ? 'paid' : 'pending'}`}>
+                                  {exp.status || 'Paid'}
+                                </span>
+                              </td>
+                              <td>{exp.description || '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    ) : (
+                      <div className="portal-empty" style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>
+                        <Wallet size={32} style={{ marginBottom: '8px', opacity: 0.5 }} />
+                        <div>No expense records found for FY {financialYear}.</div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

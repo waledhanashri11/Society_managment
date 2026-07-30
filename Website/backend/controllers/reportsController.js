@@ -1,4 +1,4 @@
-const promisePool = require('../config/database');
+const { promisePool } = require('../config/database');
 const ADMINS = new Set(['admin', 'super_admin']);
 const n = value => Number(value || 0);
 const account = method => String(method || '').trim().toLowerCase() === 'cash' ? 'CASH' : 'BANK';
