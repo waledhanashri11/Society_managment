@@ -9,6 +9,20 @@ const sendResponse = (res, statusCode, message, data = null) => {
   return res.status(statusCode).json(payload);
 };
 
+let nocSchemaEnsured = false;
+const ensureNocRuntimeSchema = async () => {
+  if (nocSchemaEnsured) return;
+  try {
+    await promisePool.query('ALTER TABLE noc_requests DROP CONSTRAINT IF EXISTS noc_requests_status_check');
+    await promisePool.query(
+      `ALTER TABLE noc_requests ADD CONSTRAINT noc_requests_status_check CHECK (status IN ('Submitted', 'Pending', 'Under Review', 'Additional Information Required', 'Approved', 'Rejected', 'Completed', 'Cancelled'))`
+    );
+    nocSchemaEnsured = true;
+  } catch (err) {
+    console.error('ensureNocRuntimeSchema error:', err.message);
+  }
+};
+
 const escapeHtml = (value = '') => String(value)
   .replace(/&/g, '&amp;')
   .replace(/</g, '&lt;')
@@ -144,6 +158,7 @@ const normalizeDocuments = (documents) => {
 // POST /api/noc/request
 const createRequest = async (req, res) => {
   try {
+    await ensureNocRuntimeSchema();
     if (req.user.role !== 'resident') {
       return sendResponse(res, 403, 'Only residents can submit NOC requests');
     }
@@ -543,7 +558,7 @@ const generateNocHtml = (request, societyName) => {
         <div class="society-title">${escapeHtml(societyName)}</div>
         <div class="society-sub">Registered Housing Society · Official No Objection Certificate</div>
       </div>
-      <div style={{ textAlign: 'right', fontSize: '12px', color: '#64748b' }}>
+      <div style="text-align: right; font-size: 12px; color: #64748b;">
         <strong>NOC Ref:</strong> ${escapeHtml(request.request_number)}
       </div>
     </div>

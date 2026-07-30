@@ -170,23 +170,57 @@ function NOCManagement() {
     }
   };
 
-  const downloadPdf = async (reqItem) => {
+  const downloadPdf = async (request) => {
+    if (!['Approved', 'Completed'].includes(request.status)) {
+      return notify('Certificate is available only after approval');
+    }
+
     try {
-      const response = await nocAPI.getPdf(reqItem.id);
+      const response = await nocAPI.getPdf(request.id);
       let htmlText = '';
       if (response.data instanceof Blob) {
         htmlText = await response.data.text();
       } else {
         htmlText = String(response.data);
       }
-      const printWin = window.open('', '_blank', 'width=900,height=750');
-      if (!printWin) {
-        return notify('Pop-up blocked. Please allow pop-ups to print NOC.');
-      }
-      printWin.document.write(htmlText);
-      printWin.document.close();
+
+      // Hide print button in downloaded PDF content
+      const cleanHtml = htmlText.replace(/<button class="print-btn"[\s\S]*?<\/button>/gi, '');
+
+      // Create an iframe to properly parse full HTML and <style> tags
+      const iframe = document.createElement('iframe');
+      iframe.style.position = 'fixed';
+      iframe.style.left = '0';
+      iframe.style.top = '0';
+      iframe.style.width = '850px';
+      iframe.style.height = '1100px';
+      iframe.style.zIndex = '-9999';
+      iframe.style.border = '0';
+      document.body.appendChild(iframe);
+
+      const doc = iframe.contentWindow.document;
+      doc.open();
+      doc.write(cleanHtml);
+      doc.close();
+
+      // Short delay to allow browser to parse CSS and render layout
+      await new Promise((r) => setTimeout(r, 400));
+
+      const html2pdf = (await import('html2pdf.js')).default;
+      const opt = {
+        margin: [8, 8, 8, 8],
+        filename: `NOC_Certificate_${request.request_number || 'Official'}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, logging: false, windowWidth: 850 },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      };
+
+      await html2pdf().set(opt).from(doc.body).save();
+      document.body.removeChild(iframe);
+      notify('NOC Certificate PDF downloaded successfully');
     } catch (err) {
-      notify('PDF is available after approval.');
+      console.error('NOC PDF generation error:', err);
+      notify('Could not generate PDF certificate');
     }
   };
 

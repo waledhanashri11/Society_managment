@@ -12,6 +12,16 @@ import { useTranslation } from 'react-i18next';
 import '../admin/maintenance.css';
 
 const unwrap = (response) => response?.data?.data ?? response?.data ?? [];
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const formatMonthName = (month) => {
+  if (!month) return '';
+  if (typeof month === 'number') return MONTH_NAMES[month - 1] || String(month);
+  if (typeof month === 'string' && /^\d+$/.test(month.trim())) {
+    const num = parseInt(month.trim(), 10);
+    return MONTH_NAMES[num - 1] || month;
+  }
+  return month;
+};
 const money = (value) => `₹${Number(value || 0).toLocaleString('en-IN')}`;
 const formatMonthDisplay = (month, year) => {
   if (!month) return '—';
@@ -226,28 +236,67 @@ function ResidentMaintenance() {
     };
   }, [bills, paidBills, pendingBills, overdueBills]);
 
-  const openPayment = async (bill = pendingBills[0]) => {
-    if (!bill) return notify('No pending bill to pay');
+  const sortedPendingBills = useMemo(() => {
+    return [...pendingBills].sort((a, b) => {
+      const cycleA = Number(a.year || 0) * 12 + Number(a.month || 0);
+      const cycleB = Number(b.year || 0) * 12 + Number(b.month || 0);
+      return cycleA - cycleB;
+    });
+  }, [pendingBills]);
+
+  const openPayment = async (billToPay) => {
+    if (!pendingBills.length && !billToPay) return notify('No pending bills to pay');
+
     setLoadingBill(true);
     try {
-      const response = await maintenanceAPI.getBillById(bill.id);
-      const fullBill = response.data?.data?.bill || response.data?.bill || bill;
-      setSelectedBill(fullBill);
-      
-      const remaining = fullBill.remainingPayable !== undefined ? fullBill.remainingPayable : (fullBill.remaining_amount !== undefined ? fullBill.remaining_amount : fullBill.total_amount);
-      const totalDue = Number(remaining || 0) + Number(fullBill.previous_outstanding || 0);
+      if (billToPay) {
+        // Individual bill payment
+        const response = await maintenanceAPI.getBillById(billToPay.id);
+        const fullBill = response.data?.data?.bill || response.data?.bill || billToPay;
+        setSelectedBill(fullBill);
+        
+        const writeOff = Number(fullBill.write_off_amount || fullBill.writeoff_amount || 0);
+        const paid = Number(fullBill.paid_amount || 0);
+        const baseRem = fullBill.remainingPayable !== undefined 
+          ? fullBill.remainingPayable 
+          : (fullBill.remaining_amount !== undefined ? fullBill.remaining_amount : Math.max(0, Number(fullBill.total_amount || fullBill.amount || 0) - writeOff - paid));
+        
+        const singleAmount = Math.max(0, Number(baseRem || 0));
 
-      setPayment({
-        paymentMethod: 'UPI',
-        transactionId: '',
-        amount: String(totalDue),
-        screenshotUrl: '',
-        paymentDate: today()
-      });
+        setPayment({
+          paymentMethod: 'UPI',
+          transactionId: '',
+          amount: String(singleAmount),
+          billIds: [fullBill.id],
+          screenshotUrl: '',
+          paymentDate: today()
+        });
+      } else {
+        // Pay ALL pending dues at once
+        setSelectedBill(pendingBills[0]);
+        const totalDueSum = pendingBills.reduce((sum, b) => {
+          const writeOff = Number(b.write_off_amount || b.writeoff_amount || 0);
+          const paid = Number(b.paid_amount || 0);
+          const baseRem = b.remainingPayable !== undefined 
+            ? b.remainingPayable 
+            : (b.remaining_amount !== undefined ? b.remaining_amount : Math.max(0, Number(b.total_amount || b.amount || 0) - writeOff - paid));
+          return sum + Math.max(0, Number(baseRem || 0));
+        }, 0);
+
+        setPayment({
+          paymentMethod: 'UPI',
+          transactionId: '',
+          amount: String(totalDueSum),
+          billIds: pendingBills.map((b) => b.id),
+          screenshotUrl: '',
+          paymentDate: today()
+        });
+      }
+
       setPaidConfirmed(false);
       setShowPayment(true);
     } catch (error) {
-      notify('Failed to load complete bill details');
+      notify('Failed to load bill details');
     } finally {
       setLoadingBill(false);
     }
@@ -287,8 +336,10 @@ function ResidentMaintenance() {
 
     setSubmitting(true);
     try {
+      const targetBillIds = payment.billIds && payment.billIds.length ? payment.billIds : [selectedBill.id];
       await maintenanceAPI.submitPayment({
         billId: selectedBill.id,
+        billIds: targetBillIds,
         paymentMethod: payment.paymentMethod,
         utrNumber: payment.transactionId.trim(),
         amount: payment.amount,
@@ -540,7 +591,7 @@ function ResidentMaintenance() {
               <div className="portal-modal-head">
                 <div>
                   <h3>{t('resMaint.payViaUpi', 'Submit Maintenance Payment')}</h3>
-                  <p>{selectedBill.bill_number || `Bill #${selectedBill.id}`} - {money(Number(selectedBill.total_amount || 0) + Number(selectedBill.previous_outstanding || 0))}</p>
+                  <p>{payment.billIds?.length > 1 ? `Pay All Pending Dues (${payment.billIds.length} Bills)` : (selectedBill.bill_number || `Bill #${selectedBill.id}`)} - {money(payment.amount)}</p>
                 </div>
               </div>
               <div className="portal-form" style={{ overflowY: 'auto', flex: '1 1 auto', display: 'grid', gap: '13px', padding: '18px 20px 20px' }}>
@@ -646,16 +697,16 @@ function ResidentMaintenance() {
                         <strong>{money(selectedBill.paid_amount)}</strong>
                       </div>
 
-                      {Number(selectedBill.previous_outstanding || 0) > 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#b42318' }}>
-                          <span>{t('resMaint.prevOutstanding', 'Previous Outstanding')}:</span>
-                          <strong>{money(selectedBill.previous_outstanding)}</strong>
+                      {payment.billIds?.length === 1 && Number(selectedBill.previous_outstanding || 0) > 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#64748b', fontSize: '0.7rem', fontStyle: 'italic' }}>
+                          <span>Previous Outstanding (Unpaid):</span>
+                          <span>{money(selectedBill.previous_outstanding)}</span>
                         </div>
                       )}
 
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, color: '#1e3a8a', fontSize: '0.8rem', borderTop: '1px dashed #cbd5e1', paddingTop: '4px', marginTop: '2px' }}>
-                        <span>{t('resMaint.remainingPayable', 'Remaining Payable')}:</span>
-                        <strong>{money(Number(selectedBill.remainingPayable !== undefined ? selectedBill.remainingPayable : selectedBill.remaining_amount) + Number(selectedBill.previous_outstanding || 0))}</strong>
+                        <span>{t('resMaint.remainingPayable', 'Total Amount Payable')}:</span>
+                        <strong>{money(payment.amount)}</strong>
                       </div>
                     </div>
                   </div>

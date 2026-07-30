@@ -1626,7 +1626,10 @@ const getBillById = async (req, res) => {
     const [outstandingRows] = await promisePool.query(
       `SELECT COALESCE(SUM(remaining_amount), 0) AS previous_outstanding
        FROM maintenance
-       WHERE resident_id = ? AND (year * 12 + month) < (? * 12 + ?) AND id != ?`,
+       WHERE resident_id = ? 
+         AND (year * 12 + month) < (? * 12 + ?) 
+         AND id != ?
+         AND status NOT IN ('Paid', 'PAID', 'SETTLED', 'WRITTEN_OFF', 'Pending Verification', 'Under Review')`,
       [bills[0].resident_id, bills[0].year, bills[0].month, bills[0].id]
     );
     const previousOutstanding = Number(outstandingRows[0]?.previous_outstanding || 0);
@@ -1669,8 +1672,19 @@ const createPayment = async (req, res) => {
 
     await connection.beginTransaction();
 
-    const [billRows] = requestedBillIds.length
-      ? await connection.query('SELECT * FROM maintenance WHERE id = ANY(?::int[]) ORDER BY year ASC, month ASC, due_date ASC, id ASC', [requestedBillIds])
+    let finalBillIds = requestedBillIds.length ? requestedBillIds : (billId ? [Number(billId)] : []);
+    if (!requestedBillIds.length && req.user?.id) {
+      const [unpaidRows] = await connection.query(
+        "SELECT id FROM maintenance WHERE resident_id = ? AND status NOT IN ('Paid', 'PAID', 'SETTLED', 'WRITTEN_OFF', 'Pending Verification', 'Under Review') ORDER BY year ASC, month ASC, id ASC",
+        [req.user.id]
+      );
+      if (unpaidRows.length > 0) {
+        finalBillIds = Array.from(new Set([...unpaidRows.map((r) => r.id), ...finalBillIds]));
+      }
+    }
+
+    const [billRows] = finalBillIds.length
+      ? await connection.query('SELECT * FROM maintenance WHERE id = ANY(?::int[]) ORDER BY year ASC, month ASC, due_date ASC, id ASC', [finalBillIds])
       : await connection.query('SELECT * FROM maintenance WHERE id = ?', [billId]);
     if (billRows.length === 0) {
       await connection.rollback();
@@ -1682,9 +1696,9 @@ const createPayment = async (req, res) => {
       return sendResponse(res, 403, 'You can only access your own bills');
     }
 
-    if (billRows.some((row) => ['Paid', 'Pending Verification', 'Under Review'].includes(row.status))) {
+    if (billRows.some((row) => ['Paid', 'PAID', 'SETTLED', 'WRITTEN_OFF'].includes(row.status))) {
       await connection.rollback();
-      return sendResponse(res, 400, 'One or more selected bills are already paid or pending verification');
+      return sendResponse(res, 400, 'One or more selected bills are already paid');
     }
 
     const bill = billRows[billRows.length - 1];
@@ -1696,24 +1710,12 @@ const createPayment = async (req, res) => {
       await connection.rollback();
       return sendResponse(res, 400, 'Valid payment amount is required');
     }
-    if (paidAmount < totalAmount) {
-      await connection.rollback();
-      return sendResponse(res, 400, `Payment amount must be at least ${totalAmount}`);
-    }
 
-    const [existingBillPayments] = await connection.query(
-      `SELECT p.id, p.payment_status
-       FROM payments p
-       JOIN payment_maintenance pm ON pm.payment_id = p.id
-       WHERE pm.maintenance_id = ANY(?::int[])
-         AND p.payment_status != 'Rejected'
-       LIMIT 1`,
+    // Delete any old pending unapproved payments for these bill IDs so new payment takes over
+    await connection.query(
+      `DELETE FROM payment_maintenance WHERE maintenance_id = ANY(?::int[]) AND payment_id IN (SELECT id FROM payments WHERE payment_status NOT IN ('Approved', 'Paid'))`,
       [selectedBillIds]
     );
-    if (existingBillPayments.length > 0) {
-      await connection.rollback();
-      return sendResponse(res, 409, 'Payment already exists for these dues', null, ['One of these maintenance bills already has a payment record']);
-    }
 
     const [paymentRows] = await connection.query('SELECT id FROM payments WHERE transaction_id = ?', [utr]);
     if (paymentRows.length > 0) {
@@ -2447,18 +2449,19 @@ const getPayments = async (req, res) => {
   try {
     await reconcilePaidPayments();
     const [payments] = await promisePool.query(`
-      SELECT p.id, p.bill_id, p.payment_method, p.transaction_id, p.amount, p.payment_status, p.paid_at, p.created_at, p.updated_at, p.remarks, p.verified_by, p.verified_at, p.rejection_reason, p.receipt_number, p.resident_id, p.rejected_by, p.rejected_at,
+      SELECT DISTINCT ON (p.id)
+             p.id, p.bill_id, p.payment_method, p.transaction_id, p.amount, p.payment_status, p.paid_at, p.created_at, p.updated_at, p.remarks, p.verified_by, p.verified_at, p.rejection_reason, p.receipt_number, p.resident_id, p.rejected_by, p.rejected_at,
              CASE WHEN p.payment_proof IS NOT NULL OR p.screenshot_url IS NOT NULL THEN 1 ELSE 0 END AS has_screenshot,
              p.transaction_id AS utr_number,
              CONCAT('BILL-', m.id) AS bill_number, m.title, m.month, m.year, m.due_date, m.total_amount AS total_amount,
-             COALESCE(m.resident_id, p.resident_id) AS resident_id,
+             COALESCE(p.resident_id, m.resident_id) AS resident_id,
              u.name AS resident_name, u.phone AS resident_phone, u.email AS resident_email, f.flat_no, f.wing
       FROM payments p
       LEFT JOIN payment_maintenance pm ON pm.payment_id = p.id
-      LEFT JOIN maintenance m ON m.id = COALESCE(pm.maintenance_id, p.bill_id)
-      LEFT JOIN users u ON u.id = COALESCE(m.resident_id, p.resident_id)
+      LEFT JOIN maintenance m ON m.id = COALESCE(p.bill_id, pm.maintenance_id)
+      LEFT JOIN users u ON u.id = COALESCE(p.resident_id, m.resident_id)
       LEFT JOIN flats f ON m.flat_id = f.id
-      ORDER BY p.created_at DESC
+      ORDER BY p.id DESC, p.created_at DESC
     `);
     const paymentsWithCoveredBills = await withCoveredPaymentBills(promisePool, payments);
     return sendResponse(res, 200, 'Payments fetched successfully', withPaymentScreenshotUrls(req, paymentsWithCoveredBills));

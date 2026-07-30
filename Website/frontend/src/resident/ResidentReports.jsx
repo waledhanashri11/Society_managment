@@ -20,9 +20,39 @@ import { CardSkeleton } from '../components/Skeletons';
 const money = (value) => `₹ ${Math.round(Number(value || 0)).toLocaleString('en-IN')}`;
 const moneyShort = (value) => `₹ ${Math.round(Number(value || 0)).toLocaleString('en-IN')}`;
 
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'
+];
+
+const formatMonthName = (month) => {
+  if (!month) return '—';
+  if (typeof month === 'number') return MONTH_NAMES[month - 1] || `Month ${month}`;
+  if (typeof month === 'string' && /^\d+$/.test(month.trim())) {
+    const num = parseInt(month.trim(), 10);
+    return MONTH_NAMES[num - 1] || month;
+  }
+  return month;
+};
+
 const formatDate = (dateStr) => {
-  if (!dateStr) return '—';
-  return new Date(dateStr).toLocaleDateString('en-IN', {
+  if (!dateStr || dateStr === 'null' || dateStr === 'undefined') return '—';
+  let d = new Date(dateStr);
+  if (isNaN(d.getTime())) {
+    if (typeof dateStr === 'string' && dateStr.includes('/')) {
+      const parts = dateStr.split('/');
+      if (parts.length === 3) {
+        d = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+      }
+    } else if (typeof dateStr === 'string' && dateStr.includes('-')) {
+      const parts = dateStr.split('-');
+      if (parts.length === 3 && parts[0].length === 2) {
+        d = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+      }
+    }
+  }
+  if (isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString('en-IN', {
     day: '2-digit',
     month: 'short',
     year: 'numeric'
@@ -250,7 +280,7 @@ export default function ResidentReports() {
                           return (
                             <tr key={idx}>
                               <td>
-                                <strong>Month {bill.month} / {bill.year}</strong>
+                                <strong>{formatMonthName(bill.month)} {bill.year}</strong>
                                 <small style={{ display: 'block', color: '#687588' }}>Due: {formatDate(bill.due_date)}</small>
                               </td>
                               <td><strong>{moneyShort(bill.bill_amount)}</strong></td>
@@ -386,7 +416,7 @@ export default function ResidentReports() {
                               <td>
                                 <strong>Wing {row.wing} - {row.flat_no}</strong>
                               </td>
-                              <td>Month {row.month}</td>
+                              <td>{formatMonthName(row.month)}</td>
                               <td><strong>{moneyShort(row.bill_amount)}</strong></td>
                               <td style={{ color: '#dd6b20', fontWeight: 600 }}>{moneyShort(row.penalty_amount || row.penalty || 0)}</td>
                               <td style={{ color: '#079447', fontWeight: 700 }}>{moneyShort(row.paid_amount)}</td>
@@ -396,7 +426,7 @@ export default function ResidentReports() {
                                   {statusText}
                                 </span>
                               </td>
-                              <td style={{ color: '#687588' }}>{formatDate(row.payment_date || row.paymentDate || row.paid_at || row.paidAt)}</td>
+                              <td style={{ color: '#687588' }}>{formatDate(row.paymentDate || row.payment_date || row.paid_at || row.paidAt)}</td>
                             </tr>
                           );
                         })}
