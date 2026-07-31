@@ -245,57 +245,41 @@ function ResidentMaintenance() {
   }, [pendingBills]);
 
   const openPayment = async (billToPay) => {
-    if (!pendingBills.length && !billToPay) return notify('No pending bills to pay');
+    const targetBill = billToPay || (pendingBills.length ? pendingBills[0] : null) || (bills.length ? bills[0] : null);
+    if (!targetBill) return notify('No bills available to pay');
 
     setLoadingBill(true);
     try {
-      if (billToPay) {
-        // Individual bill payment
-        const response = await maintenanceAPI.getBillById(billToPay.id);
-        const fullBill = response.data?.data?.bill || response.data?.bill || billToPay;
-        setSelectedBill(fullBill);
-        
-        const writeOff = Number(fullBill.write_off_amount || fullBill.writeoff_amount || 0);
-        const paid = Number(fullBill.paid_amount || 0);
-        const baseRem = fullBill.remainingPayable !== undefined 
-          ? fullBill.remainingPayable 
-          : (fullBill.remaining_amount !== undefined ? fullBill.remaining_amount : Math.max(0, Number(fullBill.total_amount || fullBill.amount || 0) - writeOff - paid));
-        
-        const singleAmount = Math.max(0, Number(baseRem || 0));
-
-        setPayment({
-          paymentMethod: 'UPI',
-          transactionId: '',
-          amount: String(singleAmount),
-          billIds: [fullBill.id],
-          screenshotUrl: '',
-          paymentDate: today()
-        });
-      } else {
-        // Pay ALL pending dues at once
-        setSelectedBill(pendingBills[0]);
-        const totalDueSum = pendingBills.reduce((sum, b) => {
-          const writeOff = Number(b.write_off_amount || b.writeoff_amount || 0);
-          const paid = Number(b.paid_amount || 0);
-          const baseRem = b.remainingPayable !== undefined 
-            ? b.remainingPayable 
-            : (b.remaining_amount !== undefined ? b.remaining_amount : Math.max(0, Number(b.total_amount || b.amount || 0) - writeOff - paid));
-          return sum + Math.max(0, Number(baseRem || 0));
-        }, 0);
-
-        setPayment({
-          paymentMethod: 'UPI',
-          transactionId: '',
-          amount: String(totalDueSum),
-          billIds: pendingBills.map((b) => b.id),
-          screenshotUrl: '',
-          paymentDate: today()
-        });
+      let fullBill = targetBill;
+      try {
+        const response = await maintenanceAPI.getBillById(targetBill.id);
+        fullBill = response.data?.data?.bill || response.data?.bill || targetBill;
+      } catch (apiErr) {
+        console.warn('Using local bill fallback:', apiErr);
       }
+
+      setSelectedBill(fullBill);
+      
+      const paid = Number(fullBill.paid_amount || 0);
+      const baseRem = fullBill.remainingPayable !== undefined 
+        ? fullBill.remainingPayable 
+        : (fullBill.remaining_amount !== undefined ? fullBill.remaining_amount : Math.max(0, Number(fullBill.total_amount || fullBill.amount || 0) - paid));
+      
+      const singleAmount = Math.max(0, Number(baseRem || 0));
+
+      setPayment({
+        paymentMethod: 'UPI',
+        transactionId: '',
+        amount: String(singleAmount || fullBill.total_amount || fullBill.amount || 0),
+        billIds: [fullBill.id],
+        screenshotUrl: '',
+        paymentDate: today()
+      });
 
       setPaidConfirmed(false);
       setShowPayment(true);
     } catch (error) {
+      console.error('Error opening payment:', error);
       notify('Failed to load bill details');
     } finally {
       setLoadingBill(false);
@@ -398,7 +382,6 @@ function ResidentMaintenance() {
       ${itemsHtml}
       <tr><th>Original Late Fee</th><td>${money(bill.late_fee || bill.penalty_amount)}</td></tr>
       <tr><th>Original Total Bill</th><td>${money(bill.total_amount)}</td></tr>
-      ${Number(bill.write_off_amount || bill.writeoff_amount || 0) > 0 ? `<tr><th style="color:#7a5af8;">Write-Off Discount</th><td style="color:#7a5af8;font-weight:bold;">- ${money(bill.write_off_amount || bill.writeoff_amount)}</td></tr>` : ''}
       ${Number(bill.paid_amount || 0) > 0 ? `<tr><th>Amount Paid</th><td>${money(bill.paid_amount)}</td></tr>` : ''}
       ${prevOutstandingHtml}
       <tr><th class="total">Remaining Payable</th><td class="total">${money(Number(bill.remainingPayable !== undefined ? bill.remainingPayable : bill.remaining_amount) + Number(bill.previous_outstanding || 0))}</td></tr>
@@ -491,11 +474,6 @@ function ResidentMaintenance() {
           <h1>{t('resMaint.title', 'Maintenance Bills')}</h1>
           <p>{t('resMaint.subtitle', 'Track your maintenance dues, invoices, and payment receipts.')}</p>
         </div>
-        <div className="mm-head-actions">
-          <button className="mm-button mm-button-primary" style={{ background: 'linear-gradient(90deg, #087d40, #0ab35c)', border: 'none' }} onClick={() => openPayment()}>
-            <CreditCard size={15} /> {t('resMaint.payNow', 'Pay Dues')}
-          </button>
-        </div>
       </div>
         <section className="mm-panel" style={{ padding: '0' }}>
           <div className="mm-panel-head" style={{ padding: '18px 20px', borderBottom: '1px solid var(--line)' }}>
@@ -512,16 +490,12 @@ function ResidentMaintenance() {
                   <tr>
                     <th>Month</th>
                     <th>Bill Amount</th>
-                    <th>Write-Off</th>
-                    <th>Final Payable</th>
                     <th>Status</th>
                     <th style={{ textAlign: 'center' }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {bills.map((bill) => {
-                    const writeOffAmt = Number(bill.write_off_amount || bill.writeoff_amount || 0);
-                    const remainingAmt = Number(bill.remainingPayable !== undefined ? bill.remainingPayable : (bill.remaining_amount !== undefined ? bill.remaining_amount : bill.total_amount));
                     return (
                       <tr key={bill.id}>
                         <td>
@@ -529,14 +503,6 @@ function ResidentMaintenance() {
                           <div className="portal-muted-text">{bill.bill_number || `BILL-${bill.id}`}</div>
                         </td>
                         <td><strong>{money(bill.total_amount)}</strong></td>
-                        <td>
-                          {writeOffAmt > 0 ? (
-                            <strong style={{ color: '#7a5af8' }}>- {money(writeOffAmt)}</strong>
-                          ) : (
-                            <span className="portal-muted-text">—</span>
-                          )}
-                        </td>
-                        <td><strong style={{ color: '#1e3a8a' }}>{money(remainingAmt)}</strong></td>
                         <td>{statusBadge(bill, t)}</td>
                       <td style={{ textAlign: 'center' }}>
                         <div className="portal-row-actions" style={{ justifyContent: 'center', gap: '6px' }}>
@@ -545,7 +511,7 @@ function ResidentMaintenance() {
                               style={{ color: '#087d40', background: '#e8f8ef', border: '1px solid #bbf7d0', padding: '4px 8px', borderRadius: '6px', fontWeight: '700', fontSize: '11px' }}
                               onClick={() => openPayment(bill)}
                             >
-                              <CreditCard size={13} /> {String(bill.payment_status || '').toUpperCase() === 'REJECTED' || String(bill.latest_payment_status || '').toUpperCase() === 'REJECTED' || bill.rejection_reason ? 'Resubmit Payment' : 'Pay'}
+                              <CreditCard size={13} /> Pay Now
                             </button>
                           )}
                           <button 
@@ -685,13 +651,6 @@ function ResidentMaintenance() {
                         <strong>{money(selectedBill.total_amount)}</strong>
                       </div>
 
-                      {Number(selectedBill.write_off_amount || selectedBill.writeoff_amount || 0) > 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#7a5af8', fontWeight: 600 }}>
-                          <span>{t('resMaint.writeOffDiscount', 'Write-Off Discount')}:</span>
-                          <strong>- {money(selectedBill.write_off_amount || selectedBill.writeoff_amount)}</strong>
-                        </div>
-                      )}
-
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span>{t('resMaint.amountPaid', 'Paid Amount')}:</span>
                         <strong>{money(selectedBill.paid_amount)}</strong>
@@ -714,11 +673,75 @@ function ResidentMaintenance() {
 
                 {paidConfirmed && (
                   <>
-                    <label><span>{t('resMaint.paymentMethod', 'Payment Method')}</span><select value={payment.paymentMethod} onChange={(event) => setPayment({ ...payment, paymentMethod: event.target.value })}><option>UPI</option><option>Bank Transfer</option><option>Cash</option><option>Cheque</option></select></label>
+                    <div className="portal-field-full" style={{ marginBottom: '8px' }}>
+                      <span style={{ fontSize: '11px', fontWeight: 700, color: '#334155', display: 'block', marginBottom: '6px' }}>Select Payment Option</span>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                        <button
+                          type="button"
+                          style={{
+                            padding: '8px 12px',
+                            borderRadius: '6px',
+                            border: payment.paymentMethod !== 'Cash' ? '2px solid #1473e6' : '1px solid #cbd5e1',
+                            background: payment.paymentMethod !== 'Cash' ? '#eff6ff' : '#ffffff',
+                            fontWeight: 700,
+                            fontSize: '11px',
+                            color: payment.paymentMethod !== 'Cash' ? '#1473e6' : '#475467',
+                            cursor: 'pointer'
+                          }}
+                          onClick={() => setPayment({ ...payment, paymentMethod: 'UPI' })}
+                        >
+                          💳 Online Payment
+                        </button>
+                        <button
+                          type="button"
+                          style={{
+                            padding: '8px 12px',
+                            borderRadius: '6px',
+                            border: payment.paymentMethod === 'Cash' ? '2px solid #16a34a' : '1px solid #cbd5e1',
+                            background: payment.paymentMethod === 'Cash' ? '#f0fdf4' : '#ffffff',
+                            fontWeight: 700,
+                            fontSize: '11px',
+                            color: payment.paymentMethod === 'Cash' ? '#16a34a' : '#475467',
+                            cursor: 'pointer'
+                          }}
+                          onClick={() => setPayment({ ...payment, paymentMethod: 'Cash', transactionId: payment.transactionId || 'CASH-PAYMENT' })}
+                        >
+                          💵 Cash Payment
+                        </button>
+                      </div>
+                    </div>
+
+                    {payment.paymentMethod !== 'Cash' ? (
+                      <label>
+                        <span>{t('resMaint.paymentMethod', 'Online Method')}</span>
+                        <select value={payment.paymentMethod} onChange={(event) => setPayment({ ...payment, paymentMethod: event.target.value })}>
+                          <option value="UPI">UPI (GPay / PhonePe / Paytm)</option>
+                          <option value="Bank Transfer">Bank Transfer (NEFT / IMPS)</option>
+                          <option value="Cheque">Cheque</option>
+                        </select>
+                      </label>
+                    ) : (
+                      <label>
+                        <span>{t('resMaint.paymentMethod', 'Payment Mode')}</span>
+                        <input type="text" value="Cash Payment" readOnly style={{ background: '#f1f5f9', cursor: 'not-allowed' }} />
+                      </label>
+                    )}
+
                     <label><span>{t('common.amount', 'Amount')}</span><input type="number" min="1" required readOnly={!SUPPORT_PARTIAL_PAYMENTS} style={{ background: !SUPPORT_PARTIAL_PAYMENTS ? '#f1f5f9' : 'white', cursor: !SUPPORT_PARTIAL_PAYMENTS ? 'not-allowed' : 'text' }} value={payment.amount} onChange={(event) => setPayment({ ...payment, amount: event.target.value })} /></label>
                     <label><span>{t('resMaint.paymentDate', 'Payment Date')}</span><input type="date" required value={payment.paymentDate} onChange={(event) => setPayment({ ...payment, paymentDate: event.target.value })} /></label>
-                    <label className="portal-field-full"><span>{t('resMaint.utrNumber', 'UTR / Transaction ID')}</span><input required value={payment.transactionId} onChange={(event) => setPayment({ ...payment, transactionId: event.target.value })} placeholder="Enter 12-digit UTR number" /></label>
-                    <label className="portal-field-full"><span>{t('resMaint.screenshotUpload', 'Screenshot Upload')}</span><input type="file" accept="image/*" onChange={handleScreenshot} /><small>Clear payment screenshot</small></label>
+
+                    {payment.paymentMethod !== 'Cash' ? (
+                      <>
+                        <label className="portal-field-full"><span>{t('resMaint.utrNumber', 'UTR / Transaction ID')}</span><input required value={payment.transactionId} onChange={(event) => setPayment({ ...payment, transactionId: event.target.value })} placeholder="Enter 12-digit UTR number" /></label>
+                        <label className="portal-field-full"><span>{t('resMaint.screenshotUpload', 'Screenshot Upload')}</span><input type="file" accept="image/*" onChange={handleScreenshot} /><small>Clear payment screenshot / bank proof</small></label>
+                      </>
+                    ) : (
+                      <>
+                        <label className="portal-field-full"><span>Reference / Remarks</span><input value={payment.transactionId} onChange={(event) => setPayment({ ...payment, transactionId: event.target.value })} placeholder="Cash payment reference or notes (optional)" /></label>
+                        <label className="portal-field-full"><span>{t('resMaint.screenshotUpload', 'Cash Receipt / Screenshot Upload')}</span><input type="file" accept="image/*" onChange={handleScreenshot} /><small>Upload cash payment receipt or proof (optional)</small></label>
+                      </>
+                    )}
+
                     {payment.screenshotUrl && <img src={payment.screenshotUrl} alt="Payment screenshot preview" className="portal-field-full max-h-48 w-full rounded-lg border border-slate-200 object-contain" />}
                   </>
                 )}

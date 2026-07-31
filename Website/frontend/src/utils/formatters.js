@@ -9,7 +9,9 @@ const localeMap = {
 export const getLocale = (language = 'en') => localeMap[language] || 'en-IN';
 
 export const formatDate = (value, language = 'en', options = {}) => {
-  if (!value) return '—';
+  if (!value || value === '—') return '—';
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return '—';
   const mergedOptions = {
     day: '2-digit',
     month: 'short',
@@ -19,16 +21,18 @@ export const formatDate = (value, language = 'en', options = {}) => {
   Object.keys(mergedOptions).forEach((key) => {
     if (mergedOptions[key] === undefined) delete mergedOptions[key];
   });
-  return new Intl.DateTimeFormat(getLocale(language), mergedOptions).format(new Date(value));
+  return new Intl.DateTimeFormat(getLocale(language), mergedOptions).format(d);
 };
 
 export const formatTime = (value, language = 'en', options = {}) => {
-  if (!value) return '—';
+  if (!value || value === '—') return '—';
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return '—';
   return new Intl.DateTimeFormat(getLocale(language), {
     hour: '2-digit',
     minute: '2-digit',
     ...options
-  }).format(new Date(value));
+  }).format(d);
 };
 
 export const formatNumber = (value, language = 'en', options = {}) => (

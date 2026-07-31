@@ -13,7 +13,11 @@ import { useLocalizedFormatters } from '../utils/formatters';
 
 const unwrap = (response) => response?.data?.data ?? response?.data ?? [];
 const monthName = (month) => new Date(2026, Number(month || 1) - 1).toLocaleDateString('en-IN', { month: 'short' });
-const fullDate = (value) => value ? new Date(value).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+const fullDate = (value) => {
+  if (!value || value === '—') return '—';
+  const d = new Date(value);
+  return isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+};
 
 const ResidentDashboard = () => {
   const { t } = useTranslation();

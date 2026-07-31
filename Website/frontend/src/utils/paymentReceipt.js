@@ -5,11 +5,14 @@ const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (character
 const amount = (value) => `₹ ${Number(value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const amountRs = (value) => `Rs. ${Number(value || 0).toLocaleString('en-IN')}`;
 
-const formatDate = (value, includeTime = false) => value
-  ? new Date(value).toLocaleString('en-IN', includeTime
+const formatDate = (value, includeTime = false) => {
+  if (!value || value === '—') return '—';
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return '—';
+  return d.toLocaleString('en-IN', includeTime
     ? { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }
-    : { day: '2-digit', month: 'short', year: 'numeric' })
-  : '—';
+    : { day: '2-digit', month: 'short', year: 'numeric' });
+};
 
 const billingPeriod = (receipt) => new Date(2026, Math.max(0, Number(receipt.month || 1) - 1), 1)
   .toLocaleDateString('en-IN', { month: 'long' }) + (receipt.year ? ` ${receipt.year}` : '');
@@ -49,7 +52,6 @@ export const createReceiptElement = (receipt, settings = {}) => {
             <tr><td style="padding:10px 0;border-top:1px solid #e5e7eb;color:#64748b;">Payment Date</td><td style="padding:10px 0;border-top:1px solid #e5e7eb;text-align:right;">${formatDate(receipt.paid_at || receipt.payment_date)}</td></tr>
             <tr><td style="padding:10px 0;border-top:1px solid #e5e7eb;color:#64748b;">Base Maintenance Charge</td><td style="padding:10px 0;border-top:1px solid #e5e7eb;text-align:right;">${amount(receipt.base_maintenance_charge ?? receipt.amount_base ?? receipt.maintenance_amount ?? receipt.base_amount ?? receipt.bill_amount)}</td></tr>
             <tr><td style="padding:10px 0;border-top:1px solid #e5e7eb;color:#64748b;">Late Fee</td><td style="padding:10px 0;border-top:1px solid #e5e7eb;text-align:right;">${amount(receipt.late_fee ?? receipt.penalty_amount)}</td></tr>
-            ${Number(receipt.write_off_amount || receipt.writeoff_amount || 0) > 0 ? `<tr><td style="padding:10px 0;border-top:1px solid #e5e7eb;color:#7a5af8;font-weight:600;">Write-Off Discount</td><td style="padding:10px 0;border-top:1px solid #e5e7eb;text-align:right;color:#7a5af8;font-weight:600;">- ${amount(receipt.write_off_amount || receipt.writeoff_amount)}</td></tr>` : ''}
             <tr><td style="padding:10px 0;border-top:1px solid #e5e7eb;color:#64748b;">Payment Mode</td><td style="padding:10px 0;border-top:1px solid #e5e7eb;text-align:right;">${escapeHtml(receipt.payment_method || '—')}</td></tr>
             <tr><td style="padding:10px 0;border-top:1px solid #e5e7eb;color:#64748b;">Transaction ID</td><td style="padding:10px 0;border-top:1px solid #e5e7eb;text-align:right;font-family:monospace;">${escapeHtml(receipt.utr_number || receipt.transaction_id || '—')}</td></tr>
           </tbody>

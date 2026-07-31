@@ -3,13 +3,10 @@ import { CheckCircle2, Download, Printer, QrCode, ReceiptIndianRupee, XCircle, C
 import { useTranslation } from 'react-i18next';
 import { maintenanceAPI, settingsAPI } from '../services/api';
 import { CardSkeleton } from '../components/Skeletons';
-import { downloadPaymentReceiptPdf, printPaymentReceipt, receiptAvailable, printWriteOffReceipt, downloadWriteOffReceiptPdf } from '../utils/paymentReceipt';
+import { downloadPaymentReceiptPdf, printPaymentReceipt, receiptAvailable } from '../utils/paymentReceipt';
 
 const unwrap = (response) => response?.data?.data ?? response?.data ?? [];
-const hasWriteOff = (bill) => Number(bill.write_off_amount || 0) > 0 || Boolean(bill.write_off_status);
-const billDisplayAmount = (bill) => hasWriteOff(bill)
-  ? bill.total_amount
-  : (bill.remainingPayable !== undefined ? bill.remainingPayable : (bill.remaining_amount !== undefined ? bill.remaining_amount : bill.total_amount));
+const billDisplayAmount = (bill) => bill.total_amount || bill.amount || 0;
 const money = (value) => `₹ ${Number(value || 0).toLocaleString('en-IN')}`;
 
 const formatMonthDisplay = (month, year) => {
@@ -84,26 +81,6 @@ const ResidentPaymentHistory = () => {
       await downloadPaymentReceiptPdf(await getReceipt(bill), paymentSettings);
     } catch (error) {
       notify('Could not download the receipt PDF');
-    }
-  };
-
-  const handlePrintWriteOffReceipt = async (bill) => {
-    try {
-      const response = await maintenanceAPI.getWriteOffReceipt(bill.id);
-      const receiptData = response.data?.data || response.data || {};
-      printWriteOffReceipt(receiptData, paymentSettings);
-    } catch (error) {
-      notify(error.message === 'Popup blocked' ? 'Popup blocked. Allow popups to print.' : 'Could not print the write-off receipt');
-    }
-  };
-
-  const handleDownloadWriteOffReceipt = async (bill) => {
-    try {
-      const response = await maintenanceAPI.getWriteOffReceipt(bill.id);
-      const receiptData = response.data?.data || response.data || {};
-      await downloadWriteOffReceiptPdf(receiptData, paymentSettings);
-    } catch (error) {
-      notify('Could not download the write-off receipt PDF');
     }
   };
 
@@ -186,7 +163,7 @@ const ResidentPaymentHistory = () => {
                           <td><strong>{money(billDisplayAmount(bill))}</strong></td>
                           <td>
                             <span className={`portal-status ${bill.payment_status === 'Paid' ? 'resolved' : bill.payment_status === 'Overdue' ? 'rejected' : 'pending'}`}>
-                              {t(`statusLabel.${bill.payment_status}`, bill.write_off_status || bill.payment_status)}
+                              {t(`statusLabel.${bill.payment_status}`, bill.payment_status)}
                             </span>
                           </td>
                           <td>{fullDate(bill.due_date)}</td>
@@ -200,24 +177,7 @@ const ResidentPaymentHistory = () => {
                             )}
                           </td>
                           <td style={{ textAlign: 'center' }}>
-                            {hasWriteOff(bill) ? (
-                              <div className="portal-row-actions" style={{ justifyContent: 'center', gap: '6px' }}>
-                                <button 
-                                  style={{ color: '#087d40', background: '#e8f8ef', border: '1px solid #bbf7d0', padding: '4px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '600' }}
-                                  onClick={() => handlePrintWriteOffReceipt(bill)} 
-                                  title="Print Receipt"
-                                >
-                                  <Printer size={12} /> {t('payHistory.printReceipt', 'Print Receipt')}
-                                </button>
-                                <button 
-                                  style={{ color: '#334155', background: '#ffffff', border: '1px solid #cbd5e1', padding: '4px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '600' }}
-                                  onClick={() => handleDownloadWriteOffReceipt(bill)} 
-                                  title="Download PDF"
-                                >
-                                  <Download size={12} /> {t('payHistory.downloadPdf', 'Download PDF')}
-                                </button>
-                              </div>
-                            ) : receiptAvailable(bill.payment_status) ? (
+                            {receiptAvailable(bill.payment_status) ? (
                               <div className="portal-row-actions" style={{ justifyContent: 'center', gap: '6px' }}>
                                 <button 
                                   style={{ color: '#087d40', background: '#e8f8ef', border: '1px solid #bbf7d0', padding: '4px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '600' }}

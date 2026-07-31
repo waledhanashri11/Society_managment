@@ -211,8 +211,9 @@
 .portal-light-btn { color: #40506a; background: #eef3f8; }
 .portal-muted-text { color: var(--portal-muted); }
 .portal-table-card { overflow: hidden; }
-.portal-table-wrap { width: 100%; overflow-x: auto; }
-.portal-table-wrap .portal-data-table-wide { min-width: 1800px; }
+.portal-table-wrap { width: 100%; overflow-x: auto; scrollbar-width: none; -ms-overflow-style: none; }
+.portal-table-wrap::-webkit-scrollbar { display: none; }
+.portal-table-wrap .portal-data-table-wide { width: 100%; min-width: 100%; }
 .portal-data-table { width: 100%; border-collapse: collapse; }
 .portal-data-table th { padding: 11px 14px; border-top: 1px solid #edf0f3; border-bottom: 1px solid #edf0f3; color: #748094; background: #f8fafc; text-align: left; font-size: 9px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; }
 .portal-data-table td { padding: 13px 14px; border-bottom: 1px solid #edf0f3; color: #3c495b; font-size: 11px; vertical-align: middle; }

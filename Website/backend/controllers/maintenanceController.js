@@ -16,6 +16,84 @@ const resolvePaymentScreenshotUrl = (req, value) => {
   return buildPublicFileUrl(req, value, { mustExist: true, rootDir: path.resolve(__dirname, '..') });
 };
 
+const sanitizeForResident = (data) => {
+  if (data === null || data === undefined) return data;
+  if (data instanceof Date) return data;
+  if (Array.isArray(data)) return data.map(sanitizeForResident);
+  if (typeof data === 'object') {
+    const isBill = data.id && (data.amount !== undefined || data.total_amount !== undefined);
+    const cleaned = {};
+
+    const writeOffAmt = Number(data.write_off_amount || data.writeoff_amount || 0);
+    const baseAmt = Number(data.amount || 0);
+    const penaltyAmt = Number(data.penalty_amount || data.penalty || 0);
+    const dbTotal = Number(data.total_amount || 0);
+    const originalGeneratedBill = Math.max(dbTotal + writeOffAmt, baseAmt + penaltyAmt, dbTotal);
+
+    for (const [key, val] of Object.entries(data)) {
+      if (
+        /write_?off/i.test(key) ||
+        /written_?off/i.test(key) ||
+        key === 'approvedWriteOffs' ||
+        key === 'writeOffs' ||
+        key === 'internalAdjustment' ||
+        key === 'adminNotes' ||
+        key === 'admin_notes'
+      ) {
+        continue;
+      }
+      let value = sanitizeForResident(val);
+      if (
+        (key === 'status' || key === 'payment_status' || key === 'paymentStatus' || key === 'calculated_status' || key === 'maintenance_status') &&
+        typeof value === 'string' &&
+        /write_?off|written_?off|waived/i.test(value)
+      ) {
+        const rem = Number(data.remaining_amount ?? data.remainingPayable ?? data.remainingAmount ?? 0) - writeOffAmt;
+        value = rem <= 0 ? (value === value.toUpperCase() ? 'PAID' : 'Paid') : (value === value.toUpperCase() ? 'PENDING' : 'Pending');
+      }
+      if (isBill && (key === 'total_amount' || key === 'originalAmount' || key === 'original_amount' || key === 'billAmount' || key === 'bill_amount')) {
+        value = originalGeneratedBill;
+      }
+      cleaned[key] = value;
+    }
+
+    if (writeOffAmt > 0) {
+      if (cleaned.paid_amount !== undefined) cleaned.paid_amount = Number(cleaned.paid_amount || 0) + writeOffAmt;
+      if (cleaned.paidAmount !== undefined) cleaned.paidAmount = Number(cleaned.paidAmount || 0) + writeOffAmt;
+
+      if (cleaned.remaining_amount !== undefined) cleaned.remaining_amount = Math.max(0, Number(cleaned.remaining_amount || 0) - writeOffAmt);
+      if (cleaned.remainingAmount !== undefined) cleaned.remainingAmount = Math.max(0, Number(cleaned.remainingAmount || 0) - writeOffAmt);
+      if (cleaned.pending_amount !== undefined) cleaned.pending_amount = Math.max(0, Number(cleaned.pending_amount || 0) - writeOffAmt);
+      if (cleaned.pendingAmount !== undefined) cleaned.pendingAmount = Math.max(0, Number(cleaned.pendingAmount || 0) - writeOffAmt);
+      if (cleaned.outstanding_amount !== undefined) cleaned.outstanding_amount = Math.max(0, Number(cleaned.outstanding_amount || 0) - writeOffAmt);
+
+      const finalRem = Number(cleaned.remaining_amount ?? cleaned.pending_amount ?? cleaned.pendingAmount ?? cleaned.remainingAmount ?? 0);
+      const finalPaid = Number(cleaned.paid_amount ?? cleaned.paidAmount ?? 0);
+      for (const stKey of ['status', 'payment_status', 'paymentStatus', 'calculated_status', 'maintenance_status']) {
+        if (cleaned[stKey] !== undefined) {
+          if (finalRem <= 0) {
+            cleaned[stKey] = typeof cleaned[stKey] === 'string' && cleaned[stKey] === cleaned[stKey].toUpperCase() ? 'PAID' : 'Paid';
+          } else if (finalPaid > 0) {
+            cleaned[stKey] = typeof cleaned[stKey] === 'string' && cleaned[stKey] === cleaned[stKey].toUpperCase() ? 'PARTIALLY_PAID' : 'Partial';
+          }
+        }
+      }
+    }
+
+    if (Array.isArray(cleaned.status_history)) {
+      cleaned.status_history = cleaned.status_history.filter((h) => {
+        const pSt = String(h.previous_status || '').toLowerCase();
+        const nSt = String(h.new_status || '').toLowerCase();
+        const comment = String(h.comment || h.reason || '').toLowerCase();
+        return !pSt.includes('write') && !nSt.includes('write') && !comment.includes('write');
+      });
+    }
+
+    return cleaned;
+  }
+  return data;
+};
+
 const withPaymentScreenshotUrls = (req, payments = []) => {
   const forwardedProto = String(req?.headers?.['x-forwarded-proto'] || '').split(',')[0].trim();
   const protocol = forwardedProto || req?.protocol || 'https';
@@ -1567,7 +1645,10 @@ const getUserMaintenance = async (req, res) => {
       };
     });
 
-    return sendResponse(res, 200, 'Resident maintenance bills fetched successfully', billsWithHistory);
+    const isResident = req.user?.role === 'resident';
+    const finalData = isResident ? sanitizeForResident(billsWithHistory) : billsWithHistory;
+
+    return sendResponse(res, 200, 'Resident maintenance bills fetched successfully', finalData);
   } catch (error) {
     console.error('Get user maintenance error:', error);
     return sendResponse(res, 500, 'Server error', null, ['Unable to fetch resident maintenance bills']);
@@ -1634,15 +1715,23 @@ const getBillById = async (req, res) => {
     );
     const previousOutstanding = Number(outstandingRows[0]?.previous_outstanding || 0);
 
-    const [payments] = await promisePool.query('SELECT * FROM payments WHERE bill_id = ? ORDER BY created_at DESC', [id]);
-    return sendResponse(res, 200, 'Bill fetched successfully', {
+    // Fetch payments for this bill
+    const [payments] = await promisePool.query(
+      'SELECT * FROM payments WHERE bill_id = ? ORDER BY created_at DESC',
+      [id]
+    );
+
+    const isResident = req.user?.role === 'resident';
+    const resultObj = {
       bill: {
         ...bills[0],
         items,
         previous_outstanding: previousOutstanding
       },
       payments
-    });
+    };
+
+    return sendResponse(res, 200, 'Bill fetched successfully', isResident ? sanitizeForResident(resultObj) : resultObj);
   } catch (error) {
     console.error('Get bill error:', error);
     return sendResponse(res, 500, 'Server error', null, ['Unable to fetch bill']);
@@ -3277,11 +3366,11 @@ const getFinancialAccountingReport = async (req, res) => {
     );
 
     const [expenses] = await promisePool.query(
-      `SELECT e.id, e.amount, e.payment_method, e.payment_account, e.expense_date,
+      `SELECT e.id, e.amount, e.payment_method, COALESCE(e.payment_account, e.account_type) AS payment_account, e.expense_date,
               EXTRACT(MONTH FROM e.expense_date) AS month,
               EXTRACT(YEAR FROM e.expense_date) AS year
        FROM maintenance_expenses e
-       WHERE COALESCE(e.status, 'Paid') = 'Paid'`
+       WHERE LOWER(COALESCE(e.status, 'paid')) = 'paid'`
     );
 
     const [pendingRows] = await promisePool.query(
@@ -3321,9 +3410,6 @@ const getFinancialAccountingReport = async (req, res) => {
     );
 
     const fyMonths = [
-      { monthNum: 1, name: 'January', year: fyInfo.startYear },
-      { monthNum: 2, name: 'February', year: fyInfo.startYear },
-      { monthNum: 3, name: 'March', year: fyInfo.startYear },
       { monthNum: 4, name: 'April', year: fyInfo.startYear },
       { monthNum: 5, name: 'May', year: fyInfo.startYear },
       { monthNum: 6, name: 'June', year: fyInfo.startYear },
@@ -3332,7 +3418,10 @@ const getFinancialAccountingReport = async (req, res) => {
       { monthNum: 9, name: 'September', year: fyInfo.startYear },
       { monthNum: 10, name: 'October', year: fyInfo.startYear },
       { monthNum: 11, name: 'November', year: fyInfo.startYear },
-      { monthNum: 12, name: 'December', year: fyInfo.startYear }
+      { monthNum: 12, name: 'December', year: fyInfo.startYear },
+      { monthNum: 1, name: 'January', year: fyInfo.endYear },
+      { monthNum: 2, name: 'February', year: fyInfo.endYear },
+      { monthNum: 3, name: 'March', year: fyInfo.endYear }
     ];
 
     let currentBankBal = baseBankOpening;
@@ -3365,11 +3454,21 @@ const getFinancialAccountingReport = async (req, res) => {
         .reduce((sum, p) => sum + Number(p.amount || 0), 0);
 
       const bankExpense = monthExpenses
-        .filter((e) => (e.payment_account || 'BANK') === 'BANK')
+        .filter((e) => {
+          const acc = String(e.payment_account || '').toUpperCase();
+          if (acc === 'CASH') return false;
+          if (acc === 'BANK') return true;
+          return String(e.payment_method || '').toLowerCase() !== 'cash';
+        })
         .reduce((sum, e) => sum + Number(e.amount || 0), 0);
 
       const cashExpense = monthExpenses
-        .filter((e) => e.payment_account === 'CASH')
+        .filter((e) => {
+          const acc = String(e.payment_account || '').toUpperCase();
+          if (acc === 'CASH') return true;
+          if (acc === 'BANK') return false;
+          return String(e.payment_method || '').toLowerCase() === 'cash';
+        })
         .reduce((sum, e) => sum + Number(e.amount || 0), 0);
 
       const totalIncome = bankIncome + cashIncome;
@@ -3463,14 +3562,20 @@ const getFinancialAccountingReport = async (req, res) => {
         bankIncome: fyBankIncome,
         cashIncome: fyCashIncome,
         totalExpense: fyTotalExpense,
+        totalExpenses: fyTotalExpense,
         bankExpense: fyBankExpense,
+        bankExpenses: fyBankExpense,
         cashExpense: fyCashExpense,
+        cashExpenses: fyCashExpense,
         maintenanceWriteOff: fyMaintenanceWriteOff,
         penaltyWriteOff: fyPenaltyWriteOff,
         totalWriteOff: fyTotalWriteOff,
         totalClosing: fyTotalClosing,
         bankClosing: fyBankClosing,
         cashClosing: fyCashClosing,
+        netAmount: fyTotalIncome - fyTotalExpense,
+        netSurplus: fyTotalIncome > fyTotalExpense ? fyTotalIncome - fyTotalExpense : 0,
+        netDeficit: fyTotalExpense > fyTotalIncome ? fyTotalExpense - fyTotalIncome : 0,
         pendingMaintenance,
         collectionPercentage
       },
@@ -3482,6 +3587,18 @@ const getFinancialAccountingReport = async (req, res) => {
   }
 };
 
+const MONTH_END_DAYS = {
+  April: 30, May: 31, June: 30, July: 31, August: 31, September: 30,
+  October: 31, November: 30, December: 31, January: 31, February: 28, March: 31
+};
+
+const getMonthEndDate = (mName, yr) => {
+  const day = MONTH_END_DAYS[mName] || 28;
+  const mIdx = MONTH_NAMES.indexOf(mName) + 1;
+  const mStr = mIdx < 10 ? `0${mIdx}` : `${mIdx}`;
+  return `${yr}-${mStr}-${day}`;
+};
+
 const getBankLedgerReport = async (req, res) => {
   try {
     const { financialYear } = req.query;
@@ -3490,35 +3607,82 @@ const getBankLedgerReport = async (req, res) => {
     const openingBalance = openingBalances.bankOpening;
 
     const [payments] = await promisePool.query(
-      `SELECT p.id, COALESCE(p.paid_at, p.created_at) AS date, 'Maintenance Income' AS transaction_type,
-              CONCAT('Maintenance payment from ', COALESCE(u.name, 'Resident'), ' (Flat ', COALESCE(f.flat_no, '—'), ')') AS description,
-              p.amount AS income, 0 AS expense, COALESCE(p.transaction_id, CONCAT('PAY-', p.id)) AS reference,
-              p.payment_status AS approval_status, 'Admin' AS approved_by
+      `SELECT p.id, p.amount, p.payment_method, p.payment_account, p.paid_at, p.created_at,
+              COALESCE(m.month, EXTRACT(MONTH FROM COALESCE(p.paid_at, p.created_at))) AS month,
+              COALESCE(m.year, EXTRACT(YEAR FROM COALESCE(p.paid_at, p.created_at))) AS year
        FROM payments p
-       LEFT JOIN users u ON p.resident_id = u.id
        LEFT JOIN maintenance m ON p.bill_id = m.id
-       LEFT JOIN flats f ON m.flat_id = f.id
-       WHERE p.payment_status IN ('Paid', 'Approved')
-         AND (p.payment_account = 'BANK' OR LOWER(COALESCE(p.payment_method, '')) != 'cash')
-         AND COALESCE(p.paid_at, p.created_at) >= ?
-         AND COALESCE(p.paid_at, p.created_at) <= ?::date + INTERVAL '1 day'`,
-      [fyInfo.startDate, fyInfo.endDate]
+       WHERE LOWER(COALESCE(p.payment_status, '')) IN ('paid', 'approved')`
+    );
+
+    const [directPaidBills] = await promisePool.query(
+      `SELECT m.id, COALESCE(m.paid_amount, m.amount) AS amount, m.payment_date,
+              m.month AS month, m.year AS year
+       FROM maintenance m
+       WHERE LOWER(COALESCE(m.status, '')) IN ('paid', 'approved')
+         AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.bill_id = m.id AND LOWER(COALESCE(p.payment_status, '')) IN ('paid', 'approved'))`
     );
 
     const [expenses] = await promisePool.query(
-      `SELECT e.id, e.expense_date AS date, CONCAT(e.category, ' Expense') AS transaction_type,
-              CONCAT(e.description, ' (Vendor: ', e.vendor, ')') AS description,
+      `SELECT e.id, e.expense_date AS date, 'Expense' AS transaction_type, e.category,
+              CONCAT(COALESCE(e.category, 'General'), ' - ', COALESCE(e.description, 'Operational Expense'),
+                     CASE WHEN e.vendor IS NOT NULL AND e.vendor != '' AND e.vendor != '—' THEN CONCAT(' (Vendor: ', e.vendor, ')') ELSE '' END) AS description,
               0 AS income, e.amount AS expense, e.expense_number AS reference,
               COALESCE(e.status, 'Paid') AS approval_status, 'Admin' AS approved_by
        FROM maintenance_expenses e
-       WHERE COALESCE(e.status, 'Paid') = 'Paid'
-         AND (e.payment_account = 'BANK' OR e.payment_account IS NULL)
-         AND e.expense_date >= ?
-         AND e.expense_date <= ?`,
-      [fyInfo.startDate, fyInfo.endDate]
+       WHERE LOWER(COALESCE(e.status, 'paid')) = 'paid'
+         AND UPPER(COALESCE(e.payment_account, e.account_type, '')) != 'CASH'
+         AND LOWER(COALESCE(e.payment_method, '')) != 'cash'`
     );
 
-    const allTxns = [...payments, ...expenses].sort((a, b) => new Date(a.date) - new Date(b.date));
+    const fyMonths = [
+      { monthNum: 4, name: 'April', year: fyInfo.startYear },
+      { monthNum: 5, name: 'May', year: fyInfo.startYear },
+      { monthNum: 6, name: 'June', year: fyInfo.startYear },
+      { monthNum: 7, name: 'July', year: fyInfo.startYear },
+      { monthNum: 8, name: 'August', year: fyInfo.startYear },
+      { monthNum: 9, name: 'September', year: fyInfo.startYear },
+      { monthNum: 10, name: 'October', year: fyInfo.startYear },
+      { monthNum: 11, name: 'November', year: fyInfo.startYear },
+      { monthNum: 12, name: 'December', year: fyInfo.startYear },
+      { monthNum: 1, name: 'January', year: fyInfo.endYear },
+      { monthNum: 2, name: 'February', year: fyInfo.endYear },
+      { monthNum: 3, name: 'March', year: fyInfo.endYear }
+    ];
+
+    const isMatchYear = (y) => {
+      const ny = Number(y);
+      return ny === fyInfo.startYear || ny === fyInfo.endYear || !y;
+    };
+
+    const summarizedCollections = [];
+
+    for (const mObj of fyMonths) {
+      const monthPayments = payments.filter((p) => Number(p.month) === mObj.monthNum && isMatchYear(p.year));
+      const monthDirectPaid = directPaidBills.filter((b) => Number(b.month) === mObj.monthNum && isMatchYear(b.year));
+
+      let bankIncome = monthPayments
+        .filter((p) => p.payment_account === 'BANK' || String(p.payment_method || '').toLowerCase() !== 'cash')
+        .reduce((sum, p) => sum + Number(p.amount || 0), 0);
+
+      bankIncome += monthDirectPaid.reduce((sum, b) => sum + Number(b.amount || 0), 0);
+
+      if (bankIncome > 0) {
+        summarizedCollections.push({
+          id: `maint-summary-${mObj.name.toLowerCase()}-${mObj.year}`,
+          date: getMonthEndDate(mObj.name, mObj.year),
+          transaction_type: 'Maintenance Collection Summary',
+          category: 'Maintenance Collection Summary',
+          description: `Monthly Maintenance Collection - ${mObj.name} ${mObj.year}`,
+          income: bankIncome,
+          expense: 0,
+          amount: bankIncome,
+          reference: `MCOL-${mObj.name.substring(0, 3).toUpperCase()}-${mObj.year}`
+        });
+      }
+    }
+
+    const allTxns = [...expenses, ...summarizedCollections].sort((a, b) => new Date(a.date) - new Date(b.date));
 
     let runningBal = openingBalance;
     const ledger = allTxns.map((t) => {
@@ -3548,33 +3712,69 @@ const getCashLedgerReport = async (req, res) => {
     const openingBalance = openingBalances.cashOpening;
 
     const [payments] = await promisePool.query(
-      `SELECT p.id, COALESCE(p.paid_at, p.created_at) AS date, 'Cash Maintenance Collection' AS transaction_type,
-              CONCAT('Cash payment from ', COALESCE(u.name, 'Resident'), ' (Flat ', COALESCE(f.flat_no, '—'), ')') AS description,
-              p.amount AS income, 0 AS expense, 'Admin' AS recorded_by, 'Admin' AS approved_by
+      `SELECT p.id, p.amount, p.payment_method, p.payment_account, p.paid_at, p.created_at,
+              COALESCE(m.month, EXTRACT(MONTH FROM COALESCE(p.paid_at, p.created_at))) AS month,
+              COALESCE(m.year, EXTRACT(YEAR FROM COALESCE(p.paid_at, p.created_at))) AS year
        FROM payments p
-       LEFT JOIN users u ON p.resident_id = u.id
        LEFT JOIN maintenance m ON p.bill_id = m.id
-       LEFT JOIN flats f ON m.flat_id = f.id
-       WHERE p.payment_status IN ('Paid', 'Approved')
-         AND (p.payment_account = 'CASH' OR LOWER(COALESCE(p.payment_method, '')) = 'cash')
-         AND COALESCE(p.paid_at, p.created_at) >= ?
-         AND COALESCE(p.paid_at, p.created_at) <= ?::date + INTERVAL '1 day'`,
-      [fyInfo.startDate, fyInfo.endDate]
+       WHERE LOWER(COALESCE(p.payment_status, '')) IN ('paid', 'approved')`
     );
 
     const [expenses] = await promisePool.query(
-      `SELECT e.id, e.expense_date AS date, CONCAT('Cash Expense - ', e.category) AS transaction_type,
-              CONCAT(e.description, ' (Vendor: ', e.vendor, ')') AS description,
+      `SELECT e.id, e.expense_date AS date, 'Cash Expense' AS transaction_type, e.category,
+              CONCAT(COALESCE(e.category, 'General'), ' - ', COALESCE(e.description, 'Operational Expense'),
+                     CASE WHEN e.vendor IS NOT NULL AND e.vendor != '' AND e.vendor != '—' THEN CONCAT(' (Vendor: ', e.vendor, ')') ELSE '' END) AS description,
               0 AS income, e.amount AS expense, 'Admin' AS recorded_by, 'Admin' AS approved_by
        FROM maintenance_expenses e
-       WHERE COALESCE(e.status, 'Paid') = 'Paid'
-         AND e.payment_account = 'CASH'
-         AND e.expense_date >= ?
-         AND e.expense_date <= ?`,
-      [fyInfo.startDate, fyInfo.endDate]
+       WHERE LOWER(COALESCE(e.status, 'paid')) = 'paid'
+         AND (UPPER(COALESCE(e.payment_account, e.account_type, '')) = 'CASH' OR LOWER(COALESCE(e.payment_method, '')) = 'cash')`
     );
 
-    const allTxns = [...payments, ...expenses].sort((a, b) => new Date(a.date) - new Date(b.date));
+    const fyMonths = [
+      { monthNum: 4, name: 'April', year: fyInfo.startYear },
+      { monthNum: 5, name: 'May', year: fyInfo.startYear },
+      { monthNum: 6, name: 'June', year: fyInfo.startYear },
+      { monthNum: 7, name: 'July', year: fyInfo.startYear },
+      { monthNum: 8, name: 'August', year: fyInfo.startYear },
+      { monthNum: 9, name: 'September', year: fyInfo.startYear },
+      { monthNum: 10, name: 'October', year: fyInfo.startYear },
+      { monthNum: 11, name: 'November', year: fyInfo.startYear },
+      { monthNum: 12, name: 'December', year: fyInfo.startYear },
+      { monthNum: 1, name: 'January', year: fyInfo.endYear },
+      { monthNum: 2, name: 'February', year: fyInfo.endYear },
+      { monthNum: 3, name: 'March', year: fyInfo.endYear }
+    ];
+
+    const isMatchYear = (y) => {
+      const ny = Number(y);
+      return ny === fyInfo.startYear || ny === fyInfo.endYear || !y;
+    };
+
+    const summarizedCollections = [];
+
+    for (const mObj of fyMonths) {
+      const monthPayments = payments.filter((p) => Number(p.month) === mObj.monthNum && isMatchYear(p.year));
+
+      const cashIncome = monthPayments
+        .filter((p) => p.payment_account === 'CASH' || String(p.payment_method || '').toLowerCase() === 'cash')
+        .reduce((sum, p) => sum + Number(p.amount || 0), 0);
+
+      if (cashIncome > 0) {
+        summarizedCollections.push({
+          id: `cash-maint-summary-${mObj.name.toLowerCase()}-${mObj.year}`,
+          date: getMonthEndDate(mObj.name, mObj.year),
+          transaction_type: 'Cash Maintenance Collection Summary',
+          category: 'Cash Maintenance Collection Summary',
+          description: `Monthly Cash Maintenance Collection - ${mObj.name} ${mObj.year}`,
+          income: cashIncome,
+          expense: 0,
+          amount: cashIncome,
+          reference: `CASH-MCOL-${mObj.name.substring(0, 3).toUpperCase()}-${mObj.year}`
+        });
+      }
+    }
+
+    const allTxns = [...expenses, ...summarizedCollections].sort((a, b) => new Date(a.date) - new Date(b.date));
 
     let runningBal = openingBalance;
     const ledger = allTxns.map((t) => {
@@ -3605,8 +3805,13 @@ const getFlatCollectionReport = async (req, res) => {
     const [rawBills] = await promisePool.query(
       `SELECT m.id AS bill_id, m.flat_id, m.resident_id, m.month, m.year,
               m.amount AS bill_amount,
+              COALESCE(m.penalty_amount, m.penalty, 0) AS penalty_amount,
+              COALESCE(m.penalty_amount, m.penalty, 0) AS penalty,
               m.write_off_amount,
               m.status,
+              m.payment_date,
+              m.paid_at,
+              m.updated_at,
               m.created_at,
               u.name AS resident_name, f.flat_no, f.wing
        FROM maintenance m
@@ -3619,7 +3824,7 @@ const getFlatCollectionReport = async (req, res) => {
     const [approvedPayments] = await promisePool.query(
       `SELECT p.id, p.bill_id, p.amount, p.paid_at, p.created_at, p.payment_status
        FROM payments p
-       WHERE p.payment_status IN ('Paid', 'Approved')`
+       WHERE (p.payment_status IS NULL OR LOWER(p.payment_status) IN ('paid', 'approved'))`
     );
 
     // Group bills by flat_id
@@ -3640,6 +3845,7 @@ const getFlatCollectionReport = async (req, res) => {
       for (const b of bills) {
         const openingOutstanding = runningOutstanding;
         const bAmount = Number(b.bill_amount || 0);
+        const writeOffAmt = Number(b.write_off_amount || b.writeoff_amount || 0);
 
         // Find approved payments for this bill
         const billPayments = approvedPayments.filter((p) => Number(p.bill_id) === Number(b.bill_id));
@@ -3650,10 +3856,11 @@ const getFlatCollectionReport = async (req, res) => {
           paidAmount = bAmount;
         }
 
-        const closingOutstanding = Math.max(0, openingOutstanding + bAmount - paidAmount);
+        const closingOutstanding = Math.max(0, openingOutstanding + bAmount - paidAmount - writeOffAmt);
         runningOutstanding = closingOutstanding;
 
         const monthName = formatMonthName(b.month);
+        const payDate = billPayments[0]?.paid_at || billPayments[0]?.created_at || b.payment_date || b.paid_at || ((paidAmount > 0 || String(b.status).toUpperCase() === 'PAID') ? (b.updated_at || b.created_at) : null);
 
         calculatedRows.push({
           bill_id: b.bill_id,
@@ -3666,18 +3873,35 @@ const getFlatCollectionReport = async (req, res) => {
           year: b.year,
           opening_outstanding: openingOutstanding,
           bill_amount: bAmount,
+          penalty_amount: Number(b.penalty_amount || b.penalty || 0),
+          penalty: Number(b.penalty_amount || b.penalty || 0),
+          write_off_amount: writeOffAmt,
           paid_amount: paidAmount,
           pending_amount: closingOutstanding,
           closing_outstanding: closingOutstanding,
-          payment_date: billPayments[0]?.paid_at || billPayments[0]?.created_at || null,
-          status: closingOutstanding <= 0 ? 'Paid' : (paidAmount > 0 ? 'Partial' : 'Pending')
+          payment_date: payDate,
+          paymentDate: payDate,
+          status: closingOutstanding <= 0 ? 'Paid' : ((paidAmount + writeOffAmt) > 0 ? 'Partial' : 'Pending')
         });
       }
     }
 
+    const monthNames = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+    const parseMonthVal = (val) => {
+      if (!val) return 0;
+      const numVal = parseInt(val, 10);
+      if (!isNaN(numVal) && numVal >= 1 && numVal <= 12) return numVal;
+      const str = String(val).trim().toLowerCase();
+      const idx = monthNames.findIndex(m => m.startsWith(str.substring(0, 3)));
+      return idx !== -1 ? idx + 1 : 0;
+    };
+
     // Apply filters on the calculated rows for the requested financial year
     let filtered = calculatedRows.filter((r) => {
-      const inFY = (r.year === fyInfo.startYear && r.month_number >= 4) || (r.year === fyInfo.endYear && r.month_number <= 3);
+      const rYr = parseInt(r.year, 10);
+      const rMo = parseMonthVal(r.month_number || r.month);
+      if (!rYr || !rMo) return true;
+      const inFY = (rYr === fyInfo.startYear && rMo >= 4) || (rYr === fyInfo.endYear && rMo <= 3);
       return inFY;
     });
 
@@ -3696,7 +3920,10 @@ const getFlatCollectionReport = async (req, res) => {
       filtered = filtered.filter((r) => String(r.status).toLowerCase() === String(status).toLowerCase());
     }
 
-    return sendResponse(res, 200, 'Flat collection report generated successfully', filtered);
+    const isResident = req.user?.role === 'resident';
+    const finalData = isResident ? sanitizeForResident(filtered) : filtered;
+
+    return sendResponse(res, 200, 'Flat collection report generated successfully', finalData);
   } catch (error) {
     console.error('Flat collection report error:', error);
     return sendResponse(res, 500, 'Server error generating flat collection report');

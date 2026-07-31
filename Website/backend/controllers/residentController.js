@@ -8,28 +8,58 @@ const normalizeStatus = (status) => {
 
 const sanitizeForResident = (data) => {
   if (data === null || data === undefined) return data;
+  if (data instanceof Date) return data;
   if (Array.isArray(data)) return data.map(sanitizeForResident);
   if (typeof data === 'object') {
+    const writeOffAmt = Number(data.write_off_amount || data.writeoff_amount || data.writeOffAmount || 0);
     const cleaned = {};
     for (const [key, val] of Object.entries(data)) {
       if (
         /write_?off/i.test(key) ||
         /written_?off/i.test(key) ||
         key === 'approvedWriteOffs' ||
-        key === 'writeOffs'
+        key === 'writeOffs' ||
+        key === 'internalAdjustment' ||
+        key === 'adminNotes' ||
+        key === 'admin_notes'
       ) {
         continue;
       }
       let value = sanitizeForResident(val);
       if (
-        (key === 'status' || key === 'payment_status' || key === 'paymentStatus' || key === 'calculated_status') &&
+        (key === 'status' || key === 'payment_status' || key === 'paymentStatus' || key === 'calculated_status' || key === 'maintenance_status') &&
         typeof value === 'string' &&
-        /write_?off|written_?off/i.test(value)
+        /write_?off|written_?off|waived/i.test(value)
       ) {
-        value = value === value.toUpperCase() ? 'PAID' : 'Paid';
+        const rem = Number(data.remaining_amount ?? data.remainingPayable ?? data.remainingAmount ?? 0) - writeOffAmt;
+        value = rem <= 0 ? (value === value.toUpperCase() ? 'PAID' : 'Paid') : (value === value.toUpperCase() ? 'PENDING' : 'Pending');
       }
       cleaned[key] = value;
     }
+
+    if (writeOffAmt > 0) {
+      if (cleaned.paid_amount !== undefined) cleaned.paid_amount = Number(cleaned.paid_amount || 0) + writeOffAmt;
+      if (cleaned.paidAmount !== undefined) cleaned.paidAmount = Number(cleaned.paidAmount || 0) + writeOffAmt;
+
+      if (cleaned.remaining_amount !== undefined) cleaned.remaining_amount = Math.max(0, Number(cleaned.remaining_amount || 0) - writeOffAmt);
+      if (cleaned.remainingAmount !== undefined) cleaned.remainingAmount = Math.max(0, Number(cleaned.remainingAmount || 0) - writeOffAmt);
+      if (cleaned.pending_amount !== undefined) cleaned.pending_amount = Math.max(0, Number(cleaned.pending_amount || 0) - writeOffAmt);
+      if (cleaned.pendingAmount !== undefined) cleaned.pendingAmount = Math.max(0, Number(cleaned.pendingAmount || 0) - writeOffAmt);
+      if (cleaned.outstanding_amount !== undefined) cleaned.outstanding_amount = Math.max(0, Number(cleaned.outstanding_amount || 0) - writeOffAmt);
+
+      const finalRem = Number(cleaned.remaining_amount ?? cleaned.pending_amount ?? cleaned.pendingAmount ?? cleaned.remainingAmount ?? 0);
+      const finalPaid = Number(cleaned.paid_amount ?? cleaned.paidAmount ?? 0);
+      for (const stKey of ['status', 'payment_status', 'paymentStatus', 'calculated_status', 'maintenance_status']) {
+        if (cleaned[stKey] !== undefined) {
+          if (finalRem <= 0) {
+            cleaned[stKey] = typeof cleaned[stKey] === 'string' && cleaned[stKey] === cleaned[stKey].toUpperCase() ? 'PAID' : 'Paid';
+          } else if (finalPaid > 0) {
+            cleaned[stKey] = typeof cleaned[stKey] === 'string' && cleaned[stKey] === cleaned[stKey].toUpperCase() ? 'PARTIALLY_PAID' : 'Partial';
+          }
+        }
+      }
+    }
+
     return cleaned;
   }
   return data;
@@ -488,8 +518,11 @@ const getReportExpenses = async (req, res) => {
     addMonthYearFilters(where, params, 'expense_date', month, year);
 
     const [rows] = await promisePool.query(
-      `SELECT id, expense_number, vendor AS expense_title, category, amount,
-              expense_date AS date, description
+      `SELECT id, expense_number, vendor, vendor AS expense_title, category, amount,
+              expense_date, expense_date AS date, description, status,
+              COALESCE(payment_account, account_type, 'BANK') AS payment_account,
+              COALESCE(account_type, payment_account, 'BANK') AS account_type,
+              COALESCE(payment_method, 'Bank Transfer') AS payment_method
        FROM maintenance_expenses
        WHERE ${where.join(' AND ')}
        ORDER BY expense_date DESC, id DESC`,
@@ -790,18 +823,15 @@ const getResidentTransparencyReport = async (req, res) => {
 
     const [approvedExpenses] = await promisePool.query(
       `SELECT e.id, e.category, e.description, e.vendor, e.amount, e.expense_date,
-              COALESCE(e.payment_account, 'BANK') AS payment_account,
-              COALESCE(e.status, 'Paid') AS status, 'Admin' AS approved_by
+              COALESCE(e.payment_account, e.account_type, 'BANK') AS payment_account,
+              COALESCE(e.status, 'Paid') AS status, 'Management' AS approved_by
        FROM maintenance_expenses e
-       WHERE COALESCE(e.status, 'Paid') = 'Paid'
-         AND e.expense_date >= ?
-         AND e.expense_date <= ?
-       ORDER BY e.expense_date DESC`,
-      [startDate, endDate]
+       WHERE (e.status IS NULL OR LOWER(e.status) IN ('paid', 'approved'))
+       ORDER BY e.expense_date DESC, e.id DESC`
     );
 
-    const bankExpense = approvedExpenses.filter((e) => e.payment_account === 'BANK').reduce((s, e) => s + Number(e.amount || 0), 0);
-    const cashExpense = approvedExpenses.filter((e) => e.payment_account === 'CASH').reduce((s, e) => s + Number(e.amount || 0), 0);
+    const bankExpense = approvedExpenses.filter((e) => String(e.payment_account || '').toUpperCase() !== 'CASH').reduce((s, e) => s + Number(e.amount || 0), 0);
+    const cashExpense = approvedExpenses.filter((e) => String(e.payment_account || '').toUpperCase() === 'CASH').reduce((s, e) => s + Number(e.amount || 0), 0);
 
     const bankClosing = baseBankOpening + bankIncome - bankExpense;
     const cashClosing = baseCashOpening + cashIncome - cashExpense;

@@ -84,11 +84,8 @@ const getMonthlyReport = async (req, res) => {
     let whereClause = [];
     let params = [];
 
-    // Access control: Residents can only view their own bills
-    if (userRole === 'resident') {
-      whereClause.push('m.resident_id = ?');
-      params.push(userId);
-    } else if (!ADMIN_ROLES.has(userRole)) {
+    // Access control: Allow admins and residents
+    if (userRole !== 'resident' && !ADMIN_ROLES.has(userRole)) {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
 
@@ -139,12 +136,13 @@ const getMonthlyReport = async (req, res) => {
         m.month,
         m.year,
         COALESCE(m.amount, 0) AS maintenance_amount,
-        COALESCE(m.penalty, 0) AS penalty,
+        COALESCE(m.penalty_amount, 0) AS penalty,
+        COALESCE(m.penalty_amount, 0) AS penalty_amount,
         COALESCE(m.discount_amount, 0) AS discount_amount,
         COALESCE(m.write_off_amount, 0) AS write_off_amount,
         COALESCE(m.paid_amount, 0) AS paid_amount,
         COALESCE(m.advance_amount, 0) AS advance_amount,
-        COALESCE(m.total_payable, m.total_amount, GREATEST(COALESCE(m.amount, 0) + COALESCE(m.penalty, 0) - COALESCE(m.discount_amount, 0) - COALESCE(m.write_off_amount, 0), 0)) AS total_payable,
+        COALESCE(m.total_payable, m.total_amount, GREATEST(COALESCE(m.amount, 0) + COALESCE(m.penalty_amount, 0) - COALESCE(m.discount_amount, 0) - COALESCE(m.write_off_amount, 0), 0)) AS total_payable,
         m.due_date,
         m.status AS bill_status,
         m.payment_date,
@@ -208,6 +206,7 @@ const getMonthlyReport = async (req, res) => {
         ...r,
         maintenance_amount,
         penalty,
+        penalty_amount: penalty,
         discount_amount,
         write_off_amount,
         total_payable,
@@ -233,9 +232,35 @@ const getMonthlyReport = async (req, res) => {
     const advanceCollection = filtered.reduce((acc, curr) => acc + curr.advance_amount, 0);
     const collectionPercentage = expectedCollection > 0 ? (totalCollection / expectedCollection) * 100 : 0;
 
+    const sanitizeOutput = (data) => {
+      if (data === null || data === undefined) return data;
+      if (data instanceof Date) return data;
+      if (Array.isArray(data)) return data.map(sanitizeOutput);
+      if (typeof data === 'object') {
+        const writeOffAmt = num(data.write_off_amount || data.writeoff_amount);
+        const cleaned = {};
+        for (const [key, val] of Object.entries(data)) {
+          if (/write_?off/i.test(key) || /written_?off/i.test(key)) continue;
+          cleaned[key] = sanitizeOutput(val);
+        }
+        if (writeOffAmt > 0) {
+          if (cleaned.paid_amount !== undefined) cleaned.paid_amount = num(cleaned.paid_amount) + writeOffAmt;
+          if (cleaned.outstanding_amount !== undefined) cleaned.outstanding_amount = Math.max(0, num(cleaned.outstanding_amount) - writeOffAmt);
+          if (cleaned.total_payable !== undefined) cleaned.total_payable = Math.max(0, num(cleaned.total_payable) + writeOffAmt);
+          if (cleaned.calculated_status !== undefined && num(cleaned.outstanding_amount) <= 0) {
+            cleaned.calculated_status = 'PAID';
+          }
+        }
+        return cleaned;
+      }
+      return data;
+    };
+
+    const responseData = userRole === 'resident' ? sanitizeOutput(filtered) : filtered;
+
     return res.json({
       success: true,
-      count: filtered.length,
+      count: responseData.length,
       summary: {
         expectedCollection,
         totalCollection,
@@ -244,7 +269,7 @@ const getMonthlyReport = async (req, res) => {
         advanceCollection,
         collectionPercentage: parseFloat(collectionPercentage.toFixed(2)),
       },
-      data: filtered,
+      data: responseData,
     });
   } catch (error) {
     console.error('Error generating monthly maintenance report:', error);
@@ -277,12 +302,12 @@ const getDashboardSummary = async (req, res) => {
     const [bills] = await promisePool.query(`
       SELECT 
         m.id,
-        COALESCE(m.amount, 0) AS maintenance_amount,
-        COALESCE(m.penalty, 0) AS penalty,
+        COALESCE(m.amount, m.total_payable, m.total_amount, 0) AS maintenance_amount,
+        COALESCE(m.penalty_amount, 0) AS penalty,
         COALESCE(m.discount_amount, 0) AS discount_amount,
         COALESCE(m.write_off_amount, 0) AS write_off_amount,
         COALESCE(m.paid_amount, 0) AS paid_amount,
-        COALESCE(m.total_payable, m.total_amount, 0) AS total_payable,
+        COALESCE(m.total_payable, m.total_amount, GREATEST(COALESCE(m.amount, 0) + COALESCE(m.penalty_amount, 0) - COALESCE(m.discount_amount, 0) - COALESCE(m.write_off_amount, 0), 0)) AS total_payable,
         m.due_date,
         m.status,
         p.payment_status AS payment_verification_status
@@ -306,11 +331,11 @@ const getDashboardSummary = async (req, res) => {
     let writeOffCases = 0;
 
     bills.forEach((b) => {
-      const maintenance_amount = num(b.maintenance_amount);
+      const maintenance_amount = num(b.maintenance_amount) || num(b.total_payable);
       const penalty = num(b.penalty);
       const discount_amount = num(b.discount_amount);
       const write_off_amount = num(b.write_off_amount);
-      const total_payable = Math.max(0, maintenance_amount + penalty - discount_amount - write_off_amount);
+      const total_payable = num(b.total_payable) || Math.max(0, maintenance_amount + penalty - discount_amount - write_off_amount);
       const amount_paid = num(b.paid_amount);
       const outstanding = Math.max(0, total_payable - amount_paid);
 
@@ -392,7 +417,7 @@ const get12MonthCollectionHistory = async (req, res) => {
       SELECT 
         m.month,
         m.year,
-        SUM(COALESCE(m.total_payable, m.total_amount, GREATEST(COALESCE(m.amount, 0) + COALESCE(m.penalty, 0) - COALESCE(m.discount_amount, 0) - COALESCE(m.write_off_amount, 0), 0))) AS expected_collection,
+        SUM(COALESCE(m.total_payable, m.total_amount, GREATEST(COALESCE(m.amount, 0) + COALESCE(m.penalty_amount, 0) - COALESCE(m.discount_amount, 0) - COALESCE(m.write_off_amount, 0), 0))) AS expected_collection,
         SUM(COALESCE(m.paid_amount, 0)) AS collected_amount
       FROM maintenance m
       GROUP BY m.year, m.month

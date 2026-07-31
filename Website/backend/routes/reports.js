@@ -1,5 +1,5 @@
 const router = require('express').Router();
-const { auth } = require('../middleware/auth');
+const { auth, adminAuth } = require('../middleware/auth');
 const c = require('../controllers/reportsController');
 const monthlyCtrl = require('../controllers/monthlyMaintenanceReportController');
 
@@ -16,7 +16,7 @@ router.get('/maintenance/dashboard-summary', auth, monthlyCtrl.getDashboardSumma
 router.get('/maintenance/12-month-history', auth, monthlyCtrl.get12MonthCollectionHistory);
 router.get('/maintenance/payment-modes', auth, monthlyCtrl.getPaymentModeReport);
 router.get('/maintenance/resident-ledger', auth, monthlyCtrl.getResidentLedger);
-router.post('/maintenance/write-off', auth, monthlyCtrl.applyWriteOff);
+router.post('/maintenance/write-off', auth, adminAuth, monthlyCtrl.applyWriteOff);
 router.put('/maintenance/payments/:id/approve', auth, monthlyCtrl.approvePaymentWorkflow);
 router.put('/maintenance/payments/:id/reject', auth, monthlyCtrl.rejectPaymentWorkflow);
 router.get('/maintenance/receipts/:payment_id', auth, monthlyCtrl.getPaymentReceipt);

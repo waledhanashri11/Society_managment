@@ -466,7 +466,7 @@ private fun MaintenanceBillDto.residentFriendlyStatus(): String {
         "approved", "paid" -> "Paid"
         "rejected" -> "Rejected"
         "partially paid" -> "Partially Paid"
-        "written off", "write off" -> "Written Off"
+        "written off", "write off", "partial write off" -> if ((this.remainingAmount ?: this.totalAmount).toMoneyDecimal() <= BigDecimal.ZERO) "Paid" else "Unpaid"
         "overdue" -> "Unpaid / Overdue"
         "pending", "unpaid", "" -> "Unpaid"
         else -> DashboardFormatters.statusLabel(status)
@@ -474,7 +474,8 @@ private fun MaintenanceBillDto.residentFriendlyStatus(): String {
 }
 private fun MaintenanceBillDto.canResidentSubmitPayment(): Boolean {
     val status = (this.latestPaymentStatus ?: this.paymentStatus ?: this.status).orEmpty().trim().replace("_", " ").lowercase()
-    return status !in setOf("pending verification", "under review", "payment proof submitted", "needs clarification", "approved", "paid", "partially paid", "written off")
+    val isSettled = (this.remainingAmount ?: this.totalAmount).toMoneyDecimal() <= BigDecimal.ZERO
+    return !isSettled && status !in setOf("pending verification", "under review", "payment proof submitted", "needs clarification", "approved", "paid")
 }
 
 private fun String?.toMoneyDecimal(): BigDecimal = this?.toBigDecimalOrNull() ?: BigDecimal.ZERO

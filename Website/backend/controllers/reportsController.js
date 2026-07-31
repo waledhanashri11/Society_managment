@@ -26,11 +26,46 @@ async function ledger(start,end,requested){
   return rows.map(r=>{running+=r.transaction_type==='INCOME'?n(r.amount):-n(r.amount);return {...r,amount:n(r.amount),runningBalance:running};});
 }
 async function flatPayments(start,end,resident){
-  const [rows]=await promisePool.query(`SELECT f.flat_no,f.wing,u.name resident_name,m.month,m.year,m.total_amount bill_amount,m.paid_amount,m.remaining_amount,m.status,COALESCE(p.paid_at,m.payment_date,m.updated_at) payment_date,p.payment_method,p.receipt_number,p.payment_status verification_status
+  const [rows]=await promisePool.query(`SELECT f.flat_no,f.wing,u.name resident_name,m.month,m.year,m.total_amount bill_amount,COALESCE(m.penalty_amount,m.penalty,0) penalty_amount,COALESCE(m.write_off_amount,m.writeoff_amount,0) write_off_amount,m.paid_amount,m.remaining_amount,m.status,COALESCE(p.paid_at,p.created_at,m.payment_date,m.paid_at,m.updated_at) payment_date,p.payment_method,p.receipt_number,p.payment_status verification_status
     FROM maintenance m JOIN flats f ON f.id=m.flat_id JOIN users u ON u.id=m.resident_id
-    LEFT JOIN LATERAL (SELECT paid_at,payment_method,receipt_number,payment_status FROM payments WHERE bill_id=m.id ORDER BY created_at DESC LIMIT 1) p ON TRUE
+    LEFT JOIN LATERAL (SELECT paid_at,created_at,payment_method,receipt_number,payment_status FROM payments WHERE bill_id=m.id ORDER BY created_at DESC LIMIT 1) p ON TRUE
     WHERE m.due_date>=? AND m.due_date<? ORDER BY f.wing,f.flat_no,m.year,m.month`,[start,end]);
-  return rows.map(r=>({wing:r.wing||'A',flatNo:r.flat_no,residentName:r.resident_name,month:r.month,year:r.year,billAmount:n(r.bill_amount),paidAmount:n(r.paid_amount),pendingAmount:n(r.remaining_amount),status:r.status,paymentDate:r.payment_date,paymentMethod:r.payment_method,receiptNumber:r.receipt_number,verificationStatus:r.verification_status}));
+  return rows.map(r => {
+    const writeOff = n(r.write_off_amount);
+    const rawPaid = n(r.paid_amount);
+    const rawPending = n(r.remaining_amount);
+    const effectivePaid = resident ? (rawPaid + writeOff) : rawPaid;
+    const effectivePending = resident ? Math.max(0, rawPending - writeOff) : rawPending;
+    let status = r.status;
+    if (resident) {
+      status = effectivePending <= 0 ? 'Paid' : (effectivePaid > 0 ? 'Partial' : 'Pending');
+    }
+
+    const payDate = (effectivePaid > 0 || String(status).toLowerCase() === 'paid') ? r.payment_date : null;
+
+    const item = {
+      wing: r.wing || 'A',
+      flatNo: r.flat_no,
+      residentName: r.resident_name,
+      month: r.month,
+      year: r.year,
+      billAmount: n(r.bill_amount),
+      penaltyAmount: n(r.penalty_amount),
+      penalty: n(r.penalty_amount),
+      paidAmount: effectivePaid,
+      pendingAmount: effectivePending,
+      status: status,
+      paymentDate: payDate,
+      payment_date: payDate,
+      paymentMethod: r.payment_method,
+      receiptNumber: r.receipt_number,
+      verificationStatus: r.verification_status
+    };
+    if (!resident) {
+      item.writeOffAmount = writeOff;
+    }
+    return item;
+  });
 }
 async function annual(req,res,resident=false){ try{ if(!(ADMINS.has(req.user?.role)||(resident&&req.user?.role==='resident')))return res.status(403).json({message:'Access denied'}); const fy=parseFy(req.query.financialYear); if(!fy)return res.status(400).json({message:'financialYear must be YYYY-YYYY'}); const start=`${fy}-04-01`,end=`${fy+1}-04-01`,s=await summary(start,end); if(!s)return res.json({available:false,reason:'Opening balance has not been configured.'}); const months=[]; for(let k=0;k<12;k++){const m=((3+k)%12)+1,p=monthPeriod(fy,m);months.push({month:m,year:p.year,...await summary(p.start,p.end)});} res.json({available:true,financialYear:`${fy}-${fy+1}`,summary:s,months,collection:await collection(start,end),...await breakdown(start,end)}); }catch(e){console.error('Annual report error',e);res.status(500).json({message:'Unable to generate report'});} }
 async function monthly(req,res){ try{if(!ADMINS.has(req.user?.role))return res.status(403).json({message:'Access denied'});const y=+req.query.year,m=+req.query.month;if(!Number.isInteger(y)||y<2000||y>2200||m<1||m>12)return res.status(400).json({message:'Valid year and month are required'});const p=monthPeriod(m>=4?y:y-1,m),s=await summary(p.start,p.end);if(!s)return res.json({available:false,reason:'Opening balance has not been configured.'});res.json({available:true,month:m,year:y,summary:s,collection:await collection(p.start,p.end),...await breakdown(p.start,p.end),bankTransactions:await ledger(p.start,p.end,'BANK'),cashTransactions:await ledger(p.start,p.end,'CASH'),flatPayments:await flatPayments(p.start,p.end,false)});}catch(e){console.error('Monthly report error',e);res.status(500).json({message:'Unable to generate report'});} }

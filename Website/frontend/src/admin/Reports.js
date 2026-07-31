@@ -63,8 +63,10 @@ const formatMonthName = (month) => {
 };
 
 const formatDate = (dateStr) => {
-  if (!dateStr) return '—';
-  return new Date(dateStr).toLocaleDateString('en-IN', {
+  if (!dateStr || dateStr === '—') return '—';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString('en-IN', {
     day: '2-digit',
     month: 'short',
     year: 'numeric'
@@ -121,7 +123,7 @@ export default function AdminReports() {
   // Multi-Filter State
   const [monthlyFilters, setMonthlyFilters] = useState({
     month: 'All',
-    year: '2026',
+    year: 'All',
     wing: 'All',
     floor: 'All',
     flat: '',
@@ -405,6 +407,8 @@ export default function AdminReports() {
 
   // Overall Financial Summary
   const summary = finData?.summary || {};
+  const totalExpensesAmount = num(summary.totalExpense !== undefined ? summary.totalExpense : summary.totalExpenses);
+  const netAmountValue = num(summary.netAmount !== undefined ? summary.netAmount : (num(summary.totalIncome) - totalExpensesAmount));
 
   return (
     <div className="portal-module reports-module" style={{ width: '100%' }}>
@@ -461,14 +465,13 @@ export default function AdminReports() {
       )}
 
       {/* Navigation Tabs (Pill style matching Notices page) */}
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', overflowX: 'auto', paddingBottom: '4px' }}>
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', overflowX: 'auto', paddingBottom: '4px', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
         {[
           { id: 'summary', label: 'Financial Accounting Summary', icon: WalletCards },
           { id: 'monthlyReport', label: 'Monthly Maintenance Report', icon: BarChart3 },
           { id: 'expenses', label: 'Expense Report', icon: Wallet },
           { id: 'bankLedger', label: 'Bank Account Ledger', icon: Landmark },
-          { id: 'cashLedger', label: 'Cash Account Ledger', icon: WalletCards },
-          { id: 'flats', label: 'Flat Collection Status', icon: Building2 }
+          { id: 'cashLedger', label: 'Cash Account Ledger', icon: WalletCards }
         ].map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -520,7 +523,7 @@ export default function AdminReports() {
                       <h2>Report Multi-Filters</h2>
                     </div>
                     <button
-                      onClick={() => setMonthlyFilters({ month: 'All', year: '2026', wing: 'All', floor: 'All', flat: '', resident: '', status: 'All', search: '' })}
+                      onClick={() => setMonthlyFilters({ month: 'All', year: 'All', wing: 'All', floor: 'All', flat: '', resident: '', status: 'All', search: '' })}
                       className="portal-link-button"
                     >
                       Reset Filters
@@ -549,6 +552,7 @@ export default function AdminReports() {
                         value={monthlyFilters.year}
                         onChange={(e) => setMonthlyFilters({ ...monthlyFilters, year: e.target.value })}
                       >
+                        <option value="All">All Years</option>
                         {['2026', '2025', '2024', '2023'].map((y) => (
                           <option key={y} value={y}>{y}</option>
                         ))}
@@ -624,53 +628,6 @@ export default function AdminReports() {
                     </label>
                   </div>
                 </div>
-
-                {/* KPI Financial Collection Summary */}
-                {dashboardSummary && (
-                  <div className="portal-kpis notice-kpis" style={{ gridTemplateColumns: 'repeat(6, minmax(0, 1fr))', gap: '8px' }}>
-                    <article className="portal-kpi" style={{ padding: '12px 10px' }}>
-                      <span style={{ fontSize: '9px', fontWeight: 700, paddingRight: '22px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>EXPECTED COLLECTION</span>
-                      <strong>{moneyShort(dashboardSummary.expectedMaintenance)}</strong>
-                      <small style={{ color: '#687588' }}>SUM(All Payable)</small>
-                      <div className="portal-kpi-icon" style={{ width: 26, height: 26, top: 10, right: 8 }}><IndianRupee size={14} /></div>
-                    </article>
-
-                    <article className="portal-kpi green" style={{ padding: '12px 10px' }}>
-                      <span style={{ fontSize: '9px', fontWeight: 700, paddingRight: '22px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>TOTAL COLLECTION</span>
-                      <strong>{moneyShort(dashboardSummary.totalCollection)}</strong>
-                      <small>Approved Payments Only</small>
-                      <div className="portal-kpi-icon" style={{ width: 26, height: 26, top: 10, right: 8 }}><CheckCircle2 size={14} /></div>
-                    </article>
-
-                    <article className="portal-kpi orange" style={{ padding: '12px 10px' }}>
-                      <span style={{ fontSize: '9px', fontWeight: 700, paddingRight: '22px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>PENDING COLLECTION</span>
-                      <strong>{moneyShort(dashboardSummary.pendingCollection)}</strong>
-                      <small style={{ color: '#dd6b20' }}>Expected - Total</small>
-                      <div className="portal-kpi-icon" style={{ width: 26, height: 26, top: 10, right: 8 }}><Clock size={14} /></div>
-                    </article>
-
-                    <article className="portal-kpi red" style={{ padding: '12px 10px' }}>
-                      <span style={{ fontSize: '9px', fontWeight: 700, paddingRight: '22px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>OVERDUE COLLECTION</span>
-                      <strong>{moneyShort(dashboardSummary.overdueCollection)}</strong>
-                      <small style={{ color: '#e33d33' }}>Due Date Crossed</small>
-                      <div className="portal-kpi-icon" style={{ width: 26, height: 26, top: 10, right: 8 }}><AlertTriangle size={14} /></div>
-                    </article>
-
-                    <article className="portal-kpi green" style={{ padding: '12px 10px' }}>
-                      <span style={{ fontSize: '9px', fontWeight: 700, paddingRight: '22px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>ADVANCE COLLECTION</span>
-                      <strong>{moneyShort(dashboardSummary.advanceCollection)}</strong>
-                      <small>Overpaid Balances</small>
-                      <div className="portal-kpi-icon" style={{ width: 26, height: 26, top: 10, right: 8 }}><Wallet size={14} /></div>
-                    </article>
-
-                    <article className="portal-kpi" style={{ padding: '12px 10px' }}>
-                      <span style={{ fontSize: '9px', fontWeight: 700, paddingRight: '22px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>COLLECTION %</span>
-                      <strong>{dashboardSummary.collectionPercentage}%</strong>
-                      <small style={{ color: '#1473e6' }}>Efficiency Ratio</small>
-                      <div className="portal-kpi-icon" style={{ width: 26, height: 26, top: 10, right: 8 }}><TrendingUp size={14} /></div>
-                    </article>
-                  </div>
-                )}
 
                 {/* 12 Month History Table */}
                 <div className="portal-panel portal-table-card">
@@ -749,7 +706,6 @@ export default function AdminReports() {
                             <th>Paid Amount</th>
                             <th>Outstanding</th>
                             <th>Status</th>
-                            <th>Actions</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -773,60 +729,6 @@ export default function AdminReports() {
                                 <span className={getStatusBadgeClass(row.calculated_status)}>
                                   {row.calculated_status}
                                 </span>
-                              </td>
-                              <td>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                  <button
-                                    onClick={() => handleOpenReceipt(row.latest_payment_id || row.bill_id)}
-                                    className="portal-icon-btn"
-                                    title="View Receipt / Details"
-                                    style={{ width: 26, height: 26, borderRadius: 6, background: '#eaf3ff', border: '1px solid #c7d7ea', color: '#1473e6', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-                                  >
-                                    <Receipt size={13} />
-                                  </button>
-
-                                  {row.latest_payment_id && (
-                                    <button
-                                      onClick={() => handleApprovePayment(row.latest_payment_id)}
-                                      className="portal-icon-btn"
-                                      title="Approve Payment"
-                                      style={{ width: 26, height: 26, borderRadius: 6, background: '#e6f4ea', border: '1px solid #b7e1cd', color: '#079447', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-                                    >
-                                      <CheckCircle2 size={13} />
-                                    </button>
-                                  )}
-
-                                  {row.latest_payment_id && (
-                                    <button
-                                      onClick={() => handleOpenRejectModal(row)}
-                                      className="portal-icon-btn"
-                                      title="Reject Payment"
-                                      style={{ width: 26, height: 26, borderRadius: 6, background: '#fce8e6', border: '1px solid #f5c2c0', color: '#dc2626', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-                                    >
-                                      <XCircle size={13} />
-                                    </button>
-                                  )}
-
-                                  <button
-                                    onClick={() => handleOpenWriteOffModal(row)}
-                                    className="portal-icon-btn"
-                                    title="Write-Off Bill"
-                                    style={{ width: 26, height: 26, borderRadius: 6, background: '#f3e8ff', border: '1px solid #e9d5ff', color: '#7a5af8', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-                                  >
-                                    <FileText size={13} />
-                                  </button>
-
-                                  {row.resident_id && (
-                                    <button
-                                      onClick={() => handleOpenLedger(row.resident_id, row.resident_name)}
-                                      className="portal-icon-btn"
-                                      title="Resident Ledger"
-                                      style={{ width: 26, height: 26, borderRadius: 6, background: '#f1f5f9', border: '1px solid #cbd5e1', color: '#475467', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-                                    >
-                                      <BookOpen size={13} />
-                                    </button>
-                                  )}
-                                </div>
                               </td>
                             </tr>
                           ))}
@@ -865,17 +767,17 @@ export default function AdminReports() {
 
                   <article className="portal-kpi red">
                     <span>TOTAL EXPENSES</span>
-                    <strong style={{ color: '#dc2626' }}>{money(summary.totalExpenses)}</strong>
+                    <strong style={{ color: '#dc2626' }}>{money(totalExpensesAmount)}</strong>
                     <small style={{ color: '#dc2626' }}>Total Operational Expenses</small>
                     <div className="portal-kpi-icon"><Wallet size={17} /></div>
                   </article>
 
-                  <article className={`portal-kpi ${summary.netAmount >= 0 ? 'green' : 'red'}`}>
+                  <article className={`portal-kpi ${netAmountValue >= 0 ? 'green' : 'red'}`}>
                     <span>NET SURPLUS / DEFICIT</span>
-                    <strong style={{ color: summary.netAmount >= 0 ? '#079447' : '#dc2626' }}>
-                      {money(summary.netAmount)}
+                    <strong style={{ color: netAmountValue >= 0 ? '#079447' : '#dc2626' }}>
+                      {money(netAmountValue)}
                     </strong>
-                    <small>{summary.netAmount >= 0 ? 'Net Surplus' : 'Net Deficit'}</small>
+                    <small>{netAmountValue >= 0 ? 'Net Surplus' : 'Net Deficit'}</small>
                     <div className="portal-kpi-icon"><TrendingUp size={17} /></div>
                   </article>
                 </div>
@@ -994,42 +896,6 @@ export default function AdminReports() {
             {/* TAB: EXPENSE REPORT */}
             {activeTab === 'expenses' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                <div className="portal-kpis">
-                  <article className="portal-kpi red">
-                    <span>TOTAL EXPENSES</span>
-                    <strong style={{ color: '#dc2626' }}>
-                      {money(expensesList.reduce((acc, curr) => acc + Number(curr.amount || 0), 0))}
-                    </strong>
-                    <small style={{ color: '#dc2626' }}>Total Operational Spent</small>
-                    <div className="portal-kpi-icon"><Wallet size={17} /></div>
-                  </article>
-
-                  <article className="portal-kpi">
-                    <span>BANK EXPENSES</span>
-                    <strong>
-                      {money(expensesList.filter(e => String(e.account_type || e.payment_method).toUpperCase().includes('BANK')).reduce((acc, curr) => acc + Number(curr.amount || 0), 0))}
-                    </strong>
-                    <small style={{ color: '#687588' }}>Bank Account Expenses</small>
-                    <div className="portal-kpi-icon"><Landmark size={17} /></div>
-                  </article>
-
-                  <article className="portal-kpi green">
-                    <span>CASH EXPENSES</span>
-                    <strong>
-                      {money(expensesList.filter(e => String(e.account_type || e.payment_method).toUpperCase().includes('CASH')).reduce((acc, curr) => acc + Number(curr.amount || 0), 0))}
-                    </strong>
-                    <small>Cash Account Expenses</small>
-                    <div className="portal-kpi-icon"><Wallet size={17} /></div>
-                  </article>
-
-                  <article className="portal-kpi">
-                    <span>EXPENSE TRANSACTIONS</span>
-                    <strong>{expensesList.length}</strong>
-                    <small style={{ color: '#687588' }}>Recorded Expense Count</small>
-                    <div className="portal-kpi-icon"><Receipt size={17} /></div>
-                  </article>
-                </div>
-
                 <div className="portal-panel portal-table-card">
                   <div className="portal-panel-head">
                     <div>
@@ -1110,17 +976,37 @@ export default function AdminReports() {
                       </tr>
                     </thead>
                     <tbody>
-                      {(bankLedger?.transactions || []).map((t, i) => (
-                        <tr key={i}>
-                          <td>{formatDate(t.transaction_date)}</td>
-                          <td><strong>{t.transaction_type}</strong></td>
-                          <td>{t.description}</td>
-                          <td style={{ color: t.transaction_type === 'INCOME' ? '#079447' : '#dc2626', fontWeight: 700 }}>
-                            {money(t.amount)}
-                          </td>
-                          <td><strong>{money(t.runningBalance)}</strong></td>
-                        </tr>
-                      ))}
+                      {(bankLedger?.ledger || bankLedger?.transactions || bankLedger?.rows || []).map((t, i) => {
+                        const isIncome = num(t.income) > 0 || (t.transaction_type || t.type) === 'INCOME';
+                        const amt = isIncome ? num(t.income || t.amount) : num(t.expense || t.amount);
+
+                        return (
+                          <tr key={i}>
+                            <td>{formatDate(t.date || t.transaction_date)}</td>
+                            <td>
+                              <span
+                                style={{
+                                  display: 'inline-block',
+                                  padding: '3px 8px',
+                                  borderRadius: '4px',
+                                  fontSize: '11px',
+                                  fontWeight: 700,
+                                  background: isIncome ? '#e8f8ef' : '#f1f5f9',
+                                  color: isIncome ? '#079447' : '#475467',
+                                  border: isIncome ? '1px solid #bbf7d0' : '1px solid #cbd5e1'
+                                }}
+                              >
+                                {isIncome ? 'INCOME' : 'EXPENSE'}
+                              </span>
+                            </td>
+                            <td>{t.description || t.transaction_type}</td>
+                            <td style={{ color: isIncome ? '#079447' : '#dc2626', fontWeight: 700 }}>
+                              {isIncome ? '+' : '-'}{money(amt)}
+                            </td>
+                            <td><strong>{money(t.runningBalance)}</strong></td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -1148,55 +1034,37 @@ export default function AdminReports() {
                       </tr>
                     </thead>
                     <tbody>
-                      {(cashLedger?.transactions || []).map((t, i) => (
-                        <tr key={i}>
-                          <td>{formatDate(t.transaction_date)}</td>
-                          <td><strong>{t.transaction_type}</strong></td>
-                          <td>{t.description}</td>
-                          <td style={{ color: t.transaction_type === 'INCOME' ? '#079447' : '#dc2626', fontWeight: 700 }}>
-                            {money(t.amount)}
-                          </td>
-                          <td><strong>{money(t.runningBalance)}</strong></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
+                      {(cashLedger?.ledger || cashLedger?.transactions || cashLedger?.rows || []).map((t, i) => {
+                        const isIncome = num(t.income) > 0 || (t.transaction_type || t.type) === 'INCOME';
+                        const amt = isIncome ? num(t.income || t.amount) : num(t.expense || t.amount);
 
-            {/* TAB 5: FLAT COLLECTION STATUS */}
-            {activeTab === 'flats' && (
-              <div className="portal-panel portal-table-card">
-                <div className="portal-panel-head">
-                  <div>
-                    <h2>Flat Maintenance Collection Summary</h2>
-                    <p>Flat-wise billing and payment status summary</p>
-                  </div>
-                </div>
-                <div className="portal-table-wrap">
-                  <table className="portal-data-table">
-                    <thead>
-                      <tr>
-                        <th>Flat No</th>
-                        <th>Resident Name</th>
-                        <th>Month/Year</th>
-                        <th>Bill Amount</th>
-                        <th>Paid Amount</th>
-                        <th>Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {flatReport.map((f, idx) => (
-                        <tr key={idx}>
-                          <td><strong>{f.flat_no}</strong></td>
-                          <td>{f.resident_name || '—'}</td>
-                          <td>{f.month}/{f.year}</td>
-                          <td><strong>{money(f.total_amount || f.amount)}</strong></td>
-                          <td style={{ color: '#079447', fontWeight: 700 }}>{money(f.paid_amount)}</td>
-                          <td><span className={getStatusBadgeClass(f.status)}>{f.status}</span></td>
-                        </tr>
-                      ))}
+                        return (
+                          <tr key={i}>
+                            <td>{formatDate(t.date || t.transaction_date)}</td>
+                            <td>
+                              <span
+                                style={{
+                                  display: 'inline-block',
+                                  padding: '3px 8px',
+                                  borderRadius: '4px',
+                                  fontSize: '11px',
+                                  fontWeight: 700,
+                                  background: isIncome ? '#e8f8ef' : '#f1f5f9',
+                                  color: isIncome ? '#079447' : '#475467',
+                                  border: isIncome ? '1px solid #bbf7d0' : '1px solid #cbd5e1'
+                                }}
+                              >
+                                {isIncome ? 'INCOME' : 'EXPENSE'}
+                              </span>
+                            </td>
+                            <td>{t.description || t.transaction_type}</td>
+                            <td style={{ color: isIncome ? '#079447' : '#dc2626', fontWeight: 700 }}>
+                              {isIncome ? '+' : '-'}{money(amt)}
+                            </td>
+                            <td><strong>{money(t.runningBalance)}</strong></td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

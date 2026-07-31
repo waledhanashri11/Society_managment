@@ -48,10 +48,10 @@ const {
 } = require('../controllers/maintenanceController');
 const moduleController = require('../controllers/maintenanceModuleController');
 
-router.get('/reports/financial', auth, adminAuth, getFinancialAccountingReport);
-router.get('/reports/bank-ledger', auth, adminAuth, getBankLedgerReport);
-router.get('/reports/cash-ledger', auth, adminAuth, getCashLedgerReport);
-router.get('/reports/flat-collection', auth, adminAuth, getFlatCollectionReport);
+router.get('/reports/financial', auth, getFinancialAccountingReport);
+router.get('/reports/bank-ledger', auth, getBankLedgerReport);
+router.get('/reports/cash-ledger', auth, getCashLedgerReport);
+router.get('/reports/flat-collection', auth, getFlatCollectionReport);
 router.put('/reports/opening-balance', auth, adminAuth, saveOpeningBalance);
 
 router.delete('/cleanup-orphaned', auth, adminAuth, deleteOrphanedMaintenance);
@@ -102,7 +102,7 @@ router.get('/user/my-maintenance', auth, getUserMaintenance);
 router.post('/bills/:id/write-off', auth, adminAuth, createDetailedWriteOff);
 router.get('/write-offs', auth, adminAuth, getWriteOffHistory);
 router.get('/agm-report', auth, adminAuth, getAGMReport);
-router.get('/bills/:id/write-off-receipt', auth, getWriteOffReceipt);
+router.get('/bills/:id/write-off-receipt', auth, adminAuth, getWriteOffReceipt);
 router.delete('/write-offs/:id', auth, adminAuth, reverseWriteOff);
 router.put('/write-offs/:id', auth, adminAuth, editWriteOff);
 router.get('/:id', auth, adminAuth, getMaintenanceById);
