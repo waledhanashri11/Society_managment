@@ -79,7 +79,7 @@ const ResidentDashboard = () => {
     {
       label: t('dashboard.totalPaid', 'Total Paid'),
       value: formatters.currency(summary.paid),
-      note: summary.underReview > 0 ? t('dashboard.paymentUnderReview', { count: summary.underReview }) : 'Up to date',
+      note: summary.underReview > 0 ? t('dashboard.paymentUnderReview', { count: summary.underReview }) : t('dashboard.upToDate', 'Up to date'),
       icon: CheckCircle2,
       tone: 'green'
     },
@@ -160,11 +160,11 @@ const ResidentDashboard = () => {
                 <table className="portal-data-table">
                   <thead>
                     <tr>
-                      <th>BILL NO.</th>
-                      <th>PERIOD</th>
-                      <th>AMOUNT</th>
-                      <th>DUE DATE</th>
-                      <th>STATUS</th>
+                      <th>{t('table.billNo', 'BILL NO.')}</th>
+                      <th>{t('table.period', 'PERIOD')}</th>
+                      <th>{t('table.amount', 'AMOUNT')}</th>
+                      <th>{t('table.dueDate', 'DUE DATE')}</th>
+                      <th>{t('table.status', 'STATUS')}</th>
                     </tr>
                   </thead>
                   <tbody>

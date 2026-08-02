@@ -220,6 +220,8 @@ const AdminLayout = () => {
               )}
             </div>
 
+            {LanguageSelector ? <LanguageSelector compact showIcon={true} style={{ marginRight: '8px' }} /> : null}
+
             <div className="portal-action-menu" onClick={(event) => event.stopPropagation()}>
               <button
                 className="portal-profile-button"

@@ -36,7 +36,20 @@ const localizeNode = (root, textMap, language) => {
       return;
     }
 
-    const translated = textMap[original];
+    let translated = textMap[original];
+    if (!translated) {
+      let temp = original;
+      const sortedKeys = Object.keys(textMap).sort((a, b) => b.length - a.length);
+      sortedKeys.forEach((key) => {
+        if (key && key.length >= 3 && temp.includes(key)) {
+          temp = temp.replaceAll(key, textMap[key]);
+        }
+      });
+      if (temp !== original) {
+        translated = temp;
+      }
+    }
+
     if (translated) {
       const formatted = preserveSpacing(value, translated);
       if (node.nodeValue !== formatted) {
@@ -55,7 +68,17 @@ const localizeNode = (root, textMap, language) => {
       const originalKey = `i18nOriginal${attribute.replace(/(^|-)([a-z])/g, (_, __, char) => char.toUpperCase())}`;
       if (!element.dataset[originalKey]) element.dataset[originalKey] = value;
       const original = element.dataset[originalKey];
-      const translated = language === 'en' ? original : textMap[original];
+      let translated = language === 'en' ? original : textMap[original];
+      if (language !== 'en' && !translated) {
+        let temp = original;
+        const sortedKeys = Object.keys(textMap).sort((a, b) => b.length - a.length);
+        sortedKeys.forEach((key) => {
+          if (key && key.length >= 3 && temp.includes(key)) {
+            temp = temp.replaceAll(key, textMap[key]);
+          }
+        });
+        if (temp !== original) translated = temp;
+      }
       if (translated) element.setAttribute(attribute, translated);
     });
 

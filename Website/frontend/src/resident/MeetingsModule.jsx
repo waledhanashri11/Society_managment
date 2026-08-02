@@ -126,7 +126,7 @@ const ResidentMeetings = () => {
         <div className="portal-kpi orange">
           <span>Absence Fines</span>
           <strong>₹{fines.reduce((sum, f) => sum + Number(f.amount || 0), 0)}</strong>
-          <small>{fines.length} penalty notices</small>
+          <small>{`${fines.length} penalty notices`}</small>
           <div className="portal-kpi-icon"><DollarSign size={18} /></div>
         </div>
       </div>

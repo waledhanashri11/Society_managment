@@ -506,14 +506,21 @@ function ResidentMaintenance() {
                         <td>{statusBadge(bill, t)}</td>
                       <td style={{ textAlign: 'center' }}>
                         <div className="portal-row-actions" style={{ justifyContent: 'center', gap: '6px' }}>
-                          {String(bill.payment_status || '').toUpperCase() !== 'PAID' && (
-                            <button 
-                              style={{ color: '#087d40', background: '#e8f8ef', border: '1px solid #bbf7d0', padding: '4px 8px', borderRadius: '6px', fontWeight: '700', fontSize: '11px' }}
-                              onClick={() => openPayment(bill)}
-                            >
-                              <CreditCard size={13} /> Pay Now
-                            </button>
-                          )}
+                          {(() => {
+                            const statusUpper = String(bill.payment_status || bill.latest_payment_status || '').toUpperCase();
+                            const isPendingVerification = statusUpper.includes('VERIFICATION') || statusUpper.includes('REVIEW');
+                            const isPaid = statusUpper === 'PAID' || statusUpper === 'APPROVED';
+                            const canPay = !isPaid && !isPendingVerification;
+
+                            return canPay && (
+                              <button 
+                                style={{ color: '#087d40', background: '#e8f8ef', border: '1px solid #bbf7d0', padding: '4px 8px', borderRadius: '6px', fontWeight: '700', fontSize: '11px' }}
+                                onClick={() => openPayment(bill)}
+                              >
+                                <CreditCard size={13} /> Pay Now
+                              </button>
+                            );
+                          })()}
                           <button 
                             style={{ color: '#334155', background: '#ffffff', border: '1px solid #cbd5e1', padding: '4px 8px', borderRadius: '6px', fontWeight: '600', fontSize: '11px' }}
                             onClick={() => handlePrint('Maintenance Invoice', bill)}

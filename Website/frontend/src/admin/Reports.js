@@ -927,8 +927,8 @@ export default function AdminReports() {
                               <td><span className="portal-badge" style={{ backgroundColor: '#f1f5f9', color: '#334155', padding: '3px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 600 }}>{exp.category || 'General'}</span></td>
                               <td><strong>{exp.vendor || '—'}</strong></td>
                               <td>
-                                <span style={{ fontWeight: 600, color: String(exp.account_type || exp.payment_method).toUpperCase() === 'CASH' ? '#16a34a' : '#2563eb' }}>
-                                  {exp.account_type || exp.payment_method || 'Bank'}
+                                <span style={{ fontWeight: 600, color: String(exp.payment_account || exp.account_type || exp.payment_method || '').toUpperCase() === 'CASH' ? '#16a34a' : '#2563eb' }}>
+                                  {exp.payment_account || exp.account_type || exp.payment_method || 'BANK'}
                                 </span>
                               </td>
                               <td style={{ color: '#dc2626', fontWeight: 700 }}>

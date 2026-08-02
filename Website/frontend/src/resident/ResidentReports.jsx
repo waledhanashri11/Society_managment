@@ -22,7 +22,8 @@ import {
   WalletCards,
   BarChart3,
   Filter,
-  Receipt
+  Receipt,
+  TrendingUp
 } from 'lucide-react';
 
 import { maintenanceAPI, residentAPI, monthlyReportAPI } from '../services/api';
@@ -382,35 +383,37 @@ export default function ResidentReports() {
                     <span>TOTAL CLOSING BALANCE</span>
                     <strong>{money(summaryData.totalClosing)}</strong>
                     <small style={{ color: '#687588' }}>Total Financial Closing</small>
-                    <div className="portal-kpi-icon"><Landmark size={16} /></div>
+                    <div className="portal-kpi-icon"><WalletCards size={17} /></div>
                   </article>
 
-                  <article className="portal-kpi blue">
+                  <article className="portal-kpi">
                     <span>BANK CLOSING BALANCE</span>
-                    <strong style={{ color: '#1473e6' }}>{money(summaryData.bankClosing)}</strong>
+                    <strong>{money(summaryData.bankClosing)}</strong>
                     <small style={{ color: '#687588' }}>Bank Account Balance</small>
-                    <div className="portal-kpi-icon"><Landmark size={16} /></div>
+                    <div className="portal-kpi-icon"><Landmark size={17} /></div>
                   </article>
 
                   <article className="portal-kpi green">
                     <span>CASH CLOSING BALANCE</span>
-                    <strong style={{ color: '#079447' }}>{money(summaryData.cashClosing)}</strong>
-                    <small style={{ color: '#687588' }}>Cash Account Balance</small>
-                    <div className="portal-kpi-icon"><WalletCards size={16} /></div>
+                    <strong>{money(summaryData.cashClosing)}</strong>
+                    <small>Cash Account Balance</small>
+                    <div className="portal-kpi-icon"><Wallet size={17} /></div>
                   </article>
 
                   <article className="portal-kpi red">
                     <span>TOTAL EXPENSES</span>
                     <strong style={{ color: '#dc2626' }}>{money(summaryData.totalExpenses)}</strong>
-                    <small style={{ color: '#687588' }}>Total Operational Expenses</small>
-                    <div className="portal-kpi-icon"><Wallet size={16} /></div>
+                    <small style={{ color: '#dc2626' }}>Total Operational Expenses</small>
+                    <div className="portal-kpi-icon"><Wallet size={17} /></div>
                   </article>
 
-                  <article className="portal-kpi">
+                  <article className={`portal-kpi ${summaryData.netSurplus >= 0 ? 'green' : 'red'}`}>
                     <span>NET SURPLUS / DEFICIT</span>
-                    <strong style={{ color: summaryData.netSurplus >= 0 ? '#079447' : '#dc2626' }}>{money(summaryData.netSurplus)}</strong>
-                    <small style={{ color: '#687588' }}>{summaryData.netSurplus >= 0 ? 'Net Surplus' : 'Net Deficit'}</small>
-                    <div className="portal-kpi-icon"><IndianRupee size={16} /></div>
+                    <strong style={{ color: summaryData.netSurplus >= 0 ? '#079447' : '#dc2626' }}>
+                      {money(summaryData.netSurplus)}
+                    </strong>
+                    <small>{summaryData.netSurplus >= 0 ? 'Net Surplus' : 'Net Deficit'}</small>
+                    <div className="portal-kpi-icon"><TrendingUp size={17} /></div>
                   </article>
                 </div>
 
@@ -427,22 +430,25 @@ export default function ResidentReports() {
                     <table className="portal-data-table portal-data-table-wide">
                       <thead>
                         <tr>
-                          <th>MONTH</th>
-                          <th>OPENING</th>
-                          <th>BANK INCOME</th>
-                          <th>CASH INCOME</th>
-                          <th>TOTAL INCOME</th>
-                          <th>BANK EXPENSE</th>
-                          <th>CASH EXPENSE</th>
-                          <th>TOTAL EXPENSES</th>
-                          <th>NET SURPLUS</th>
-                          <th>CLOSING</th>
+                          <th>Month</th>
+                          <th>Opening</th>
+                          <th>Bank Income</th>
+                          <th>Cash Income</th>
+                          <th>Total Income</th>
+                          <th>Bank Expense</th>
+                          <th>Cash Expense</th>
+                          <th>Total Expenses</th>
+                          <th>Maintenance Write-Off</th>
+                          <th>Penalty Write-Off</th>
+                          <th>Total Write-Off</th>
+                          <th>Net Surplus</th>
+                          <th>Closing</th>
                         </tr>
                       </thead>
                       <tbody>
                         {((finData?.months || finData?.monthlyBreakdown || []).length === 0) ? (
                           <tr>
-                            <td colSpan="10" className="portal-empty">
+                            <td colSpan="13" className="portal-empty">
                               No monthly financial accounting data available for FY {financialYear}.
                             </td>
                           </tr>
@@ -450,6 +456,9 @@ export default function ResidentReports() {
                           (finData?.months || finData?.monthlyBreakdown || []).map((m, idx) => {
                             const monthName = formatMonthName(m.month || m.monthNum);
                             const net = num(m.netAmount || (num(m.totalIncome) - num(m.totalExpense || m.totalExpenses)));
+                            const maintWO = num(m.maintenanceWriteOff);
+                            const penaltyWO = num(m.penaltyWriteOff);
+                            const totalWO = num(m.totalWriteOff !== undefined ? m.totalWriteOff : (maintWO + penaltyWO));
 
                             return (
                               <tr key={idx}>
@@ -461,10 +470,19 @@ export default function ResidentReports() {
                                 <td style={{ color: '#dc2626', fontWeight: 600 }}>{money(m.bankExpenses || m.bankExpense)}</td>
                                 <td style={{ color: '#dc2626', fontWeight: 600 }}>{money(m.cashExpenses || m.cashExpense)}</td>
                                 <td style={{ color: '#dc2626', fontWeight: 700 }}>{money(m.totalExpenses || m.totalExpense)}</td>
+                                <td style={{ color: maintWO > 0 ? '#079447' : 'inherit', fontWeight: maintWO > 0 ? 600 : 'normal' }}>
+                                  {money(maintWO)}
+                                </td>
+                                <td style={{ color: penaltyWO > 0 ? '#079447' : 'inherit', fontWeight: penaltyWO > 0 ? 600 : 'normal' }}>
+                                  {money(penaltyWO)}
+                                </td>
+                                <td style={{ color: totalWO > 0 ? '#079447' : 'inherit', fontWeight: totalWO > 0 ? 700 : 'normal' }}>
+                                  {money(totalWO)}
+                                </td>
                                 <td style={{ color: net >= 0 ? '#079447' : '#dc2626', fontWeight: 700 }}>
                                   {money(net)}
                                 </td>
-                                <td style={{ fontWeight: 700, color: '#1473e6' }}>{money(m.totalClosing)}</td>
+                                <td><strong>{money(m.totalClosing)}</strong></td>
                               </tr>
                             );
                           })
@@ -472,8 +490,8 @@ export default function ResidentReports() {
                       </tbody>
                       {finData?.summary && (
                         <tfoot>
-                          <tr style={{ background: '#f8fafc', fontWeight: 800 }}>
-                            <td>TOTAL</td>
+                          <tr style={{ background: '#f8fafc', fontWeight: 700, borderTop: '2px solid #cbd5e1' }}>
+                            <td style={{ color: '#1e293b' }}>TOTAL</td>
                             <td>—</td>
                             <td style={{ color: '#079447' }}>{money(finData.summary.bankIncome)}</td>
                             <td style={{ color: '#079447' }}>{money(finData.summary.cashIncome)}</td>
@@ -481,10 +499,19 @@ export default function ResidentReports() {
                             <td style={{ color: '#dc2626' }}>{money(finData.summary.bankExpense)}</td>
                             <td style={{ color: '#dc2626' }}>{money(finData.summary.cashExpense)}</td>
                             <td style={{ color: '#dc2626' }}>{money(finData.summary.totalExpense || finData.summary.totalExpenses)}</td>
-                            <td style={{ color: (finData.summary.netSurplus || 0) >= 0 ? '#079447' : '#dc2626' }}>
-                              {money(finData.summary.netSurplus)}
+                            <td style={{ color: num(finData.summary.maintenanceWriteOff) > 0 ? '#079447' : 'inherit' }}>
+                              {money(finData.summary.maintenanceWriteOff)}
                             </td>
-                            <td style={{ color: '#1473e6' }}>{money(finData.summary.totalClosing)}</td>
+                            <td style={{ color: num(finData.summary.penaltyWriteOff) > 0 ? '#079447' : 'inherit' }}>
+                              {money(finData.summary.penaltyWriteOff)}
+                            </td>
+                            <td style={{ color: num(finData.summary.totalWriteOff) > 0 ? '#079447' : 'inherit' }}>
+                              {money(finData.summary.totalWriteOff)}
+                            </td>
+                            <td style={{ color: (num(finData.summary.totalIncome) - num(finData.summary.totalExpense || finData.summary.totalExpenses)) >= 0 ? '#079447' : '#dc2626' }}>
+                              {money(num(finData.summary.totalIncome) - num(finData.summary.totalExpense || finData.summary.totalExpenses))}
+                            </td>
+                            <td style={{ color: '#1473e6' }}><strong>{money(finData.summary.totalClosing)}</strong></td>
                           </tr>
                         </tfoot>
                       )}
@@ -666,8 +693,8 @@ export default function ResidentReports() {
                 <div className="portal-panel portal-table-card">
                   <div className="portal-panel-head">
                     <div>
-                      <h2>Verified Bank Account Transactions Ledger</h2>
-                      <p>Read-only transparent audit log of verified bank transactions</p>
+                      <h2>Bank Account Transaction Ledger</h2>
+                      <p>All recorded bank income and expenditure transactions</p>
                     </div>
                   </div>
 
@@ -677,9 +704,9 @@ export default function ResidentReports() {
                         <tr>
                           <th>Date</th>
                           <th>Type</th>
-                          <th>Category / Reference</th>
+                          <th>Description</th>
                           <th>Amount</th>
-                          <th>Running Balance</th>
+                          <th>Balance</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -708,9 +735,9 @@ export default function ResidentReports() {
                               </td>
                               <td>{tRow.description || tRow.transaction_type || tRow.category}</td>
                               <td style={{ color: isIncome ? '#079447' : '#dc2626', fontWeight: 700 }}>
-                                {isIncome ? '+' : '-'}{moneyShort(amt)}
+                                {isIncome ? '+' : '-'}{money(amt)}
                               </td>
-                              <td style={{ fontWeight: 700, color: '#1473e6' }}>{moneyShort(tRow.runningBalance)}</td>
+                              <td><strong>{money(tRow.runningBalance)}</strong></td>
                             </tr>
                           );
                         }))}
@@ -727,8 +754,8 @@ export default function ResidentReports() {
                 <div className="portal-panel portal-table-card">
                   <div className="portal-panel-head">
                     <div>
-                      <h2>Verified Cash Account Transactions Ledger</h2>
-                      <p>Read-only transparent audit log of verified cash transactions</p>
+                      <h2>Cash Account Transaction Ledger</h2>
+                      <p>All recorded cash income and expense transactions</p>
                     </div>
                   </div>
 
@@ -738,9 +765,9 @@ export default function ResidentReports() {
                         <tr>
                           <th>Date</th>
                           <th>Type</th>
-                          <th>Category / Reference</th>
+                          <th>Description</th>
                           <th>Amount</th>
-                          <th>Running Balance</th>
+                          <th>Balance</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -769,9 +796,9 @@ export default function ResidentReports() {
                               </td>
                               <td>{tRow.description || tRow.category}</td>
                               <td style={{ color: isIncome ? '#079447' : '#dc2626', fontWeight: 700 }}>
-                                {isIncome ? '+' : '-'}{moneyShort(amt)}
+                                {isIncome ? '+' : '-'}{money(amt)}
                               </td>
-                              <td style={{ fontWeight: 700, color: '#079447' }}>{moneyShort(tRow.runningBalance)}</td>
+                              <td><strong>{money(tRow.runningBalance)}</strong></td>
                             </tr>
                           );
                         }))}

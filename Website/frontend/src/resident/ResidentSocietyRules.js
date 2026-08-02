@@ -40,7 +40,7 @@ function ResidentSocietyRules() {
           <p>{t('societyRules.resSubtitle', 'Read the latest society guidelines, code of conduct, and resident responsibilities.')}</p>
         </div>
         <div className="portal-date-chip">
-          <ClipboardList size={15} /> {t('societyRules.version', 'Version')} {data.version}
+          <ClipboardList size={15} /> {`${t('societyRules.version', 'Version')} ${data.version}`}
         </div>
       </div>
 
@@ -97,10 +97,10 @@ function ResidentSocietyRules() {
               <div className="portal-panel-head">
                 <div>
                   <h2>{formatCategoryTitle(group.category)}</h2>
-                  <p>Guidelines regarding {group.category.toLowerCase()} for all residents.</p>
+                  <p>{`Guidelines regarding ${group.category.toLowerCase()} for all residents.`}</p>
                 </div>
                 <span className="portal-date-chip" style={{ fontSize: '10px' }}>
-                  {group.rules.length} {group.rules.length === 1 ? 'Rule' : 'Rules'}
+                  {`${group.rules.length} ${group.rules.length === 1 ? 'Rule' : 'Rules'}`}
                 </span>
               </div>
               <div className="portal-panel-body" style={{ padding: '16px' }}>
