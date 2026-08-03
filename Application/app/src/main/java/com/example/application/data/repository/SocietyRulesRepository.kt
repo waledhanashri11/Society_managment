@@ -79,6 +79,7 @@ class SocietyRulesRepository @Inject constructor(
     suspend fun publishRule(id: String) = action { api.publishRule(id) }
     suspend fun unpublishRule(id: String) = action { api.unpublishRule(id) }
     suspend fun archiveRule(id: String) = action { api.archiveRule(id) }
+    suspend fun reorderRules(ids: List<String>) = action { api.reorderRules(mapOf("ids" to ids)) }
 
     suspend fun markRuleRead(id: String): NetworkResult<String> {
         return messageCall { api.markRuleRead(id) }.also {

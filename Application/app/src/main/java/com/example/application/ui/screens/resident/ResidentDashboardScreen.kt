@@ -22,36 +22,31 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Event
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Report
 import androidx.compose.material.icons.filled.ReportProblem
+import androidx.compose.material.icons.filled.SensorDoor
 import androidx.compose.material.icons.filled.TaskAlt
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalDrawerSheet
-import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -66,15 +61,21 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.application.R
 import com.example.application.data.remote.dto.MaintenanceBillDto
+import com.example.application.ui.components.DashboardSkeleton
+import com.example.application.ui.components.MetricGrid
+import com.example.application.ui.components.SectionCard
+import com.example.application.ui.components.KeyValue
+import com.example.application.ui.components.RetryState
 import com.example.application.ui.components.LanguageSelector
 import com.example.application.ui.components.NotificationDropdown
 import com.example.application.ui.components.localizedLabel
 import com.example.application.ui.components.localizedPaymentStatus
 import com.example.application.util.DashboardFormatters
+import com.example.application.ui.theme.SocietyBlue40
 import com.example.application.viewmodel.ResidentDashboardViewModel
 import com.example.application.viewmodel.SessionViewModel
 import java.math.BigDecimal
-import kotlinx.coroutines.launch
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -87,141 +88,120 @@ fun ResidentDashboardScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val data = state.data
-    val drawerState = rememberDrawerState(DrawerValue.Closed)
-    val scope = rememberCoroutineScope()
 
-    ModalNavigationDrawer(
-        drawerState = drawerState,
-        drawerContent = {
-            ResidentDrawer(
+    Scaffold(
+        topBar = {
+            ResidentDashboardTopBar(
+                title = stringResource(R.string.society_management_system),
+                subtitle = stringResource(R.string.resident_workspace),
                 residentName = data?.profile?.name,
-                flat = data?.profile?.flatNo,
-                onItemClick = { item ->
-                    scope.launch { drawerState.close() }
+                onProfileClick = onProfileClick,
+                onNotificationClick = { onQuickAction("Notifications") }
+            )
+        },
+        bottomBar = {
+            ResidentBottomNavigation(
+                selected = "Home",
+                items = listOf("Home", "Maintenance", "Complaints", "Notices", "Profile"),
+                onSelected = { item ->
                     when (item) {
-                        "Payment History" -> onQuickAction("Payment History")
-                        "Reports" -> onQuickAction("Reports")
-                        "NOC Requests" -> onQuickAction("NOC Requests")
-                        "Society Members" -> onQuickAction("Members")
+                        "Maintenance" -> onQuickAction("Maintenance")
+                        "Complaints" -> onQuickAction("My Complaints")
+                        "Notices" -> onQuickAction("Notices")
+                        "Profile" -> onProfileClick()
                     }
                 }
             )
         }
-    ) {
-        Scaffold(
-            topBar = {
-                ResidentDashboardTopBar(
-                    title = stringResource(R.string.society_management_system),
-                    subtitle = stringResource(R.string.resident_workspace),
-                    residentName = data?.profile?.name,
-                    onMenuClick = { scope.launch { drawerState.open() } },
-                    onProfileClick = onProfileClick,
-                    onNotificationClick = { onQuickAction("Notifications") }
-                )
-            },
-            bottomBar = {
-                ResidentBottomNavigation(
-                    selected = "Home",
-                    items = listOf("Home", "Maintenance", "Complaints", "Notices", "Profile"),
-                    onSelected = { item ->
-                        when (item) {
-                            "Maintenance" -> onQuickAction("Maintenance")
-                            "Complaints" -> onQuickAction("My Complaints")
-                            "Notices" -> onQuickAction("Notices")
-                            "Profile" -> onProfileClick()
-                        }
-                    }
-                )
-            }
-        ) { padding ->
-            PullToRefreshBox(
-                isRefreshing = state.isRefreshing,
-                onRefresh = { viewModel.load(refresh = true) },
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-            ) {
-                when {
-                    state.isLoading && data == null -> DashboardSkeleton()
-                    data == null -> Column(modifier = Modifier.padding(20.dp)) {
-                        DashboardError(
-                            message = state.errorMessage ?: "Dashboard data is unavailable.",
-                            onRetry = { viewModel.load(refresh = true) }
+    ) { padding ->
+        PullToRefreshBox(
+            isRefreshing = state.isRefreshing,
+            onRefresh = { viewModel.load(refresh = true) },
+            indicator = {},
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+        ) {
+            when {
+                state.isLoading && data == null -> DashboardSkeleton()
+                data == null -> Column(modifier = Modifier.padding(20.dp)) {
+                    RetryState(
+                        message = state.errorMessage ?: "Dashboard data is unavailable.",
+                        onRetry = { viewModel.load(refresh = true) }
+                    )
+                }
+                else -> LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    item {
+                        ResidentHeroCard(
+                            residentName = data.profile.name ?: "Resident",
+                            flat = data.profile.flatNo ?: "Not assigned",
+                            amount = DashboardFormatters.money(data.totalDue),
+                            dueDate = DashboardFormatters.date(data.currentBill?.dueDate ?: data.currentBill?.maintenanceDueDate),
+                            billId = data.currentBill?.id,
+                            canPay = data.currentBill?.canResidentSubmitPayment() == true,
+                            statusText = data.currentBill?.residentFriendlyStatus() ?: "No pending bill",
+                            onPayNow = { billId ->
+                                if (!billId.isNullOrBlank()) onQuickAction("ResidentPayment:$billId")
+                                else onQuickAction("Maintenance")
+                            }
                         )
                     }
-                    else -> LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(20.dp),
-                        verticalArrangement = Arrangement.spacedBy(14.dp)
-                    ) {
-                        item {
-                            ResidentHeroCard(
-                                residentName = data.profile.name ?: "Resident",
-                                flat = data.profile.flatNo ?: "Not assigned",
-                                amount = DashboardFormatters.money(data.totalDue),
-                                dueDate = DashboardFormatters.date(data.currentBill?.dueDate ?: data.currentBill?.maintenanceDueDate),
-                                billId = data.currentBill?.id,
-                                canPay = data.currentBill?.canResidentSubmitPayment() == true,
-                                statusText = data.currentBill?.residentFriendlyStatus() ?: "No pending bill",
-                                onPayNow = { billId ->
-                                    if (!billId.isNullOrBlank()) onQuickAction("ResidentPayment:$billId")
-                                    else onQuickAction("Maintenance")
-                                }
-                            )
-                        }
-                        item {
-                            ResidentQuickActions(onQuickAction = onQuickAction)
-                        }
-                        item {
-                            MetricGrid(
-                                listOf(
-                                    Triple(stringResource(R.string.total_due), DashboardFormatters.money(data.totalDue), pluralStringResource(R.plurals.pending_bills, data.pendingBillCount, data.pendingBillCount)),
-                                    Triple(stringResource(R.string.status_paid), DashboardFormatters.money(data.totalPaid), "${data.paidBillCount} ${stringResource(R.string.status_paid).lowercase()}"),
-                                    Triple(stringResource(R.string.complaints), data.totalComplaints.toString(), data.openComplaints.toString()),
-                                    Triple(stringResource(R.string.status_approved), data.resolvedComplaints.toString(), stringResource(R.string.complaints))
-                                )
-                            )
-                        }
-                        item {
-                            SectionCard("Upcoming Due") {
-                                val bill = data.currentBill
-                                if (bill == null) {
-                                    Text("No pending maintenance bill right now.")
-                                } else {
-                                    KeyValue("Title", bill.title ?: "Maintenance Bill")
-                                    KeyValue("Amount", DashboardFormatters.money((bill.remainingAmount ?: bill.totalAmount).toMoneyDecimal()))
-                                    KeyValue("Status", bill.residentFriendlyStatus())
-                                    KeyValue("Due date", DashboardFormatters.date(bill.dueDate ?: bill.maintenanceDueDate))
-                                }
-                            }
-                        }
-                        item {
-                            SectionCard("Latest Notices") {
-                                if (data.latestNotices.isEmpty()) Text("No notices available.")
-                                data.latestNotices.forEach {
-                                    KeyValue(it.title ?: "Notice", DashboardFormatters.date(it.createdAt))
-                                }
-                            }
-                        }
-                        item {
-                            SectionCard("Complaint Summary") {
-                                KeyValue("Open", data.openComplaints.toString())
-                                KeyValue("In progress", data.inProgressComplaints.toString())
-                                KeyValue("Resolved", data.resolvedComplaints.toString())
-                            }
-                        }
-                        if (data.warnings.isNotEmpty()) {
-                            item {
-                                SectionCard("Unavailable sections") {
-                                    data.warnings.forEach { Text("• $it") }
-                                }
-                            }
-                        }
-                        state.errorMessage?.let {
-                            item { DashboardError(it) { viewModel.load(refresh = true) } }
-                        }
-                        item { Spacer(Modifier.height(16.dp)) }
+                    item {
+                        ResidentQuickActions(onQuickAction = onQuickAction)
                     }
+                    item {
+                        MetricGrid(
+                            listOf(
+                                Triple(stringResource(R.string.total_due), DashboardFormatters.money(data.totalDue), pluralStringResource(R.plurals.pending_bills, data.pendingBillCount, data.pendingBillCount)),
+                                Triple(stringResource(R.string.status_paid), DashboardFormatters.money(data.totalPaid), "${data.paidBillCount} ${stringResource(R.string.status_paid).lowercase()}"),
+                                Triple(stringResource(R.string.complaints), data.totalComplaints.toString(), data.openComplaints.toString()),
+                                Triple(stringResource(R.string.status_approved), data.resolvedComplaints.toString(), stringResource(R.string.complaints))
+                            )
+                        )
+                    }
+                    item {
+                        SectionCard(stringResource(R.string.upcoming_due)) {
+                            val bill = data.currentBill
+                            if (bill == null) {
+                                Text(stringResource(R.string.no_pending_bills), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            } else {
+                                KeyValue(stringResource(R.string.rules_title), bill.title ?: stringResource(R.string.maintenance))
+                                KeyValue(stringResource(R.string.submitted_amount), DashboardFormatters.money((bill.remainingAmount ?: bill.totalAmount).toMoneyDecimal()))
+                                KeyValue(stringResource(R.string.rules_status), bill.residentFriendlyStatus())
+                                KeyValue(stringResource(R.string.meeting_date), DashboardFormatters.date(bill.dueDate ?: bill.maintenanceDueDate))
+                            }
+                        }
+                    }
+                    item {
+                        SectionCard(stringResource(R.string.latest_notices)) {
+                            if (data.latestNotices.isEmpty()) Text(stringResource(R.string.notice_no_notices), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            data.latestNotices.forEach {
+                                KeyValue(it.title ?: stringResource(R.string.notices), DashboardFormatters.date(it.createdAt))
+                            }
+                        }
+                    }
+                    item {
+                        SectionCard(stringResource(R.string.complaint_summary)) {
+                            KeyValue(stringResource(R.string.open_label), data.openComplaints.toString())
+                            KeyValue(stringResource(R.string.in_progress_label), data.inProgressComplaints.toString())
+                            KeyValue(stringResource(R.string.resolved_label), data.resolvedComplaints.toString())
+                        }
+                    }
+                    if (data.warnings.isNotEmpty()) {
+                        item {
+                            SectionCard("Unavailable sections") {
+                                data.warnings.forEach { Text("• $it") }
+                            }
+                        }
+                    }
+                    state.errorMessage?.let {
+                        item { RetryState(it, onRetry = { viewModel.load(refresh = true) }) }
+                    }
+                    item { Spacer(Modifier.height(16.dp)) }
                 }
             }
         }
@@ -234,20 +214,11 @@ private fun ResidentDashboardTopBar(
     title: String,
     subtitle: String,
     residentName: String?,
-    onMenuClick: () -> Unit,
     onProfileClick: () -> Unit,
     onNotificationClick: () -> Unit
 ) {
     TopAppBar(
-        navigationIcon = {
-            IconButton(onClick = onMenuClick) {
-                Icon(
-                    imageVector = Icons.Filled.Menu,
-                    contentDescription = stringResource(R.string.open_menu),
-                    tint = Color(0xFF0B5FFF)
-                )
-            }
-        },
+        navigationIcon = {},  // No drawer icon
         title = {
             Column {
                 Text(title, fontWeight = FontWeight.Bold)
@@ -255,12 +226,12 @@ private fun ResidentDashboardTopBar(
             }
         },
         actions = {
-            NotificationDropdown(tint = Color(0xFF0B5FFF), onViewAll = onNotificationClick)
+            NotificationDropdown(tint = MaterialTheme.colorScheme.primary, onViewAll = onNotificationClick)
             IconButton(onClick = onProfileClick) {
                 Surface(
                     modifier = Modifier.size(38.dp),
                     shape = CircleShape,
-                    color = Color(0xFFEAF3FF)
+                    color = MaterialTheme.colorScheme.primaryContainer
                 ) {
                     Row(
                         modifier = Modifier
@@ -272,7 +243,7 @@ private fun ResidentDashboardTopBar(
                         Text(
                             text = residentName?.trim()?.firstOrNull()?.uppercaseChar()?.toString() ?: "R",
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFF0B5FFF)
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                     }
                 }
@@ -292,54 +263,112 @@ private fun ResidentHeroCard(
     statusText: String,
     onPayNow: (String?) -> Unit
 ) {
+    val currentHour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+    val greetingRes = when (currentHour) {
+        in 4..11 -> R.string.greeting_good_morning
+        in 12..16 -> R.string.greeting_good_afternoon
+        else -> R.string.greeting_good_evening
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
+        shape = RoundedCornerShape(24.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
         colors = CardDefaults.cardColors(containerColor = Color.Transparent)
     ) {
         Column(
             modifier = Modifier
                 .background(
                     Brush.linearGradient(
-                        colors = listOf(Color(0xFF0B6BFF), Color(0xFF083B92))
+                        colors = listOf(Color(0xFF1E40AF), Color(0xFF1E3A8A), Color(0xFF0F172A))
                     )
                 )
-                .padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+                .padding(22.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text(stringResource(R.string.welcome_back), color = Color.White.copy(alpha = 0.82f))
-            Text(residentName, style = MaterialTheme.typography.titleLarge, color = Color.White, fontWeight = FontWeight.Bold)
-            Text(stringResource(R.string.flat_label, flat), color = Color.White.copy(alpha = 0.82f))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = "${stringResource(greetingRes)},",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White.copy(alpha = 0.85f)
+                    )
+                    Text(
+                        text = residentName,
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = Color.White.copy(alpha = 0.18f)
+                ) {
+                    Text(
+                        text = stringResource(R.string.flat_label, flat),
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color.White,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(22.dp),
+                shape = RoundedCornerShape(18.dp),
                 colors = CardDefaults.cardColors(containerColor = Color.White)
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
+                        .padding(18.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.weight(1f)) {
-                        Text(stringResource(R.string.total_due), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(amount, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                        Text(stringResource(R.string.due_date, dueDate), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(statusText, style = MaterialTheme.typography.bodySmall, color = if (canPay) Color(0xFFD64545) else Color(0xFFE58A00), fontWeight = FontWeight.SemiBold)
+                        Text(
+                            text = stringResource(R.string.total_due),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Color(0xFF64748B)
+                        )
+                        Text(
+                            text = amount,
+                            style = MaterialTheme.typography.headlineMedium,
+                            color = Color(0xFF0F172A),
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                        Text(
+                            text = stringResource(R.string.due_date, dueDate),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFF64748B)
+                        )
                     }
                     Surface(
                         onClick = { if (canPay) onPayNow(billId) else onPayNow(null) },
-                        color = if (canPay) Color(0xFF0B5FFF) else Color(0xFFE7ECF5),
+                        color = if (canPay) Color(0xFF2563EB) else Color(0xFFF1F5F9),
                         shape = RoundedCornerShape(14.dp)
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                            modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(Icons.Filled.Payments, contentDescription = null, tint = if (canPay) Color.White else Color(0xFF59647A), modifier = Modifier.size(18.dp))
-                            Text(if (canPay) stringResource(R.string.pay_now) else stringResource(R.string.view), color = if (canPay) Color.White else Color(0xFF59647A), fontWeight = FontWeight.Bold)
+                            Icon(
+                                imageVector = Icons.Filled.Payments,
+                                contentDescription = "Payment",
+                                tint = if (canPay) Color.White else Color(0xFF475569),
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                text = if (canPay) stringResource(R.string.pay_now) else stringResource(R.string.view),
+                                color = if (canPay) Color.White else Color(0xFF475569),
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
                 }
@@ -354,75 +383,50 @@ private fun ResidentQuickActions(onQuickAction: (String) -> Unit) {
     SectionCard(stringResource(R.string.quick_actions)) {
         FlowRow(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(18.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            ResidentAction("Maintenance", Icons.Filled.Payments) { onQuickAction("Maintenance") }
-            ResidentAction("Complaints", Icons.Filled.ReportProblem) { onQuickAction("My Complaints") }
-            ResidentAction("Notices", Icons.Filled.Campaign) { onQuickAction("Notices") }
-            ResidentAction("Rules", Icons.Filled.TaskAlt) { onQuickAction("Society Rules") }
-            ResidentAction("Meetings", Icons.Filled.Event) { onQuickAction("Meeting Management") }
-            ResidentAction("NOC", Icons.Filled.Description) { onQuickAction("NOC Requests") }
+            ResidentAction("Maintenance", Icons.Filled.Payments, Color(0xFF2563EB)) { onQuickAction("Maintenance") }
+            ResidentAction("Complaints", Icons.Filled.ReportProblem, Color(0xFFD97706)) { onQuickAction("My Complaints") }
+            ResidentAction("Notices", Icons.Filled.Campaign, Color(0xFF0D9488)) { onQuickAction("Notices") }
+            ResidentAction("Meetings", Icons.Filled.Event, Color(0xFF7C3AED)) { onQuickAction("Meeting Management") }
+            ResidentAction("Rules", Icons.Filled.TaskAlt, Color(0xFF059669)) { onQuickAction("Society Rules") }
+            ResidentAction("Payment History", Icons.Filled.Description, Color(0xFF6366F1)) { onQuickAction("Payment History") }
+            ResidentAction("Reports", Icons.Filled.GridView, Color(0xFF0284C7)) { onQuickAction("Reports") }
+            ResidentAction("NOC", Icons.Filled.SensorDoor, Color(0xFFDB2777)) { onQuickAction("NOC Requests") }
+            ResidentAction("Members", Icons.Filled.Groups, Color(0xFF4F46E5)) { onQuickAction("Members") }
+            ResidentAction("Notifications", Icons.Filled.Notifications, Color(0xFFEA580C)) { onQuickAction("Notifications") }
         }
     }
 }
 
 @Composable
-private fun ResidentAction(label: String, icon: ImageVector, onClick: () -> Unit) {
+private fun ResidentAction(label: String, icon: ImageVector, accentColor: Color, onClick: () -> Unit) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Surface(
             onClick = onClick,
             modifier = Modifier.size(54.dp),
             shape = RoundedCornerShape(16.dp),
-            color = Color(0xFFEAF3FF)
+            color = accentColor.copy(alpha = 0.12f)
         ) {
             Row(
                 modifier = Modifier.fillMaxSize(),
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(icon, contentDescription = label, tint = Color(0xFF0B5FFF))
+                Icon(icon, contentDescription = label, tint = accentColor, modifier = Modifier.size(24.dp))
             }
         }
-        Text(localizedLabel(label), style = MaterialTheme.typography.labelSmall)
+        Text(
+            text = localizedLabel(label),
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
     }
 }
 
-@Composable
-private fun ResidentDrawer(
-    residentName: String?,
-    flat: String?,
-    onItemClick: (String) -> Unit
-) {
-    ModalDrawerSheet {
-        Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Surface(modifier = Modifier.size(58.dp), shape = CircleShape, color = Color(0xFF0B5FFF)) {
-                Row(modifier = Modifier.fillMaxSize(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                    Text(residentName?.trim()?.firstOrNull()?.uppercaseChar()?.toString() ?: "R", color = Color.White, fontWeight = FontWeight.Bold)
-                }
-            }
-            Text(residentName ?: stringResource(R.string.resident), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text(stringResource(R.string.flat_label, flat ?: "-"), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            LanguageSelector(showTitle = false, showHint = false)
-        }
-        listOf(
-            DrawerItem("Payment History", Icons.Filled.Payments),
-            DrawerItem("Reports", Icons.Filled.Report),
-            DrawerItem("NOC Requests", Icons.Filled.Description),
-            DrawerItem("Society Members", Icons.Filled.Groups)
-        ).forEach { item ->
-            NavigationDrawerItem(
-                label = { Text(localizedLabel(item.label)) },
-                selected = false,
-                icon = { Icon(item.icon, contentDescription = item.label) },
-                onClick = { onItemClick(item.label) },
-                modifier = Modifier.padding(horizontal = 12.dp)
-            )
-        }
-    }
-}
 
-private data class DrawerItem(val label: String, val icon: ImageVector)
 
 @Composable
 private fun ResidentBottomNavigation(
@@ -439,11 +443,10 @@ private fun ResidentBottomNavigation(
                     Icon(
                         imageVector = navIcon(item),
                         contentDescription = item,
-                        modifier = Modifier.size(21.dp),
-                        tint = if (selected == item) Color(0xFF0B5FFF) else MaterialTheme.colorScheme.onSurfaceVariant
+                        tint = if (selected == item) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 },
-                label = { Text(localizedLabel(item), style = MaterialTheme.typography.labelSmall) }
+                label = { Text(localizedLabel(item), style = MaterialTheme.typography.labelSmall, color = if (selected == item) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
             )
         }
     }
@@ -451,14 +454,20 @@ private fun ResidentBottomNavigation(
 
 private fun navIcon(label: String): ImageVector {
     return when (label) {
-        "Home" -> Icons.Filled.Home
+        "Home", "Dashboard" -> Icons.Filled.Home
         "Maintenance" -> Icons.Filled.Payments
         "Complaints" -> Icons.Filled.ReportProblem
         "Notices" -> Icons.Filled.Campaign
+        "Rules" -> Icons.Filled.TaskAlt
+        "Meetings" -> Icons.Filled.Event
         "Profile" -> Icons.Filled.Person
-        else -> Icons.Filled.TaskAlt
+        else -> Icons.Filled.Home
     }
 }
+
+private fun String?.toMoneyDecimal(): BigDecimal =
+    this?.toBigDecimalOrNull() ?: BigDecimal.ZERO
+
 private fun MaintenanceBillDto.residentFriendlyStatus(): String {
     val status = (this.latestPaymentStatus ?: this.paymentStatus ?: this.status).orEmpty().trim().replace("_", " ")
     return when (status.lowercase()) {
@@ -472,95 +481,9 @@ private fun MaintenanceBillDto.residentFriendlyStatus(): String {
         else -> DashboardFormatters.statusLabel(status)
     }
 }
+
 private fun MaintenanceBillDto.canResidentSubmitPayment(): Boolean {
     val status = (this.latestPaymentStatus ?: this.paymentStatus ?: this.status).orEmpty().trim().replace("_", " ").lowercase()
     val isSettled = (this.remainingAmount ?: this.totalAmount).toMoneyDecimal() <= BigDecimal.ZERO
     return !isSettled && status !in setOf("pending verification", "under review", "payment proof submitted", "needs clarification", "approved", "paid")
-}
-
-private fun String?.toMoneyDecimal(): BigDecimal = this?.toBigDecimalOrNull() ?: BigDecimal.ZERO
-@Composable
-private fun DashboardSkeleton() {
-    Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        repeat(5) { index ->
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(if (index == 0) 180.dp else 82.dp)
-                    .clip(RoundedCornerShape(24.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
-            )
-        }
-    }
-}
-
-@Composable
-private fun DashboardError(message: String, onRetry: () -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
-    ) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(message, color = MaterialTheme.colorScheme.onErrorContainer)
-            Surface(
-                onClick = onRetry,
-                color = MaterialTheme.colorScheme.error,
-                shape = RoundedCornerShape(14.dp)
-            ) {
-                Text("Retry", modifier = Modifier.padding(horizontal = 16.dp, vertical = 9.dp), color = MaterialTheme.colorScheme.onError)
-            }
-        }
-    }
-}
-
-@Composable
-private fun SectionCard(
-    title: String,
-    subtitle: String? = null,
-    content: @Composable ColumnScope.() -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-    ) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            subtitle?.let {
-                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            content()
-        }
-    }
-}
-
-@Composable
-private fun KeyValue(label: String, value: String) {
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(label, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun MetricGrid(items: List<Triple<String, String, String?>>) {
-    FlowRow(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        maxItemsInEachRow = 2
-    ) {
-        items.forEach { (label, value, note) ->
-            Card(modifier = Modifier.weight(1f), shape = RoundedCornerShape(20.dp)) {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    Text(label, style = MaterialTheme.typography.labelLarge)
-                    note?.let {
-                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            }
-        }
-    }
 }

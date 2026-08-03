@@ -45,6 +45,9 @@ interface CommunicationApiService {
     @GET("api/notices")
     suspend fun getNotices(): Response<List<NoticeDto>>
 
+    @GET("api/notices/stats/overview")
+    suspend fun getNoticeStats(): Response<com.example.application.data.remote.dto.NoticeStatsDto>
+
     @GET("api/notices/latest")
     suspend fun getLatestNotices(): Response<List<NoticeDto>>
 
@@ -53,6 +56,12 @@ interface CommunicationApiService {
 
     @POST("api/notices")
     suspend fun createNotice(@Body request: NoticeSaveRequest): Response<NoticeDto>
+
+    @PUT("api/notices/{id}")
+    suspend fun updateNotice(@Path("id") id: String, @Body request: NoticeSaveRequest): Response<MessageResponse>
+
+    @PUT("api/notices/{id}/publish")
+    suspend fun publishNotice(@Path("id") id: String): Response<MessageResponse>
 
     @PUT("api/notices/{id}/poll/close")
     suspend fun closePoll(@Path("id") id: String): Response<MessageResponse>
@@ -68,6 +77,9 @@ interface CommunicationApiService {
 
     @PUT("api/notifications/read")
     suspend fun markNotificationsRead(): Response<MarkReadResponse>
+
+    @PUT("api/notifications/{id}/read")
+    suspend fun markNotificationRead(@Path("id") id: String): Response<MarkReadResponse>
 
     @GET("api/notifications/admin")
     suspend fun getAdminNotifications(): Response<AdminNotificationsResponse>

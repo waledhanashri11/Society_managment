@@ -8,8 +8,12 @@ import android.graphics.pdf.PdfDocument
 import android.os.Build
 import android.provider.MediaStore
 import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -20,6 +24,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -34,9 +39,11 @@ import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -65,8 +72,10 @@ import androidx.core.content.FileProvider
 import com.example.application.data.remote.dto.MaintenanceBillDto
 import com.example.application.data.remote.dto.MembersMaintenanceReportDto
 import com.example.application.util.DashboardFormatters
+import com.example.application.ui.components.EmptyState
+import com.example.application.ui.components.RetryState
 import com.example.application.viewmodel.ResidentMaintenanceViewModel
-import com.example.application.viewmodel.ResidentReportsViewModel
+import com.example.application.viewmodel.ResidentMembersViewModel
 import java.math.BigDecimal
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -90,12 +99,11 @@ fun ResidentPaymentHistoryScreen(
         onRefresh = { viewModel.load(refresh = true) }
     ) {
         if (state.error != null && bills.isEmpty()) {
-            item { ErrorCard(state.error ?: "Unable to load payment history.", { viewModel.load(refresh = true) }) }
+            item { RetryState(message = state.error ?: "Unable to load payment history.", onRetry = { viewModel.load(refresh = true) }) }
         }
         if (paymentBills.isEmpty()) {
             item {
-                EmptyResidentCard(
-                    icon = Icons.Filled.Payments,
+                EmptyState(
                     title = if (state.isLoading) "Preparing payment history" else "No payment records",
                     message = if (state.isLoading) "Your screen is ready. Latest records are refreshing silently." else "Paid bills will appear here after admin approval."
                 )
@@ -131,27 +139,26 @@ fun ResidentPaymentHistoryScreen(
 @Composable
 fun ResidentMembersScreen(
     onBack: () -> Unit,
-    viewModel: ResidentReportsViewModel = hiltViewModel()
+    viewModel: ResidentMembersViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    val members = state.data?.membersMaintenance.orEmpty()
+    val members = state.members
 
     ResidentSimpleScaffold(
         title = "Society Members",
         subtitle = "Read-only resident directory",
         onBack = onBack,
-        isRefreshing = state.isRefreshing,
+        isRefreshing = state.refreshing,
         onRefresh = { viewModel.load(refresh = true) }
     ) {
         if (state.error != null && members.isEmpty()) {
-            item { ErrorCard(state.error ?: "Unable to load members.", { viewModel.load(refresh = true) }) }
+            item { RetryState(message = state.error ?: "Unable to load members.", onRetry = { viewModel.load(refresh = true) }) }
         }
         if (members.isEmpty()) {
             item {
-                EmptyResidentCard(
-                    icon = Icons.Filled.Groups,
-                    title = if (state.isLoading) "Preparing members list" else "No members found",
-                    message = if (state.isLoading) "The screen is ready. Latest members are refreshing silently." else "Member details will appear when the backend returns them."
+                EmptyState(
+                    title = if (state.loading) "Preparing members list" else "No members found",
+                    message = if (state.loading) "The screen is ready. Latest members are refreshing silently." else "No approved residents were returned by the directory."
                 )
             }
         } else {
@@ -193,6 +200,7 @@ private fun ResidentSimpleScaffold(
         PullToRefreshBox(
             isRefreshing = isRefreshing,
             onRefresh = onRefresh,
+            indicator = {},
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
@@ -237,17 +245,17 @@ private fun PaymentHistoryCard(bill: MaintenanceBillDto, onViewReceipt: () -> Un
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     OutlinedButton(onClick = onViewReceipt, shape = RoundedCornerShape(12.dp)) {
-                        Icon(Icons.Filled.ReceiptLong, contentDescription = null)
+                        Icon(Icons.Filled.ReceiptLong, contentDescription = "Receipt")
                         Spacer(Modifier.width(6.dp))
                         Text("Receipt")
                     }
                     OutlinedButton(onClick = { saveResidentReceiptPdf(context, bill) }, shape = RoundedCornerShape(12.dp)) {
-                        Icon(Icons.Filled.Download, contentDescription = null)
+                        Icon(Icons.Filled.Download, contentDescription = "Download")
                         Spacer(Modifier.width(6.dp))
                         Text("Download")
                     }
                     OutlinedButton(onClick = { shareResidentReceiptPdf(context, bill) }, shape = RoundedCornerShape(12.dp)) {
-                        Icon(Icons.Filled.Share, contentDescription = null)
+                        Icon(Icons.Filled.Share, contentDescription = "Share")
                         Spacer(Modifier.width(6.dp))
                         Text("Share")
                     }
@@ -266,24 +274,159 @@ private fun PaymentHistoryCard(bill: MaintenanceBillDto, onViewReceipt: () -> Un
 @Composable
 private fun ResidentReceiptDialog(bill: MaintenanceBillDto, onDismiss: () -> Unit) {
     val context = LocalContext.current
+    val amountStr = DashboardFormatters.money((bill.paidAmount ?: bill.totalAmount ?: bill.amount).toMoneyDecimal())
+    
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Generated Receipt") },
+        confirmButton = {},
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                InfoRow("Receipt No.", bill.receiptNumber ?: "-")
-                InfoRow("Resident", bill.residentName ?: "My account")
-                InfoRow("Flat", bill.flatNo ?: "-")
-                InfoRow("Maintenance", bill.title ?: "Maintenance")
-                InfoRow("Billing", "${bill.month ?: "-"}/${bill.year ?: "-"}")
-                InfoRow("Amount", DashboardFormatters.money((bill.paidAmount ?: bill.totalAmount ?: bill.amount).toMoneyDecimal()))
-                InfoRow("Transaction", bill.transactionId ?: "-")
-                InfoRow("Approved", DashboardFormatters.date(bill.verifiedAt))
-                Text("This is a digitally generated receipt.", style = MaterialTheme.typography.bodySmall)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Visual Paper Document Card
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    border = BorderStroke(1.dp, Color(0xFFCBD5E1)),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        // Header Logo & Title
+                        Surface(
+                            shape = CircleShape,
+                            color = Color(0xFF16A34A).copy(alpha = 0.12f),
+                            modifier = Modifier.size(54.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(Icons.Filled.ReceiptLong, contentDescription = null, tint = Color(0xFF16A34A), modifier = Modifier.size(30.dp))
+                            }
+                        }
+                        
+                        Text(
+                            text = "SOCIETY MANAGEMENT SYSTEM",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = Color(0xFF0F172A)
+                        )
+                        Text(
+                            text = "OFFICIAL PAYMENT RECEIPT",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF16A34A)
+                        )
+                        
+                        HorizontalDivider(color = Color(0xFFE2E8F0))
+                        
+                        // Receipt Ref & Date
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column {
+                                Text("RECEIPT NO.", style = MaterialTheme.typography.labelSmall, color = Color(0xFF64748B), fontWeight = FontWeight.Bold)
+                                Text(bill.receiptNumber ?: "REC-2026-${bill.id?.takeLast(4) ?: "01"}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A))
+                            }
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text("PAYMENT DATE", style = MaterialTheme.typography.labelSmall, color = Color(0xFF64748B), fontWeight = FontWeight.Bold)
+                                Text(DashboardFormatters.date(bill.paymentDate ?: bill.verifiedAt), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A))
+                            }
+                        }
+                        
+                        // Amount Highlight Box
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = Color(0xFFF0FDF4),
+                            border = BorderStroke(1.dp, Color(0xFFBBF7D0)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(14.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Text("TOTAL AMOUNT RECEIVED", style = MaterialTheme.typography.labelSmall, color = Color(0xFF15803D), fontWeight = FontWeight.Bold)
+                                Text(amountStr, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold, color = Color(0xFF15803D))
+                            }
+                        }
+                        
+                        // Payment Details Breakdown
+                        Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            InfoRow("Resident Name", bill.residentName ?: "My Account")
+                            InfoRow("Flat / Unit", bill.flatNo ?: "-")
+                            InfoRow("Billing Month", "${bill.month ?: "-"}/${bill.year ?: "-"}")
+                            InfoRow("Maintenance Title", bill.title ?: "Maintenance Bill")
+                            InfoRow("Transaction Ref", bill.transactionId ?: "-")
+                            InfoRow("Verification Status", "APPROVED & VERIFIED ✅")
+                        }
+                        
+                        HorizontalDivider(color = Color(0xFFE2E8F0))
+                        
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text("Payment Status: APPROVED", style = MaterialTheme.typography.labelSmall, color = Color(0xFF16A34A), fontWeight = FontWeight.Bold)
+                                Text("Computer Generated Receipt", style = MaterialTheme.typography.labelSmall, color = Color(0xFF64748B))
+                            }
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color(0xFFDCFCE7),
+                                border = BorderStroke(1.dp, Color(0xFF86EFAC))
+                            ) {
+                                Text(
+                                    text = "PAID",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF15803D),
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+                
+                // Action Buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Button(
+                        onClick = { saveResidentReceiptPdf(context, bill) },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0B5FFF))
+                    ) {
+                        Icon(Icons.Filled.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Download PDF", fontWeight = FontWeight.Bold)
+                    }
+                    OutlinedButton(
+                        onClick = { shareResidentReceiptPdf(context, bill) },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Share", fontWeight = FontWeight.Bold)
+                    }
+                }
+                
+                TextButton(onClick = onDismiss) {
+                    Text("Close Preview", color = Color(0xFF64748B))
+                }
             }
-        },
-        confirmButton = { Button(onClick = { saveResidentReceiptPdf(context, bill) }) { Text("Download") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } }
+        }
     )
 }
 
@@ -327,28 +470,7 @@ private fun SummaryStrip(label: String, value: String, note: String) {
     }
 }
 
-@Composable
-private fun EmptyResidentCard(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, message: String) {
-    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp)) {
-        Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Icon(icon, contentDescription = null, tint = Color(0xFF0B5FFF), modifier = Modifier.background(Color(0xFFEAF3FF), CircleShape).padding(12.dp))
-            Text(title, fontWeight = FontWeight.Bold)
-            Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
 
-@Composable
-private fun ErrorCard(message: String, onRetry: () -> Unit) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(message, color = MaterialTheme.colorScheme.onErrorContainer)
-            Surface(onClick = onRetry, shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.error) {
-                Text("Retry", Modifier.padding(horizontal = 16.dp, vertical = 9.dp), color = MaterialTheme.colorScheme.onError)
-            }
-        }
-    }
-}
 
 @Composable
 private fun InfoRow(label: String, value: String) {

@@ -315,7 +315,7 @@ const getMembers = async (req, res) => {
               ) AS payment_status
        FROM users u
        LEFT JOIN flats f ON f.id = u.flat_id
-       LEFT JOIN maintenance_bills mb ON mb.resident_id = u.id
+       LEFT JOIN maintenance mb ON mb.resident_id = u.id
        WHERE u.role = ? AND COALESCE(u.status, 'approved') = ?
        GROUP BY u.id, u.name, u.email, u.phone, f.flat_no, f.wing, f.floor_no
        ORDER BY f.wing, f.floor_no, f.flat_no, u.name`,
@@ -739,7 +739,7 @@ const getResidentAccountReport = async (req, res) => {
        FROM maintenance m
        WHERE m.resident_id = ?
          AND m.created_at >= ?
-         AND m.created_at <= ?::date + INTERVAL '1 day'
+         AND m.created_at <= CONCAT(?, ' 23:59:59')
        ORDER BY m.created_at DESC`,
       [residentId, startDate, endDate]
     );
@@ -814,7 +814,7 @@ const getResidentTransparencyReport = async (req, res) => {
        FROM payments p
        WHERE p.payment_status IN ('Paid', 'Approved')
          AND COALESCE(p.paid_at, p.created_at) >= ?
-         AND COALESCE(p.paid_at, p.created_at) <= ?::date + INTERVAL '1 day'`,
+         AND COALESCE(p.paid_at, p.created_at) <= CONCAT(?, ' 23:59:59')`,
       [startDate, endDate]
     );
 
@@ -845,11 +845,14 @@ const getResidentTransparencyReport = async (req, res) => {
               COALESCE(m.payment_date, p.paid_at, (CASE WHEN LOWER(COALESCE(m.status, '')) IN ('paid', 'partially paid', 'partially_paid') THEN m.updated_at ELSE NULL END)) AS payment_date
        FROM maintenance m
        JOIN flats f ON m.flat_id = f.id
-       LEFT JOIN LATERAL (
-         SELECT COALESCE(paid_at, created_at) AS paid_at FROM payments WHERE bill_id = m.id AND payment_status IN ('Approved', 'PAID', 'Paid') ORDER BY id DESC LIMIT 1
-       ) p ON true
+       LEFT JOIN (
+         SELECT bill_id, MAX(COALESCE(paid_at, created_at)) AS paid_at 
+         FROM payments 
+         WHERE payment_status IN ('Approved', 'PAID', 'Paid') 
+         GROUP BY bill_id
+       ) p ON p.bill_id = m.id
        WHERE m.created_at >= ?
-         AND m.created_at <= ?::date + INTERVAL '1 day'
+         AND m.created_at <= CONCAT(?, ' 23:59:59')
        ORDER BY f.wing ASC, f.flat_no ASC`,
       [startDate, endDate]
     );

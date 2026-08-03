@@ -24,7 +24,8 @@ data class CommunicationListState<T>(
     val filter: String = "All",
     val error: String? = null,
     val message: String? = null,
-    val submitting: Boolean = false
+    val submitting: Boolean = false,
+    val noticeStats: com.example.application.data.remote.dto.NoticeStatsDto? = null
 )
 
 data class NotificationState(
@@ -127,8 +128,17 @@ class NoticesViewModel @Inject constructor(private val repository: Communication
         }
     }
     fun setQuery(value: String) = _state.update { it.copy(query = value) }
+    fun loadStats() = viewModelScope.launch {
+        when (val result = repository.getNoticeStats()) {
+            is NetworkResult.Success -> _state.update { it.copy(noticeStats = result.data) }
+            else -> Unit
+        }
+    }
     fun createNotice(title: String, description: String, poll: NoticePollSaveRequest? = null) = action { repository.createNotice(title, description, poll) }
+    fun updateNotice(id: String, title: String, description: String, poll: NoticePollSaveRequest? = null) =
+        action { repository.updateNotice(id, title, description, poll) }
     fun deleteNotice(id: String) = action { repository.deleteNotice(id) }
+    fun publishNotice(id: String) = action { repository.publishNotice(id) }
     fun closePoll(id: String) = action { repository.closePoll(id) }
     fun vote(id: String, optionIds: List<Int>) = action { repository.voteNotice(id, optionIds) }
     private fun action(call: suspend () -> NetworkResult<String>) {
@@ -162,6 +172,16 @@ class NotificationsViewModel @Inject constructor(private val repository: Communi
         viewModelScope.launch {
             _state.update { it.copy(submitting = true, error = null) }
             when (val result = repository.markNotificationsRead()) {
+                is NetworkResult.Success -> { _state.update { it.copy(submitting = false, message = result.data) }; load(true) }
+                is NetworkResult.Error -> _state.update { it.copy(submitting = false, error = repository.userMessageFor(result.error)) }
+                NetworkResult.Loading -> Unit
+            }
+        }
+    }
+    fun markRead(id: String) {
+        viewModelScope.launch {
+            _state.update { it.copy(submitting = true, error = null) }
+            when (val result = repository.markNotificationRead(id)) {
                 is NetworkResult.Success -> { _state.update { it.copy(submitting = false, message = result.data) }; load(true) }
                 is NetworkResult.Error -> _state.update { it.copy(submitting = false, error = repository.userMessageFor(result.error)) }
                 NetworkResult.Loading -> Unit

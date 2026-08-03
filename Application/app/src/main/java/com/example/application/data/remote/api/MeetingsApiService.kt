@@ -6,6 +6,7 @@ import retrofit2.Response
 import retrofit2.http.*
 
 interface MeetingsApiService {
+    @GET("api/meetings/analytics/overview") suspend fun getAnalytics(): Response<MeetingAnalyticsDto>
     @GET("api/meetings") suspend fun getMeetings(@Query("meeting_type") type: String? = null, @Query("status") status: String? = null, @Query("priority") priority: String? = null, @Query("date") date: String? = null, @Query("title") title: String? = null): Response<List<MeetingDto>>
     @GET("api/meetings/{id}") suspend fun getMeeting(@Path("id") id: String): Response<MeetingDetailsDto>
     @POST("api/meetings") suspend fun createMeeting(@Body request: MeetingSaveRequest): Response<JsonElement>

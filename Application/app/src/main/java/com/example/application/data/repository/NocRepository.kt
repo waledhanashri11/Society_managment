@@ -5,6 +5,7 @@ import com.example.application.data.remote.dto.ApiResponse
 import com.example.application.data.remote.dto.CreateNocRequest
 import com.example.application.data.remote.dto.ErrorResponse
 import com.example.application.data.remote.dto.NocRequestDto
+import com.example.application.data.remote.dto.NocReportsDto
 import com.example.application.data.remote.dto.PublicNocCertificateDto
 import com.example.application.data.remote.dto.ReviewNocRequest
 import com.example.application.data.remote.dto.UploadNocInfoRequest
@@ -52,8 +53,26 @@ class NocRepository @Inject constructor(
             .also { if (it is NetworkResult.Success && status.isNullOrBlank()) adminCache = it.data }
     }
 
+    suspend fun getReports(): NetworkResult<NocReportsDto> = try {
+        val response = api.getReports()
+        if (response.isSuccessful) {
+            response.body()?.let { NetworkResult.Success(it) }
+                ?: NetworkResult.Error(AppError.Unknown("NOC report is empty."))
+        } else {
+            NetworkResult.Error(mapHttpError(response.code(), parseErrorMessage(response.errorBody()?.string())))
+        }
+    } catch (_: UnknownHostException) {
+        NetworkResult.Error(AppError.NoInternet)
+    } catch (_: SocketTimeoutException) {
+        NetworkResult.Error(AppError.Timeout)
+    } catch (_: IOException) {
+        NetworkResult.Error(AppError.NoInternet)
+    } catch (_: Exception) {
+        NetworkResult.Error(AppError.Unknown("Unable to load NOC reports."))
+    }
+
     suspend fun reviewNoc(id: String, status: String, comments: String?): NetworkResult<String> {
-        val call: suspend () -> Response<ApiResponse<Unit>> = when (status) {
+        val call: suspend () -> Response<ApiResponse<Any>> = when (status) {
             "Approved" -> { { api.approveNoc(id, ReviewNocRequest(comments)) } }
             "Rejected" -> { { api.rejectNoc(id, mapOf("reason" to comments, "remarks" to comments)) } }
             "Additional Information Required" -> { { api.requestInfo(id, ReviewNocRequest(comments)) } }
@@ -83,8 +102,9 @@ class NocRepository @Inject constructor(
         return try {
             val response = api.generateShareLink(id)
             if (response.isSuccessful && response.body()?.success != false) {
-                val data = response.body()?.data.orEmpty()
-                NetworkResult.Success(data["shareUrl"] ?: data["url"] ?: data["link"] ?: response.body()?.message ?: "Share link generated")
+                val data = response.body()?.data
+                val shareUrl = (data?.get("shareUrl") ?: data?.get("url") ?: data?.get("link"))?.toString()
+                NetworkResult.Success(shareUrl ?: response.body()?.message ?: "Share link generated")
             } else {
                 NetworkResult.Error(mapHttpError(response.code(), parseErrorMessage(response.errorBody()?.string()) ?: response.body()?.message))
             }
@@ -125,10 +145,10 @@ class NocRepository @Inject constructor(
             if (!response.isSuccessful || response.body() == null) {
                 NetworkResult.Error(mapHttpError(response.code(), parseErrorMessage(response.errorBody()?.string())))
             } else {
-                val name = "${requestNumber?.takeIf { it.isNotBlank() } ?: "NOC-$id"}.html"
+                val name = "${requestNumber?.takeIf { it.isNotBlank() } ?: "NOC-$id"}.pdf"
                 val values = ContentValues().apply {
                     put(MediaStore.Downloads.DISPLAY_NAME, name)
-                    put(MediaStore.Downloads.MIME_TYPE, "text/html")
+                    put(MediaStore.Downloads.MIME_TYPE, "application/pdf")
                     put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
                     put(MediaStore.Downloads.IS_PENDING, 1)
                 }

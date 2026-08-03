@@ -8,11 +8,68 @@ import com.example.application.data.remote.dto.ResidentExpenseReportDto
 import com.example.application.data.remote.dto.ResidentMaintenanceReportDto
 import com.example.application.data.remote.dto.SocietyReportSummaryDto
 import com.example.application.data.remote.dto.FinancialReportDto
+import com.example.application.data.remote.dto.MonthlyMaintenanceReportResponse
+import com.example.application.data.remote.dto.MonthlyDashboardSummaryDto
+import com.example.application.data.remote.dto.CollectionHistoryDto
+import com.example.application.data.remote.dto.PaymentModeReportDto
+import com.example.application.data.remote.dto.ResidentLedgerResponse
+import com.example.application.data.remote.dto.MonthlyReceiptDto
 import retrofit2.Response
 import retrofit2.http.GET
+import retrofit2.http.Body
+import retrofit2.http.PUT
+import retrofit2.http.Path
 import retrofit2.http.Query
 
 interface ReportsApiService {
+    @GET("api/reports/maintenance/monthly-report")
+    suspend fun getMonthlyMaintenanceReport(
+        @Query("month") month: String? = null, @Query("year") year: String? = null,
+        @Query("wing") wing: String? = null, @Query("floor") floor: String? = null,
+        @Query("flat") flat: String? = null, @Query("resident") resident: String? = null,
+        @Query("payment_status") paymentStatus: String? = null, @Query("search") search: String? = null
+    ): Response<MonthlyMaintenanceReportResponse>
+
+    @GET("api/reports/maintenance/dashboard-summary")
+    suspend fun getMonthlyDashboardSummary(@Query("month") month: String? = null, @Query("year") year: String? = null): Response<ApiResponse<MonthlyDashboardSummaryDto>>
+
+    @GET("api/reports/maintenance/12-month-history")
+    suspend fun get12MonthHistory(): Response<ApiResponse<List<CollectionHistoryDto>>>
+
+    @GET("api/reports/maintenance/payment-modes")
+    suspend fun getPaymentModes(@Query("month") month: String? = null, @Query("year") year: String? = null): Response<ApiResponse<PaymentModeReportDto>>
+
+    @GET("api/reports/maintenance/resident-ledger")
+    suspend fun getResidentLedger(@Query("resident_id") residentId: String, @Query("month") month: String? = null, @Query("year") year: String? = null): Response<ResidentLedgerResponse>
+
+    @GET("api/reports/maintenance/receipts/{id}")
+    suspend fun getMonthlyReceipt(@Path("id") paymentId: String): Response<ApiResponse<MonthlyReceiptDto>>
+    @GET("api/maintenance/reports/financial")
+    suspend fun getFinancialReport(@Query("financialYear") financialYear: String): Response<ApiResponse<FinancialReportDto>>
+
+    @GET("api/maintenance/reports/bank-ledger")
+    suspend fun getBankLedger(@Query("financialYear") financialYear: String): Response<ApiResponse<com.example.application.data.remote.dto.AccountLedgerDto>>
+
+    @GET("api/maintenance/reports/cash-ledger")
+    suspend fun getCashLedger(@Query("financialYear") financialYear: String): Response<ApiResponse<com.example.application.data.remote.dto.AccountLedgerDto>>
+
+    @GET("api/maintenance/reports/flat-collection")
+    suspend fun getFlatCollectionReport(
+        @Query("financialYear") financialYear: String,
+        @Query("month") month: String? = null,
+        @Query("wing") wing: String? = null,
+        @Query("flatNo") flatNo: String? = null,
+        @Query("status") status: String? = null
+    ): Response<ApiResponse<List<com.example.application.data.remote.dto.FlatPaymentReportDto>>>
+
+    @PUT("api/maintenance/reports/opening-balance")
+    suspend fun saveOpeningBalance(@Body request: com.example.application.data.remote.dto.OpeningBalanceRequest): Response<ApiResponse<com.example.application.data.remote.dto.OpeningBalanceDto>>
+
+    @GET("api/resident/reports/account-summary")
+    suspend fun getResidentAccountSummary(@Query("financialYear") financialYear: String): Response<com.example.application.data.remote.dto.ResidentAccountReportDto>
+
+    @GET("api/resident/reports/society-transparency")
+    suspend fun getResidentSocietyTransparency(@Query("financialYear") financialYear: String): Response<com.example.application.data.remote.dto.ResidentTransparencyReportDto>
     @GET("api/reports/admin/annual")
     suspend fun getAdminAnnual(@Query("financialYear") financialYear: String): Response<FinancialReportDto>
 

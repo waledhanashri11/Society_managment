@@ -142,7 +142,6 @@ class AdvancedFeaturesViewModel @Inject constructor(
     }
 
     fun writeOffHistory() = request("Write-off history") { api.getWriteOffHistory() }
-    fun agmReport() = request("AGM report") { api.getAgmReport() }
     fun reverseWriteOff(id: String) = requireId(id) { request("Write-off", "Write-off reversed") { api.reverseWriteOff(it) } }
 
     private fun parseIds(value: String) = value.split(',').mapNotNull { it.trim().toIntOrNull() }.distinct()

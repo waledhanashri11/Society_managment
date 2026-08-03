@@ -30,6 +30,9 @@ class ResidentRepository @Inject constructor(
         return safeApiCall { flatApiService.getAvailableFlats() }
     }
 
+    suspend fun getMembers(): NetworkResult<List<com.example.application.data.remote.dto.MembersMaintenanceReportDto>> =
+        safeApiCall { residentApiService.getMembers() }
+
     suspend fun getProfile(): NetworkResult<ProfileDto> {
         val result = safeApiCall { residentApiService.getDashboard() }
         return when (result) {

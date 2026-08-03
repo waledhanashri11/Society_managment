@@ -50,6 +50,8 @@ interface AdvancedApiService {
     @PUT("api/maintenance/flats/{flatId}/categories") suspend fun saveFlatCategories(@Path("flatId") flatId: String, @Body body: Map<String, List<Int>>): Response<JsonElement>
     @POST("api/maintenance/resident-categories/bulk") suspend fun bulkAssignCategories(@Body body: Map<String, @JvmSuppressWildcards Any>): Response<JsonElement>
     @GET("api/maintenance/write-offs") suspend fun getWriteOffHistory(): Response<JsonElement>
-    @GET("api/maintenance/agm-report") suspend fun getAgmReport(): Response<JsonElement>
+    @GET("api/maintenance/dashboard/writeoffs") suspend fun getWriteOffDashboard(): Response<JsonElement>
+    @GET("api/maintenance/reports/writeoffs") suspend fun getWriteOffReport(): Response<JsonElement>
     @DELETE("api/maintenance/write-offs/{id}") suspend fun reverseWriteOff(@Path("id") id: String): Response<JsonElement>
+    @PUT("api/maintenance/write-offs/{id}") suspend fun editWriteOff(@Path("id") id: String, @Body body: Map<String, @JvmSuppressWildcards Any>): Response<JsonElement>
 }

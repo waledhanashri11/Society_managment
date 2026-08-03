@@ -6,9 +6,12 @@ import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -66,6 +69,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -118,7 +122,16 @@ fun AdminComplaintsScreen(onBack: () -> Unit, viewModel: AdminComplaintsViewMode
             SearchAndStatus(state.query, viewModel::setQuery, state.filter, viewModel::setFilter)
             state.message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
         }
-        if (items.isEmpty()) item { EmptyState("No complaints", "Resident complaints will appear here.") }
+        if (state.isLoading && items.isEmpty()) {
+            item {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    repeat(6) {
+                        com.example.application.ui.components.SkeletonListItem(modifier = Modifier.fillMaxWidth())
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                }
+            }
+        } else if (items.isEmpty()) item { EmptyState("No complaints", "Resident complaints will appear here.") }
         else items(items, key = { it.id ?: it.title.orEmpty() }) { complaint ->
             ComplaintCard(complaint, admin = true, onReply = { dialog = ComplaintDialog.Reply(complaint) }, onDelete = { complaint.id?.let(viewModel::deleteComplaint) })
         }
@@ -189,6 +202,7 @@ fun ResidentComplaintsScreen(
         PullToRefreshBox(
             isRefreshing = state.isRefreshing,
             onRefresh = { viewModel.load(true) },
+            indicator = {},
             modifier = Modifier.fillMaxSize().padding(padding)
         ) {
             LazyColumn(
@@ -323,23 +337,35 @@ private fun ResidentComplaintsHeader(onBack: () -> Unit, onRaise: () -> Unit) {
 
 @Composable
 private fun ResidentComplaintFilterChips(selected: String, onSelected: (String) -> Unit) {
-    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+    ) {
         listOf("All", "Pending", "In Progress", "Resolved").forEach { label ->
             val isSelected = selected.normalizedComplaintStatus() == label.normalizedComplaintStatus()
             val colors = complaintChipColors(label, isSelected)
             Button(
                 onClick = { onSelected(label) },
-                modifier = Modifier.weight(1f).height(48.dp),
-                shape = RoundedCornerShape(28.dp),
+                modifier = Modifier
+                    .weight(1f)
+                    .height(44.dp),
+                shape = RoundedCornerShape(22.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = colors.first,
-                    contentColor = colors.second,
-                    disabledContainerColor = colors.first,
-                    disabledContentColor = colors.second
+                    contentColor = colors.second
                 ),
-                contentPadding = PaddingValues(horizontal = 6.dp)
+                elevation = ButtonDefaults.buttonElevation(
+                    defaultElevation = if (isSelected) 2.dp else 0.dp
+                ),
+                contentPadding = PaddingValues(horizontal = 4.dp)
             ) {
-                Text(label)
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                )
             }
         }
     }
@@ -354,64 +380,152 @@ private fun ResidentComplaintCard(
     val status = complaint.status.normalizedComplaintStatus()
     val colors = complaintStatusColors(status)
     val images = complaint.complaintImagesForDisplay()
+
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, Color(0xFFEAECF0)),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White)
     ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(14.dp)
+        Column(
+            modifier = Modifier.fillMaxWidth()
         ) {
+            // Status top accent line
             Box(
                 modifier = Modifier
-                    .size(64.dp)
-                    .clip(CircleShape)
-                    .background(colors.iconBg),
-                contentAlignment = Alignment.Center
+                    .fillMaxWidth()
+                    .height(4.dp)
+                    .background(colors.fg)
+            )
+
+            Column(
+                modifier = Modifier.padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Icon(complaintIcon(status), contentDescription = null, tint = colors.fg, modifier = Modifier.size(34.dp))
-            }
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(verticalAlignment = Alignment.Top) {
-                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                        Text(complaint.title ?: "Complaint", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color(0xFF101828))
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Icon(Icons.Filled.DateRange, contentDescription = null, tint = Color(0xFF667085), modifier = Modifier.size(18.dp))
-                            Text("${DashboardFormatters.date(complaint.createdAt)}  •  ${complaintTime(complaint.createdAt)}", color = Color(0xFF667085))
-                        }
+                // Header row with Icon, Title & Status Badge
+                Row(
+                    verticalAlignment = Alignment.Top,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(colors.iconBg),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = complaintIcon(status),
+                            contentDescription = null,
+                            tint = colors.fg,
+                            modifier = Modifier.size(26.dp)
+                        )
                     }
-                    ResidentComplaintStatusBadge(status)
-                }
-                Text(complaint.description ?: "-", color = Color(0xFF475467), style = MaterialTheme.typography.bodyLarge)
-                if (images.isNotEmpty()) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        images.take(3).forEach { image ->
-                            ComplaintProofImage(
-                                image = image,
-                                modifier = Modifier
-                                    .size(96.dp)
-                                    .clip(RoundedCornerShape(10.dp))
+
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = complaint.title ?: "Complaint",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF101828)
+                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.DateRange,
+                                contentDescription = null,
+                                tint = Color(0xFF667085),
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = "${DashboardFormatters.date(complaint.createdAt)} • ${complaintTime(complaint.createdAt)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color(0xFF667085)
                             )
                         }
                     }
+
+                    ResidentComplaintStatusBadge(status)
                 }
+
+                // Description
+                Text(
+                    text = complaint.description ?: "-",
+                    color = Color(0xFF344054),
+                    style = MaterialTheme.typography.bodyMedium,
+                    lineHeight = MaterialTheme.typography.bodyMedium.lineHeight
+                )
+
+                // Attachments section if present
+                if (images.isNotEmpty()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            text = "Attachments (${images.size})",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFF667085)
+                        )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            images.take(3).forEach { image ->
+                                ComplaintProofImage(
+                                    image = image,
+                                    modifier = Modifier
+                                        .size(80.dp)
+                                        .clip(RoundedCornerShape(10.dp))
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Admin Reply Box
                 complaint.reply?.takeIf { it.isNotBlank() }?.let { reply ->
                     ResidentAdminReply(reply = reply, resolved = status == "resolved", createdAt = complaint.createdAt)
                 }
+
+                // Actions for resolved complaints
                 if (status == "resolved") {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        Button(onClick = onConfirmResolved, modifier = Modifier.weight(1f)) {
-                            Text("Confirm Resolved")
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                    ) {
+                        Button(
+                            onClick = onConfirmResolved,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF12B76A),
+                                contentColor = Color.White
+                            ),
+                            contentPadding = PaddingValues(vertical = 10.dp)
+                        ) {
+                            Icon(Icons.Filled.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Confirm Resolved", fontWeight = FontWeight.Bold)
                         }
-                        OutlinedButton(onClick = onReopen, modifier = Modifier.weight(1f)) {
-                            Text("Reopen")
+                        OutlinedButton(
+                            onClick = onReopen,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, Color(0xFFD0D5DD)),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF344054)),
+                            contentPadding = PaddingValues(vertical = 10.dp)
+                        ) {
+                            Text("Reopen", fontWeight = FontWeight.SemiBold)
                         }
                     }
                 }
             }
-            Icon(Icons.Filled.MoreVert, contentDescription = null, tint = Color(0xFF667085), modifier = Modifier.align(Alignment.Bottom))
         }
     }
 }
@@ -421,11 +535,11 @@ private fun ResidentComplaintStatusBadge(status: String) {
     val colors = complaintStatusColors(status)
     Row(
         modifier = Modifier
-            .clip(RoundedCornerShape(28.dp))
+            .clip(RoundedCornerShape(16.dp))
             .background(colors.bg)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         Icon(
             imageVector = when (status) {
@@ -435,26 +549,53 @@ private fun ResidentComplaintStatusBadge(status: String) {
             },
             contentDescription = null,
             tint = colors.fg,
-            modifier = Modifier.size(18.dp)
+            modifier = Modifier.size(14.dp)
         )
-        Text(status.complaintStatusLabel(), color = colors.fg, fontWeight = FontWeight.SemiBold)
+        Text(
+            text = status.complaintStatusLabel(),
+            color = colors.fg,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold
+        )
     }
 }
 
 @Composable
 private fun ResidentAdminReply(reply: String, resolved: Boolean, createdAt: String?) {
-    val bg = if (resolved) Color(0xFFE8F7E8) else Color(0xFFEAF2FF)
-    val fg = if (resolved) Color(0xFF176B2C) else Color(0xFF0B3F91)
+    val bg = if (resolved) Color(0xFFF0FDF4) else Color(0xFFEFF8FF)
+    val border = if (resolved) Color(0xFFBBF7D0) else Color(0xFFB2DDFF)
+    val fg = if (resolved) Color(0xFF15803D) else Color(0xFF175CD3)
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(bg)
-            .padding(12.dp),
+            .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Text("Admin Reply  •  ${DashboardFormatters.date(createdAt)}  •  ${complaintTime(createdAt)}", color = fg, fontWeight = FontWeight.Bold)
-        Text(reply, color = fg)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Filled.MarkEmailRead,
+                contentDescription = null,
+                tint = fg,
+                modifier = Modifier.size(16.dp)
+            )
+            Text(
+                text = "Admin Reply • ${DashboardFormatters.date(createdAt)} ${complaintTime(createdAt)}",
+                color = fg,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold
+            )
+        }
+        Text(
+            text = reply,
+            color = Color(0xFF1D2939),
+            style = MaterialTheme.typography.bodySmall
+        )
     }
 }
 
@@ -562,9 +703,18 @@ private fun ResidentComplaintsBottomBar(
 fun NoticesScreen(onBack: () -> Unit, admin: Boolean, viewModel: NoticesViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var showCreate by remember { mutableStateOf(false) }
+    var editingNotice by remember { mutableStateOf<NoticeDto?>(null) }
     val notices by remember(state.items, state.query) { derivedStateOf { state.items.filter { it.matchesNotice(state.query) } } }
+    LaunchedEffect(admin) { if (admin) viewModel.loadStats() }
     ListShell(if (admin) "Notices" else "Society Notices", onBack, state.isRefreshing, { viewModel.load(true) }, state.isLoading, state.error, { viewModel.load(true) }, action = { if (admin) IconButton(onClick = { showCreate = true }) { Icon(Icons.Filled.Add, contentDescription = "Add notice") } }) {
         item {
+            if (admin) state.noticeStats?.let { stats ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("Notices" to stats.totalNotices, "Active polls" to stats.activePolls, "Votes" to stats.totalVotes).forEach { (label, value) ->
+                        Card(Modifier.weight(1f)) { Column(Modifier.padding(10.dp)) { Text((value ?: 0).toString(), fontWeight = FontWeight.Bold); Text(label, style = MaterialTheme.typography.labelSmall) } }
+                    }
+                }
+            }
             OutlinedTextField(state.query, viewModel::setQuery, modifier = Modifier.fillMaxWidth(), label = { Text("Search notices") }, singleLine = true)
             state.message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
         }
@@ -573,10 +723,46 @@ fun NoticesScreen(onBack: () -> Unit, admin: Boolean, viewModel: NoticesViewMode
             NoticeCard(
                 notice = notice,
                 admin = admin,
+                onEdit = { editingNotice = notice },
                 onDelete = { notice.id?.let(viewModel::deleteNotice) },
+                onPublish = { notice.id?.let(viewModel::publishNotice) },
                 onClosePoll = { notice.id?.let(viewModel::closePoll) },
                 onVote = { optionIds -> notice.id?.let { viewModel.vote(it, optionIds) } }
             )
+        }
+    }
+    editingNotice?.let { notice ->
+        SimpleDialog("Edit Notice", { editingNotice = null }) {
+            var title by remember(notice.id) { mutableStateOf(notice.title.orEmpty()) }
+            var description by remember(notice.id) { mutableStateOf(notice.description.orEmpty()) }
+            BasicAppTextField(title, { title = it }, "Title")
+            BasicAppTextField(description, { description = it }, "Description")
+            Text(
+                if (notice.poll == null) "This notice has no poll." else "Existing poll configuration and votes will be preserved.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall
+            )
+            Button(
+                onClick = {
+                    val poll = notice.poll?.let {
+                        NoticePollSaveRequest(
+                            enabled = true,
+                            question = it.question.orEmpty(),
+                            pollType = it.pollType ?: "yes_no",
+                            options = it.options.orEmpty().mapNotNull { option -> option.optionText },
+                            startAt = it.startAt.orEmpty(), endAt = it.endAt.orEmpty(),
+                            anonymous = it.anonymous ?: false,
+                            allowVoteChange = it.allowVoteChange ?: true,
+                            showResultsBeforeEnd = it.showResultsBeforeEnd ?: false,
+                            mandatory = it.mandatory ?: false
+                        )
+                    }
+                    notice.id?.let { viewModel.updateNotice(it, title.trim(), description.trim(), poll) }
+                    editingNotice = null
+                },
+                enabled = title.isNotBlank() && description.isNotBlank(),
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Save Changes") }
         }
     }
     if (showCreate) {
@@ -672,7 +858,9 @@ fun NotificationsScreen(onBack: () -> Unit, viewModel: NotificationsViewModel = 
             state.message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
         }
         if (notifications.isEmpty()) item { EmptyState("No notifications", "Admin alerts will appear here.") }
-        else items(notifications, key = { it.id ?: it.title.orEmpty() }) { item -> NotificationCard(item) }
+        else items(notifications, key = { it.id ?: it.title.orEmpty() }) { item ->
+            NotificationCard(item, enabled = !state.submitting, onMarkRead = { item.id?.let(viewModel::markRead) })
+        }
     }
 }
 
@@ -690,10 +878,10 @@ private fun ListShell(
     content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit
 ) {
     Scaffold(topBar = { TopAppBar(title = { Text(title, fontWeight = FontWeight.Bold) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, contentDescription = "Back") } }, actions = { action() }) }) { padding ->
-        PullToRefreshBox(isRefreshing = refreshing, onRefresh = onRefresh, modifier = Modifier.fillMaxSize().padding(padding)) {
+        PullToRefreshBox(isRefreshing = refreshing, onRefresh = onRefresh, indicator = {}, modifier = Modifier.fillMaxSize().padding(padding)) {
             LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 when {
-                    loading -> item { DashboardSkeleton() }
+                    loading -> items(5) { com.example.application.ui.components.SkeletonListItem() }
                     error != null -> item { RetryState(error, onRetry) }
                     else -> content()
                 }
@@ -704,6 +892,8 @@ private fun ListShell(
 
 @Composable
 private fun ComplaintCard(complaint: ComplaintDto, admin: Boolean, onReply: () -> Unit = {}, onDelete: () -> Unit = {}) {
+    var previewImage by remember { mutableStateOf<String?>(null) }
+
     ManagementCard {
         Text(complaint.title ?: "Complaint", fontWeight = FontWeight.Bold)
         Text(complaint.description ?: "-", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -717,7 +907,7 @@ private fun ComplaintCard(complaint: ComplaintDto, admin: Boolean, onReply: () -
                             .fillMaxWidth()
                             .height(180.dp)
                             .clip(RoundedCornerShape(14.dp))
-                            .clickable { }
+                            .clickable { previewImage = image }
                     )
                 }
             }
@@ -739,13 +929,22 @@ private fun ComplaintCard(complaint: ComplaintDto, admin: Boolean, onReply: () -
             }
         }
     }
+
+    previewImage?.let { img ->
+        ComplaintProofFullPreviewDialog(
+            image = img,
+            onDismiss = { previewImage = null }
+        )
+    }
 }
 
 @Composable
 private fun NoticeCard(
     notice: NoticeDto,
     admin: Boolean,
+    onEdit: () -> Unit,
     onDelete: () -> Unit,
+    onPublish: () -> Unit,
     onClosePoll: () -> Unit,
     onVote: (List<Int>) -> Unit
 ) {
@@ -757,6 +956,7 @@ private fun NoticeCard(
         Text(notice.title ?: "Notice", fontWeight = FontWeight.Bold)
         Text(notice.description ?: "-", color = MaterialTheme.colorScheme.onSurfaceVariant)
         KeyValue("Created", DashboardFormatters.date(notice.createdAt))
+        notice.status?.let { KeyValue("Status", it.replace('_', ' ')) }
         if (poll != null) {
             KeyValue("Poll Status", poll.status ?: notice.pollStatus ?: "Poll")
             Text(poll.question ?: "Poll", fontWeight = FontWeight.SemiBold)
@@ -791,10 +991,14 @@ private fun NoticeCard(
                 ) { Text(if (poll.myVoteOptionIds.orEmpty().isEmpty()) "Submit Vote" else "Update Vote") }
             }
         }
-        if (admin) TextButton(onClick = onDelete) {
-            Icon(Icons.Filled.Delete, contentDescription = null)
-            Spacer(Modifier.width(6.dp))
-            Text("Delete")
+        if (admin) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (notice.status.equals("draft", ignoreCase = true)) TextButton(onClick = onPublish) { Text("Publish") }
+            TextButton(onClick = onEdit) { Text("Edit") }
+            TextButton(onClick = onDelete) {
+                Icon(Icons.Filled.Delete, contentDescription = null)
+                Spacer(Modifier.width(6.dp))
+                Text("Delete")
+            }
         }
         if (admin && poll != null && poll.status != "Poll Closed") {
             TextButton(onClick = onClosePoll) {
@@ -807,7 +1011,7 @@ private fun NoticeCard(
 }
 
 @Composable
-private fun NotificationCard(item: NotificationDto) {
+private fun NotificationCard(item: NotificationDto, enabled: Boolean, onMarkRead: () -> Unit) {
     val type = item.type?.lowercase().orEmpty()
     val accent = when {
         "complaint" in type -> Color(0xFFE86D00)
@@ -854,6 +1058,13 @@ private fun NotificationCard(item: NotificationDto) {
                     )
                     Text(DashboardFormatters.date(item.createdAt), color = Color(0xFF667085), style = MaterialTheme.typography.bodySmall)
                 }
+                if (item.isRead == false) {
+                    TextButton(onClick = onMarkRead, enabled = enabled && item.id != null) {
+                        Icon(Icons.Filled.MarkEmailRead, contentDescription = null)
+                        Spacer(Modifier.width(6.dp))
+                        Text("Mark as read")
+                    }
+                }
             }
         }
     }
@@ -865,6 +1076,7 @@ private fun ManagementCard(content: @Composable ColumnScope.() -> Unit) {
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
+        border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp), content = content)
@@ -898,7 +1110,15 @@ private fun SimpleDialog(title: String, onDismiss: () -> Unit, content: @Composa
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
-        text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp), content = content) },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                content = content
+            )
+        },
         confirmButton = {},
         dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } }
     )
@@ -945,6 +1165,55 @@ private fun ComplaintProofImage(image: String, modifier: Modifier = Modifier) {
             contentScale = ContentScale.Crop
         )
     }
+}
+
+@Composable
+private fun ComplaintProofFullPreviewDialog(image: String, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close", fontWeight = FontWeight.Bold)
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "Complaint Attachment Preview",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                val bitmap = remember(image) { decodeDataImage(image) }
+                if (bitmap != null) {
+                    Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = "Full Complaint Attachment",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(340.dp)
+                            .clip(RoundedCornerShape(16.dp)),
+                        contentScale = ContentScale.Fit
+                    )
+                } else {
+                    AsyncImage(
+                        model = fullMediaUrl(image),
+                        contentDescription = "Full Complaint Attachment",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(340.dp)
+                            .clip(RoundedCornerShape(16.dp)),
+                        contentScale = ContentScale.Fit
+                    )
+                }
+            }
+        }
+    )
 }
 
 private fun decodeDataImage(value: String): android.graphics.Bitmap? {

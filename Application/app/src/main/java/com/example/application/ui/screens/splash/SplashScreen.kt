@@ -10,8 +10,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.application.R
 
 @Composable
 fun SplashScreen() {
@@ -23,17 +25,17 @@ fun SplashScreen() {
         verticalArrangement = Arrangement.Center
     ) {
         Text(
-            text = "Society Management",
+            text = stringResource(R.string.app_name),
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary
         )
         Text(
-            text = "Checking your session...",
+            text = stringResource(R.string.splash_checking_session),
             modifier = Modifier.padding(top = 8.dp, bottom = 24.dp),
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        CircularProgressIndicator()
+        com.example.application.ui.components.SkeletonText(widthFraction = 0.4f, height = 12.dp)
     }
 }

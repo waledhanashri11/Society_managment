@@ -72,9 +72,15 @@ class CommunicationRepository @Inject constructor(
     }
 
     suspend fun getNotice(id: String) = safeCall { api.getNotice(id) }
+    suspend fun getNoticeStats() = safeCall { api.getNoticeStats() }
 
     suspend fun createNotice(title: String, description: String, poll: NoticePollSaveRequest? = null): NetworkResult<String> {
         return messageCall { api.createNotice(NoticeSaveRequest(title, description, poll)) }.also { if (it is NetworkResult.Success) noticesCache = null }
+    }
+
+    suspend fun updateNotice(id: String, title: String, description: String, poll: NoticePollSaveRequest?): NetworkResult<String> {
+        return messageCall { api.updateNotice(id, NoticeSaveRequest(title, description, poll)) }
+            .also { if (it is NetworkResult.Success) noticesCache = null }
     }
 
     suspend fun deleteNotice(id: String): NetworkResult<String> {
@@ -100,6 +106,15 @@ class CommunicationRepository @Inject constructor(
         return messageCall {
             if (sessionPreferences.readSession()?.role?.lowercase() in setOf("admin", "super_admin")) api.markAdminNotificationsRead() else api.markNotificationsRead()
         }.also { if (it is NetworkResult.Success) notificationsCache = null }
+    }
+
+    suspend fun publishNotice(id: String): NetworkResult<String> {
+        return messageCall { api.publishNotice(id) }.also { if (it is NetworkResult.Success) noticesCache = null }
+    }
+
+    suspend fun markNotificationRead(id: String): NetworkResult<String> {
+        return messageCall { api.markNotificationRead(id) }
+            .also { if (it is NetworkResult.Success) notificationsCache = null }
     }
 
     private fun clearComplaintCache() {

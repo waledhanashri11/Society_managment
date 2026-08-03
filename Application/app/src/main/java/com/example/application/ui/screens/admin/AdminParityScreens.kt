@@ -4,6 +4,11 @@ package com.example.application.ui.screens.admin
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Paint
+import android.graphics.pdf.PdfDocument
+import android.util.Base64
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -24,8 +29,10 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import com.example.application.ui.components.LanguageSelectorCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -47,8 +54,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import coil3.compose.AsyncImage
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.core.content.FileProvider
 import com.example.application.data.remote.dto.FlatDto
 import com.example.application.data.remote.dto.MaintenanceCategoryDto
 import com.example.application.data.remote.dto.UserSummaryDto
@@ -95,6 +104,9 @@ fun AdminSettingsScreen(onBack: () -> Unit, viewModel: AdminParityViewModel = hi
     var visitorAlerts by remember(state.settings) { mutableStateOf(state.settings.bool("visitorAlerts", false)) }
     var categoryFlatId by remember { mutableStateOf("") }
     val selectedCategories = remember { mutableStateListOf<Int>() }
+    val qrPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        uri?.let { qrImageFromUri(context, it)?.let { encoded -> qrImage = encoded } }
+    }
 
     AdminParityShell("Admin Settings", "Society details, QR, alerts and flat category assignment", onBack, { viewModel.loadSettings() }) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -107,7 +119,17 @@ fun AdminSettingsScreen(onBack: () -> Unit, viewModel: AdminParityViewModel = hi
                     BasicAppTextField(phone, { phone = it }, "Phone")
                     BasicAppTextField(upi, { upi = it }, "Payment UPI ID")
                     BasicAppTextField(paymentNote, { paymentNote = it }, "Payment instructions")
-                    BasicAppTextField(qrImage, { qrImage = it }, "QR image URL/Base64")
+                    if (qrImage.isNotBlank()) {
+                        AsyncImage(
+                            model = qrImage,
+                            contentDescription = "Payment QR preview",
+                            modifier = Modifier.fillMaxWidth().height(220.dp)
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { qrPicker.launch("image/*") }) { Text(if (qrImage.isBlank()) "Choose QR image" else "Replace QR image") }
+                        if (qrImage.isNotBlank()) TextButton(onClick = { qrImage = "" }) { Text("Remove") }
+                    }
                     Button(
                         onClick = {
                             viewModel.saveSettings(
@@ -142,6 +164,9 @@ fun AdminSettingsScreen(onBack: () -> Unit, viewModel: AdminParityViewModel = hi
                 }
             }
             item {
+                LanguageSelectorCard()
+            }
+            item {
                 SectionCard("Maintenance categories per flat", "Select a flat and assign active maintenance categories.") {
                     BasicAppTextField(categoryFlatId, { categoryFlatId = it }, "Flat ID")
                     CategoryChips(state.categories, selectedCategories)
@@ -161,6 +186,12 @@ fun AdminSettingsScreen(onBack: () -> Unit, viewModel: AdminParityViewModel = hi
         }
     }
 }
+
+private fun qrImageFromUri(context: Context, uri: android.net.Uri): String? = runCatching {
+    val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return null
+    val mime = context.contentResolver.getType(uri) ?: "image/png"
+    "data:$mime;base64,${Base64.encodeToString(bytes, Base64.NO_WRAP)}"
+}.getOrNull()
 
 @Composable
 private fun CategoryChips(categories: List<MaintenanceCategoryDto>, selected: MutableList<Int>) {
@@ -189,6 +220,8 @@ fun AdminWriteOffHistoryScreen(onBack: () -> Unit, viewModel: AdminParityViewMod
     val state by viewModel.state.collectAsStateWithLifecycle()
     var query by remember { mutableStateOf("") }
     val context = LocalContext.current
+    var editing by remember { mutableStateOf<JsonObject?>(null) }
+    var reversing by remember { mutableStateOf<JsonObject?>(null) }
     LaunchedEffect(Unit) { viewModel.loadWriteOffs() }
     val rows = state.writeOffs.filter { query.isBlank() || it.toString().contains(query, ignoreCase = true) }
     AdminParityShell("Write-off History", "Filter, audit and reverse maintenance write-offs", onBack, { viewModel.loadWriteOffs() }) { padding ->
@@ -196,7 +229,13 @@ fun AdminWriteOffHistoryScreen(onBack: () -> Unit, viewModel: AdminParityViewMod
             item {
                 BasicAppTextField(query, { query = it }, "Search resident, flat, reason")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
-                    OutlinedButton(onClick = { shareCsv(context, "write-off-history.csv", rows.toCsv()) }) { Icon(Icons.Filled.Download, null); Text("CSV") }
+                    OutlinedButton(onClick = { shareCsv(context, "write-off-history.csv", rows.toCsv()) }) { Icon(Icons.Filled.Download, null); Text("History CSV") }
+                    OutlinedButton(onClick = { shareCsv(context, "write-off-report.csv", state.writeOffReport.toCsv()) }, enabled = state.writeOffReport.isNotEmpty()) { Text("Report CSV") }
+                }
+            }
+            if (state.writeOffDashboard.entrySet().isNotEmpty()) item {
+                SectionCard("Write-off Summary") {
+                    JsonCard(state.writeOffDashboard, preferred = listOf("total_writeoffs", "total_writeoff_amount", "partial_writeoffs", "today_writeoffs", "today_writeoff_amount", "monthly_writeoffs", "yearly_writeoffs"))
                 }
             }
             state.error?.let { item { ErrorMessageCard(it) } }
@@ -204,35 +243,34 @@ fun AdminWriteOffHistoryScreen(onBack: () -> Unit, viewModel: AdminParityViewMod
             items(rows, key = { it.text("id").ifBlank { it.hashCode().toString() } }) { row ->
                 SectionCard(row.text("resident_name").ifBlank { "Write-off #${row.text("id")}" }) {
                     JsonCard(row, preferred = listOf("flat_no", "bill_number", "write_off_amount", "reason", "created_at", "admin_name", "status"))
-                    row.text("id").takeIf { it.isNotBlank() }?.let { id ->
-                        TextButton(onClick = { viewModel.reverseWriteOff(id) }, enabled = !state.submitting) { Text("Reverse write-off") }
+                    row.text("id").takeIf { it.isNotBlank() }?.let {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            TextButton(onClick = { shareWriteOffReceiptPdf(context, row) }) { Text("Receipt PDF") }
+                            TextButton(onClick = { editing = row }, enabled = !state.submitting) { Text("Edit") }
+                            TextButton(onClick = { reversing = row }, enabled = !state.submitting) { Text("Reverse") }
+                        }
                     }
                 }
             }
         }
     }
-}
-
-@Composable
-fun AdminAgmReportScreen(onBack: () -> Unit, viewModel: AdminParityViewModel = hiltViewModel()) {
-    val state by viewModel.state.collectAsStateWithLifecycle()
-    val context = LocalContext.current
-    var query by remember { mutableStateOf("") }
-    LaunchedEffect(Unit) { viewModel.loadAgmReport() }
-    val rows = state.agmRows.filter { query.isBlank() || it.toString().contains(query, ignoreCase = true) }
-    AdminParityShell("AGM Report", "Annual maintenance summary with export", onBack, { viewModel.loadAgmReport() }) { padding ->
-        LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            item {
-                BasicAppTextField(query, { query = it }, "Search AGM report")
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
-                    OutlinedButton(onClick = { shareCsv(context, "agm-report.csv", rows.toCsv()) }) { Icon(Icons.Filled.Download, null); Text("CSV") }
-                    OutlinedButton(onClick = { shareText(context, "AGM Report", rows.joinToString("\n\n") { it.prettyText() }) }) { Text("Share / Print") }
-                }
-            }
-            state.error?.let { item { ErrorMessageCard(it) } }
-            if (rows.isEmpty()) item { EmptyState("No AGM data", "AGM report rows will appear here.") }
-            items(rows, key = { it.hashCode() }) { row -> JsonCard(row, preferred = listOf("resident_name", "flat_no", "total_amount", "paid_amount", "outstanding", "write_off_amount", "status")) }
-        }
+    editing?.let { row ->
+        var amount by remember(row) { mutableStateOf(row.text("amount").ifBlank { row.text("write_off_amount") }) }
+        var reason by remember(row) { mutableStateOf(row.text("reason")) }
+        AlertDialog(
+            onDismissRequest = { editing = null }, title = { Text("Edit Write-off") },
+            text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { BasicAppTextField(amount, { amount = it.filter { ch -> ch.isDigit() || ch == '.' } }, "Amount"); BasicAppTextField(reason, { reason = it }, "Reason") } },
+            confirmButton = { Button(onClick = { viewModel.editWriteOff(row.text("id"), amount, reason); editing = null }, enabled = !state.submitting && amount.toBigDecimalOrNull()?.signum() == 1 && reason.isNotBlank()) { Text("Update") } },
+            dismissButton = { TextButton(onClick = { editing = null }) { Text("Cancel") } }
+        )
+    }
+    reversing?.let { row ->
+        AlertDialog(
+            onDismissRequest = { reversing = null }, title = { Text("Reverse Write-off?") },
+            text = { Text("This restores ${row.text("amount").ifBlank { row.text("write_off_amount") }} to the resident's unpaid bill and removes the write-off record.") },
+            confirmButton = { Button(onClick = { viewModel.reverseWriteOff(row.text("id")); reversing = null }, enabled = !state.submitting) { Text("Reverse") } },
+            dismissButton = { TextButton(onClick = { reversing = null }) { Text("Cancel") } }
+        )
     }
 }
 
@@ -340,6 +378,42 @@ private fun shareCsv(context: Context, filename: String, csv: String) {
 private fun shareText(context: Context, title: String, body: String) {
     val intent = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_SUBJECT, title).putExtra(Intent.EXTRA_TEXT, body)
     runCatching { context.startActivity(Intent.createChooser(intent, title)) }
+}
+
+private fun shareWriteOffReceiptPdf(context: Context, row: JsonObject) {
+    runCatching {
+        val document = PdfDocument()
+        val page = document.startPage(PdfDocument.PageInfo.Builder(595, 842, 1).create())
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 13f; color = android.graphics.Color.BLACK }
+        var y = 58f
+        fun line(text: String, heading: Boolean = false) {
+            paint.textSize = if (heading) 19f else 13f
+            paint.isFakeBoldText = heading
+            page.canvas.drawText(text.take(88), 48f, y, paint)
+            y += if (heading) 32f else 23f
+        }
+        line("Official Maintenance Write-off Receipt", true)
+        line("Write-off ID: ${row.text("id")}")
+        line("Bill: ${row.text("bill_number").ifBlank { row.text("bill_id") }}")
+        line("Resident: ${row.text("resident_name")}")
+        line("Flat: ${row.text("flat_no")}")
+        line("Amount: ${row.text("amount").ifBlank { row.text("write_off_amount") }}")
+        line("Type: ${row.text("type").ifBlank { row.text("writeoff_type") }}")
+        line("Reason: ${row.text("reason")}")
+        line("Approved by: ${row.text("admin_name")}")
+        line("Date: ${row.text("created_at")}")
+        line("This is a digitally generated receipt and does not require a signature.")
+        document.finishPage(page)
+        val file = java.io.File(context.cacheDir, "write-off-receipt-${row.text("id").ifBlank { System.currentTimeMillis().toString() }}.pdf")
+        file.outputStream().use(document::writeTo)
+        document.close()
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        val view = Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/pdf").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        val share = Intent(Intent.ACTION_SEND).setType("application/pdf").putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        val chooser = Intent.createChooser(view, "Open, print or save receipt")
+        chooser.putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(share))
+        context.startActivity(chooser)
+    }
 }
 
 private fun FlatDto.label(): String = "Wing ${wing ?: "A"}-${flatNo ?: id ?: "-"}"

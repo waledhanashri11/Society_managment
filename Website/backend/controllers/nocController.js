@@ -110,7 +110,7 @@ const getResidentFlat = async (residentId) => {
             f.id AS flat_id, f.flat_no, f.wing, f.floor_no, f.status AS flat_status
      FROM users u
      LEFT JOIN flats f ON u.flat_id = f.id
-     WHERE u.id = ? AND u.role = 'resident'`,
+     WHERE u.id = ?`,
     [residentId]
   );
   return rows[0] || null;
@@ -159,17 +159,23 @@ const normalizeDocuments = (documents) => {
 const createRequest = async (req, res) => {
   try {
     await ensureNocRuntimeSchema();
-    if (req.user.role !== 'resident') {
+    const userRole = String(req.user?.role || '').toLowerCase();
+    if (userRole === 'admin') {
       return sendResponse(res, 403, 'Only residents can submit NOC requests');
     }
 
-    const { noc_type: nocType, purpose, remarks, required_date, contact_number, documents } = req.body;
+    const nocType = req.body.noc_type || req.body.nocType || req.body.type;
+    const { purpose, remarks, required_date, contact_number, documents } = req.body;
     if (!nocType || !purpose) {
       return sendResponse(res, 400, 'NOC type and purpose are required');
     }
 
     const resident = await getResidentFlat(req.user.id);
-    if (!resident || resident.resident_status !== 'approved') {
+    if (!resident) {
+      return sendResponse(res, 400, 'Resident account not found');
+    }
+    const safeStatus = String(resident.resident_status || 'approved').toLowerCase();
+    if (['rejected', 'blocked', 'disabled', 'inactive'].includes(safeStatus)) {
       return sendResponse(res, 400, 'Resident account is not active');
     }
 
@@ -178,7 +184,7 @@ const createRequest = async (req, res) => {
     const [result] = await promisePool.query(
       `INSERT INTO noc_requests
        (request_number, resident_id, flat_id, noc_type, purpose, remarks, required_date, contact_number, documents, status, verification_number)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Submitted', ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pending', ?)`,
       [
         requestNumber,
         req.user.id,
@@ -205,7 +211,7 @@ const createRequest = async (req, res) => {
     return sendResponse(res, 201, 'NOC request submitted successfully', { id: result.insertId, request_number: requestNumber });
   } catch (error) {
     console.error('Create NOC request error:', error);
-    return sendResponse(res, 500, 'Server error');
+    return sendResponse(res, 500, error.message || 'Server error');
   }
 };
 
@@ -441,6 +447,7 @@ const rejectRequest = async (req, res) => {
   }
 };
 
+
 // PUT /api/noc/:id/complete
 const completeRequest = async (req, res) => {
   try {
@@ -466,7 +473,7 @@ const cancelRequest = async (req, res) => {
     if (req.user.role !== 'admin' && String(request.resident_id) !== String(req.user.id)) {
       return sendResponse(res, 403, 'Access denied');
     }
-    if (!['Pending', 'Under Review'].includes(request.status)) {
+    if (!['Pending', 'Under Review', 'Submitted'].includes(request.status)) {
       return sendResponse(res, 400, 'Only pending or under review NOC requests can be cancelled');
     }
 

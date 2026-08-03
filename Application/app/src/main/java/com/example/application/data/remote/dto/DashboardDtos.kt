@@ -57,7 +57,15 @@ data class MaintenanceBillDto(
     @SerializedName("verified_at") val verifiedAt: String?,
     @SerializedName("rejection_reason") val rejectionReason: String?,
     @SerializedName("resident_note") val residentNote: String?,
-    @SerializedName("paid_at") val paidAt: String?
+    @SerializedName("paid_at") val paidAt: String?,
+    @SerializedName("base_amount") val baseAmount: String? = null,
+    @SerializedName("previous_due") val previousDue: String? = null,
+    @SerializedName("other_charges") val otherCharges: String? = null,
+    @SerializedName("advance_adjusted") val advanceAdjusted: String? = null,
+    @SerializedName("advance_balance") val advanceBalance: String? = null,
+    @SerializedName("flat_type") val flatType: String? = null,
+    @SerializedName("flat_type_rate") val flatTypeRate: String? = null,
+    @SerializedName("clarification_note") val clarificationNote: String? = null
 )
 
 data class ComplaintDto(
@@ -84,6 +92,7 @@ data class NoticeDto(
     val title: String?,
     val description: String?,
     val priority: String?,
+    val status: String? = null,
     @SerializedName("created_at") val createdAt: String?,
     @SerializedName("has_poll") val hasPoll: Boolean? = null,
     @SerializedName("poll_status") val pollStatus: String? = null,
@@ -98,6 +107,9 @@ data class NoticePollDto(
     @SerializedName("end_at") val endAt: String?,
     val status: String?,
     @SerializedName("allow_vote_change") val allowVoteChange: Boolean? = null,
+    val anonymous: Boolean? = null,
+    @SerializedName("show_results_before_end") val showResultsBeforeEnd: Boolean? = null,
+    val mandatory: Boolean? = null,
     @SerializedName("my_vote_option_ids") val myVoteOptionIds: List<Int>? = null,
     val options: List<NoticePollOptionDto>? = null,
     val results: NoticePollResultsDto? = null

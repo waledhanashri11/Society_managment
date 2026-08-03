@@ -46,18 +46,18 @@ import com.example.application.viewmodel.AdvancedFeaturesViewModel
 import com.example.application.util.ThemePreference
 
 @Composable
-fun AdminAdvancedFeaturesScreen(onBack: () -> Unit, viewModel: AdvancedFeaturesViewModel = hiltViewModel()) {
-    AdvancedFeaturesScaffold("Administration tools", onBack, viewModel, admin = true)
+fun AdminAdvancedFeaturesScreen(onBack: () -> Unit, onOpen: (String) -> Unit = {}, viewModel: AdvancedFeaturesViewModel = hiltViewModel()) {
+    AdvancedFeaturesScaffold("Administration tools", onBack, onOpen, viewModel, admin = true)
 }
 
 @Composable
-fun ResidentAdvancedFeaturesScreen(onBack: () -> Unit, viewModel: AdvancedFeaturesViewModel = hiltViewModel()) {
-    AdvancedFeaturesScaffold("My society services", onBack, viewModel, admin = false)
+fun ResidentAdvancedFeaturesScreen(onBack: () -> Unit, onOpen: (String) -> Unit = {}, viewModel: AdvancedFeaturesViewModel = hiltViewModel()) {
+    AdvancedFeaturesScaffold("My society services", onBack, onOpen, viewModel, admin = false)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AdvancedFeaturesScaffold(title: String, onBack: () -> Unit, vm: AdvancedFeaturesViewModel, admin: Boolean) {
+private fun AdvancedFeaturesScaffold(title: String, onBack: () -> Unit, onOpen: (String) -> Unit, vm: AdvancedFeaturesViewModel, admin: Boolean) {
     val state by vm.state.collectAsStateWithLifecycle()
     val snackbars = remember { SnackbarHostState() }
     LaunchedEffect(state.error, state.success) {
@@ -69,24 +69,16 @@ private fun AdvancedFeaturesScaffold(title: String, onBack: () -> Unit, vm: Adva
         snackbarHost = { SnackbarHost(snackbars) }
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            if (admin) AdminTools(vm, state) else ResidentTools(vm)
-            if (state.loading) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) { CircularProgressIndicator() }
-            if (state.content.isNotBlank()) ResultCard(state.title, state.content)
+            if (admin) AdminTools(vm, state, onOpen) else ResidentTools(vm, onOpen)
+            if (state.loading) com.example.application.ui.components.SkeletonCard(height = 90.dp)
+            if (state.content.isNotBlank() && state.title != "Society settings") ResultCard(state.title, state.content)
             Spacer(Modifier.height(24.dp))
         }
     }
 }
 
 @Composable
-private fun AdminTools(vm: AdvancedFeaturesViewModel, state: com.example.application.viewmodel.AdvancedUiState) {
-    var flatId by remember { mutableStateOf("") }
-    var residentId by remember { mutableStateOf("") }
-    var recordId by remember { mutableStateOf("") }
-    var writeOffId by remember { mutableStateOf("") }
-    var reason by remember { mutableStateOf("") }
-    var categoryIds by remember { mutableStateOf("") }
-    var flatIds by remember { mutableStateOf("") }
-    var nocType by remember { mutableStateOf("") }
+private fun AdminTools(vm: AdvancedFeaturesViewModel, state: com.example.application.viewmodel.AdvancedUiState, onOpen: (String) -> Unit) {
     var societyName by remember { mutableStateOf("") }
     var address by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
@@ -162,34 +154,19 @@ private fun AdminTools(vm: AdvancedFeaturesViewModel, state: com.example.applica
             ThemePreference.toggle(context)
         }
     }
-    ToolSection("Flat ownership and history") {
-        Field(flatId, { flatId = it }, "Flat ID")
-        Field(residentId, { residentId = it }, "New resident ID (blank to unassign)")
-        Field(reason, { reason = it }, "Transfer reason")
-        ActionRow("Current resident", { vm.currentResident(flatId) }, "Transfer flat", { vm.transferFlat(flatId, residentId, reason) })
-        ActionRow("Ownership history", { vm.flatHistory(flatId) }, "Transfer history", { vm.flatTransfers(flatId) })
-    }
-    ToolSection("Notifications") {
-        ActionRow("Refresh notifications", vm::adminNotifications, "Mark all read", vm::readAllAdminNotifications)
-    }
-    ToolSection("NOC management") {
-        Field(recordId, { recordId = it }, "NOC request ID")
-        Field(nocType, { nocType = it }, "New NOC type")
-        ActionRow("Summary", vm::nocSummary, "Types", vm::nocTypes)
-        ActionRow("Request details", { vm.nocDetails(recordId) }, "Create share link", { vm.shareNoc(recordId) })
-        WideAction("Create NOC type") { vm.createNocType(nocType, "Created from Android") }
-    }
-    ToolSection("Reports") { WideAction("Complaint report", vm::complaintReport) }
-    ToolSection("Maintenance reports") {
-        Field(writeOffId, { writeOffId = it }, "Write-off ID")
-        ActionRow("Write-off history", vm::writeOffHistory, "AGM report", vm::agmReport)
-        WideAction("Reverse write-off") { vm.reverseWriteOff(writeOffId) }
+    ToolSection("Management") {
+        HubRow("Residents", "Flats", onOpen)
+        HubRow("Flat transfers", "NOC management", onOpen)
+        HubRow("Complaints", "Notifications", onOpen)
+        HubRow("Maintenance", "Reports", onOpen)
+        HubRow("Write-off history", "AGM report", onOpen)
+        HubRow("Society rules", "Meetings", onOpen)
+        WideAction("Events") { onOpen("Events") }
     }
 }
 
 @Composable
-private fun ResidentTools(vm: AdvancedFeaturesViewModel) {
-    var id by remember { mutableStateOf("") }
+private fun ResidentTools(vm: AdvancedFeaturesViewModel, onOpen: (String) -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
     ToolSection("Appearance") {
         Text(
@@ -204,27 +181,73 @@ private fun ResidentTools(vm: AdvancedFeaturesViewModel) {
         ActionRow("Visitors", vm::visitors, "Parcels", vm::parcels)
         WideAction("Recent activity", vm::activities)
     }
-    ToolSection("Complaints") {
-        Field(id, { id = it }, "Complaint ID")
-        ActionRow("Confirm resolved", { vm.confirmComplaint(id) }, "Reopen", { vm.reopenComplaint(id) })
+    ToolSection("Society services") {
+        HubRow("Maintenance", "Payment history", onOpen)
+        HubRow("Complaints", "Notices", onOpen)
+        HubRow("NOC requests", "Reports", onOpen)
+        HubRow("Rules", "Meetings", onOpen)
+        HubRow("Events", "Members", onOpen)
+        WideAction("Notifications") { onOpen("Notifications") }
     }
-    ToolSection("Notifications") {
-        Field(id, { id = it }, "Notification ID")
-        WideAction("Mark notification read") { vm.readResidentNotification(id) }
-    }
-    ToolSection("NOC information") {
-        Field(id, { id = it }, "NOC request ID")
-        ActionRow("Summary", vm::nocSummary, "Available types", vm::nocTypes)
-        WideAction("Request details") { vm.nocDetails(id) }
-    }
-    ToolSection("Reports") { WideAction("Complaint report", vm::complaintReport) }
 }
 
-@Composable private fun ToolSection(title: String, content: @Composable () -> Unit) = Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { Text(title, style = MaterialTheme.typography.titleMedium); content() } }
-@Composable private fun Field(value: String, onChange: (String) -> Unit, label: String) = OutlinedTextField(value, onChange, Modifier.fillMaxWidth(), label = { Text(label) }, singleLine = true)
-@Composable private fun ActionRow(first: String, firstAction: () -> Unit, second: String, secondAction: () -> Unit) = Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { OutlinedButton(firstAction, Modifier.weight(1f)) { Text(first) }; Button(secondAction, Modifier.weight(1f)) { Text(second) } }
-@Composable private fun WideAction(label: String, action: () -> Unit) = Button(action, Modifier.fillMaxWidth()) { Text(label) }
-@Composable private fun ResultCard(title: String, content: String) = Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Text(title, style = MaterialTheme.typography.titleMedium); Text(content, style = MaterialTheme.typography.bodySmall) } }
+@Composable
+private fun ToolSection(title: String, content: @Composable () -> Unit) = Card(
+    modifier = Modifier.fillMaxWidth(),
+    shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+    colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+) {
+    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+        content()
+    }
+}
+
+@Composable private fun Field(value: String, onChange: (String) -> Unit, label: String) = OutlinedTextField(value, onChange, Modifier.fillMaxWidth(), label = { Text(label) }, singleLine = true, shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+@Composable private fun ActionRow(first: String, firstAction: () -> Unit, second: String, secondAction: () -> Unit) = Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { OutlinedButton(firstAction, Modifier.weight(1f), shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)) { Text(first) }; Button(secondAction, Modifier.weight(1f), shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)) { Text(second) } }
+@Composable private fun WideAction(label: String, action: () -> Unit) = Button(action, Modifier.fillMaxWidth(), shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)) { Text(label) }
+@Composable private fun HubRow(first: String, second: String, onOpen: (String) -> Unit) = ActionRow(first, { onOpen(first) }, second, { onOpen(second) })
+
+@Composable
+private fun ResultCard(title: String, content: String) = Card(
+    modifier = Modifier.fillMaxWidth(),
+    shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+    colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+) {
+    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+        friendlyResultLines(content).forEach { line -> Text(line, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+    }
+}
+
+private fun friendlyResultLines(content: String): List<String> = runCatching {
+    fun label(key: String) = key.replace('_', ' ').replace(Regex("([a-z])([A-Z])"), "$1 $2").replaceFirstChar { it.uppercase() }
+    fun objectLines(value: org.json.JSONObject, prefix: String = ""): List<String> = value.keys().asSequence().flatMap { key ->
+        val child = value.opt(key)
+        val heading = (prefix + label(key)).trim()
+        when (child) {
+            is org.json.JSONObject -> objectLines(child, "$heading · ").asSequence()
+            is org.json.JSONArray -> sequenceOf("$heading: ${child.length()} records")
+            null, org.json.JSONObject.NULL -> sequenceOf("$heading: —")
+            else -> sequenceOf("$heading: $child")
+        }
+    }.toList()
+    when (val root = org.json.JSONTokener(content).nextValue()) {
+        is org.json.JSONArray -> {
+            if (root.length() == 0) listOf("No records found.")
+            else (0 until root.length()).flatMap { index ->
+                when (val item = root.opt(index)) {
+                    is org.json.JSONObject -> listOf("Record ${index + 1}") + objectLines(item)
+                    else -> listOf(item?.toString().orEmpty())
+                }
+            }
+        }
+        is org.json.JSONObject -> objectLines(root)
+        else -> listOf(root.toString())
+    }
+}.getOrElse { listOf(content) }
 
 private fun Uri.asDataUrl(context: Context): String {
     val mimeType = context.contentResolver.getType(this) ?: "image/png"

@@ -17,6 +17,7 @@ import com.example.application.data.remote.dto.MarkPaidRequest
 import com.example.application.data.remote.dto.SubmitPaymentRequest
 import com.example.application.data.remote.dto.UpdatePaymentRequest
 import com.example.application.data.remote.dto.WriteOffRequest
+import com.example.application.data.remote.dto.LedgerWriteOffRequest
 import com.example.application.util.AppError
 import com.example.application.util.NetworkResult
 import com.google.gson.Gson
@@ -76,7 +77,7 @@ class MaintenanceRepository @Inject constructor(
         val settingsCall = async { safeApiCall { api.getSettings() } }
         val lateFeeCall = async { safeApiCall { api.getLateFeeRule() } }
         val disputesCall = async { safeApiCall { api.getDisputes() } }
-        val writeOffsCall = async { safeApiCall { api.getWriteOffs() } }
+        val writeOffsCall = async { safeApiCall { api.getWriteOffHistory() } }
 
         val dashboard = dashboardCall.await()
         val bills = billsCall.await()
@@ -90,12 +91,16 @@ class MaintenanceRepository @Inject constructor(
         val writeOffs = writeOffsCall.await()
 
         if (dashboard is NetworkResult.Error && bills is NetworkResult.Error) return@coroutineScope dashboard
+        val allVerificationRows = mergeVerificationPayments(
+            (pendingPayments as? NetworkResult.Success)?.data.orEmpty(),
+            (payments as? NetworkResult.Success)?.data.orEmpty()
+        )
         val data = AdminMaintenanceData(
             adminSummary = null,
             dashboard = (dashboard as? NetworkResult.Success)?.data,
             bills = (bills as? NetworkResult.Success)?.data.orEmpty(),
             payments = (payments as? NetworkResult.Success)?.data.orEmpty(),
-            verifications = (pendingPayments as? NetworkResult.Success)?.data.orEmpty(),
+            verifications = allVerificationRows,
             categories = (categories as? NetworkResult.Success)?.data.orEmpty(),
             expenses = (expenses as? NetworkResult.Success)?.data.orEmpty(),
             settings = (settings as? NetworkResult.Success)?.data,
@@ -177,10 +182,27 @@ class MaintenanceRepository @Inject constructor(
     suspend fun sendReminder(id: String) = messageCall { api.sendReminder(id) }
     suspend fun applyPenalty() = messageCall { api.applyPenalty() }
     suspend fun waiveLateFee(id: String) = messageCall { api.waiveLateFee(id) }
-    suspend fun applyPenaltyToBill(id: String, amount: String, reason: String?) = messageCall { api.applyPenalty() }
+    suspend fun applyPenaltyToBill(id: String, amount: String, reason: String?) =
+        messageCall { api.applyPenaltyToBill(id, mapOf("amount" to amount, "reason" to (reason ?: "Late fee penalty"))) }
     suspend fun applyWaiver(id: String, amount: String, reason: String, type: String, reference: String?, date: String?, note: String?) =
         messageCall { api.applyAdminWaiver(id, ApplyWaiverRequest(amount, reason, type, reference, date, note)) }
-    suspend fun createWriteOff(id: String, request: WriteOffRequest) = messageCall { api.createWriteOff(id, request) }
+    suspend fun createWriteOff(id: String, request: WriteOffRequest): NetworkResult<String> {
+        val amountValue = request.amount?.toDoubleOrNull() ?: 0.0
+        val maintValue = request.maintenanceAmount?.toDoubleOrNull()
+        val penaltyValue = request.penaltyAmount?.toDoubleOrNull()
+        val ledgerRequest = LedgerWriteOffRequest(
+            billId = id,
+            writeoffType = request.writeoffType,
+            amount = amountValue,
+            maintenanceAmount = maintValue,
+            penaltyAmount = penaltyValue,
+            reason = request.reason,
+            remarks = request.remarks
+        )
+        return messageCall { api.createWriteOff(ledgerRequest) }
+    }
+    suspend fun getPaymentReceipt(id: String) = safeApiCall { api.getPaymentReceipt(id) }
+    suspend fun getWriteOffReceipt(id: String) = safeApiCall { api.getWriteOffReceipt(id) }
     suspend fun cancelBill(id: String, reason: String) = messageCall { api.deleteMaintenance(id) }
     suspend fun submitPayment(request: SubmitPaymentRequest) = messageCall { api.submitPayment(request) }
     suspend fun updatePayment(id: String, request: UpdatePaymentRequest): NetworkResult<String> {
@@ -190,7 +212,7 @@ class MaintenanceRepository @Inject constructor(
                 api.rejectPayment(
                     id,
                     mapOf(
-                        "rejectionReason" to (request.rejectionReason ?: request.remarks ?: "Rejected by admin")
+                        "rejection_reason" to (request.rejectionReason ?: request.remarks ?: "Rejected by admin")
                     )
                 )
             }
@@ -213,6 +235,49 @@ class MaintenanceRepository @Inject constructor(
     ): List<com.example.application.data.remote.dto.MaintenancePaymentDto> {
         return (pendingPayments + payments)
             .distinctBy { it.id ?: "${it.billId}-${it.transactionId}-${it.createdAt}" }
+    }
+
+    private fun mergeVerificationPayments(
+        verificationRows: List<com.example.application.data.remote.dto.MaintenancePaymentVerificationDto>,
+        payments: List<com.example.application.data.remote.dto.MaintenancePaymentDto>
+    ): List<com.example.application.data.remote.dto.MaintenancePaymentVerificationDto> {
+        val mappedPayments = payments.map { payment ->
+            com.example.application.data.remote.dto.MaintenancePaymentVerificationDto(
+                submissionId = payment.id,
+                billId = payment.billId,
+                title = payment.title,
+                month = payment.month?.toIntOrNull(),
+                year = payment.year?.toIntOrNull(),
+                billAmount = payment.totalAmount,
+                dueDate = payment.dueDate,
+                amount = payment.amount,
+                paymentMethod = payment.paymentMethod,
+                transactionReference = payment.transactionId,
+                utrNumber = payment.transactionId,
+                verificationStatus = payment.paymentStatus,
+                paymentDate = payment.paidAt,
+                submittedAt = payment.createdAt,
+                remarks = payment.remarks,
+                residentNote = payment.residentNote,
+                residentId = null,
+                residentName = payment.residentName,
+                flatNumber = payment.flatNo,
+                billNumber = payment.billId?.let { "BILL-$it" },
+                hasScreenshot = if (payment.screenshotUrl.isNullOrBlank() && payment.screenshot.isNullOrBlank() && payment.screenshotPath.isNullOrBlank()) 0 else 1,
+                screenshotUrl = payment.screenshotUrl,
+                screenshot = payment.screenshot,
+                screenshotPath = payment.screenshotPath,
+                wing = payment.wing,
+                residentPhone = null,
+                residentEmail = null,
+                verifiedAt = payment.verifiedAt,
+                rejectedAt = payment.rejectedAt
+            )
+        }
+        return (verificationRows + mappedPayments)
+            .filter { !it.submissionId.isNullOrBlank() }
+            .distinctBy { it.submissionId }
+            .sortedByDescending { it.submittedAt ?: it.paymentDate.orEmpty() }
     }
 
     private suspend fun <T> messageCall(call: suspend () -> Response<ApiResponse<T>>): NetworkResult<String> {

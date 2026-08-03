@@ -1,5 +1,10 @@
 package com.example.application.ui.screens.rules
 
+import android.content.Context
+import android.content.Intent
+import android.graphics.Paint
+import android.graphics.pdf.PdfDocument
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -23,6 +28,7 @@ import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Publish
 import androidx.compose.material.icons.filled.Search
@@ -52,12 +58,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.core.content.FileProvider
 import com.example.application.R
 import com.example.application.data.remote.dto.SocietyRuleAcknowledgementReportDto
 import com.example.application.data.remote.dto.SocietyRuleDto
@@ -69,6 +77,7 @@ import com.example.application.util.DashboardFormatters
 import com.example.application.viewmodel.AdminSocietyRulesViewModel
 import com.example.application.viewmodel.ResidentSocietyRulesViewModel
 import com.example.application.viewmodel.SocietyRulesState
+import java.io.File
 
 @Composable
 fun ResidentRulesGate(
@@ -108,6 +117,7 @@ fun AdminSocietyRulesScreen(
     viewModel: AdminSocietyRulesViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     var editRule by remember { mutableStateOf<SocietyRuleDto?>(null) }
     var showCreate by remember { mutableStateOf(false) }
     var reportRule by remember { mutableStateOf<SocietyRuleDto?>(null) }
@@ -124,20 +134,15 @@ fun AdminSocietyRulesScreen(
         error = state.error,
         onRetry = { viewModel.load(true) },
         action = {
+            IconButton(onClick = { exportRulesPdf(context, rules) }) {
+                Icon(Icons.Filled.Download, contentDescription = "Download rules PDF")
+            }
             IconButton(onClick = { showCreate = true }) {
                 Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.rules_create))
             }
         }
     ) {
         item {
-            RuleFilters(
-                state = state,
-                admin = true,
-                onQuery = viewModel::setQuery,
-                onCategory = viewModel::setCategory,
-                onPriority = viewModel::setPriority,
-                onStatus = viewModel::setStatus
-            )
             StatusText(state.message, state.error)
         }
         if (rules.isEmpty()) {
@@ -157,6 +162,10 @@ fun AdminSocietyRulesScreen(
                         },
                         onReminder = { rule.id?.let(viewModel::sendReminders) }
                     )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { rule.id?.let { viewModel.moveRule(it, -1) } }) { Text("Move up") }
+                        OutlinedButton(onClick = { rule.id?.let { viewModel.moveRule(it, 1) } }) { Text("Move down") }
+                    }
                 }
             }
         }
@@ -198,6 +207,35 @@ fun AdminSocietyRulesScreen(
             onReminder = { rule.id?.let(viewModel::sendReminders) }
         )
     }
+}
+
+private fun exportRulesPdf(context: Context, rules: List<SocietyRuleDto>) {
+    if (rules.isEmpty()) { Toast.makeText(context, "No rules to export", Toast.LENGTH_SHORT).show(); return }
+    runCatching {
+        val file = File(context.cacheDir, "society-rules-${System.currentTimeMillis()}.pdf")
+        val document = PdfDocument()
+        val pageInfo = PdfDocument.PageInfo.Builder(595, 842, 1).create()
+        val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 19f; isFakeBoldText = true }
+        val headingPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 12f; isFakeBoldText = true }
+        val bodyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 10f }
+        var pageNumber = 1
+        var page = document.startPage(pageInfo)
+        var canvas = page.canvas
+        var y = 42f
+        fun nextPage() { document.finishPage(page); pageNumber++; page = document.startPage(pageInfo); canvas = page.canvas; y = 42f }
+        canvas.drawText("Society Rules", 36f, y, titlePaint); y += 28f
+        rules.forEachIndexed { index, rule ->
+            if (y > 760f) nextPage()
+            canvas.drawText("${index + 1}. ${rule.title.orEmpty()}", 36f, y, headingPaint); y += 18f
+            val text = rule.description.orEmpty().replace("\n", " ")
+            text.chunked(88).forEach { line -> if (y > 800f) nextPage(); canvas.drawText(line, 44f, y, bodyPaint); y += 14f }
+            y += 10f
+        }
+        document.finishPage(page)
+        file.outputStream().use(document::writeTo); document.close()
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("application/pdf").putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), "Share Society Rules"))
+    }.onFailure { Toast.makeText(context, "Unable to export rules PDF", Toast.LENGTH_LONG).show() }
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -282,7 +320,7 @@ private fun RulesShell(
             )
         }
     ) { padding ->
-        PullToRefreshBox(isRefreshing = refreshing, onRefresh = onRefresh, modifier = Modifier.fillMaxSize().padding(padding)) {
+        PullToRefreshBox(isRefreshing = refreshing, onRefresh = onRefresh, indicator = {}, modifier = Modifier.fillMaxSize().padding(padding)) {
             LazyColumn(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),

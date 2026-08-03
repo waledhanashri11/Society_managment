@@ -64,6 +64,14 @@ class AdminSocietyRulesViewModel @Inject constructor(
     fun publishRule(id: String) = action(reload = true) { repository.publishRule(id) }
     fun unpublishRule(id: String) = action(reload = true) { repository.unpublishRule(id) }
     fun archiveRule(id: String) = action(reload = true) { repository.archiveRule(id) }
+    fun moveRule(id: String, direction: Int) {
+        val ids = _state.value.items.mapNotNull { it.id }.toMutableList()
+        val from = ids.indexOf(id)
+        val to = (from + direction).coerceIn(0, ids.lastIndex)
+        if (from < 0 || from == to) return
+        ids.add(to, ids.removeAt(from))
+        action(reload = true) { repository.reorderRules(ids) }
+    }
 
     fun loadReport(id: String, refresh: Boolean = false) {
         viewModelScope.launch {

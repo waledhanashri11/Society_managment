@@ -8,6 +8,7 @@ import com.example.application.data.remote.dto.ExpenseCreateRequest
 import com.example.application.data.remote.dto.LateFeeRuleRequest
 import com.example.application.data.remote.dto.MaintenanceCreateRequest
 import com.example.application.data.remote.dto.MaintenanceSettingsRequest
+import com.example.application.data.remote.dto.MaintenanceUpdateRequest
 import com.example.application.data.remote.dto.ManualPayRequest
 import com.example.application.data.remote.dto.MarkPaidRequest
 import com.example.application.data.remote.dto.SubmitPaymentRequest
@@ -16,6 +17,7 @@ import com.example.application.data.remote.dto.WriteOffRequest
 import com.example.application.data.repository.AdminMaintenanceData
 import com.example.application.data.repository.MaintenanceRepository
 import com.example.application.data.repository.ResidentMaintenanceData
+import com.example.application.util.AppError
 import com.example.application.util.NetworkResult
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.time.LocalDate
@@ -110,6 +112,8 @@ class AdminMaintenanceViewModel @Inject constructor(
     fun createManualBill(title: String, month: Int, year: Int, dueDate: String, amount: String, residentId: String?, flatId: String?) =
         action { repository.createMaintenance(MaintenanceCreateRequest(title, month, year, dueDate, amount, residentId, flatId)) }
     fun deleteBill(id: String) = action { repository.deleteMaintenance(id) }
+    fun editBill(id: String, amount: String, customReason: String?) =
+        action { repository.updateMaintenance(id, MaintenanceUpdateRequest(amount = amount, customReason = customReason?.ifBlank { null })) }
     fun cancelBill(id: String, reason: String) = action { repository.cancelBill(id, reason) }
     fun markPaid(id: String, amount: String, paymentDate: String) =
         action { repository.manualPay(id, ManualPayRequest(amount, paymentDate)) }
@@ -121,6 +125,22 @@ class AdminMaintenanceViewModel @Inject constructor(
         action { repository.applyWaiver(id, amount, reason, type, reference, date, note) }
     fun createWriteOff(id: String, type: String, amount: String?, reason: String, remarks: String?) =
         action { repository.createWriteOff(id, WriteOffRequest(type, amount?.ifBlank { null }, reason, remarks?.ifBlank { null })) }
+
+    fun fetchPaymentReceipt(id: String, onReady: (com.example.application.data.remote.dto.MaintenancePaymentDto) -> Unit) = viewModelScope.launch {
+        when (val result = repository.getPaymentReceipt(id)) {
+            is NetworkResult.Success -> onReady(result.data)
+            is NetworkResult.Error -> _state.update { it.copy(error = repository.userMessageFor(result.error)) }
+            NetworkResult.Loading -> Unit
+        }
+    }
+
+    fun fetchWriteOffReceipt(id: String, onReady: (com.example.application.data.remote.dto.WriteOffReceiptDto) -> Unit) = viewModelScope.launch {
+        when (val result = repository.getWriteOffReceipt(id)) {
+            is NetworkResult.Success -> onReady(result.data)
+            is NetworkResult.Error -> _state.update { it.copy(error = repository.userMessageFor(result.error)) }
+            NetworkResult.Loading -> Unit
+        }
+    }
 
     suspend fun createWriteOffDirect(
         id: String,
@@ -216,7 +236,14 @@ class ResidentMaintenanceViewModel @Inject constructor(
             _state.update { it.copy(isLoading = it.data == null, isRefreshing = refresh, error = null, message = null) }
             when (val result = repository.getResidentData(refresh)) {
                 is NetworkResult.Success -> _state.update { it.copy(isLoading = false, isRefreshing = false, data = result.data) }
-                is NetworkResult.Error -> _state.update { it.copy(isLoading = false, isRefreshing = false, error = repository.userMessageFor(result.error)) }
+                is NetworkResult.Error -> _state.update {
+                    val errMessage = repository.userMessageFor(result.error)
+                    val isTimeout = result.error is AppError.Timeout ||
+                            errMessage.contains("time out", ignoreCase = true) ||
+                            errMessage.contains("timed out", ignoreCase = true)
+                    val safeError = if (isTimeout || (it.data != null && refresh)) null else errMessage
+                    it.copy(isLoading = false, isRefreshing = false, error = safeError)
+                }
                 NetworkResult.Loading -> Unit
             }
         }
@@ -249,6 +276,22 @@ class ResidentMaintenanceViewModel @Inject constructor(
 
     fun createDispute(billId: String, subject: String, description: String) =
         action { repository.createDispute(CreateDisputeRequest(billId, subject, description)) }
+
+    fun fetchPaymentReceipt(id: String, onReady: (com.example.application.data.remote.dto.MaintenancePaymentDto) -> Unit) = viewModelScope.launch {
+        when (val result = repository.getPaymentReceipt(id)) {
+            is NetworkResult.Success -> onReady(result.data)
+            is NetworkResult.Error -> _state.update { it.copy(error = repository.userMessageFor(result.error)) }
+            NetworkResult.Loading -> Unit
+        }
+    }
+
+    fun fetchWriteOffReceipt(id: String, onReady: (com.example.application.data.remote.dto.WriteOffReceiptDto) -> Unit) = viewModelScope.launch {
+        when (val result = repository.getWriteOffReceipt(id)) {
+            is NetworkResult.Success -> onReady(result.data)
+            is NetworkResult.Error -> _state.update { it.copy(error = repository.userMessageFor(result.error)) }
+            NetworkResult.Loading -> Unit
+        }
+    }
 
     private fun action(block: suspend () -> NetworkResult<String>) {
         viewModelScope.launch {

@@ -18,6 +18,7 @@ data class MeetingsUiState(
     val meetings: List<MeetingDto> = emptyList(), val selected: MeetingDetailsDto? = null,
     val attendance: List<MeetingAttendanceDto> = emptyList(), val fines: List<MeetingFineDto> = emptyList(),
     val comments: List<MeetingCommentDto> = emptyList(), val query: String = "", val filter: String = "All",
+    val analytics: MeetingAnalyticsDto? = null,
     val error: String? = null, val message: String? = null
 )
 
@@ -36,6 +37,13 @@ class MeetingsViewModel @Inject constructor(private val repository: MeetingsRepo
     }
     fun setQuery(value: String) = _state.update { it.copy(query = value) }
     fun setFilter(value: String) = _state.update { it.copy(filter = value) }
+    fun loadAnalytics() = viewModelScope.launch {
+        when (val result = repository.getAnalytics()) {
+            is NetworkResult.Success -> _state.update { it.copy(analytics = result.data) }
+            is NetworkResult.Error -> _state.update { it.copy(error = repository.userMessageFor(result.error)) }
+            NetworkResult.Loading -> Unit
+        }
+    }
     fun open(id: String) = viewModelScope.launch {
         _state.update { it.copy(submitting = false, error = null) }
         when (val result = repository.getMeeting(id, true)) {

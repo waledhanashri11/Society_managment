@@ -34,6 +34,12 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import com.example.application.viewmodel.ChangePasswordViewModel
 import com.example.application.viewmodel.ForgotPasswordViewModel
 import com.example.application.viewmodel.RegistrationViewModel
@@ -177,6 +183,7 @@ private fun AuthScaffold(title: String, content: @Composable ColumnScope.() -> U
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .imePadding()
             .verticalScroll(rememberScrollState())
             .padding(20.dp),
         verticalArrangement = Arrangement.Center
@@ -210,7 +217,12 @@ private fun PasswordField(
         visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
         trailingIcon = {
-            TextButton(onClick = { visible = !visible }) { Text(if (visible) "Hide" else "Show") }
+            IconButton(onClick = { visible = !visible }) {
+                Icon(
+                    imageVector = if (visible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                    contentDescription = if (visible) "Hide password" else "Show password"
+                )
+            }
         },
         modifier = Modifier.fillMaxWidth()
     )

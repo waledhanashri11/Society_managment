@@ -1,0 +1,1 @@
+const { promisePool } = require('./database/client'); async function run() { const [rows] = await promisePool.query('SELECT p.*, m.id as m_bill_id, u.name as resident_name FROM payments p LEFT JOIN maintenance m ON p.bill_id = m.id LEFT JOIN users u ON p.resident_id = u.id ORDER BY p.id DESC LIMIT 5'); console.log(rows); process.exit(); } run();

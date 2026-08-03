@@ -22,6 +22,7 @@ class MeetingsRepository @Inject constructor(private val api: MeetingsApiService
         cache?.takeIf { !refresh }?.let { return NetworkResult.Success(it) }
         return safe { api.getMeetings() }.also { if (it is NetworkResult.Success) cache = it.data }
     }
+    suspend fun getAnalytics(): NetworkResult<MeetingAnalyticsDto> = safe { api.getAnalytics() }
     suspend fun getMeeting(id: String, refresh: Boolean = false): NetworkResult<MeetingDetailsDto> {
         detailsCache[id]?.takeIf { !refresh }?.let { return NetworkResult.Success(it) }
         return safe { api.getMeeting(id) }.also { if (it is NetworkResult.Success) detailsCache[id] = it.data }

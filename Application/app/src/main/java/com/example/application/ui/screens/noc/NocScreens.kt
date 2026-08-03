@@ -5,6 +5,10 @@ import android.content.Intent
 import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -16,29 +20,38 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Done
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.UploadFile
+import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.DropdownMenuItem
@@ -49,7 +62,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -68,8 +83,9 @@ import com.example.application.viewmodel.PublicNocViewModel
 import com.example.application.viewmodel.ResidentNocViewModel
 import java.io.ByteArrayOutputStream
 
-private val NocTypes = listOf("Address Proof", "Vehicle NOC", "Tenant NOC", "Sale/Transfer NOC", "Other")
-private val NocStatuses = listOf("All", "Submitted", "Under Review", "Additional Information Required", "Approved", "Completed", "Rejected", "Cancelled")
+
+private val NocTypes = listOf("Address Proof", "Vehicle NOC", "Tenant NOC", "Sale/Transfer NOC", "Sell", "Rent", "Renovation", "Passport", "Electricity", "Gift", "Other")
+private val NocStatuses = listOf("All", "Pending", "Submitted", "Under Review", "Additional Information Required", "Approved", "Completed", "Rejected", "Cancelled")
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -108,7 +124,7 @@ fun PublicNocCertificateScreen(
                 singleLine = true
             )
             Button(onClick = { viewModel.load() }, enabled = !state.loading, modifier = Modifier.fillMaxWidth()) {
-                Text(if (state.loading) "Loading..." else "View Certificate")
+                Text(if (state.loading) "Fetching Certificate..." else "View Certificate", fontWeight = FontWeight.Bold)
             }
             state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             state.certificate?.let { certificate ->
@@ -141,6 +157,7 @@ fun ResidentNocScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     var showCreate by remember { mutableStateOf(false) }
     var uploadTarget by remember { mutableStateOf<NocRequestDto?>(null) }
+    var previewTarget by remember { mutableStateOf<NocRequestDto?>(null) }
     val context = LocalContext.current
 
     LaunchedEffect(state.certificateUri) {
@@ -170,6 +187,7 @@ fun ResidentNocScreen(
         PullToRefreshBox(
             isRefreshing = state.isRefreshing,
             onRefresh = { viewModel.load(refresh = true) },
+            indicator = {},
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
@@ -187,7 +205,8 @@ fun ResidentNocScreen(
                     modifier = Modifier.fillMaxSize(),
                     onCancel = { viewModel.cancel(it) },
                     onDownload = { id, number -> viewModel.downloadCertificate(id, number) },
-                    onUploadInfo = { uploadTarget = it }
+                    onUploadInfo = { uploadTarget = it },
+                    onPreviewCertificate = { previewTarget = it }
                 )
             }
         }
@@ -210,6 +229,15 @@ fun ResidentNocScreen(
             onSubmit = { remarks, docs ->
                 viewModel.uploadInfo(request.id.orEmpty(), remarks, docs)
                 uploadTarget = null
+            }
+        )
+    }
+    previewTarget?.let { request ->
+        NocCertificateDocumentPreviewDialog(
+            item = request,
+            onDismiss = { previewTarget = null },
+            onDownload = {
+                viewModel.downloadCertificate(request.id.orEmpty(), request.nocNumber)
             }
         )
     }
@@ -240,6 +268,7 @@ fun AdminNocScreen(
         PullToRefreshBox(
             isRefreshing = state.isRefreshing,
             onRefresh = { viewModel.load(refresh = true) },
+            indicator = {},
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
@@ -250,7 +279,7 @@ fun AdminNocScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 item {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
                         NocStatuses.forEach { status ->
                             FilterChip(
                                 selected = state.filter == status,
@@ -322,7 +351,8 @@ private fun NocList(
     modifier: Modifier = Modifier,
     onCancel: (String) -> Unit,
     onDownload: (String, String?) -> Unit,
-    onUploadInfo: (NocRequestDto) -> Unit
+    onUploadInfo: (NocRequestDto) -> Unit,
+    onPreviewCertificate: (NocRequestDto) -> Unit
 ) {
     LazyColumn(
         modifier = modifier,
@@ -335,7 +365,8 @@ private fun NocList(
                 admin = false,
                 onCancel = { onCancel(item.id.orEmpty()) },
                 onDownload = { onDownload(item.id.orEmpty(), item.nocNumber) },
-                onUploadInfo = { onUploadInfo(item) }
+                onUploadInfo = { onUploadInfo(item) },
+                onPreviewCertificate = { onPreviewCertificate(item) }
             )
         }
     }
@@ -353,7 +384,8 @@ private fun NocCard(
     onComplete: (() -> Unit)? = null,
     onShare: (() -> Unit)? = null,
     onDownload: (() -> Unit)? = null,
-    onUploadInfo: (() -> Unit)? = null
+    onUploadInfo: (() -> Unit)? = null,
+    onPreviewCertificate: (() -> Unit)? = null
 ) {
     val status = item.status ?: "Pending"
     Card(
@@ -387,10 +419,14 @@ private fun NocCard(
                     Text("Upload Requested Info", modifier = Modifier.padding(start = 8.dp))
                 }
             }
-            if (!admin && status == "Approved") {
-                Button(onClick = { onDownload?.invoke() }, modifier = Modifier.fillMaxWidth()) {
+            if (!admin && (status == "Approved" || status == "Completed")) {
+                Button(
+                    onClick = { onPreviewCertificate?.invoke() ?: onDownload?.invoke() },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0B5FFF))
+                ) {
                     Icon(Icons.Filled.Description, contentDescription = null)
-                    Text("Download NOC Certificate", modifier = Modifier.padding(start = 8.dp))
+                    Text("View NOC Certificate", fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 8.dp))
                 }
             }
             if (admin && status !in listOf("Approved", "Completed", "Rejected", "Cancelled")) {
@@ -446,6 +482,13 @@ private fun CreateNocDialog(
             if (uris.size > 3) error("Please select up to 3 documents.")
             val resolver = context.contentResolver
             val encoded = uris.map { uri ->
+                val size = resolver.query(uri, arrayOf(android.provider.OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val idx = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE)
+                        if (idx != -1) cursor.getLong(idx) else 0L
+                    } else 0L
+                } ?: 0L
+                if (size > 5 * 1024 * 1024) error("Each document must be smaller than 5 MB.")
                 val bytes = resolver.openInputStream(uri)?.use { input ->
                     val output = ByteArrayOutputStream()
                     input.copyTo(output)
@@ -473,7 +516,12 @@ private fun CreateNocDialog(
                         onValueChange = {},
                         readOnly = true,
                         label = { Text("Select NOC type") },
-                        modifier = Modifier.fillMaxWidth().clickable { menuExpanded = !menuExpanded }
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .clickable { menuExpanded = !menuExpanded }
                     )
                     DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
                         NocTypes.forEach { type ->
@@ -491,7 +539,7 @@ private fun CreateNocDialog(
                 )
                 OutlinedButton(onClick = { picker.launch("*/*") }, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Filled.UploadFile, contentDescription = null)
-                    Text(if (documentNames.isEmpty()) "Required documents" else "${documentNames.size} document(s) selected", modifier = Modifier.padding(start = 8.dp))
+                    Text(if (documentNames.isEmpty()) "Attach documents (optional)" else "${documentNames.size} document(s) selected", modifier = Modifier.padding(start = 8.dp))
                 }
                 if (documentNames.isNotEmpty()) Text(documentNames.joinToString("\n"), style = MaterialTheme.typography.bodySmall)
                 localError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
@@ -500,7 +548,7 @@ private fun CreateNocDialog(
         confirmButton = {
             Button(
                 onClick = { onSubmit(selectedType, purpose, remarks, documentData) },
-                enabled = !submitting && purpose.isNotBlank() && documentData.isNotEmpty()
+                enabled = !submitting && purpose.isNotBlank()
             ) { Text(if (submitting) "Submitting..." else "Submit Request") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
@@ -614,4 +662,191 @@ private fun StatusChip(status: String) {
 private fun shortDate(value: String?): String {
     if (value.isNullOrBlank()) return "-"
     return value.take(10)
+}
+
+@Composable
+fun NocCertificateDocumentPreviewDialog(
+    item: NocRequestDto,
+    onDismiss: () -> Unit,
+    onDownload: () -> Unit,
+    onShare: (() -> Unit)? = null
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {},
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Visual Document Card (Official Certificate Paper)
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    border = BorderStroke(1.dp, Color(0xFFCBD5E1)),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        // Header Emblem Banner
+                        Surface(
+                            shape = CircleShape,
+                            color = Color(0xFF0B5FFF).copy(alpha = 0.12f),
+                            modifier = Modifier.size(54.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(Icons.Filled.VerifiedUser, contentDescription = null, tint = Color(0xFF0B5FFF), modifier = Modifier.size(32.dp))
+                            }
+                        }
+
+                        Text(
+                            text = "SOCIETY MANAGEMENT SYSTEM",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = Color(0xFF0F172A)
+                        )
+                        Text(
+                            text = "OFFICIAL NO OBJECTION CERTIFICATE",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF0B5FFF)
+                        )
+
+                        HorizontalDivider(color = Color(0xFFE2E8F0))
+
+                        // Ref & Issue Date
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column {
+                                Text("CERTIFICATE NO.", style = MaterialTheme.typography.labelSmall, color = Color(0xFF64748B), fontWeight = FontWeight.Bold)
+                                Text(item.nocNumber ?: "NOC-2026-REF", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A))
+                            }
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text("ISSUE DATE", style = MaterialTheme.typography.labelSmall, color = Color(0xFF64748B), fontWeight = FontWeight.Bold)
+                                Text(shortDate(item.createdAt), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A))
+                            }
+                        }
+
+                        // Certificate Body Paper Container
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = Color(0xFFF8FAFC),
+                            border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(
+                                    text = "TO WHOM IT MAY CONCERN",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = Color(0xFF334155)
+                                )
+                                Text(
+                                    text = "This is to certify that ${item.residentName ?: "the resident"} residing at Wing ${item.wing ?: "-"}, Flat No. ${item.flatNo ?: "-"} has clear record with no pending dues or charges against their flat.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color(0xFF475467)
+                                )
+                                Text(
+                                    text = "The Management Committee has NO OBJECTION for the requested purpose: ${item.purpose ?: item.nocType ?: "General NOC"}.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color(0xFF0F172A)
+                                )
+                            }
+                        }
+
+                        // Details Table
+                        Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            NocDocDetailRow("NOC Category", item.nocType ?: "Standard NOC")
+                            NocDocDetailRow("Applicant", item.residentName ?: "Resident")
+                            NocDocDetailRow("Flat / Unit", "Wing ${item.wing ?: "-"} - ${item.flatNo ?: "-"}")
+                            NocDocDetailRow("Status", "VERIFIED & APPROVED")
+                            item.adminComments?.takeIf { it.isNotBlank() }?.let {
+                                NocDocDetailRow("Admin Note", it)
+                            }
+                        }
+
+                        HorizontalDivider(color = Color(0xFFE2E8F0))
+
+                        // Signature Stamp Section
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text("Digitally Verified", style = MaterialTheme.typography.labelSmall, color = Color(0xFF16A34A), fontWeight = FontWeight.Bold)
+                                Text("Authorized Signatory", style = MaterialTheme.typography.labelSmall, color = Color(0xFF64748B))
+                            }
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color(0xFFDCFCE7),
+                                border = BorderStroke(1.dp, Color(0xFF86EFAC))
+                            ) {
+                                Text(
+                                    text = "SEALED & ISSUED",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF15803D),
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Download & Share buttons right below document
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Button(
+                        onClick = onDownload,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0B5FFF))
+                    ) {
+                        Icon(Icons.Filled.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Download PDF", fontWeight = FontWeight.Bold)
+                    }
+                    onShare?.let { shareFn ->
+                        OutlinedButton(
+                            onClick = shareFn,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Share Link", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
+                TextButton(onClick = onDismiss) {
+                    Text("Close Preview", color = Color(0xFF64748B))
+                }
+            }
+        }
+    )
+}
+
+@Composable
+private fun NocDocDetailRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(label, style = MaterialTheme.typography.bodySmall, color = Color(0xFF64748B))
+        Text(value, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A))
+    }
 }

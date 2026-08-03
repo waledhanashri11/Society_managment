@@ -9,6 +9,8 @@ import retrofit2.http.GET
 import retrofit2.http.PUT
 
 interface ResidentApiService {
+    @GET("api/resident/members")
+    suspend fun getMembers(): Response<List<com.example.application.data.remote.dto.MembersMaintenanceReportDto>>
     @GET("api/resident/dashboard")
     suspend fun getDashboard(): Response<ResidentDashboardResponse>
 

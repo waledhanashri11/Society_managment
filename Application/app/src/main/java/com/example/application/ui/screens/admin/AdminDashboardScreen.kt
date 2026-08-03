@@ -77,6 +77,7 @@ import com.example.application.R
 import com.example.application.ui.components.LanguageSelector
 import com.example.application.ui.components.NotificationDropdown
 import com.example.application.ui.components.localizedLabel
+import com.example.application.ui.theme.SocietyBlue40
 import com.example.application.util.DashboardFormatters
 import com.example.application.viewmodel.AdminDashboardViewModel
 import com.example.application.viewmodel.SessionViewModel
@@ -84,8 +85,7 @@ import kotlinx.coroutines.launch
 
 private val NavyTop = Color(0xFF0B6BFF)
 private val NavyBottom = Color(0xFF083B92)
-private val AdminBlue = Color(0xFF0B5FFF)
-private val TextNavy = Color(0xFF061C43)
+private val AdminBlue = SocietyBlue40
 
 @Composable
 fun AdminDashboardScreen(
@@ -124,30 +124,35 @@ fun AdminDashboardScreen(
                     }
                 )
             },
-            containerColor = Color(0xFFF7F9FD)
+            containerColor = MaterialTheme.colorScheme.background
         ) { padding ->
             PullToRefreshBox(
                 isRefreshing = state.isRefreshing,
                 onRefresh = { viewModel.load(refresh = true) },
+                indicator = {},
                 modifier = Modifier.fillMaxSize().padding(padding)
             ) {
-                LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 18.dp)) {
-                    item {
-                        AdminHeader(
-                            adminName = data?.adminName ?: "Admin",
-                            onMenu = { scope.launch { drawerState.open() } },
-                            onNotifications = { onQuickAction("Notifications") },
-                            onLogout = { sessionViewModel.logout(onLogoutComplete) }
-                        )
-                    }
-                    item {
-                        AdminDashboardBody(
-                            data = data,
-                            isLoading = state.isLoading,
-                            errorMessage = state.errorMessage,
-                            onRetry = { viewModel.load(refresh = true) },
-                            onQuickAction = onQuickAction
-                        )
+                if (state.isLoading && data == null) {
+                    com.example.application.ui.components.DashboardSkeleton()
+                } else {
+                    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 18.dp)) {
+                        item {
+                            AdminHeader(
+                                adminName = data?.adminName ?: "Admin",
+                                onMenu = { scope.launch { drawerState.open() } },
+                                onNotifications = { onQuickAction("Notifications") },
+                                onLogout = { sessionViewModel.logout(onLogoutComplete) }
+                            )
+                        }
+                        item {
+                            AdminDashboardBody(
+                                data = data,
+                                isLoading = state.isLoading,
+                                errorMessage = state.errorMessage,
+                                onRetry = { viewModel.load(refresh = true) },
+                                onQuickAction = onQuickAction
+                            )
+                        }
                     }
                 }
             }
@@ -165,10 +170,7 @@ private fun AdminHeader(adminName: String, onMenu: () -> Unit, onNotifications: 
             .statusBarsPadding()
             .padding(horizontal = 22.dp, vertical = 18.dp)
     ) {
-        IconButton(onClick = onMenu, modifier = Modifier.align(Alignment.TopStart)) {
-            Icon(Icons.Filled.Menu, contentDescription = stringResource(R.string.open_admin_menu), tint = Color.White, modifier = Modifier.size(34.dp))
-        }
-        Column(modifier = Modifier.align(Alignment.TopCenter).padding(top = 6.dp)) {
+        Column(modifier = Modifier.align(Alignment.TopStart).padding(top = 6.dp)) {
             Text(stringResource(R.string.society_management), color = Color.White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             Text(stringResource(R.string.system), color = Color.White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         }
@@ -211,22 +213,28 @@ private fun AdminDashboardBody(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(topStart = 34.dp, topEnd = 34.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 24.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
             SectionHeader(stringResource(R.string.overview), stringResource(R.string.view_all)) { onQuickAction("Reports") }
             OverviewGrid(data, isLoading)
             TodayWorkCard(data = data, isLoading = isLoading, onQuickAction = onQuickAction)
-            Text(stringResource(R.string.quick_access), color = TextNavy, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text(stringResource(R.string.quick_access), color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 maxItemsInEachRow = 3
             ) {
-                adminQuickActions().forEach { action -> AdminQuickAccessTile(action) { onQuickAction(action.routeName) } }
+                adminQuickActions().forEach { action ->
+                    AdminQuickAccessTile(
+                        action = action,
+                        modifier = Modifier.weight(1f),
+                        onClick = { onQuickAction(action.routeName) }
+                    )
+                }
             }
             RecentActivityCard(data = data, isLoading = isLoading, onViewAll = { onQuickAction("Notifications") })
             errorMessage?.let { ErrorInline(message = it, onRetry = onRetry) }
@@ -240,10 +248,10 @@ private fun AdminDashboardBody(
 @Composable
 private fun SectionHeader(title: String, action: String, onAction: () -> Unit) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-        Text(title, color = TextNavy, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Text(title, color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         Row(modifier = Modifier.clickable(onClick = onAction), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(action, color = Color(0xFF006BFF), fontWeight = FontWeight.Bold)
-            Icon(Icons.Filled.ArrowForward, contentDescription = action, tint = Color(0xFF006BFF), modifier = Modifier.size(20.dp))
+            Text(action, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+            Icon(Icons.Filled.ArrowForward, contentDescription = action, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
         }
     }
 }
@@ -251,10 +259,10 @@ private fun SectionHeader(title: String, action: String, onAction: () -> Unit) {
 @Composable
 private fun OverviewGrid(data: AdminDashboardData?, isLoading: Boolean) {
     val cards = listOf(
-        OverviewItem("Total Flats", data?.totalFlats?.toString().orEmpty(), Icons.Filled.Apartment, Color(0xFF2F80ED), Color(0xFFEAF3FF)),
-        OverviewItem("Residents", data?.totalResidents?.toString().orEmpty(), Icons.Filled.Groups, Color(0xFF20B86B), Color(0xFFEAF8EF)),
-        OverviewItem("Total Collections", data?.collected?.let(DashboardFormatters::money).orEmpty(), Icons.Filled.Assignment, Color(0xFF9C3ED7), Color(0xFFF6ECFF)),
-        OverviewItem("Pending Dues", data?.pendingBillCount?.toString().orEmpty(), Icons.Filled.Notifications, Color(0xFFFF8A00), Color(0xFFFFF1E6))
+        OverviewItem("Total Flats", data?.totalFlats?.toString().orEmpty(), Icons.Filled.Apartment, SocietyBlue40, SocietyBlue40.copy(alpha = 0.12f)),
+        OverviewItem("Residents", data?.totalResidents?.toString().orEmpty(), Icons.Filled.Groups, Color(0xFF20B86B), Color(0xFF20B86B).copy(alpha = 0.12f)),
+        OverviewItem("Total Collections", data?.collected?.let(DashboardFormatters::money).orEmpty(), Icons.Filled.Assignment, Color(0xFF9C3ED7), Color(0xFF9C3ED7).copy(alpha = 0.12f)),
+        OverviewItem("Pending Dues", data?.pendingBillCount?.toString().orEmpty(), Icons.Filled.Notifications, Color(0xFFFF8A00), Color(0xFFFF8A00).copy(alpha = 0.12f))
     )
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         cards.forEach { OverviewCard(it, isLoading = isLoading && data == null, modifier = Modifier.weight(1f)) }
@@ -263,12 +271,16 @@ private fun OverviewGrid(data: AdminDashboardData?, isLoading: Boolean) {
 
 @Composable
 private fun OverviewCard(item: OverviewItem, isLoading: Boolean, modifier: Modifier = Modifier) {
-    Card(modifier = modifier.height(118.dp), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = item.container)) {
+    Card(modifier = modifier.height(118.dp), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = item.container)) {
         Column(modifier = Modifier.fillMaxSize().padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
             Icon(item.icon, contentDescription = item.label, tint = item.tint, modifier = Modifier.size(28.dp))
             Spacer(Modifier.height(8.dp))
-            Text(if (isLoading) "..." else item.value.ifBlank { "0" }, color = TextNavy, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
-            Text(item.label, color = TextNavy, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
+            if (isLoading) {
+                com.example.application.ui.components.SkeletonText(widthFraction = 0.6f, height = 18.dp)
+            } else {
+                Text(item.value.ifBlank { "0" }, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+            }
+            Text(item.label, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
         }
     }
 }
@@ -277,17 +289,17 @@ private fun OverviewCard(item: OverviewItem, isLoading: Boolean, modifier: Modif
 private fun TodayWorkCard(data: AdminDashboardData?, isLoading: Boolean, onQuickAction: (String) -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFFF7FAFF)),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(
             modifier = Modifier
-                .border(1.dp, Color(0xFFE0E6F0), RoundedCornerShape(20.dp))
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp))
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text("Today's Work", color = TextNavy, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text("Today's Work", color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             if (isLoading && data == null) {
                 repeat(3) { ActivitySkeletonRow() }
             } else {
@@ -296,7 +308,7 @@ private fun TodayWorkCard(data: AdminDashboardData?, isLoading: Boolean, onQuick
                     value = "${data?.recentPayments?.count { !(it.paymentStatus).equals("Paid", true) && !(it.paymentStatus).equals("Approved", true) } ?: 0}",
                     note = "resident proofs",
                     icon = Icons.Filled.Payments,
-                    tint = Color(0xFF1D72F3),
+                    tint = SocietyBlue40,
                     onClick = { onQuickAction("Dues & Payments") }
                 )
                 DailyWorkRow(
@@ -309,8 +321,8 @@ private fun TodayWorkCard(data: AdminDashboardData?, isLoading: Boolean, onQuick
                 )
                 DailyWorkRow(
                     title = "Resolve complaints",
-                    value = "${data?.openComplaints ?: 0}",
-                    note = "${data?.inProgressComplaints ?: 0} in progress",
+                    value = "${data?.recentComplaints?.count { !(it.status).equals("Resolved", true) } ?: 0}",
+                    note = "open complaints",
                     icon = Icons.Filled.WarningAmber,
                     tint = Color(0xFFFF5A4F),
                     onClick = { onQuickAction("Complaints") }
@@ -334,7 +346,7 @@ private fun DailyWorkRow(
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
             .clickable(onClick = onClick)
-            .background(Color.White)
+            .background(MaterialTheme.colorScheme.surface)
             .padding(12.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -345,28 +357,37 @@ private fun DailyWorkRow(
             }
         }
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(title, color = TextNavy, fontWeight = FontWeight.Bold)
+            Text(title, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
             Text(note, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
         }
-        Text(value, color = TextNavy, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Text(value, color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
     }
 }
 
 @Composable
-private fun AdminQuickAccessTile(action: AdminAction, onClick: () -> Unit) {
-    Card(modifier = Modifier.height(104.dp).fillMaxWidth(0.31f).clickable(onClick = onClick), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Color.White), elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)) {
-        Column(modifier = Modifier.fillMaxSize().border(1.dp, Color(0xFFE0E6F0), RoundedCornerShape(16.dp)).padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+private fun AdminQuickAccessTile(action: AdminAction, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Card(
+        modifier = modifier.height(104.dp).clickable(onClick = onClick),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize().border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp)).padding(10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
             Icon(action.icon, contentDescription = action.label, tint = action.tint, modifier = Modifier.size(31.dp))
             Spacer(Modifier.height(10.dp))
-            Text(action.label, color = TextNavy, textAlign = TextAlign.Center, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+            Text(action.label, color = MaterialTheme.colorScheme.onSurface, textAlign = TextAlign.Center, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
         }
     }
 }
 
 @Composable
 private fun RecentActivityCard(data: AdminDashboardData?, isLoading: Boolean, onViewAll: () -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = Color.White), elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)) {
-        Column(modifier = Modifier.border(1.dp, Color(0xFFE0E6F0), RoundedCornerShape(20.dp)).padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)) {
+        Column(modifier = Modifier.border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp)).padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             SectionHeader("Recent Activity", "View All", onViewAll)
             if (isLoading && data == null) repeat(4) { ActivitySkeletonRow() } else {
                 val activities = buildRecentActivities(data)
@@ -381,13 +402,13 @@ private fun RecentActivityCard(data: AdminDashboardData?, isLoading: Boolean, on
 private fun ActivityRow(item: ActivityItem) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
         Surface(modifier = Modifier.size(36.dp), shape = CircleShape, color = item.container) { Box(contentAlignment = Alignment.Center) { Icon(item.icon, contentDescription = null, tint = item.tint, modifier = Modifier.size(20.dp)) } }
-        Text(item.title, modifier = Modifier.weight(1f), color = TextNavy, style = MaterialTheme.typography.bodyMedium)
-        Text(item.time, color = Color(0xFF8B95A7), style = MaterialTheme.typography.bodySmall)
+        Text(item.title, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.bodyMedium)
+        Text(item.time, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
     }
 }
 
 @Composable
-private fun ActivitySkeletonRow() { Box(modifier = Modifier.fillMaxWidth().height(38.dp).clip(RoundedCornerShape(14.dp)).background(Color(0xFFF1F4F8))) }
+private fun ActivitySkeletonRow() { Box(modifier = Modifier.fillMaxWidth().height(38.dp).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surfaceVariant)) }
 
 @Composable
 private fun ErrorInline(message: String, onRetry: () -> Unit) {
@@ -402,20 +423,20 @@ private fun ErrorInline(message: String, onRetry: () -> Unit) {
 
 @Composable
 private fun SoftInfoCard(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Card(colors = CardDefaults.cardColors(containerColor = Color(0xFFF6F8FC))) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Text(title, fontWeight = FontWeight.Bold, color = TextNavy); content() }
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Text(title, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface); content() }
     }
 }
 
 @Composable
 private fun AdminBottomBar(selected: String, onSelected: (String) -> Unit) {
-    NavigationBar(containerColor = Color.White) {
-        listOf("Dashboard", "Residents", "Payments", "More").forEach { item ->
+    NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+        listOf("Dashboard", "Residents", "Payments", "Reports").forEach { item ->
             NavigationBarItem(
                 selected = selected == item,
                 onClick = { onSelected(item) },
-                icon = { Icon(imageVector = when (item) { "Dashboard" -> Icons.Filled.Dashboard; "Residents" -> Icons.Filled.Groups; "Payments" -> Icons.Filled.Payments; else -> Icons.Filled.MoreVert }, contentDescription = item, tint = if (selected == item) Color(0xFF006BFF) else Color(0xFF555B66)) },
-                label = { Text(localizedLabel(item), color = if (selected == item) Color(0xFF006BFF) else TextNavy) }
+                icon = { Icon(imageVector = when (item) { "Dashboard" -> Icons.Filled.Dashboard; "Residents" -> Icons.Filled.Groups; "Payments" -> Icons.Filled.Payments; else -> Icons.Filled.TrendingUp }, contentDescription = item, tint = if (selected == item) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) },
+                label = { Text(localizedLabel(item), color = if (selected == item) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
             )
         }
     }
@@ -425,8 +446,8 @@ private fun AdminBottomBar(selected: String, onSelected: (String) -> Unit) {
 private fun AdminDrawer(adminName: String, onAction: (String) -> Unit) {
     ModalDrawerSheet {
         Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Surface(modifier = Modifier.size(60.dp), shape = CircleShape, color = Color(0xFFEAF3FF)) { Box(contentAlignment = Alignment.Center) { Icon(Icons.Filled.Security, contentDescription = stringResource(R.string.admin), tint = AdminBlue) } }
-            Text(adminName, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+            Surface(modifier = Modifier.size(60.dp), shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) { Box(contentAlignment = Alignment.Center) { Icon(Icons.Filled.Security, contentDescription = stringResource(R.string.admin), tint = MaterialTheme.colorScheme.onPrimaryContainer) } }
+            Text(adminName, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
             Text(stringResource(R.string.super_admin), color = MaterialTheme.colorScheme.onSurfaceVariant)
             LanguageSelector(showTitle = false, showHint = false)
         }
@@ -442,7 +463,6 @@ private fun AdminDrawer(adminName: String, onAction: (String) -> Unit) {
             AdminAction("Reports", "Reports", Icons.Filled.TrendingUp, Color(0xFF9C3ED7)),
             AdminAction("Settings", "Settings", Icons.Filled.Settings, Color(0xFF0B7F77)),
             AdminAction("Write-offs", "Write-off History", Icons.Filled.ReceiptLong, Color(0xFFD14343)),
-            AdminAction("AGM Report", "AGM Report", Icons.Filled.TrendingUp, Color(0xFF5B5BD6)),
             AdminAction("Flat Transfers", "Flat Transfers", Icons.Filled.Apartment, Color(0xFF20B86B)),
             AdminAction("NOC", "NOC Requests", Icons.Filled.Description, Color(0xFF16B6A4)),
             AdminAction("Logout", "Logout", Icons.Filled.Logout, Color(0xFFE53935))
@@ -453,31 +473,29 @@ private fun AdminDrawer(adminName: String, onAction: (String) -> Unit) {
 }
 
 private fun adminQuickActions(): List<AdminAction> = listOf(
-    AdminAction("Residents", "Residents", Icons.Filled.Groups, Color(0xFF2F80ED)),
+    AdminAction("Residents", "Residents", Icons.Filled.Groups, SocietyBlue40),
     AdminAction("Flats", "Flats", Icons.Filled.Apartment, Color(0xFF20B86B)),
-    AdminAction("Add Resident", "Add Resident", Icons.Filled.PersonAdd, Color(0xFFFF8A00)),
     AdminAction("Maintenance", "Maintenance", Icons.Filled.ReceiptLong, Color(0xFF9C3ED7)),
     AdminAction("Payment Reviews", "Payment Reviews", Icons.Filled.Assignment, Color(0xFFFF5A4F)),
-    AdminAction("Notices", "Notices", Icons.Filled.Campaign, Color(0xFF2F80ED)),
+    AdminAction("Notices", "Notices", Icons.Filled.Campaign, SocietyBlue40),
     AdminAction("Rules", "Society Rules", Icons.Filled.Assignment, Color(0xFF0B7F77)),
     AdminAction("Meetings", "Meeting Management", Icons.Filled.Event, Color(0xFF5B5BD6)),
     AdminAction("Complaints", "Complaints", Icons.Filled.WarningAmber, Color(0xFFFFA000)),
     AdminAction("Reports", "Reports", Icons.Filled.TrendingUp, Color(0xFF9C3ED7)),
     AdminAction("Settings", "Settings", Icons.Filled.Settings, Color(0xFF0B7F77)),
     AdminAction("Write-offs", "Write-off History", Icons.Filled.ReceiptLong, Color(0xFFD14343)),
-    AdminAction("AGM Report", "AGM Report", Icons.Filled.TrendingUp, Color(0xFF5B5BD6)),
     AdminAction("Flat Transfers", "Flat Transfers", Icons.Filled.Apartment, Color(0xFF20B86B)),
     AdminAction("NOC", "NOC Requests", Icons.Filled.Description, Color(0xFF16B6A4)),
-    AdminAction("Staff", "Staff", Icons.Filled.Security, Color(0xFF2F80ED))
+    AdminAction("Staff", "Staff", Icons.Filled.Security, SocietyBlue40)
 )
 
 private fun buildRecentActivities(data: AdminDashboardData?): List<ActivityItem> {
     if (data == null) return emptyList()
     val items = mutableListOf<ActivityItem>()
-    data.recentPayments.firstOrNull()?.let { items += ActivityItem("Maintenance payment received from Flat ${it.flatNo ?: "-"}", DashboardFormatters.date(it.createdAt ?: it.paidAt), Icons.Filled.Payments, Color(0xFF21B66F), Color(0xFFE6F8ED)) }
-    if (data.totalResidents > 0) items += ActivityItem("Residents directory updated", "Today", Icons.Filled.Groups, Color(0xFF2F80ED), Color(0xFFEAF3FF))
-    data.latestNotices.firstOrNull()?.let { items += ActivityItem("New notice published", DashboardFormatters.date(it.createdAt), Icons.Filled.Campaign, Color(0xFFFF8A00), Color(0xFFFFF1E6)) }
-    data.recentComplaints.firstOrNull()?.let { items += ActivityItem(it.title ?: "New complaint submitted", DashboardFormatters.statusLabel(it.status), Icons.Filled.WarningAmber, Color(0xFFFF5A4F), Color(0xFFFFECEA)) }
+    data.recentPayments.firstOrNull()?.let { items += ActivityItem("Maintenance payment received from Flat ${it.flatNo ?: "-"}", DashboardFormatters.date(it.createdAt ?: it.paidAt), Icons.Filled.Payments, Color(0xFF21B66F), Color(0xFF21B66F).copy(alpha = 0.12f)) }
+    if (data.totalResidents > 0) items += ActivityItem("Residents directory updated", "Today", Icons.Filled.Groups, SocietyBlue40, SocietyBlue40.copy(alpha = 0.12f))
+    data.latestNotices.firstOrNull()?.let { items += ActivityItem("New notice published", DashboardFormatters.date(it.createdAt), Icons.Filled.Campaign, Color(0xFFFF8A00), Color(0xFFFF8A00).copy(alpha = 0.12f)) }
+    data.recentComplaints.firstOrNull()?.let { items += ActivityItem(it.title ?: "New complaint submitted", DashboardFormatters.statusLabel(it.status), Icons.Filled.WarningAmber, Color(0xFFFF5A4F), Color(0xFFFF5A4F).copy(alpha = 0.12f)) }
     return items.take(4)
 }
 

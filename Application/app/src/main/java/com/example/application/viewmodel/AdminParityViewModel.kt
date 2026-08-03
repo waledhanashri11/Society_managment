@@ -26,7 +26,8 @@ data class AdminParityState(
     val message: String? = null,
     val settings: JsonObject = JsonObject(),
     val writeOffs: List<JsonObject> = emptyList(),
-    val agmRows: List<JsonObject> = emptyList(),
+    val writeOffDashboard: JsonObject = JsonObject(),
+    val writeOffReport: List<JsonObject> = emptyList(),
     val flats: List<FlatDto> = emptyList(),
     val residents: List<UserSummaryDto> = emptyList(),
     val residentCategories: List<JsonObject> = emptyList(),
@@ -86,7 +87,10 @@ class AdminParityViewModel @Inject constructor(
     fun loadWriteOffs() = viewModelScope.launch {
         _state.update { it.copy(loading = true, error = null, message = null) }
         runCatching {
-            _state.update { it.copy(loading = false, writeOffs = advancedApi.getWriteOffHistory().body().asRows()) }
+            val history = advancedApi.getWriteOffHistory().body().asRows()
+            val dashboard = advancedApi.getWriteOffDashboard().body().dataObject()
+            val report = advancedApi.getWriteOffReport().body().asRows()
+            _state.update { it.copy(loading = false, writeOffs = history, writeOffDashboard = dashboard, writeOffReport = report) }
         }.onFailure { error -> _state.update { it.copy(loading = false, error = error.cleanMessage("Unable to load write-off history.")) } }
     }
 
@@ -100,12 +104,22 @@ class AdminParityViewModel @Inject constructor(
         }.onFailure { error -> _state.update { it.copy(submitting = false, error = error.cleanMessage("Unable to reverse write-off.")) } }
     }
 
-    fun loadAgmReport() = viewModelScope.launch {
-        _state.update { it.copy(loading = true, error = null, message = null) }
+    fun editWriteOff(id: String, amount: String, reason: String) = viewModelScope.launch {
+        val parsed = amount.toBigDecimalOrNull()
+        when {
+            id.isBlank() -> return@launch showError("Write-off ID is missing.")
+            parsed == null || parsed.signum() <= 0 -> return@launch showError("Enter a valid positive amount.")
+            reason.isBlank() -> return@launch showError("A reason is required.")
+        }
+        _state.update { it.copy(submitting = true, error = null, message = null) }
         runCatching {
-            _state.update { it.copy(loading = false, agmRows = advancedApi.getAgmReport().body().asRows()) }
-        }.onFailure { error -> _state.update { it.copy(loading = false, error = error.cleanMessage("Unable to load AGM report.")) } }
+            val response = advancedApi.editWriteOff(id, mapOf("amount" to parsed!!.toPlainString(), "reason" to reason.trim()))
+            if (!response.isSuccessful) error(response.errorBody()?.string() ?: "Unable to update write-off (${response.code()})")
+            _state.update { it.copy(submitting = false, message = "Write-off updated successfully") }
+            loadWriteOffs()
+        }.onFailure { error -> _state.update { it.copy(submitting = false, error = error.cleanMessage("Unable to update write-off.")) } }
     }
+
 
     fun loadFlatTransferData(flatId: String? = null) = viewModelScope.launch {
         _state.update { it.copy(loading = true, error = null, message = null) }
@@ -156,6 +170,10 @@ class AdminParityViewModel @Inject constructor(
 }
 
 private fun JsonElement?.asObject(): JsonObject = this?.asObjectOrNull() ?: JsonObject()
+private fun JsonElement?.dataObject(): JsonObject {
+    val root = asObjectOrNull() ?: return JsonObject()
+    return root.get("data")?.asObjectOrNull() ?: root
+}
 private fun JsonElement?.asObjectOrNull(): JsonObject? = this?.takeIf { it.isJsonObject }?.asJsonObject
 
 private fun JsonElement?.asRows(): List<JsonObject> {

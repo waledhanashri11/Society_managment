@@ -5,6 +5,9 @@ sealed class AppRoute(val route: String) {
     data object Login : AppRoute("login")
     data object Register : AppRoute("register")
     data object ForgotPassword : AppRoute("forgot_password")
+    data object LegalInformation : AppRoute("legal/{section}") {
+        fun createRoute(section: String) = "legal/$section"
+    }
     data object ResetPassword : AppRoute("reset_password?token={token}") {
         fun createRoute(token: String = "") = "reset_password?token=$token"
     }

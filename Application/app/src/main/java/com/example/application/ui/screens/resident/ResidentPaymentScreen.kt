@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
@@ -71,14 +72,20 @@ import com.example.application.BuildConfig
 import com.example.application.data.remote.dto.MaintenanceBillDto
 import com.example.application.data.remote.dto.PaymentSettingsDto
 import com.example.application.util.DashboardFormatters
+import com.example.application.ui.components.RetryState
+import com.example.application.ui.theme.SocietyBlue40
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import com.example.application.viewmodel.ResidentMaintenanceViewModel
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.io.File
 
+import androidx.compose.foundation.layout.imePadding
+
 private val Ink = Color(0xFF071338)
 private val Muted = Color(0xFF59647A)
-private val PaymentBlue = Color(0xFF0B64E8)
+private val PaymentBlue = SocietyBlue40
 private val SuccessGreen = Color(0xFF0E9F5A)
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -120,6 +127,7 @@ fun ResidentPaymentScreen(
     }
 
     Scaffold(
+        modifier = Modifier.fillMaxSize().imePadding(),
         topBar = {
             TopAppBar(
                 title = { Text("Pay Maintenance", fontWeight = FontWeight.Bold) },
@@ -139,13 +147,24 @@ fun ResidentPaymentScreen(
             )
         }
     ) { padding ->
+        if (state.isLoading && bill == null) {
+            Column(modifier = Modifier.padding(padding).padding(16.dp)) {
+                com.example.application.ui.components.SkeletonSummaryCard(modifier = Modifier.fillMaxWidth())
+                Spacer(modifier = Modifier.height(16.dp))
+                repeat(4) {
+                    com.example.application.ui.components.SkeletonRow(height = 64.dp, modifier = Modifier.fillMaxWidth())
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+            }
+            return@Scaffold
+        }
         if (bill == null) {
-            BillMissingState(
+            RetryState(
+                message = "The selected maintenance bill could not be loaded. Try refreshing.",
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
                     .padding(16.dp),
-                isLoading = state.isLoading,
                 onRetry = { viewModel.load(refresh = true) }
             )
             return@Scaffold
@@ -219,9 +238,9 @@ fun ResidentPaymentScreen(
                 Button(
                     onClick = onViewPaymentHistory,
                     modifier = Modifier.fillMaxWidth().height(54.dp),
-                    shape = RoundedCornerShape(10.dp)
+                    shape = RoundedCornerShape(16.dp)
                 ) {
-                    Icon(Icons.Filled.ReceiptLong, contentDescription = null)
+                    Icon(Icons.Filled.ReceiptLong, contentDescription = "Receipt")
                     Spacer(Modifier.size(10.dp))
                     Text("View Payment History", fontWeight = FontWeight.Bold)
                 }
@@ -234,21 +253,82 @@ fun ResidentPaymentScreen(
 private fun PaymentSummaryCard(bill: MaintenanceBillDto) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(16.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White)
     ) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text(bill.displayTitle(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Ink)
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text(bill.displayTitle(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Ink)
+                bill.flatType?.let { ft ->
+                    Surface(shape = RoundedCornerShape(8.dp), color = Color(0xFFEFF6FF)) {
+                        Text(ft, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), color = SocietyBlue40, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+
+            HorizontalDivider(color = Color(0xFFF1F5F9))
+
+            // Breakdown Rows
+            val base = bill.baseAmount?.toDoubleOrNull() ?: bill.amount?.toDoubleOrNull() ?: 0.0
+            val prev = bill.previousDue?.toDoubleOrNull() ?: bill.originalAmount?.toDoubleOrNull()?.let { (it - base).coerceAtLeast(0.0) } ?: 0.0
+            val penalty = bill.penaltyAmount?.toDoubleOrNull() ?: bill.lateFee?.toDoubleOrNull() ?: 0.0
+            val other = bill.otherCharges?.toDoubleOrNull() ?: 0.0
+            val advanceAdj = bill.advanceAdjusted?.toDoubleOrNull() ?: 0.0
+            val total = bill.expectedPayableAmount()
+
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Due Date", color = Muted, style = MaterialTheme.typography.bodyMedium)
+                Text("Base Maintenance", color = Muted, style = MaterialTheme.typography.bodyMedium)
+                Text(DashboardFormatters.money(base), color = Ink, fontWeight = FontWeight.Medium)
+            }
+
+            if (prev > 0) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Previous Dues", color = Color(0xFFD97706), style = MaterialTheme.typography.bodyMedium)
+                    Text("+${DashboardFormatters.money(prev)}", color = Color(0xFFD97706), fontWeight = FontWeight.Medium)
+                }
+            }
+
+            if (penalty > 0) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Penalty / Late Fee", color = Color(0xFFDC2626), style = MaterialTheme.typography.bodyMedium)
+                    Text("+${DashboardFormatters.money(penalty)}", color = Color(0xFFDC2626), fontWeight = FontWeight.Medium)
+                }
+            }
+
+            if (other > 0) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Other Charges", color = Ink, style = MaterialTheme.typography.bodyMedium)
+                    Text("+${DashboardFormatters.money(other)}", color = Ink, fontWeight = FontWeight.Medium)
+                }
+            }
+
+            if (advanceAdj > 0) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Advance Adjusted", color = Color(0xFF16A34A), style = MaterialTheme.typography.bodyMedium)
+                    Text("-${DashboardFormatters.money(advanceAdj)}", color = Color(0xFF16A34A), fontWeight = FontWeight.Bold)
+                }
+            }
+
+            HorizontalDivider(color = Color(0xFFF1F5F9))
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("Due Date", color = Muted, style = MaterialTheme.typography.labelMedium)
                     Text(DashboardFormatters.date(bill.dueDate ?: bill.maintenanceDueDate), color = Ink, fontWeight = FontWeight.SemiBold)
                 }
-                Box(modifier = Modifier.height(56.dp).padding(horizontal = 12.dp).border(0.5.dp, Color(0xFFD8DEE8)))
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Total Amount", color = Muted, style = MaterialTheme.typography.bodyMedium)
-                    Text(DashboardFormatters.money(bill.expectedPayableAmount()), color = PaymentBlue, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("Total Payable", color = Muted, style = MaterialTheme.typography.labelMedium)
+                    Text(DashboardFormatters.money(total), color = PaymentBlue, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            bill.advanceBalance?.toDoubleOrNull()?.takeIf { it > 0 }?.let { advBal ->
+                Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp), color = Color(0xFFF0FDF4)) {
+                    Row(modifier = Modifier.padding(10.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Text("Advance Credit Balance", color = Color(0xFF166534), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                        Text(DashboardFormatters.money(advBal), color = Color(0xFF166534), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }
@@ -257,7 +337,7 @@ private fun PaymentSummaryCard(bill: MaintenanceBillDto) {
 
 @Composable
 private fun PaymentNoticeCard() {
-    Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), color = Color(0xFFFFF5D9)) {
+    Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), color = Color(0xFFFFF5D9)) {
         Row(modifier = Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Surface(shape = RoundedCornerShape(50), color = Color(0xFFFFE6A3)) {
                 Text("i", modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp), color = Color(0xFF8A6500), fontWeight = FontWeight.Bold)
@@ -271,7 +351,7 @@ private fun PaymentNoticeCard() {
 private fun UpiPaymentCard(paymentSettings: PaymentSettingsDto?, onDownload: () -> Unit, onCopy: () -> Unit) {
     val upiId = paymentSettings.displayUpiId()
     val qrImage = paymentSettings?.paymentQrImage?.ifBlank { null }
-    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Pay Using UPI", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Ink)
             Text("Scan QR code using any UPI app", color = Muted)
@@ -280,8 +360,8 @@ private fun UpiPaymentCard(paymentSettings: PaymentSettingsDto?, onDownload: () 
                     modifier = Modifier
                         .weight(0.42f)
                         .height(156.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .border(1.dp, Color(0xFFE3E8F1), RoundedCornerShape(10.dp))
+                        .clip(RoundedCornerShape(16.dp))
+                        .border(1.dp, Color(0xFFE3E8F1), RoundedCornerShape(16.dp))
                         .background(Color.White),
                     contentAlignment = Alignment.Center
                 ) {
@@ -298,8 +378,8 @@ private fun UpiPaymentCard(paymentSettings: PaymentSettingsDto?, onDownload: () 
                     modifier = Modifier
                         .weight(0.58f)
                         .height(156.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .border(1.dp, Color(0xFFE3E8F1), RoundedCornerShape(10.dp))
+                        .clip(RoundedCornerShape(16.dp))
+                        .border(1.dp, Color(0xFFE3E8F1), RoundedCornerShape(16.dp))
                         .padding(14.dp),
                     verticalArrangement = Arrangement.SpaceBetween
                 ) {
@@ -309,17 +389,17 @@ private fun UpiPaymentCard(paymentSettings: PaymentSettingsDto?, onDownload: () 
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                         TextButton(onClick = onCopy) {
-                            Icon(Icons.Filled.ContentCopy, contentDescription = null)
+                            Icon(Icons.Filled.ContentCopy, contentDescription = "Copy")
                             Text("Copy")
                         }
                         TextButton(onClick = onDownload) {
-                            Icon(Icons.Filled.Download, contentDescription = null)
+                            Icon(Icons.Filled.Download, contentDescription = "Download")
                             Text("QR")
                         }
                     }
                 }
             }
-            Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(10.dp), color = Color(0xFFEFF6FF)) {
+            Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), color = Color(0xFFEFF6FF)) {
                 Row(modifier = Modifier.padding(14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Filled.Smartphone, contentDescription = null, tint = PaymentBlue)
                     Text("Open any UPI app and scan this QR code to pay. Google Pay, PhonePe, Paytm, BHIM, etc.", color = Muted)
@@ -343,7 +423,7 @@ private fun UploadPaymentCard(
     onNoteChange: (String) -> Unit,
     onSubmit: () -> Unit
 ) {
-    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Upload Payment Screenshot", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Ink)
             Text("After successful payment, upload the screenshot for admin verification.", color = Muted)
@@ -351,14 +431,14 @@ private fun UploadPaymentCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(if (proofUri == null) 150.dp else 210.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .border(1.dp, Color(0xFF9AB8F3), RoundedCornerShape(12.dp))
+                    .clip(RoundedCornerShape(16.dp))
+                    .border(1.dp, Color(0xFF9AB8F3), RoundedCornerShape(16.dp))
                     .clickable(onClick = onUploadClick),
                 contentAlignment = Alignment.Center
             ) {
                 if (proofUri == null) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Icon(Icons.Filled.UploadFile, contentDescription = null, tint = PaymentBlue, modifier = Modifier.size(42.dp))
+                        Icon(Icons.Filled.UploadFile, contentDescription = "Upload", tint = PaymentBlue, modifier = Modifier.size(42.dp))
                         Text("Tap to upload screenshot", color = PaymentBlue, fontWeight = FontWeight.Bold)
                         Text("JPG, PNG up to 5MB", color = Muted)
                     }
@@ -369,18 +449,18 @@ private fun UploadPaymentCard(
             TextButton(onClick = onCameraClick, modifier = Modifier.fillMaxWidth()) {
                 Text("Take picture with camera")
             }
-            OutlinedTextField(value = transactionId, onValueChange = onTransactionChange, modifier = Modifier.fillMaxWidth(), label = { Text("UPI transaction ID / UTR number") }, singleLine = true)
-            OutlinedTextField(value = amount, onValueChange = {}, modifier = Modifier.fillMaxWidth(), label = { Text("Amount") }, enabled = false, singleLine = true)
+            OutlinedTextField(value = transactionId, onValueChange = onTransactionChange, modifier = Modifier.fillMaxWidth(), label = { Text("UPI transaction ID / UTR number") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text))
+            OutlinedTextField(value = amount, onValueChange = {}, modifier = Modifier.fillMaxWidth(), label = { Text("Amount") }, enabled = false, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
             OutlinedTextField(value = note, onValueChange = onNoteChange, modifier = Modifier.fillMaxWidth(), label = { Text("Remarks optional") })
             validationError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-            Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(10.dp), color = Color(0xFFEAF8EF)) {
+            Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), color = Color(0xFFEAF8EF)) {
                 Row(modifier = Modifier.padding(14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Filled.Security, contentDescription = null, tint = SuccessGreen)
                     Text("Your payment will be verified by the admin. You will receive a notification once it's confirmed.", color = Ink)
                 }
             }
-            Button(onClick = onSubmit, modifier = Modifier.fillMaxWidth().height(52.dp), enabled = !isSubmitting, shape = RoundedCornerShape(10.dp)) {
-                Icon(Icons.Filled.Payments, contentDescription = null)
+            Button(onClick = onSubmit, modifier = Modifier.fillMaxWidth().height(52.dp), enabled = !isSubmitting, shape = RoundedCornerShape(16.dp)) {
+                Icon(Icons.Filled.Payments, contentDescription = "Payment")
                 Spacer(Modifier.size(8.dp))
                 Text(if (isSubmitting) "Submitting..." else "Submit Payment for Verification", fontWeight = FontWeight.Bold)
             }
@@ -388,20 +468,7 @@ private fun UploadPaymentCard(
     }
 }
 
-@Composable
-private fun BillMissingState(modifier: Modifier, isLoading: Boolean, onRetry: () -> Unit) {
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (!isLoading) {
-                    Text("Bill not found", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text("The selected maintenance bill could not be loaded. Try refreshing.")
-                    Button(onClick = onRetry) { Text("Retry") }
-                }
-            }
-        }
-    }
-}
+
 
 private fun validatePaymentProof(context: Context, bill: MaintenanceBillDto, expectedAmount: BigDecimal, amount: String, txn: String, proofUri: Uri?): String? {
     val paid = amount.toMoneyDecimal()
@@ -433,7 +500,7 @@ private fun uriToBase64DataUrl(context: Context, uri: Uri): String? {
 
 @Composable
 private fun PaymentSubmittedCard() {
-    Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), color = Color(0xFFFFF5D9)) {
+    Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), color = Color(0xFFFFF5D9)) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Verification Pending", color = Color(0xFFE58A00), fontWeight = FontWeight.Bold)
             Text("Your payment has been submitted and sent to the admin for approval. It will be marked as paid after verification.", color = Ink)
@@ -443,7 +510,7 @@ private fun PaymentSubmittedCard() {
 
 @Composable
 private fun ExistingPaymentStatusCard(bill: MaintenanceBillDto) {
-    Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), color = Color(0xFFFFF5D9)) {
+    Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), color = Color(0xFFFFF5D9)) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Verification Pending", color = Color(0xFFE58A00), fontWeight = FontWeight.Bold)
             Text("Your payment proof is already submitted. Admin approval is required before this bill is marked paid.", color = Ink)
@@ -453,7 +520,7 @@ private fun ExistingPaymentStatusCard(bill: MaintenanceBillDto) {
                 AsyncImage(
                     model = fullMediaUrl(it),
                     contentDescription = "Uploaded payment screenshot",
-                    modifier = Modifier.fillMaxWidth().height(180.dp).clip(RoundedCornerShape(10.dp)),
+                    modifier = Modifier.fillMaxWidth().height(180.dp).clip(RoundedCornerShape(16.dp)),
                     contentScale = ContentScale.Crop
                 )
             }

@@ -36,13 +36,17 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.core.content.FileProvider
+import androidx.compose.ui.res.stringResource
+import com.example.application.R
 import com.example.application.BuildConfig
 import com.example.application.data.remote.dto.*
 import com.example.application.ui.components.BasicAppTextField
+import com.example.application.ui.components.DashboardSkeleton
 import com.example.application.ui.components.EmptyState
 import com.example.application.ui.components.KeyValue
 import com.example.application.ui.components.RetryState
 import com.example.application.ui.components.SectionCard
+import com.example.application.ui.components.SkeletonListItem
 import com.example.application.viewmodel.MeetingsViewModel
 import java.io.File
 import java.time.LocalDate
@@ -57,12 +61,25 @@ fun AdminMeetingsScreen(onBack: () -> Unit, viewModel: MeetingsViewModel = hiltV
     var poll by remember { mutableStateOf(false) }
     var fines by remember { mutableStateOf(false) }
     var comments by remember { mutableStateOf(false) }
-    MeetingScaffold("Meetings", onBack, { viewModel.load(true) }) {
+    LaunchedEffect(Unit) { viewModel.loadAnalytics() }
+    MeetingScaffold(stringResource(R.string.meeting_meetings), onBack, { viewModel.load(true) }) {
         MeetingFilters(state.query, state.filter, viewModel::setQuery, viewModel::setFilter)
         if (state.error != null && state.meetings.isEmpty()) RetryState(state.error ?: "Unable to load meetings", { viewModel.load(true) })
-        else if (state.meetings.isEmpty() && !state.loading) EmptyState("No meetings", "Schedule a meeting to get started.")
+        else if (state.loading && state.meetings.isEmpty()) Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            repeat(6) { SkeletonListItem() }
+        }
+        else if (state.meetings.isEmpty() && !state.loading) EmptyState(stringResource(R.string.meeting_no_meetings), "Schedule a meeting to get started.")
         else LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
-            item { Button(onClick = { selected = null; editor = true }, modifier = Modifier.fillMaxWidth(), enabled = !state.submitting) { Icon(Icons.Filled.Add, null); Spacer(Modifier.width(6.dp)); Text("Create meeting") } }
+            state.analytics?.let { analytics -> item {
+                SectionCard(stringResource(R.string.meeting_analytics)) {
+                    KeyValue("Total meetings", (analytics.totalMeetings ?: 0).toString())
+                    KeyValue("Completed", (analytics.completedMeetings ?: 0).toString())
+                    KeyValue("Upcoming", (analytics.upcomingMeetings ?: 0).toString())
+                    KeyValue("Attendance", "${analytics.attendancePercentage ?: 0}%")
+                    KeyValue("Pending fines", "₹${analytics.fines?.pendingFines ?: "0"}")
+                }
+            } }
+            item { Button(onClick = { selected = null; editor = true }, modifier = Modifier.fillMaxWidth(), enabled = !state.submitting) { Icon(Icons.Filled.Add, null); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.meeting_create)) } }
             items(filteredMeetings(state.meetings, state.query, state.filter), key = { it.id ?: it.title.orEmpty() }) { meeting ->
                 MeetingCard(meeting, true,
                     onDetails = { selected = meeting; viewModel.open(meeting.id ?: "") },
@@ -109,10 +126,13 @@ fun ResidentMeetingsScreen(onBack: () -> Unit, viewModel: MeetingsViewModel = hi
     var selectedId by remember { mutableStateOf<String?>(null) }
     var comments by remember { mutableStateOf(false) }
     val detail = state.selected
-    MeetingScaffold("Meetings", onBack, { viewModel.load(true) }) {
+    MeetingScaffold(stringResource(R.string.meeting_meetings), onBack, { viewModel.load(true) }) {
         MeetingFilters(state.query, state.filter, viewModel::setQuery, viewModel::setFilter)
         if (state.error != null && state.meetings.isEmpty()) RetryState(state.error ?: "Unable to load meetings", { viewModel.load(true) })
-        else if (state.meetings.isEmpty() && !state.loading) EmptyState("No meetings", "Upcoming society meetings will appear here.")
+        else if (state.loading && state.meetings.isEmpty()) Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            repeat(6) { SkeletonListItem() }
+        }
+        else if (state.meetings.isEmpty() && !state.loading) EmptyState(stringResource(R.string.meeting_no_meetings), "Upcoming society meetings will appear here.")
         else LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
             items(filteredMeetings(state.meetings, state.query, state.filter), key = { it.id ?: it.title.orEmpty() }) { meeting ->
                 MeetingCard(meeting, false, onDetails = { selectedId = meeting.id; meeting.id?.let(viewModel::open) }, onEdit = {}, onDelete = {}, onDuplicate = {}, onAttendance = {}, onReport = {}, onPoll = {}, onFines = {}, onComments = { meeting.id?.let { selectedId = it; viewModel.loadComments(it); comments = true } })
@@ -145,7 +165,7 @@ private fun MeetingScaffold(title: String, onBack: () -> Unit, onRefresh: () -> 
 
 @Composable
 private fun MeetingFilters(query: String, filter: String, onQuery: (String) -> Unit, onFilter: (String) -> Unit) {
-    BasicAppTextField(query, onQuery, "Search title, venue or type")
+    BasicAppTextField(query, onQuery, stringResource(R.string.meeting_search_placeholder))
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
         listOf("All", "Upcoming", "Today", "Completed", "Cancelled").forEach { value -> FilterChip(selected = filter == value, onClick = { onFilter(value) }, label = { Text(value) }) }
     }
@@ -168,10 +188,10 @@ private fun MeetingCard(meeting: MeetingDto, admin: Boolean, onDetails: () -> Un
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(meeting.title ?: "Meeting", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium); StatusChip(meeting.status ?: "Scheduled") }
             Text(meeting.meetingType ?: "Meeting", color = MaterialTheme.colorScheme.primary)
-            KeyValue("Date", meeting.meetingDate?.take(10) ?: "-"); KeyValue("Time", "${meeting.startTime ?: "-"} - ${meeting.endTime ?: "-"}"); KeyValue("Venue", meeting.venue ?: "-")
+            KeyValue(stringResource(R.string.meeting_date), meeting.meetingDate?.take(10) ?: "-"); KeyValue(stringResource(R.string.meeting_time), "${meeting.startTime ?: "-"} - ${meeting.endTime ?: "-"}"); KeyValue(stringResource(R.string.meeting_venue), meeting.venue ?: "-")
             if (meeting.totalCount != null) KeyValue("Attendance", "${meeting.presentCount ?: 0}/${meeting.totalCount}")
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) { OutlinedButton(onClick = onDetails) { Icon(Icons.Filled.Visibility, null); Spacer(Modifier.width(4.dp)); Text("Details") }; TextButton(onClick = onComments) { Text("Comments") }; if (admin) { TextButton(onClick = onEdit) { Icon(Icons.Filled.Edit, null); Text("Edit") }; TextButton(onClick = onDelete) { Icon(Icons.Filled.Delete, null); Text("Delete") } } }
-            if (admin) Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) { TextButton(onClick = onAttendance) { Icon(Icons.Filled.CheckCircle, null); Text("Attendance") }; TextButton(onClick = onReport) { Text("Minutes") }; TextButton(onClick = onPoll) { Icon(Icons.Filled.HowToVote, null); Text("Poll") }; TextButton(onClick = onFines) { Text("Fines") }; TextButton(onClick = onDuplicate) { Text("Duplicate") } }
+            if (admin) Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) { TextButton(onClick = onAttendance) { Icon(Icons.Filled.CheckCircle, null); Text(stringResource(R.string.meeting_attendance)) }; TextButton(onClick = onReport) { Text(stringResource(R.string.meeting_minutes)) }; TextButton(onClick = onPoll) { Icon(Icons.Filled.HowToVote, null); Text(stringResource(R.string.meeting_poll)) }; TextButton(onClick = onFines) { Text(stringResource(R.string.meeting_fines)) }; TextButton(onClick = onDuplicate) { Text(stringResource(R.string.meeting_duplicate)) } }
         }
     }
 }
@@ -199,11 +219,11 @@ private fun MeetingDetailsDialog(
     var statusAction by remember(detail.id) { mutableStateOf<MeetingActionDto?>(null) }
     AlertDialog(onDismissRequest = onDismiss, title = { Text(detail.title ?: "Meeting") }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-            KeyValue("Type", detail.meetingType ?: "-"); KeyValue("Date", detail.meetingDate?.take(10) ?: "-"); KeyValue("Time", "${detail.startTime ?: "-"} - ${detail.endTime ?: "-"}"); KeyValue("Venue", detail.venue ?: "-"); KeyValue("Priority", detail.priority ?: "Normal"); KeyValue("Status", detail.status ?: "-")
+            KeyValue(stringResource(R.string.meeting_type), detail.meetingType ?: "-"); KeyValue(stringResource(R.string.meeting_date), detail.meetingDate?.take(10) ?: "-"); KeyValue(stringResource(R.string.meeting_time), "${detail.startTime ?: "-"} - ${detail.endTime ?: "-"}"); KeyValue(stringResource(R.string.meeting_venue), detail.venue ?: "-"); KeyValue("Priority", detail.priority ?: "Normal"); KeyValue("Status", detail.status ?: "-")
             if (detail.isCompulsory == true) KeyValue("Compulsory fine", "₹${detail.fineAmount ?: 0.0} due in ${detail.fineDueDays ?: 7} days")
             Text(detail.description ?: "No description provided.")
             OutlinedButton(onClick = onOpenComments, modifier = Modifier.fillMaxWidth()) { Text("Open Comments / Q&A") }
-            Text("Agenda", fontWeight = FontWeight.Bold); detail.agendas.orEmpty().forEachIndexed { index, item -> Text("${index + 1}. ${item.itemText ?: ""}") }
+            Text(stringResource(R.string.meeting_agenda), fontWeight = FontWeight.Bold); detail.agendas.orEmpty().forEachIndexed { index, item -> Text("${index + 1}. ${item.itemText ?: ""}") }
             detail.report?.let { report ->
                 Text("Minutes", fontWeight = FontWeight.Bold); Text(report.summary ?: "No summary"); Text(report.discussion ?: ""); Text(report.decisionsTaken ?: "")
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -260,9 +280,9 @@ private fun MeetingDetailsDialog(detail: MeetingDetailsDto, admin: Boolean, onDi
     val context = LocalContext.current
     AlertDialog(onDismissRequest = onDismiss, title = { Text(detail.title ?: "Meeting") }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-            KeyValue("Type", detail.meetingType ?: "-"); KeyValue("Date", detail.meetingDate?.take(10) ?: "-"); KeyValue("Time", "${detail.startTime ?: "-"} - ${detail.endTime ?: "-"}"); KeyValue("Venue", detail.venue ?: "-"); KeyValue("Priority", detail.priority ?: "Normal"); KeyValue("Status", detail.status ?: "-")
+            KeyValue(stringResource(R.string.meeting_type), detail.meetingType ?: "-"); KeyValue(stringResource(R.string.meeting_date), detail.meetingDate?.take(10) ?: "-"); KeyValue(stringResource(R.string.meeting_time), "${detail.startTime ?: "-"} - ${detail.endTime ?: "-"}"); KeyValue(stringResource(R.string.meeting_venue), detail.venue ?: "-"); KeyValue("Priority", detail.priority ?: "Normal"); KeyValue("Status", detail.status ?: "-")
             Text(detail.description ?: "No description provided.")
-            Text("Agenda", fontWeight = FontWeight.Bold); detail.agendas.orEmpty().forEachIndexed { index, item -> Text("${index + 1}. ${item.itemText ?: ""}") }
+            Text(stringResource(R.string.meeting_agenda), fontWeight = FontWeight.Bold); detail.agendas.orEmpty().forEachIndexed { index, item -> Text("${index + 1}. ${item.itemText ?: ""}") }
             detail.report?.let { report -> Text("Minutes", fontWeight = FontWeight.Bold); Text(report.summary ?: "No summary"); Text(report.discussion ?: ""); Text(report.decisionsTaken ?: "") }
             if (detail.actions.orEmpty().isNotEmpty()) {
                 Text("Action Items", fontWeight = FontWeight.Bold)
@@ -310,14 +330,14 @@ private fun MeetingEditorDialog(existing: MeetingDto?, submitting: Boolean, onDi
         title = { Text(if (existing == null) "Create meeting" else "Edit meeting") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                BasicAppTextField(title, { title = it }, "Title")
-                BasicAppTextField(type, { type = it }, "Meeting type")
-                BasicAppTextField(date, { date = it }, "Date YYYY-MM-DD")
-                BasicAppTextField(start, { start = it }, "Start time HH:MM")
-                BasicAppTextField(end, { end = it }, "End time HH:MM")
-                BasicAppTextField(venue, { venue = it }, "Venue")
+                BasicAppTextField(title, { title = it }, stringResource(R.string.meeting_title))
+                BasicAppTextField(type, { type = it }, stringResource(R.string.meeting_type))
+                BasicAppTextField(date, { date = it }, stringResource(R.string.meeting_date) + " YYYY-MM-DD")
+                BasicAppTextField(start, { start = it }, stringResource(R.string.meeting_time) + " HH:MM (Start)")
+                BasicAppTextField(end, { end = it }, stringResource(R.string.meeting_time) + " HH:MM (End)")
+                BasicAppTextField(venue, { venue = it }, stringResource(R.string.meeting_venue))
                 BasicAppTextField(priority, { priority = it }, "Priority")
-                BasicAppTextField(description, { description = it }, "Description")
+                BasicAppTextField(description, { description = it }, stringResource(R.string.meeting_description))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     FilterChip(selected = notifyResidents, onClick = { notifyResidents = !notifyResidents }, label = { Text("Notify residents") })
                     FilterChip(selected = compulsory, onClick = { compulsory = !compulsory }, label = { Text("Compulsory") })

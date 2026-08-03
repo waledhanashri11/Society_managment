@@ -94,8 +94,13 @@ fun AdminEventsScreen(onBack: () -> Unit, viewModel: EventsViewModel = hiltViewM
         state.message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
         if (state.error != null && state.events.isEmpty()) {
             RetryState(state.error ?: "Unable to load events", { viewModel.load(true) })
-        } else if (state.loading) {
-            Text("Loading events...")
+        } else if (state.loading && state.events.isEmpty()) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                repeat(4) {
+                    com.example.application.ui.components.SkeletonCard(height = 150.dp, modifier = Modifier.fillMaxWidth())
+                    Spacer(modifier = Modifier.height(10.dp))
+                }
+            }
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
                 item {
@@ -166,8 +171,13 @@ fun ResidentEventsScreen(onBack: () -> Unit, viewModel: EventsViewModel = hiltVi
         EventSearchAndFilters(state.query, viewModel::setQuery, state.filter, viewModel::setFilter, admin = false)
         if (state.error != null && state.events.isEmpty()) {
             RetryState(state.error ?: "Unable to load events", { viewModel.load(true) })
-        } else if (state.loading) {
-            Text("Loading events...")
+        } else if (state.loading && state.events.isEmpty()) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                repeat(4) {
+                    com.example.application.ui.components.SkeletonCard(height = 150.dp, modifier = Modifier.fillMaxWidth())
+                    Spacer(modifier = Modifier.height(10.dp))
+                }
+            }
         } else if (filtered.isEmpty()) {
             EmptyState("No events", "Published society events will appear here.")
         } else {
@@ -207,6 +217,7 @@ private fun EventsScaffold(title: String, onBack: () -> Unit, refreshing: Boolea
         PullToRefreshBox(
             isRefreshing = refreshing,
             onRefresh = onRefresh,
+            indicator = {},
             modifier = Modifier.fillMaxSize().padding(padding)
         ) {
             Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp), content = content)

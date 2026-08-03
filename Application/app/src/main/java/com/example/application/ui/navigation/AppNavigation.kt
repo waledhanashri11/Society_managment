@@ -12,6 +12,11 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navDeepLink
 import androidx.navigation.compose.rememberNavController
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import com.example.application.data.local.datastore.UserSession
 import com.example.application.data.repository.AuthRepository
 import com.example.application.ui.screens.admin.AdminDashboardScreen
@@ -20,7 +25,6 @@ import com.example.application.ui.screens.advanced.ResidentAdvancedFeaturesScree
 import com.example.application.ui.screens.admin.FlatDetailsScreen
 import com.example.application.ui.screens.admin.FlatFormScreen
 import com.example.application.ui.screens.admin.FlatsListScreen
-import com.example.application.ui.screens.admin.AdminAgmReportScreen
 import com.example.application.ui.screens.admin.AdminFlatTransferHistoryScreen
 import com.example.application.ui.screens.admin.AdminSettingsScreen
 import com.example.application.ui.screens.admin.AdminWriteOffHistoryScreen
@@ -35,6 +39,7 @@ import com.example.application.ui.screens.auth.ForgotPasswordScreen
 import com.example.application.ui.screens.auth.LoginScreen
 import com.example.application.ui.screens.auth.RegisterScreen
 import com.example.application.ui.screens.auth.ResetPasswordScreen
+import com.example.application.ui.screens.legal.LegalInformationScreen
 import com.example.application.ui.screens.common.ComingSoonScreen
 import com.example.application.ui.screens.communication.AdminComplaintsScreen
 import com.example.application.ui.screens.communication.NoticesScreen
@@ -104,7 +109,11 @@ fun SocietyNavGraph(
 
     NavHost(
         navController = navController,
-        startDestination = AppRoute.Splash.route
+        startDestination = AppRoute.Splash.route,
+        enterTransition = { slideInHorizontally(initialOffsetX = { it }) + fadeIn(animationSpec = tween(300)) },
+        exitTransition = { slideOutHorizontally(targetOffsetX = { -it / 3 }) + fadeOut(animationSpec = tween(300)) },
+        popEnterTransition = { slideInHorizontally(initialOffsetX = { -it }) + fadeIn(animationSpec = tween(300)) },
+        popExitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut(animationSpec = tween(300)) }
     ) {
         composable(AppRoute.Splash.route) {
             val viewModel: SplashViewModel = hiltViewModel()
@@ -127,8 +136,16 @@ fun SocietyNavGraph(
                     navigateToDashboard(session)
                 },
                 onRegisterClick = { navController.navigate(AppRoute.Register.route) },
-                onForgotPasswordClick = { navController.navigate(AppRoute.ForgotPassword.route) }
+                onForgotPasswordClick = { navController.navigate(AppRoute.ForgotPassword.route) },
+                onLegalClick = { section -> navController.navigate(AppRoute.LegalInformation.createRoute(section)) }
             )
+        }
+
+        composable(
+            route = AppRoute.LegalInformation.route,
+            arguments = listOf(navArgument("section") { type = NavType.StringType })
+        ) { entry ->
+            LegalInformationScreen(entry.arguments?.getString("section").orEmpty(), onBack = { navController.popBackStack() })
         }
 
         composable(AppRoute.Register.route) {
@@ -177,7 +194,6 @@ fun SocietyNavGraph(
                         "Reports" -> navController.navigate(AppRoute.AdminReports.route)
                         "Settings" -> navController.navigate(AppRoute.AdminSettings.route)
                         "Write-off History" -> navController.navigate(AppRoute.AdminWriteOffHistory.route)
-                        "AGM Report" -> navController.navigate(AppRoute.AdminAgmReport.route)
                         "Flat Transfers" -> navController.navigate(AppRoute.AdminFlatTransfers.route)
                         "NOC Requests" -> navController.navigate(AppRoute.AdminNoc.route)
                         "Notifications" -> navController.navigate(AppRoute.Notifications.route)
@@ -199,10 +215,6 @@ fun SocietyNavGraph(
 
         composable(AppRoute.AdminWriteOffHistory.route) {
             AdminWriteOffHistoryScreen(onBack = { navController.popBackStack() })
-        }
-
-        composable(AppRoute.AdminAgmReport.route) {
-            AdminAgmReportScreen(onBack = { navController.popBackStack() })
         }
 
         composable(AppRoute.AdminFlatTransfers.route) {
@@ -264,7 +276,28 @@ fun SocietyNavGraph(
         }
 
         composable(AppRoute.AdminAdvanced.route) {
-            AdminAdvancedFeaturesScreen(onBack = { navController.popBackStack() })
+            AdminAdvancedFeaturesScreen(
+                onBack = { navController.popBackStack() },
+                onOpen = { destination ->
+                    val route = when (destination) {
+                        "Residents" -> AppRoute.AdminResidents.route
+                        "Flats" -> AppRoute.AdminFlats.route
+                        "Flat transfers" -> AppRoute.AdminFlatTransfers.route
+                        "NOC management" -> AppRoute.AdminNoc.route
+                        "Complaints" -> AppRoute.AdminComplaints.route
+                        "Notifications" -> AppRoute.Notifications.route
+                        "Maintenance" -> AppRoute.AdminMaintenance.route
+                        "Reports" -> AppRoute.AdminReports.route
+                        "Write-off history" -> AppRoute.AdminWriteOffHistory.route
+                        "AGM report" -> AppRoute.AdminReports.route
+                        "Society rules" -> AppRoute.AdminRules.route
+                        "Meetings" -> AppRoute.AdminMeetings.route
+                        "Events" -> AppRoute.AdminEvents.route
+                        else -> null
+                    }
+                    route?.let(navController::navigate)
+                }
+            )
         }
 
         composable(AppRoute.AdminResidents.route) {
@@ -364,7 +397,7 @@ fun SocietyNavGraph(
                             title == "NOC Requests" -> navController.navigate(AppRoute.ResidentNoc.route)
                             title == "Members" -> navController.navigate(AppRoute.ResidentMembers.route)
                             title == "Notifications" -> navController.navigate(AppRoute.Notifications.route)
-                            title == "Visitors" || title == "Parcels" || title == "Activities" || title == "More" || title == "Services" -> navController.navigate(AppRoute.ResidentAdvanced.route)
+                            title == "Visitors" || title == "Parcels" || title == "Activities" || title == "More" || title == "Services" || title == "Advanced" -> navController.navigate(AppRoute.ResidentAdvanced.route)
                             else -> navController.navigate(AppRoute.ComingSoon.createRoute(title))
                         }
                     }
@@ -470,7 +503,26 @@ fun SocietyNavGraph(
 
         composable(AppRoute.ResidentAdvanced.route) {
             ResidentRulesGate(onOpenRules = { navController.navigate(AppRoute.ResidentRules.route) }) {
-                ResidentAdvancedFeaturesScreen(onBack = { navController.popBackStack() })
+                ResidentAdvancedFeaturesScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpen = { destination ->
+                        val route = when (destination) {
+                            "Maintenance" -> AppRoute.ResidentMaintenance.route
+                            "Payment history" -> AppRoute.ResidentPaymentHistory.route
+                            "Complaints" -> AppRoute.ResidentComplaints.route
+                            "Notices" -> AppRoute.ResidentNotices.route
+                            "NOC requests" -> AppRoute.ResidentNoc.route
+                            "Reports" -> AppRoute.ResidentReports.route
+                            "Rules" -> AppRoute.ResidentRules.route
+                            "Meetings" -> AppRoute.ResidentMeetings.route
+                            "Events" -> AppRoute.ResidentEvents.route
+                            "Members" -> AppRoute.ResidentMembers.route
+                            "Notifications" -> AppRoute.Notifications.route
+                            else -> null
+                        }
+                        route?.let(navController::navigate)
+                    }
+                )
             }
         }
 
@@ -486,5 +538,3 @@ fun SocietyNavGraph(
         }
     }
 }
-
-

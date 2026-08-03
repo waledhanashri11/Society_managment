@@ -60,17 +60,23 @@ import com.example.application.ui.components.ErrorMessageCard
 import com.example.application.ui.components.rolePrimary
 import com.example.application.viewmodel.LoginViewModel
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.imePadding
+
 @Composable
 fun LoginScreen(
     onLoginSuccess: (UserSession) -> Unit,
     onRegisterClick: () -> Unit,
     onForgotPasswordClick: () -> Unit,
+    onLegalClick: (String) -> Unit,
     viewModel: LoginViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var passwordVisible by remember { mutableStateOf(false) }
     var selectedRole by remember { mutableStateOf(AppRoleTheme.Admin) }
     val primary = rolePrimary(selectedRole)
+    val scrollState = rememberScrollState()
 
     LaunchedEffect(uiState.loggedInSession) {
         uiState.loggedInSession?.let { session ->
@@ -91,12 +97,14 @@ fun LoginScreen(
                     )
                 )
             )
+            .imePadding()
+            .verticalScroll(scrollState)
             .padding(20.dp),
         contentAlignment = Alignment.Center
     ) {
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(28.dp),
+            shape = RoundedCornerShape(24.dp),
             elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
         ) {
@@ -123,7 +131,7 @@ fun LoginScreen(
                 Box(
                     modifier = Modifier
                         .size(58.dp)
-                        .clip(RoundedCornerShape(18.dp))
+                        .clip(RoundedCornerShape(16.dp))
                         .background(primary),
                     contentAlignment = Alignment.Center
                 ) {
@@ -158,14 +166,14 @@ fun LoginScreen(
                         selected = selectedRole == AppRoleTheme.Admin,
                         onClick = { selectedRole = AppRoleTheme.Admin },
                         label = { Text(stringResource(R.string.admin)) },
-                        leadingIcon = { Icon(Icons.Filled.AdminPanelSettings, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                        leadingIcon = { Icon(Icons.Filled.AdminPanelSettings, contentDescription = "Admin role", modifier = Modifier.size(18.dp)) },
                         modifier = Modifier.weight(1f)
                     )
                     FilterChip(
                         selected = selectedRole == AppRoleTheme.Resident,
                         onClick = { selectedRole = AppRoleTheme.Resident },
                         label = { Text(stringResource(R.string.resident)) },
-                        leadingIcon = { Icon(Icons.Filled.Person, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                        leadingIcon = { Icon(Icons.Filled.Person, contentDescription = "Resident role", modifier = Modifier.size(18.dp)) },
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -238,20 +246,9 @@ fun LoginScreen(
                     enabled = !uiState.isLoading,
                     colors = ButtonDefaults.buttonColors(containerColor = primary)
                 ) {
-                    if (uiState.isLoading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.onPrimary
-                        )
-                        Text(
-                            text = "  ${stringResource(R.string.logging_in)}"
-                        )
-                    } else {
-                        Icon(Icons.Filled.Login, contentDescription = null, modifier = Modifier.size(20.dp))
-                        Spacer(Modifier.size(8.dp))
-                        Text(stringResource(R.string.login))
-                    }
+                    Icon(Icons.Filled.Login, contentDescription = "Login", modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.size(8.dp))
+                    Text(if (uiState.isLoading) stringResource(R.string.logging_in) else stringResource(R.string.login), fontWeight = FontWeight.Bold)
                 }
 
                 Row(
@@ -262,6 +259,11 @@ fun LoginScreen(
                     TextButton(onClick = onRegisterClick, enabled = !uiState.isLoading) {
                         Text(stringResource(R.string.register))
                     }
+                }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                    TextButton(onClick = { onLegalClick("privacy") }) { Text("Privacy") }
+                    TextButton(onClick = { onLegalClick("terms") }) { Text("Terms") }
+                    TextButton(onClick = { onLegalClick("refunds") }) { Text("Refunds") }
                 }
             }
         }

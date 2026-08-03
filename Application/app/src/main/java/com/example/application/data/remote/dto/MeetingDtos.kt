@@ -2,6 +2,18 @@ package com.example.application.data.remote.dto
 
 import com.google.gson.annotations.SerializedName
 
+data class MeetingFineAnalyticsDto(
+    @SerializedName("total_fines") val totalFines: String?,
+    @SerializedName("collected_fines") val collectedFines: String?,
+    @SerializedName("pending_fines") val pendingFines: String?
+)
+data class MeetingTypeAnalyticsDto(@SerializedName("meeting_type") val meetingType: String?, val count: Int?)
+data class MeetingAnalyticsDto(
+    val totalMeetings: Int?, val completedMeetings: Int?, val upcomingMeetings: Int?,
+    val attendancePercentage: Int?, val fines: MeetingFineAnalyticsDto?,
+    val meetingTypes: List<MeetingTypeAnalyticsDto>?
+)
+
 data class MeetingDto(
     val id: String?, val title: String?, @SerializedName("meeting_type") val meetingType: String?,
     @SerializedName("meeting_date") val meetingDate: String?, @SerializedName("start_time") val startTime: String?,

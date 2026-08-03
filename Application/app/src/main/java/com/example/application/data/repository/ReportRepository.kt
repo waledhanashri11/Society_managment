@@ -10,12 +10,27 @@ import com.example.application.data.remote.dto.ErrorResponse
 import com.example.application.data.remote.dto.ExpenseDto
 import com.example.application.data.remote.dto.MaintenanceBillDto
 import com.example.application.data.remote.dto.MembersMaintenanceReportDto
+import com.example.application.data.remote.dto.MaintenanceWaiverDto
 import com.example.application.data.remote.dto.ReportFilterState
 import com.example.application.data.remote.dto.ReportSummaryDto
 import com.example.application.data.remote.dto.ResidentExpenseReportDto
 import com.example.application.data.remote.dto.ResidentMaintenanceReportDto
 import com.example.application.data.remote.dto.SocietyReportSummaryDto
+import com.example.application.data.remote.dto.currentFinancialYear
 import com.example.application.data.remote.dto.FinancialReportDto
+import com.example.application.data.remote.dto.AccountLedgerDto
+import com.example.application.data.remote.dto.FlatPaymentReportDto
+import com.example.application.data.remote.dto.ResidentAccountReportDto
+import com.example.application.data.remote.dto.ResidentTransparencyReportDto
+import com.example.application.data.remote.dto.OpeningBalanceRequest
+import com.example.application.data.remote.dto.MonthlyMaintenanceRowDto
+import com.example.application.data.remote.dto.MonthlyCollectionSummaryDto
+import com.example.application.data.remote.dto.MonthlyDashboardSummaryDto
+import com.example.application.data.remote.dto.CollectionHistoryDto
+import com.example.application.data.remote.dto.PaymentModeReportDto
+import com.example.application.data.remote.dto.ResidentLedgerResponse
+import com.example.application.data.remote.dto.MonthlyReceiptDto
+import com.example.application.data.remote.dto.LedgerWriteOffRequest
 import com.example.application.util.AppError
 import com.example.application.util.NetworkResult
 import com.google.gson.Gson
@@ -31,18 +46,39 @@ import retrofit2.Response
 class ReportRepository @Inject constructor(
     private val reportsApi: ReportsApiService,
     private val maintenanceApi: MaintenanceApiService,
-    private val communicationApi: CommunicationApiService,
-    private val gson: Gson
+    private val communicationApi: CommunicationApiService
 ) {
     private var adminCache: AdminReportsData? = null
+    private var adminCacheKey: String? = null
     private var residentCache: ResidentReportsData? = null
-    private var adminCacheKey: String = ""
-    private var residentCacheKey: String = ""
+    private var residentCacheKey: String? = null
 
     suspend fun getAdminReports(filter: ReportFilterState, refresh: Boolean = false): NetworkResult<AdminReportsData> {
         val key = filter.cacheKey()
         adminCache?.takeIf { !refresh && adminCacheKey == key }?.let { return NetworkResult.Success(it) }
 
+        val financialYear = filter.financialYear.ifBlank { currentFinancialYear() }
+        val qMonth = filter.month.takeIf { it.isNotBlank() && !it.equals("All", true) }
+        val qYear = filter.year.takeIf { it.isNotBlank() && !it.equals("All", true) }
+        val qWing = filter.wing.takeIf { it.isNotBlank() && !it.equals("All", true) }
+        val qFloor = filter.floor.takeIf { it.isNotBlank() && !it.equals("All", true) }
+        val qFlat = filter.flatNo.takeIf { it.isNotBlank() }
+        val qResident = filter.resident.takeIf { it.isNotBlank() }
+        val qStatus = filter.status.takeIf { it.isNotBlank() && !it.equals("All", true) }
+        val qSearch = filter.search.takeIf { it.isNotBlank() }
+
+        val financial = safeWrapped { reportsApi.getFinancialReport(financialYear) }
+        val monthlyReport = safeMonthlyReport { reportsApi.getMonthlyMaintenanceReport(
+            qMonth, qYear, qWing, qFloor, qFlat, qResident, qStatus, qSearch
+        ) }
+        val monthlyDashboard = safeWrapped { reportsApi.getMonthlyDashboardSummary(qMonth, qYear) }
+        val history12Month = safeWrappedList { reportsApi.get12MonthHistory() }
+        val paymentModes = safeWrapped { reportsApi.getPaymentModes(qMonth, qYear) }
+        val bankLedger = safeWrapped { reportsApi.getBankLedger(financialYear) }
+        val cashLedger = safeWrapped { reportsApi.getCashLedger(financialYear) }
+        val flatCollection = safeWrappedList { reportsApi.getFlatCollectionReport(
+            financialYear, qMonth, qWing, qFlat, qStatus
+        ) }
         val bills = safeWrappedList { maintenanceApi.getBills() }
         val expenses = safeWrappedList { maintenanceApi.getExpenses() }
         val complaints = safeList { communicationApi.getAllComplaints() }
@@ -50,10 +86,7 @@ class ReportRepository @Inject constructor(
         val monthlyCollection = safeWrappedList { reportsApi.getAdminMaintenanceReport("monthly-collection") }
         val pendingBills = safeWrappedList { reportsApi.getAdminMaintenanceReport("pending-bills") }
         val paidBills = safeWrappedList { reportsApi.getAdminMaintenanceReport("paid-bills") }
-        val startYear = filter.year.toIntOrNull() ?: java.time.LocalDate.now().let { if (it.monthValue >= 4) it.year else it.year - 1 }
-        val financial = safeDirect { reportsApi.getAdminAnnual("$startYear-${startYear + 1}") }
-
-        if (bills is NetworkResult.Error && overview is NetworkResult.Error) return bills
+        val writeOffs = safeWrappedList { maintenanceApi.getWriteOffHistory(financialYear = financialYear) }
 
         val data = AdminReportsData(
             bills = (bills as? NetworkResult.Success)?.data.orEmpty(),
@@ -64,10 +97,28 @@ class ReportRepository @Inject constructor(
             pendingBills = (pendingBills as? NetworkResult.Success)?.data.orEmpty(),
             paidBills = (paidBills as? NetworkResult.Success)?.data.orEmpty(),
             financial = (financial as? NetworkResult.Success)?.data,
+            bankLedger = (bankLedger as? NetworkResult.Success)?.data,
+            cashLedger = (cashLedger as? NetworkResult.Success)?.data,
+            flatCollection = (flatCollection as? NetworkResult.Success)?.data.orEmpty(),
+            waivers = (writeOffs as? NetworkResult.Success)?.data.orEmpty(),
+            monthlyReport = (monthlyReport as? NetworkResult.Success)?.data?.rows.orEmpty(),
+            monthlySummary = (monthlyReport as? NetworkResult.Success)?.data?.summary,
+            monthlyDashboard = (monthlyDashboard as? NetworkResult.Success)?.data,
+            history12Month = (history12Month as? NetworkResult.Success)?.data.orEmpty(),
+            paymentModes = (paymentModes as? NetworkResult.Success)?.data,
             warnings = listOfNotNull(
+                if (financial is NetworkResult.Error) "Financial accounting summary unavailable: ${messageFor(financial.error)}" else null,
+                if (monthlyReport is NetworkResult.Error) "Monthly maintenance report unavailable: ${messageFor(monthlyReport.error)}" else null,
+                if (monthlyDashboard is NetworkResult.Error) "Monthly dashboard summary unavailable." else null,
+                if (history12Month is NetworkResult.Error) "12-month collection history unavailable." else null,
+                if (paymentModes is NetworkResult.Error) "Payment mode report unavailable." else null,
                 if (expenses is NetworkResult.Error) messageFor(expenses.error) else null,
                 if (complaints is NetworkResult.Error) "Complaint report unavailable." else null,
-                if (monthlyCollection is NetworkResult.Error) "Monthly collection report unavailable." else null
+                if (monthlyCollection is NetworkResult.Error) "Monthly collection report unavailable." else null,
+                if (bankLedger is NetworkResult.Error) "Bank ledger unavailable: ${messageFor(bankLedger.error)}" else null,
+                if (cashLedger is NetworkResult.Error) "Cash ledger unavailable: ${messageFor(cashLedger.error)}" else null,
+                if (flatCollection is NetworkResult.Error) "Flat collection unavailable: ${messageFor(flatCollection.error)}" else null,
+                if (writeOffs is NetworkResult.Error) "Write-offs audit log unavailable: ${messageFor(writeOffs.error)}" else null
             )
         ).filtered(filter)
 
@@ -80,21 +131,36 @@ class ReportRepository @Inject constructor(
         val key = filter.cacheKey()
         residentCache?.takeIf { !refresh && residentCacheKey == key }?.let { return NetworkResult.Success(it) }
 
-        val month = filter.month.takeIf { it.isNotBlank() }
-        val year = filter.year.takeIf { it.isNotBlank() }
-        val status = filter.status.takeIf { it.isNotBlank() }
+        val financialYear = filter.financialYear.ifBlank { currentFinancialYear() }
+        val qMonth = filter.month.takeIf { it.isNotBlank() && !it.equals("All", true) }
+        val qYear = filter.year.takeIf { it.isNotBlank() && !it.equals("All", true) }
+        val qWing = filter.wing.takeIf { it.isNotBlank() && !it.equals("All", true) }
+        val qStatus = filter.status.takeIf { it.isNotBlank() && !it.equals("All", true) }
+        val qSearch = filter.search.takeIf { it.isNotBlank() }
 
+        val financial = safeWrapped { reportsApi.getFinancialReport(financialYear) }
+        val bankLedger = safeWrapped { reportsApi.getBankLedger(financialYear) }
+        val cashLedger = safeWrapped { reportsApi.getCashLedger(financialYear) }
+        val flatCollection = safeWrappedList { reportsApi.getFlatCollectionReport(financialYear, qMonth, qWing, null, qStatus) }
+        val monthlyReport = safeMonthlyReport { reportsApi.getMonthlyMaintenanceReport(qMonth, qYear, qWing, null, null, null, qStatus, qSearch) }
+
+        val account = (safeDirect { reportsApi.getResidentAccountSummary(financialYear) } as? NetworkResult.Success)?.data
+        val transparency = (safeDirect { reportsApi.getResidentSocietyTransparency(financialYear) } as? NetworkResult.Success)?.data
         val mySummary = safeDirect { reportsApi.getResidentReportSummary() }
-        val myMaintenance = safeList { reportsApi.getResidentMaintenanceReport(month, year, status) }
-        val societySummary = safeDirect { reportsApi.getSocietyReportSummary(month, year) }
-        val expenses = safeList { reportsApi.getResidentExpenseReport(month, year) }
-        val members = safeList { reportsApi.getMembersMaintenanceReport(month, year, status) }
-        val allMaintenance = safeList { reportsApi.getAllMaintenanceReport(month, year, status) }
+        val myMaintenance = safeList { reportsApi.getResidentMaintenanceReport(qMonth, qYear, qStatus) }
+        val societySummary = safeDirect { reportsApi.getSocietyReportSummary(qMonth, qYear) }
+        val expenses = safeList { reportsApi.getResidentExpenseReport(qMonth, qYear) }
+        val members = safeList { reportsApi.getMembersMaintenanceReport(qMonth, qYear, qStatus) }
+        val allMaintenance = safeList { reportsApi.getAllMaintenanceReport(qMonth, qYear, qStatus) }
         val complaints = safeList { communicationApi.getMyComplaints() }
-        val startYear = filter.year.toIntOrNull() ?: java.time.LocalDate.now().let { if (it.monthValue >= 4) it.year else it.year - 1 }
-        val transparency = safeDirect { reportsApi.getResidentTransparency("$startYear-${startYear + 1}") }
 
-        if (mySummary is NetworkResult.Error && myMaintenance is NetworkResult.Error) return mySummary
+        val finData = (financial as? NetworkResult.Success)?.data ?: FinancialReportDto(
+            available = true, reason = null, financialYear = financialYear,
+            summary = transparency?.summary,
+            months = null, collection = null, income = null, expenses = null,
+            bankTransactions = null, cashTransactions = null,
+            flatPayments = transparency?.flatPayments
+        )
 
         val data = ResidentReportsData(
             summary = (mySummary as? NetworkResult.Success)?.data,
@@ -104,8 +170,16 @@ class ReportRepository @Inject constructor(
             membersMaintenance = (members as? NetworkResult.Success)?.data.orEmpty(),
             allMaintenance = (allMaintenance as? NetworkResult.Success)?.data.orEmpty(),
             complaints = (complaints as? NetworkResult.Success)?.data.orEmpty(),
-            financial = (transparency as? NetworkResult.Success)?.data,
+            financial = finData,
+            bankLedger = (bankLedger as? NetworkResult.Success)?.data,
+            cashLedger = (cashLedger as? NetworkResult.Success)?.data,
+            flatCollection = (flatCollection as? NetworkResult.Success)?.data.orEmpty(),
+            monthlyReport = (monthlyReport as? NetworkResult.Success)?.data?.rows.orEmpty(),
+            accountReport = account,
+            transparencyReport = transparency,
             warnings = listOfNotNull(
+                if (account == null) "Account summary unavailable." else null,
+                if (transparency == null) "Society transparency details unavailable." else null,
                 if (societySummary is NetworkResult.Error) "Society summary unavailable." else null,
                 if (expenses is NetworkResult.Error) "Expense report unavailable." else null,
                 if (members is NetworkResult.Error) "Members payment status unavailable." else null
@@ -127,41 +201,86 @@ class ReportRepository @Inject constructor(
     suspend fun getAdminMonthly(year: Int, month: Int): NetworkResult<FinancialReportDto> =
         safeDirect { reportsApi.getAdminMonthly(year, month) }
 
+    suspend fun saveOpeningBalance(financialYear: String, bank: String, cash: String): NetworkResult<String> {
+        return when (val result = safeWrapped { reportsApi.saveOpeningBalance(OpeningBalanceRequest(financialYear, bank, cash)) }) {
+            is NetworkResult.Success -> { clear(); NetworkResult.Success("Opening balance saved") }
+            is NetworkResult.Error -> result
+            NetworkResult.Loading -> NetworkResult.Loading
+        }
+    }
+
+    suspend fun getResidentLedger(residentId: String, month: String? = null, year: String? = null): NetworkResult<ResidentLedgerResponse> =
+        safeDirect { reportsApi.getResidentLedger(residentId, month, year) }
+
+    suspend fun getMonthlyReceipt(paymentId: String): NetworkResult<MonthlyReceiptDto> =
+        safeWrapped { reportsApi.getMonthlyReceipt(paymentId) }
+
+    suspend fun approveMonthlyPayment(paymentId: String): NetworkResult<String> =
+        actionCall { maintenanceApi.approvePayment(paymentId) }
+
+    suspend fun rejectMonthlyPayment(paymentId: String, reason: String): NetworkResult<String> =
+        actionCall { maintenanceApi.rejectPayment(paymentId, mapOf("rejection_reason" to reason)) }
+
+    suspend fun applyMonthlyWriteOff(
+        billId: String,
+        type: String,
+        amount: Double,
+        reason: String,
+        remarks: String?
+    ): NetworkResult<String> {
+        return actionCall {
+            maintenanceApi.createWriteOff(
+                LedgerWriteOffRequest(
+                    billId = billId,
+                    writeoffType = type,
+                    amount = amount,
+                    reason = reason,
+                    remarks = remarks?.takeIf { it.isNotBlank() }
+                )
+            )
+        }
+    }
+
     private fun AdminReportsData.filtered(filter: ReportFilterState): AdminReportsData {
+        val q = filter.search.trim().lowercase()
+        if (q.isBlank()) return this
         return copy(
-            bills = bills.filter { it.matches(filter, it.dueDate ?: it.paymentDate, it.month, it.year, it.paymentStatus ?: it.status) },
-            expenses = expenses.filter { it.matches(filter) },
-            complaints = complaints.filter { it.matches(filter) }
+            bills = bills.filter {
+                (it.residentName ?: "").lowercase().contains(q) ||
+                (it.flatNo ?: "").lowercase().contains(q) ||
+                (it.status ?: "").lowercase().contains(q)
+            },
+            expenses = expenses.filter {
+                (it.expenseNumber ?: "").lowercase().contains(q) ||
+                (it.category ?: "").lowercase().contains(q) ||
+                (it.vendor ?: "").lowercase().contains(q) ||
+                (it.description ?: "").lowercase().contains(q) ||
+                (it.amount ?: "").lowercase().contains(q)
+            },
+            complaints = complaints.filter {
+                (it.title ?: "").lowercase().contains(q) ||
+                (it.description ?: "").lowercase().contains(q) ||
+                (it.status ?: "").lowercase().contains(q)
+            },
+            waivers = waivers.filter {
+                (it.residentName ?: "").lowercase().contains(q) ||
+                (it.flatNo ?: "").lowercase().contains(q) ||
+                (it.wing ?: "").lowercase().contains(q) ||
+                (it.reason ?: "").lowercase().contains(q)
+            },
+            flatCollection = flatCollection.filter {
+                (it.residentName ?: "").lowercase().contains(q) ||
+                (it.flatNo ?: "").lowercase().contains(q) ||
+                (it.wing ?: "").lowercase().contains(q) ||
+                (it.status ?: "").lowercase().contains(q)
+            },
+            monthlyReport = monthlyReport.filter {
+                (it.residentName ?: "").lowercase().contains(q) ||
+                (it.flatNo ?: "").lowercase().contains(q) ||
+                (it.wing ?: "").lowercase().contains(q) ||
+                (it.calculatedStatus ?: it.billStatus ?: "").lowercase().contains(q)
+            }
         )
-    }
-
-    private fun MaintenanceBillDto.matches(filter: ReportFilterState, date: String?, month: String?, year: String?, status: String?): Boolean {
-        if (filter.status.isNotBlank() && !status.equals(filter.status, ignoreCase = true)) return false
-        if (filter.month.isBlank() && filter.year.isBlank()) return true
-        val datePart = date.orEmpty().take(10)
-        if (filter.year.isNotBlank()) {
-            val rowYear = if (datePart.length >= 4) datePart.take(4) else year.orEmpty()
-            if (rowYear != filter.year) return false
-        }
-        if (filter.month.isNotBlank()) {
-            val rowMonth = if (datePart.length >= 7) datePart.substring(5, 7).trimStart('0') else month.orEmpty().trimStart('0')
-            if (rowMonth != filter.month.trimStart('0')) return false
-        }
-        return true
-    }
-
-    private fun ExpenseDto.matches(filter: ReportFilterState): Boolean {
-        val date = expenseDate.orEmpty().take(10)
-        if (filter.year.isNotBlank() && date.length >= 4 && date.take(4) != filter.year) return false
-        if (filter.month.isNotBlank() && date.length >= 7 && date.substring(5, 7).trimStart('0') != filter.month.trimStart('0')) return false
-        return true
-    }
-
-    private fun ComplaintDto.matches(filter: ReportFilterState): Boolean {
-        val date = createdAt.orEmpty().take(10)
-        if (filter.year.isNotBlank() && date.length >= 4 && date.take(4) != filter.year) return false
-        if (filter.month.isNotBlank() && date.length >= 7 && date.substring(5, 7).trimStart('0') != filter.month.trimStart('0')) return false
-        return true
     }
 
     private suspend fun <T> safeWrappedList(call: suspend () -> Response<ApiResponse<List<T>>>): NetworkResult<List<T>> {
@@ -171,6 +290,40 @@ class ReportRepository @Inject constructor(
                 NetworkResult.Success(response.body()?.data.orEmpty())
             } else {
                 NetworkResult.Error(mapHttpError(response.code(), parseErrorMessage(response.errorBody()?.string()) ?: response.body()?.message))
+            }
+        } catch (error: Exception) {
+            NetworkResult.Error(mapException(error))
+        }
+    }
+
+    private suspend fun safeMonthlyReport(call: suspend () -> Response<com.example.application.data.remote.dto.MonthlyMaintenanceReportResponse>): NetworkResult<MonthlyReportBundle> {
+        return try {
+            val response = call()
+            val body = response.body()
+            if (response.isSuccessful && body?.success != false) NetworkResult.Success(MonthlyReportBundle(body?.data.orEmpty(), body?.summary))
+            else NetworkResult.Error(mapHttpError(response.code(), body?.message ?: parseErrorMessage(response.errorBody()?.string())))
+        } catch (error: Exception) { NetworkResult.Error(mapException(error)) }
+    }
+
+    private suspend fun <T> safeWrapped(call: suspend () -> Response<ApiResponse<T>>): NetworkResult<T> {
+        return try {
+            val response = call()
+            val body = response.body()
+            val data = body?.data
+            if (response.isSuccessful && body?.success != false && data != null) NetworkResult.Success(data)
+            else NetworkResult.Error(mapHttpError(response.code(), parseErrorMessage(response.errorBody()?.string()) ?: body?.message))
+        } catch (error: Exception) { NetworkResult.Error(mapException(error)) }
+    }
+
+    private suspend fun <T> actionCall(call: suspend () -> Response<ApiResponse<T>>): NetworkResult<String> {
+        return try {
+            val response = call()
+            val body = response.body()
+            if (response.isSuccessful && body?.success != false) {
+                clear()
+                NetworkResult.Success(body?.message ?: "Saved successfully")
+            } else {
+                NetworkResult.Error(mapHttpError(response.code(), body?.message ?: parseErrorMessage(response.errorBody()?.string())))
             }
         } catch (error: Exception) {
             NetworkResult.Error(mapException(error))
@@ -210,7 +363,7 @@ class ReportRepository @Inject constructor(
 
     private fun parseErrorMessage(errorBody: String?): String? {
         if (errorBody.isNullOrBlank()) return null
-        return try { gson.fromJson(errorBody, ErrorResponse::class.java)?.message } catch (_: Exception) { null }
+        return try { com.google.gson.Gson().fromJson(errorBody, ErrorResponse::class.java)?.message } catch (_: Exception) { null }
     }
 
     private fun mapHttpError(code: Int, serverMessage: String?): AppError {
@@ -251,8 +404,19 @@ data class AdminReportsData(
     val pendingBills: List<AdminReportRowDto>,
     val paidBills: List<AdminReportRowDto>,
     val warnings: List<String>,
-    val financial: FinancialReportDto?
+    val financial: FinancialReportDto?,
+    val bankLedger: AccountLedgerDto?,
+    val cashLedger: AccountLedgerDto?,
+    val flatCollection: List<FlatPaymentReportDto>,
+    val waivers: List<MaintenanceWaiverDto>,
+    val monthlyReport: List<MonthlyMaintenanceRowDto>,
+    val monthlySummary: MonthlyCollectionSummaryDto?,
+    val monthlyDashboard: MonthlyDashboardSummaryDto?,
+    val history12Month: List<CollectionHistoryDto>,
+    val paymentModes: PaymentModeReportDto?
 )
+
+data class MonthlyReportBundle(val rows: List<MonthlyMaintenanceRowDto>, val summary: MonthlyCollectionSummaryDto?)
 
 data class ResidentReportsData(
     val summary: ReportSummaryDto?,
@@ -263,7 +427,13 @@ data class ResidentReportsData(
     val allMaintenance: List<ResidentMaintenanceReportDto>,
     val complaints: List<ComplaintDto>,
     val warnings: List<String>,
-    val financial: FinancialReportDto?
+    val financial: FinancialReportDto?,
+    val bankLedger: AccountLedgerDto? = null,
+    val cashLedger: AccountLedgerDto? = null,
+    val flatCollection: List<FlatPaymentReportDto> = emptyList(),
+    val monthlyReport: List<MonthlyMaintenanceRowDto> = emptyList(),
+    val accountReport: ResidentAccountReportDto?,
+    val transparencyReport: ResidentTransparencyReportDto?
 )
 
-private fun ReportFilterState.cacheKey(): String = "$month|$year|$status"
+private fun ReportFilterState.cacheKey(): String = "$financialYear|$month|$year|$status|$wing|$flatNo|$search"

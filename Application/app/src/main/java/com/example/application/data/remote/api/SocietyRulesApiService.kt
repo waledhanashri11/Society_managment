@@ -35,6 +35,9 @@ interface SocietyRulesApiService {
     @POST("api/rules")
     suspend fun createRule(@Body request: SocietyRuleSaveRequest): Response<SocietyRuleActionResponse>
 
+    @PUT("api/rules/reorder")
+    suspend fun reorderRules(@Body request: Map<String, List<String>>): Response<SocietyRuleActionResponse>
+
     @PUT("api/rules/{id}")
     suspend fun updateRule(
         @Path("id") id: String,

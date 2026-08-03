@@ -203,7 +203,8 @@ const ensureMaintenanceRuntimeSchema = async () => {
       ADD COLUMN IF NOT EXISTS rejected_at TIMESTAMPTZ,
       ADD COLUMN IF NOT EXISTS approved_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
       ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ,
-      ADD COLUMN IF NOT EXISTS approval_comment TEXT
+      ADD COLUMN IF NOT EXISTS approval_comment TEXT,
+      ADD COLUMN IF NOT EXISTS resident_note TEXT
   `);
   await promisePool.query(`
     CREATE TABLE IF NOT EXISTS payment_status_history (
@@ -1751,7 +1752,8 @@ const createPayment = async (req, res) => {
       billIds,
       screenshotUrl,
       screenshot,
-      paymentDate
+      paymentDate,
+      note
     } = req.body;
     const utr = String(utrNumber || transactionId || '').trim();
     const requestedBillIds = Array.isArray(billIds) && billIds.length ? billIds.map(Number).filter(Boolean) : [];
@@ -1825,6 +1827,10 @@ const createPayment = async (req, res) => {
     if (paymentsHasPaymentProof) {
       insertColumns.push('payment_proof');
       insertValues.push((screenshot || screenshotUrl));
+    }
+    if (await hasTableColumn('payments', 'resident_note')) {
+      insertColumns.push('resident_note');
+      insertValues.push(note || null);
     }
 
     const placeholders = insertColumns.map(() => '?').join(', ');
@@ -2328,6 +2334,7 @@ const getPendingVerificationPayments = async (req, res) => {
 
 const getPaymentVerifications = async (req, res) => {
   try {
+    await ensureMaintenanceRuntimeSchema();
     let query = `
       SELECT 
           m.id AS "billId",
@@ -2727,17 +2734,32 @@ const createDetailedWriteOff = async (req, res) => {
 
 const getWriteOffHistory = async (req, res) => {
   try {
-    const { resident, flat, wing, month, startDate, endDate, type } = req.query;
+    const { resident, flat, wing, month, startDate, endDate, type, financialYear } = req.query;
     let query = `
-      SELECT w.*, m.month, m.year, m.title AS bill_title, m.amount AS bill_amount, m.penalty_amount AS bill_penalty, m.total_amount AS bill_total, m.remaining_amount AS bill_remaining,
-             u.name AS resident_name, f.flat_no, f.wing
+      SELECT w.*, m.month, m.year, m.title AS bill_title, m.amount AS bill_amount,
+             m.penalty_amount AS bill_penalty, m.total_amount AS bill_total,
+             m.remaining_amount AS bill_remaining, m.paid_amount AS bill_paid,
+             u.name AS resident_name, u.name AS admin_name_ref, f.flat_no, f.wing,
+             admin_u.name AS admin_name
       FROM write_offs w
       JOIN maintenance m ON w.bill_id = m.id
       JOIN users u ON m.resident_id = u.id
       JOIN flats f ON m.flat_id = f.id
+      LEFT JOIN users admin_u ON w.approved_by = admin_u.id
       WHERE 1 = 1
     `;
     const params = [];
+
+    // Financial Year filtering (Indian FY: April–March)
+    if (financialYear) {
+      const parts = financialYear.split('-');
+      if (parts.length === 2) {
+        const startY = parseInt(parts[0], 10);
+        const endY = parseInt(parts[1], 10);
+        query += ` AND ((m.year = ? AND m.month >= 4) OR (m.year = ? AND m.month <= 3))`;
+        params.push(startY, endY);
+      }
+    }
 
     if (resident) {
       query += ` AND (u.name ILIKE ? OR u.id = ?)`;
@@ -2777,6 +2799,7 @@ const getWriteOffHistory = async (req, res) => {
     return sendResponse(res, 500, 'Server error', null, ['Unable to fetch write-off history']);
   }
 };
+
 
 const getAGMReport = async (req, res) => {
   try {

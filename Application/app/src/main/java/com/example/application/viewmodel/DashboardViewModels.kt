@@ -115,7 +115,11 @@ class ResidentDashboardViewModel @Inject constructor(
                     )
                 }
                 is DashboardLoadResult.Error -> _uiState.update {
-                    it.copy(isLoading = false, isRefreshing = false, errorMessage = result.message)
+                    val isTimeout = result.message.contains("time out", ignoreCase = true) ||
+                            result.message.contains("timed out", ignoreCase = true) ||
+                            result.message.contains("Timeout", ignoreCase = true)
+                    val safeError = if (isTimeout || (it.data != null && refresh)) null else result.message
+                    it.copy(isLoading = false, isRefreshing = false, errorMessage = safeError)
                 }
             }
         }

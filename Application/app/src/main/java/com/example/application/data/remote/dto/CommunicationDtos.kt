@@ -38,6 +38,15 @@ data class NoticeVoteRequest(
     @SerializedName("option_ids") val optionIds: List<Int>
 )
 
+data class NoticeStatsDto(
+    @SerializedName("total_notices") val totalNotices: Int?,
+    @SerializedName("notices_with_polls") val noticesWithPolls: Int?,
+    @SerializedName("active_polls") val activePolls: Int?,
+    @SerializedName("closed_polls") val closedPolls: Int?,
+    @SerializedName("total_votes") val totalVotes: Int?,
+    @SerializedName("participation_percent") val participationPercent: Int?
+)
+
 data class AdminNotificationsResponse(
     val notifications: List<NotificationDto>?,
     val unreadCount: Int?

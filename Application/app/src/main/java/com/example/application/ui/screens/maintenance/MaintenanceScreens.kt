@@ -35,11 +35,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -48,9 +50,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.OpenInNew
@@ -70,6 +74,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -87,6 +98,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.example.application.util.NetworkResult
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -119,10 +132,19 @@ import com.example.application.data.remote.dto.MaintenanceWaiverDto
 import com.example.application.data.remote.dto.PaymentSettingsDto
 import com.example.application.ui.components.AppBottomNavigation
 import com.example.application.ui.components.AppRoleTheme
+import com.example.application.ui.components.NotificationDropdown
+import com.example.application.ui.theme.SocietyBlue40
 import com.example.application.ui.screens.resident.saveResidentReceiptPdf
 import com.example.application.util.DashboardFormatters
 import com.example.application.viewmodel.AdminMaintenanceViewModel
 import com.example.application.viewmodel.ResidentMaintenanceViewModel
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.TrendingUp
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.LocalDate
@@ -138,7 +160,7 @@ import androidx.compose.material3.HorizontalDivider
 fun AdminMaintenanceScreen(
     onBack: () -> Unit,
     onPaymentVerification: () -> Unit = {},
-    initialTab: String = "Overview",
+    initialTab: String = "Bills",
     viewModel: AdminMaintenanceViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -146,92 +168,67 @@ fun AdminMaintenanceScreen(
     var dialog by remember { mutableStateOf<MaintenanceDialog?>(null) }
     var selectedMonth by remember { mutableStateOf(LocalDate.now().monthValue) }
     var selectedYear by remember { mutableStateOf(LocalDate.now().year) }
-    LaunchedEffect(initialTab) {
-        viewModel.setTab(if (initialTab == "Payments") "Verification" else initialTab)
-    }
-    val bills by remember(data?.bills, state.query, state.filter) {
-        derivedStateOf {
-            data?.bills.orEmpty()
-                .filter { it.matchesBill(state.query) }
-                .filter { state.filter == "All" || (it.paymentStatus ?: it.status) == state.filter }
-        }
+
+    val activeTab = when (state.activeTab) {
+        "Overview", "Payments", "Verification" -> "Bills"
+        else -> state.activeTab
     }
 
-    Scaffold(topBar = {
-        MaintenanceTopBar(
-            title = "Maintenance",
-            subtitle = "Bills, dues, write-offs and settings",
-            navigationText = "Back",
-            onNavigationClick = onBack,
-            actionText = "Apply Penalty",
-            onActionClick = { viewModel.applyPenalty() }
-        )
-    }) { padding ->
+    Scaffold(
+        topBar = {
+            AdminMaintenanceHeader(
+                title = "Maintenance Management",
+                subtitle = "Manage bills, expenses & reports",
+                onMenuClick = onBack,
+                onSearchToggle = { /* handled via tab query */ },
+                onFilterToggle = { viewModel.setTab("Settings") }
+            )
+        },
+        bottomBar = {
+            AdminMaintenanceBottomBar(
+                selectedTab = activeTab,
+                onTabSelected = viewModel::setTab
+            )
+        }
+    ) { padding ->
         PullToRefreshBox(
             isRefreshing = state.isRefreshing,
             onRefresh = { viewModel.load(refresh = true) },
+            indicator = {},
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .background(Color(0xFFF7F9FC))
+                .background(MaterialTheme.colorScheme.background)
         ) {
             LazyColumn(
-                contentPadding = PaddingValues(start = 16.dp, top = 14.dp, end = 16.dp, bottom = 18.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                contentPadding = PaddingValues(start = 16.dp, top = 14.dp, end = 16.dp, bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                item {
-                    AdminMaintenanceTabs(
-                        selected = state.activeTab,
-                        onSelected = viewModel::setTab
-                    )
-                    state.message?.let {
-                        AdminInlineMessage(it, Color(0xFF0B56D9), Color(0xFFEAF2FF), Modifier.padding(top = 10.dp))
-                    }
-                    state.error?.let { RetryState(it, { viewModel.load(refresh = true) }, Modifier.padding(top = 10.dp)) }
+                state.message?.let {
+                    item { AdminInlineMessage(it, MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.surfaceVariant) }
                 }
+                state.error?.let {
+                    item { RetryState(it, { viewModel.load(refresh = true) }) }
+                }
+
                 if (state.isLoading && data == null) {
                     item { DashboardSkeleton() }
                 } else if (data == null) {
                     item { EmptyState("Maintenance unavailable", "Pull down or tap retry.") }
                 } else {
                     item {
-                        AdminMaintenanceHomeSummary(
+                        AdminMaintenanceStatsRow(
                             data = data,
                             selectedMonth = selectedMonth,
-                            selectedYear = selectedYear,
-                            onPreviousMonth = {
-                                if (selectedMonth == 1) {
-                                    selectedMonth = 12
-                                    selectedYear -= 1
-                                } else selectedMonth -= 1
-                            },
-                            onNextMonth = {
-                                if (selectedMonth == 12) {
-                                    selectedMonth = 1
-                                    selectedYear += 1
-                                } else selectedMonth += 1
-                            },
-                            onGenerateBills = { dialog = MaintenanceDialog.Generate },
-                            onRecordPayment = { viewModel.setTab("Bills") },
-                            onVerifyPayments = onPaymentVerification,
-                            onDefaulters = { viewModel.setTab("Defaulters") },
-                            onWriteOff = { viewModel.setTab("Write-Offs") },
-                            onReports = { viewModel.setTab("Reports") }
+                            selectedYear = selectedYear
                         )
                     }
-                    when (state.activeTab) {
-                        "Defaulters" -> defaultersTab(data.bills, viewModel, { dialog = it })
-                        "Write-Offs" -> waiversTab(data.waivers, viewModel, { dialog = it })
-                        "Categories" -> categoriesTab(data.categories, viewModel, { dialog = it })
-                        "Expenses" -> expensesTab(data.expenses, viewModel, { dialog = it })
-                        "Late Fee" -> lateFeeTab(data.lateFeeRule, viewModel, { dialog = it })
+
+                    when (activeTab) {
                         "Settings" -> settingsTab(data.settings, viewModel, { dialog = it })
-                        "Disputes" -> disputesTab(data.disputes)
+                        "Expenses" -> expensesTab(data.expenses, viewModel, { dialog = it })
                         "Reports" -> reportsTab(data)
-                        else -> billsTab(bills, state.query, state.filter, viewModel, { dialog = it })
-                    }
-                    if (data.warnings.isNotEmpty()) {
-                        item { SectionCard("Warnings") { data.warnings.forEach { Text("\u2022 $it") } } }
+                        else -> billsTab(data.bills, viewModel) { dialog = it }
                     }
                 }
             }
@@ -265,17 +262,18 @@ fun AdminPaymentVerificationScreen(
         PullToRefreshBox(
             isRefreshing = state.isRefreshing,
             onRefresh = { viewModel.load(refresh = true) },
+            indicator = {},
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .background(Color(0xFFF7F9FC))
+                .background(MaterialTheme.colorScheme.background)
         ) {
             LazyColumn(
                 contentPadding = PaddingValues(start = 16.dp, top = 14.dp, end = 16.dp, bottom = 18.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 state.message?.let {
-                    item { AdminInlineMessage(it, Color(0xFF0B56D9), Color(0xFFEAF2FF)) }
+                    item { AdminInlineMessage(it, MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.surfaceVariant) }
                 }
                 state.error?.let {
                     item { RetryState(it, { viewModel.load(refresh = true) }) }
@@ -315,13 +313,13 @@ fun ResidentMaintenanceScreen(
             onProfile = onProfile
         )
     }) { padding ->
-        PullToRefreshBox(isRefreshing = state.isRefreshing, onRefresh = { viewModel.load(refresh = true) }, modifier = Modifier.fillMaxSize().padding(padding)) {
+        PullToRefreshBox(isRefreshing = state.isRefreshing, onRefresh = { viewModel.load(refresh = true) }, indicator = {}, modifier = Modifier.fillMaxSize().padding(padding)) {
             LazyColumn(
                 contentPadding = PaddingValues(start = 16.dp, top = 14.dp, end = 16.dp, bottom = 18.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color(0xFFF7F9FC))
+                    .background(MaterialTheme.colorScheme.background)
             ) {
                 item {
                     state.message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
@@ -354,7 +352,13 @@ fun ResidentMaintenanceScreen(
                             ResidentMaintenanceBillCard(
                                 bill = bill,
                                 onPay = { bill.id?.let(onPayBill) },
-                                onDownloadReceipt = { saveResidentReceiptPdf(context, bill) },
+                                onDownloadReceipt = {
+                                    when {
+                                        !bill.paymentId.isNullOrBlank() -> viewModel.fetchPaymentReceipt(bill.paymentId) { saveReceiptPdf(context, it) }
+                                        bill.writeOffAmount.toMoneyDecimal() > BigDecimal.ZERO && !bill.id.isNullOrBlank() -> viewModel.fetchWriteOffReceipt(bill.id) { saveWriteOffReceiptPdf(context, it) }
+                                        else -> saveResidentReceiptPdf(context, bill)
+                                    }
+                                },
                                 onViewStatus = onPaymentHistory,
                                 onDispute = { disputeBill = bill }
                             )
@@ -440,17 +444,17 @@ private fun ResidentMaintenanceTopBar(onBack: () -> Unit, onPaymentHistory: () -
         verticalAlignment = Alignment.CenterVertically
     ) {
         IconButton(onClick = onBack) {
-            Icon(Icons.Filled.ArrowBack, contentDescription = "Back", tint = Color(0xFF0B56D9))
+            Icon(Icons.Filled.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.primary)
         }
         Text(
             "Maintenance",
             modifier = Modifier.weight(1f).padding(start = 8.dp),
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
-            color = Color(0xFF101828)
+            color = MaterialTheme.colorScheme.onSurface
         )
         IconButton(onClick = onPaymentHistory) {
-            Icon(Icons.Filled.Download, contentDescription = null, tint = Color(0xFF0B56D9))
+            Icon(Icons.Filled.Download, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
         }
     }
 }
@@ -466,38 +470,43 @@ private fun ResidentMaintenanceOverviewCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Text("Maintenance Overview", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            Text("Maintenance Overview", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+            ) {
                 ResidentMetricItem(
                     label = "Total Outstanding",
                     value = DashboardFormatters.money(totalOutstanding),
-                    tint = Color(0xFFE31B23),
-                    bg = Color(0xFFFFE4E6),
-                    modifier = Modifier.weight(1f)
+                    tint = MaterialTheme.colorScheme.error,
+                    bg = MaterialTheme.colorScheme.errorContainer,
+                    modifier = Modifier.width(105.dp)
                 )
                 ResidentMetricItem(
                     label = "Next Due Date",
                     value = nextDueDate,
-                    tint = Color(0xFF0B56D9),
-                    bg = Color(0xFFE8F0FF),
-                    modifier = Modifier.weight(1f)
+                    tint = MaterialTheme.colorScheme.primary,
+                    bg = MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier.width(105.dp)
                 )
                 ResidentMetricItem(
                     label = "Pending Bills Count",
                     value = pendingCount.toString(),
-                    tint = Color(0xFF6D28D9),
-                    bg = Color(0xFFF0E7FF),
-                    modifier = Modifier.weight(1f)
+                    tint = MaterialTheme.colorScheme.tertiary,
+                    bg = MaterialTheme.colorScheme.tertiaryContainer,
+                    modifier = Modifier.width(105.dp)
                 )
                 ResidentMetricItem(
                     label = "Paid This Month",
                     value = DashboardFormatters.money(paidThisMonth),
-                    tint = Color(0xFF087A2E),
-                    bg = Color(0xFFE0F7E8),
-                    modifier = Modifier.weight(1f)
+                    tint = MaterialTheme.colorScheme.primary,
+                    bg = MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier.width(105.dp)
                 )
             }
         }
@@ -601,7 +610,7 @@ private fun ResidentMetricItem(
         ) {
             Icon(Icons.Filled.Payments, contentDescription = null, tint = tint)
         }
-        Text(label, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center, color = Color(0xFF101828))
+        Text(label, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurface)
         Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, color = tint)
     }
 }
@@ -625,7 +634,7 @@ private fun ResidentMaintenanceBillCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Row(
             modifier = Modifier.padding(14.dp),
@@ -636,34 +645,24 @@ private fun ResidentMaintenanceBillCard(
                 modifier = Modifier
                     .size(62.dp)
                     .clip(CircleShape)
-                    .background(Color(0xFFEAF2FF)),
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Filled.Payments, contentDescription = null, tint = Color(0xFF0B56D9), modifier = Modifier.size(30.dp))
+                Icon(Icons.Filled.Payments, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(30.dp))
             }
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(bill.displayTitle(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color(0xFF101828))
-                Text("Due ${DashboardFormatters.date(bill.dueDate ?: bill.maintenanceDueDate)}", color = Color(0xFF667085))
-                if (overdue) Text("Overdue", color = Color(0xFFE31B23), fontWeight = FontWeight.SemiBold)
+                Text(bill.displayTitle(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                Text("Due ${DashboardFormatters.date(bill.dueDate ?: bill.maintenanceDueDate)}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (overdue) Text("Overdue", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold)
             }
             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(DashboardFormatters.money((bill.remainingDue ?: bill.currentDue ?: bill.remainingAmount ?: bill.totalAmount ?: bill.amount).toMoneyDecimal()), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                ResidentStatusBadge(
-                    text = when {
+                Text(DashboardFormatters.money((bill.remainingDue ?: bill.currentDue ?: bill.remainingAmount ?: bill.totalAmount ?: bill.amount).toMoneyDecimal()), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                StatusBadge(
+                    status = when {
                         settledByWriteOff -> "Settled"
                         paid -> "Paid"
                         verifying -> "Verification Pending"
                         else -> "Pending"
-                    },
-                    fg = when {
-                        finished -> Color(0xFF087A2E)
-                        verifying -> Color(0xFF174EA6)
-                        else -> Color(0xFFE86D00)
-                    },
-                    bg = when {
-                        finished -> Color(0xFFDDF8E7)
-                        verifying -> Color(0xFFE6F0FF)
-                        else -> Color(0xFFFFE8C7)
                     }
                 )
                 when {
@@ -694,17 +693,8 @@ private fun ResidentMaintenanceBillCard(
 }
 
 @Composable
-private fun ResidentStatusBadge(text: String, fg: Color, bg: Color) {
-    Text(
-        text,
-        modifier = Modifier
-            .clip(RoundedCornerShape(50))
-            .background(bg)
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-        color = fg,
-        style = MaterialTheme.typography.labelLarge,
-        fontWeight = FontWeight.SemiBold
-    )
+private fun ResidentStatusBadge(text: String, fg: Color = Color.Unspecified, bg: Color = Color.Unspecified) {
+    StatusBadge(status = text)
 }
 
 @Composable
@@ -818,131 +808,743 @@ private fun ResidentMaintenanceBottomBar(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AdminMaintenanceHeader(
+    title: String,
+    subtitle: String,
+    onMenuClick: () -> Unit,
+    onSearchToggle: () -> Unit,
+    onFilterToggle: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                Brush.verticalGradient(
+                    listOf(Color(0xFF0B6BFF), Color(0xFF083B92))
+                )
+            )
+            .padding(horizontal = 16.dp, vertical = 18.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                IconButton(onClick = onMenuClick) {
+                    Icon(
+                        imageVector = Icons.Filled.Menu,
+                        contentDescription = "Menu",
+                        tint = Color.White,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+                Column {
+                    Text(
+                        text = title,
+                        color = Color.White,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = subtitle,
+                        color = Color.White.copy(alpha = 0.82f),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                IconButton(onClick = onSearchToggle) {
+                    Icon(
+                        imageVector = Icons.Filled.Search,
+                        contentDescription = "Search",
+                        tint = Color.White,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+                NotificationDropdown(tint = Color.White, onViewAll = {})
+                IconButton(onClick = onFilterToggle) {
+                    Icon(
+                        imageVector = Icons.Filled.FilterList,
+                        contentDescription = "Filter",
+                        tint = Color.White,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AdminMaintenanceStatsRow(
+    data: com.example.application.data.repository.AdminMaintenanceData,
+    selectedMonth: Int,
+    selectedYear: Int
+) {
+    val bills = data.bills
+    val payments = data.payments
+    val summary = data.adminSummary
+
+    val totalOutstanding = summary?.totalOutstanding.toMoneyDecimal().takeIf { it > BigDecimal.ZERO }
+        ?: bills.filter { !(it.paymentStatus ?: it.status).isSettledBillStatus() }
+            .fold(BigDecimal.ZERO) { sum, bill -> sum + bill.expectedPayableAmount() }
+
+    val collectedThisMonth = summary?.currentMonthCollection.toMoneyDecimal().takeIf { it > BigDecimal.ZERO }
+        ?: payments.filter { it.paymentStatus.isApprovedStatus() }
+            .fold(BigDecimal.ZERO) { sum, payment -> sum + payment.amount.toMoneyDecimal() }
+
+    val pendingVerificationCount = summary?.verificationPending ?: data.verifications.count { it.verificationStatus.isPaymentVerificationPending() }
+    val overdueCount = summary?.overdueBills ?: bills.count { it.isOverdueBill() }
+    val pendingBillsCount = summary?.pendingBills ?: bills.count { !(it.paymentStatus ?: it.status).isSettledBillStatus() }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        StatsTileCard(
+            label = "Total Outstanding",
+            value = DashboardFormatters.money(totalOutstanding),
+            subtext = "From $pendingBillsCount Residents",
+            icon = Icons.Filled.Wallet,
+            accentColor = Color(0xFF0B5FFF),
+            containerColor = Color(0xFFF0F5FF),
+            borderColor = Color(0xFFD6E4FF)
+        )
+        StatsTileCard(
+            label = "Collected This Month",
+            value = DashboardFormatters.money(collectedThisMonth),
+            subtext = "${monthName(selectedMonth)} $selectedYear",
+            icon = Icons.Filled.CheckCircle,
+            accentColor = Color(0xFF1B8F4D),
+            containerColor = Color(0xFFF6FFED),
+            borderColor = Color(0xFFD9F7BE)
+        )
+        StatsTileCard(
+            label = "Pending Verification",
+            value = pendingVerificationCount.toString(),
+            subtext = "Payments",
+            icon = Icons.Filled.Payments,
+            accentColor = Color(0xFFFF8A00),
+            containerColor = Color(0xFFFFF7E6),
+            borderColor = Color(0xFFFFE7BA)
+        )
+        StatsTileCard(
+            label = "Overdue Bills",
+            value = overdueCount.toString(),
+            subtext = "Bills",
+            icon = Icons.Filled.ReceiptLong,
+            accentColor = Color(0xFF9C3ED7),
+            containerColor = Color(0xFFFFF0F6),
+            borderColor = Color(0xFFFFD6E7)
+        )
+    }
+}
+
+@Composable
+private fun StatsTileCard(
+    label: String,
+    value: String,
+    subtext: String,
+    icon: ImageVector,
+    accentColor: Color,
+    containerColor: Color,
+    borderColor: Color
+) {
+    Card(
+        modifier = Modifier.width(200.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        border = BorderStroke(1.dp, borderColor)
+    ) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(containerColor),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(icon, contentDescription = label, tint = accentColor, modifier = Modifier.size(22.dp))
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(label, style = MaterialTheme.typography.bodySmall, color = Color(0xFF64748B), maxLines = 1)
+                Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A))
+                Text(subtext, style = MaterialTheme.typography.labelSmall, color = Color(0xFF94A3B8))
+            }
+        }
+    }
+}
+
+@Composable
+private fun AdminMaintenanceStyledTabs(selected: String, onSelected: (String) -> Unit) {
+    val tabs = listOf(
+        "Overview" to Icons.Filled.Home,
+        "Bills" to Icons.Filled.ReceiptLong,
+        "Settings" to Icons.Filled.Settings,
+        "Expenses" to Icons.Filled.Wallet,
+        "Payments" to Icons.Filled.CheckCircle,
+        "Reports" to Icons.Filled.TrendingUp
+    )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        tabs.forEach { (tabLabel, icon) ->
+            val mappedTabKey = if (tabLabel == "Payments") "Verification" else tabLabel
+            val active = selected == mappedTabKey || selected == tabLabel
+            Surface(
+                onClick = { onSelected(mappedTabKey) },
+                shape = RoundedCornerShape(12.dp),
+                color = if (active) SocietyBlue40 else Color.White,
+                border = BorderStroke(1.dp, if (active) SocietyBlue40 else Color(0xFFE2E8F0)),
+                shadowElevation = if (active) 2.dp else 0.dp
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        icon,
+                        contentDescription = tabLabel,
+                        tint = if (active) Color.White else Color(0xFF64748B),
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        tabLabel,
+                        color = if (active) Color.White else Color(0xFF334155),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = if (active) FontWeight.Bold else FontWeight.Medium
+                    )
+                }
+            }
+        }
+    }
+}
+
 private fun androidx.compose.foundation.lazy.LazyListScope.billsTab(
     bills: List<MaintenanceBillDto>,
-    query: String,
-    filter: String,
     viewModel: AdminMaintenanceViewModel,
     openDialog: (MaintenanceDialog) -> Unit
 ) {
     item {
-        SearchAndFilter(query, viewModel::setQuery, filter, viewModel::setFilter)
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Monthly Maintenance Bills",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF0F172A)
+                    )
+                    Text(
+                        text = "Total ${bills.size} bill(s) generated",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF64748B)
+                    )
+                }
+                Button(
+                    onClick = { openDialog(MaintenanceDialog.Generate) },
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = SocietyBlue40),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+                ) {
+                    Icon(Icons.Filled.Add, contentDescription = "Generate Bills", modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Generate Bills", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+
+    if (bills.isEmpty()) {
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .padding(32.dp)
+                        .fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Icon(Icons.Filled.ReceiptLong, contentDescription = null, tint = Color(0xFF94A3B8), modifier = Modifier.size(48.dp))
+                    Spacer(Modifier.height(8.dp))
+                    Text("No bills generated yet", style = MaterialTheme.typography.titleSmall, color = Color(0xFF475467))
+                    Text("Tap 'Generate Bills' above to create bills for all flats.", style = MaterialTheme.typography.bodySmall, color = Color(0xFF94A3B8))
+                }
+            }
+        }
+    } else {
+        items(bills, key = { it.id ?: it.hashCode().toString() }) { bill ->
+            AdminBillCard(bill = bill, openDialog = openDialog)
+        }
+    }
+}
+
+@Composable
+private fun AdminBillCard(
+    bill: MaintenanceBillDto,
+    openDialog: (MaintenanceDialog) -> Unit
+) {
+    val remaining = (bill.remainingDue ?: bill.currentDue ?: bill.remainingAmount ?: bill.totalAmount).toMoneyDecimal()
+    val paid = bill.paidAmount.toMoneyDecimal()
+    val penalty = (bill.penaltyAmount ?: bill.lateFee).toMoneyDecimal()
+    val writeOff = (bill.writeOffAmount ?: bill.maintenanceWriteOffAmount).toMoneyDecimal()
+    val statusStr = (bill.paymentStatus ?: bill.status ?: "Unpaid").trim()
+    val statusColor = when (statusStr.lowercase()) {
+        "paid" -> Color(0xFF1B8F4D)
+        "partial", "partially_paid" -> Color(0xFF0B56D9)
+        "overdue" -> Color(0xFFD14343)
+        "written_off", "written off" -> Color(0xFF6B7280)
+        else -> Color(0xFFC06A00)
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            // Header Row: Resident Name & Flat + Status
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = bill.residentName ?: "Flat ${bill.flatNo ?: "—"}",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF0F172A)
+                    )
+                    Text(
+                        text = "Flat ${bill.flatNo ?: "—"} • ${monthName(bill.month?.toIntOrNull() ?: 1)} ${bill.year ?: ""}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF64748B)
+                    )
+                }
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = statusColor.copy(alpha = 0.12f)
+                ) {
+                    Text(
+                        text = statusStr,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = statusColor
+                    )
+                }
+            }
+
+            HorizontalDivider(color = Color(0xFFF1F5F9))
+
+            // Amount Breakdown Grid Row 1
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Column {
+                    Text("Base Amount", style = MaterialTheme.typography.labelSmall, color = Color(0xFF94A3B8))
+                    Text(DashboardFormatters.money(bill.amount.toMoneyDecimal()), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = Color(0xFF1E293B))
+                }
+                Column {
+                    Text("Penalty", style = MaterialTheme.typography.labelSmall, color = Color(0xFF94A3B8))
+                    Text(DashboardFormatters.money(penalty), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = if (penalty > BigDecimal.ZERO) Color(0xFFD14343) else Color(0xFF1E293B))
+                }
+                Column {
+                    Text("Total Due", style = MaterialTheme.typography.labelSmall, color = Color(0xFF94A3B8))
+                    Text(DashboardFormatters.money(bill.totalAmount.toMoneyDecimal()), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A))
+                }
+            }
+
+            // Amount Breakdown Grid Row 2
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Column {
+                    Text("Paid", style = MaterialTheme.typography.labelSmall, color = Color(0xFF94A3B8))
+                    Text(DashboardFormatters.money(paid), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = Color(0xFF1B8F4D))
+                }
+                Column {
+                    Text("Write Off", style = MaterialTheme.typography.labelSmall, color = Color(0xFF94A3B8))
+                    Text(DashboardFormatters.money(writeOff), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = Color(0xFF0B56D9))
+                }
+                Column {
+                    Text("Remaining", style = MaterialTheme.typography.labelSmall, color = Color(0xFF94A3B8))
+                    Text(DashboardFormatters.money(remaining), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = if (remaining > BigDecimal.ZERO) Color(0xFFD14343) else Color(0xFF1B8F4D))
+                }
+            }
+
+            HorizontalDivider(color = Color(0xFFF1F5F9))
+
+            // Action Buttons Row (Edit, Write Off, Delete)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedButton(
+                    onClick = { openDialog(MaintenanceDialog.EditBill(bill)) },
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                    modifier = Modifier.height(34.dp)
+                ) {
+                    Text("Edit", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+                }
+
+                Spacer(Modifier.width(8.dp))
+
+                OutlinedButton(
+                    onClick = { openDialog(MaintenanceDialog.WriteOff(bill)) },
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                    modifier = Modifier.height(34.dp)
+                ) {
+                    Text("Write Off", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = Color(0xFF0B56D9))
+                }
+
+                Spacer(Modifier.width(8.dp))
+
+                OutlinedButton(
+                    onClick = { openDialog(MaintenanceDialog.DeleteBill(bill)) },
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFD14343)),
+                    border = BorderStroke(1.dp, Color(0xFFFCA5A5)),
+                    modifier = Modifier.height(34.dp)
+                ) {
+                    Text("Delete", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = Color(0xFFD14343))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AdminMaintenanceBottomBar(
+    selectedTab: String,
+    onTabSelected: (String) -> Unit
+) {
+    val items = listOf(
+        "Bills" to Icons.Filled.ReceiptLong,
+        "Expenses" to Icons.Filled.Wallet,
+        "Reports" to Icons.Filled.TrendingUp,
+        "Settings" to Icons.Filled.Settings
+    )
+
+    NavigationBar(
+        containerColor = Color.White,
+        tonalElevation = 8.dp
+    ) {
+        items.forEach { (tabKey, icon) ->
+            val active = selectedTab == tabKey
+            NavigationBarItem(
+                selected = active,
+                onClick = { onTabSelected(tabKey) },
+                icon = {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = tabKey
+                    )
+                },
+                label = {
+                    Text(
+                        text = tabKey,
+                        fontWeight = if (active) FontWeight.Bold else FontWeight.Normal
+                    )
+                },
+                colors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = SocietyBlue40,
+                    selectedTextColor = SocietyBlue40,
+                    indicatorColor = Color(0xFFEFF6FF),
+                    unselectedIconColor = Color(0xFF64748B),
+                    unselectedTextColor = Color(0xFF64748B)
+                )
+            )
+        }
+    }
+}
+
+@Composable
+private fun AdminBillRowCard(
+    bill: MaintenanceBillDto,
+    onViewDetails: () -> Unit,
+    onMarkPaid: () -> Unit,
+    onReminder: () -> Unit,
+    onWaive: () -> Unit,
+    onWriteOff: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val status = bill.paymentStatus ?: bill.status ?: "Pending"
+    val paid = status.isApprovedStatus()
+    val settledByWriteOff = status.normalizePaymentStatus() in setOf("WRITTEN_OFF", "SETTLED")
+    val verifying = status.isVerificationPendingStatus()
+    val overdue = isBillOverdue(bill) && !paid && !settledByWriteOff
+
+    var showMenu by remember { mutableStateOf(false) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.5.dp)
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 12.dp),
+                .horizontalScroll(rememberScrollState())
+                .padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Button(
-                onClick = { openDialog(MaintenanceDialog.Generate) },
-                modifier = Modifier
-                    .weight(1f)
-                    .height(54.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0B56D9))
-            ) {
-                Icon(Icons.Filled.ReceiptLong, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Generate Monthly Bills")
+            Column(modifier = Modifier.widthIn(min = 100.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = "${monthName(bill.month)} ${bill.year.orEmpty()}".trim(),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = bill.title ?: "Monthly",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
-            Button(
-                onClick = { openDialog(MaintenanceDialog.ManualBill) },
-                modifier = Modifier
-                    .weight(1f)
-                    .height(54.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0B56D9))
-            ) {
-                Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Create Manual Bill")
-            }
-        }
-        Text(
-            "Bills",
-            modifier = Modifier.padding(top = 18.dp),
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-            color = Color(0xFF101828)
-        )
-    }
-    if (bills.isEmpty()) item { EmptyState("No bills found", "Generate bills or change filters.") }
-    else items(bills, key = { it.id ?: "${it.month}-${it.year}" }) { bill ->
-        BillCard(
-            bill = bill,
-            admin = true,
-            onPay = { openDialog(MaintenanceDialog.MarkPaid(bill)) },
-            onDispute = {},
-            onReminder = { bill.id?.let(viewModel::sendReminder) },
-            onWaive = { openDialog(MaintenanceDialog.ApplyWaiver(bill)) },
-            onWriteOff = { openDialog(MaintenanceDialog.WriteOff(bill)) },
-            onDelete = { openDialog(MaintenanceDialog.CancelBill(bill)) }
-        )
-    }
-}
 
-@Composable
-private fun AdminMaintenanceHomeSummary(
-    data: com.example.application.data.repository.AdminMaintenanceData,
-    selectedMonth: Int,
-    selectedYear: Int,
-    onPreviousMonth: () -> Unit,
-    onNextMonth: () -> Unit,
-    onGenerateBills: () -> Unit,
-    onRecordPayment: () -> Unit,
-    onVerifyPayments: () -> Unit,
-    onDefaulters: () -> Unit,
-    onWriteOff: () -> Unit,
-    onReports: () -> Unit
-) {
-    val bills = data.bills
-    val payments = data.payments
-    val totalBilled = bills.fold(BigDecimal.ZERO) { sum, bill -> sum + (bill.totalAmount ?: bill.amount).toMoneyDecimal() }
-    val totalCollected = data.dashboard?.summary?.collected.toMoneyDecimal().takeIf { it > BigDecimal.ZERO }
-        ?: payments.filter { it.paymentStatus.isApprovedStatus() }.fold(BigDecimal.ZERO) { sum, payment -> sum + payment.amount.toMoneyDecimal() }
-    val pendingAmount = bills.filter { !(it.paymentStatus ?: it.status).isSettledBillStatus() }.fold(BigDecimal.ZERO) { sum, bill -> sum + bill.expectedPayableAmount() }
-    val overdueAmount = data.dashboard?.summary?.overdue.toMoneyDecimal().takeIf { it > BigDecimal.ZERO }
-        ?: bills.filter { it.isOverdueBill() }.fold(BigDecimal.ZERO) { sum, bill -> sum + bill.expectedPayableAmount() }
-    val verificationPending = payments.count { it.paymentStatus.isVerificationPendingStatus() }
-    val writtenOffAmount = data.waivers.fold(BigDecimal.ZERO) { sum, waiver -> sum + waiver.waiverAmount.toMoneyDecimal() }
-
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        SectionCard("Billing Period", "Use this month/year before generating or reviewing bills") {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                OutlinedButton(onClick = onPreviousMonth) { Text("Previous") }
-                Text("${monthName(selectedMonth)} $selectedYear", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                OutlinedButton(onClick = onNextMonth) { Text("Next") }
+            Column(modifier = Modifier.widthIn(min = 120.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = "Flat ${bill.flatNo ?: "-"}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = bill.residentName ?: "Resident",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1
+                )
             }
-        }
-        MetricGrid(
-            listOf(
-                Triple("Total Billed", DashboardFormatters.money(totalBilled), "${bills.size} bills"),
-                Triple("Collected", DashboardFormatters.money(totalCollected), "approved payments"),
-                Triple("Pending", DashboardFormatters.money(pendingAmount), "outstanding"),
-                Triple("Overdue", DashboardFormatters.money(overdueAmount), "needs follow-up"),
-                Triple("Verification", verificationPending.toString(), "payment proofs"),
-                Triple("Written Off", DashboardFormatters.money(writtenOffAmount), "not collected income")
+
+            Column(modifier = Modifier.widthIn(min = 100.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = DashboardFormatters.date(bill.dueDate ?: bill.maintenanceDueDate),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (overdue) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = if (overdue) FontWeight.Bold else FontWeight.Normal
+                )
+                if (overdue) {
+                    Text("Overdue", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            Text(
+                text = DashboardFormatters.money(bill.expectedPayableAmount()),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.widthIn(min = 90.dp)
             )
-        )
-        SectionCard("Quick Actions", "Common admin maintenance tasks") {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                MaintenanceQuickAction("Generate Bills", Icons.Filled.ReceiptLong, onGenerateBills)
-                MaintenanceQuickAction("Record Payment", Icons.Filled.Payments, onRecordPayment)
-                MaintenanceQuickAction("Open Payment Verification", Icons.Filled.CheckCircle, onVerifyPayments)
-                MaintenanceQuickAction("View Defaulters", Icons.Filled.Warning, onDefaulters)
-                MaintenanceQuickAction("Write Off", Icons.Filled.Delete, onWriteOff)
-                MaintenanceQuickAction("Reports", Icons.Filled.Download, onReports)
+
+            val displayStatus = when {
+                status.contains("partially", ignoreCase = true) -> "Partially Paid"
+                status.contains("clarification", ignoreCase = true) -> "Clarification Required"
+                status.contains("waived", ignoreCase = true) -> "Waived"
+                settledByWriteOff -> "Written Off"
+                paid -> "Paid"
+                verifying -> "Verification Pending"
+                overdue -> "Overdue"
+                status.equals("cancelled", ignoreCase = true) -> "Cancelled"
+                else -> "Unpaid"
+            }
+            Box(modifier = Modifier.widthIn(min = 110.dp)) {
+                StatusBadge(status = displayStatus)
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onViewDetails, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Filled.Visibility, contentDescription = "View Details", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                }
+                Box {
+                    IconButton(onClick = { showMenu = true }, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Filled.MoreVert, contentDescription = "More actions", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                    }
+                    androidx.compose.material3.DropdownMenu(
+                        expanded = showMenu,
+                        onDismissRequest = { showMenu = false }
+                    ) {
+                        androidx.compose.material3.DropdownMenuItem(
+                            text = { Text("Mark Paid") },
+                            onClick = { showMenu = false; onMarkPaid() }
+                        )
+                        androidx.compose.material3.DropdownMenuItem(
+                            text = { Text("Send Reminder") },
+                            onClick = { showMenu = false; onReminder() }
+                        )
+                        androidx.compose.material3.DropdownMenuItem(
+                            text = { Text("Apply Waiver") },
+                            onClick = { showMenu = false; onWaive() }
+                        )
+                        androidx.compose.material3.DropdownMenuItem(
+                            text = { Text("Write Off") },
+                            onClick = { showMenu = false; onWriteOff() }
+                        )
+                        androidx.compose.material3.DropdownMenuItem(
+                            text = { Text("Cancel Bill", color = MaterialTheme.colorScheme.error) },
+                            onClick = { showMenu = false; onDelete() }
+                        )
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun MaintenanceQuickAction(label: String, icon: ImageVector, onClick: () -> Unit) {
-    OutlinedButton(onClick = onClick, modifier = Modifier.height(52.dp), shape = RoundedCornerShape(14.dp)) {
-        Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(8.dp))
-        Text(label)
+private fun AdminStatusBadge(statusText: String, fg: Color = Color.Unspecified, bg: Color = Color.Unspecified) {
+    StatusBadge(status = statusText)
+}
+
+@Composable
+private fun RecentPaymentsVerificationCard(
+    verifications: List<MaintenancePaymentVerificationDto>,
+    onViewAll: () -> Unit,
+    viewModel: AdminMaintenanceViewModel
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Recent Payments (Pending Verification)",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF0F172A)
+                )
+                TextButton(onClick = onViewAll) {
+                    Text("View All", color = SocietyBlue40, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            verifications.forEachIndexed { index, item ->
+                RecentPaymentRowItem(
+                    verification = item,
+                    onApprove = { item.submissionId?.let { id -> viewModel.updatePayment(id, "APPROVED") } },
+                    onReject = { item.submissionId?.let { id -> viewModel.updatePayment(id, "REJECTED", "Rejected by admin") } }
+                )
+                if (index < verifications.size - 1) {
+                    HorizontalDivider(color = Color(0xFFF1F5F9))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecentPaymentRowItem(
+    verification: MaintenancePaymentVerificationDto,
+    onApprove: () -> Unit,
+    onReject: () -> Unit
+) {
+    val name = verification.residentName ?: "Resident"
+    val initials = name.split(" ").mapNotNull { it.firstOrNull()?.uppercaseChar() }.take(2).joinToString("").ifEmpty { "R" }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.widthIn(min = 140.dp)
+        ) {
+            Surface(
+                modifier = Modifier.size(40.dp),
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surfaceVariant
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(initials, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
+                }
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                Text("Flat ${verification.flatNumber ?: "-"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+
+        Text(
+            text = DashboardFormatters.money(verification.amount.toMoneyDecimal()),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.widthIn(min = 90.dp)
+        )
+
+        Column(modifier = Modifier.widthIn(min = 100.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = DashboardFormatters.date(verification.paymentDate ?: verification.submittedAt),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = verification.paymentMethod ?: "UPI",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onApprove, modifier = Modifier.size(34.dp)) {
+                Icon(Icons.Filled.Check, contentDescription = "Approve", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+            }
+            IconButton(onClick = onReject, modifier = Modifier.size(34.dp)) {
+                Icon(Icons.Filled.Close, contentDescription = "Reject", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
+            }
+        }
     }
 }
 
@@ -1017,6 +1619,8 @@ private fun PaymentVerificationSection(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val submitting = state.submitting
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     var selectedPaymentIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var screenshotPayment by remember { mutableStateOf<MaintenancePaymentVerificationDto?>(null) }
@@ -1026,6 +1630,7 @@ private fun PaymentVerificationSection(
     var confirmClarifyPayment by remember { mutableStateOf<MaintenancePaymentVerificationDto?>(null) }
     var bulkReject by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
+    var statusFilter by remember { mutableStateOf("All") }
 
     val sortedVerifications = remember(verifications) {
         verifications.sortedWith(
@@ -1034,17 +1639,23 @@ private fun PaymentVerificationSection(
         )
     }
 
-    val filteredVerifications = remember(sortedVerifications, searchQuery) {
-        if (searchQuery.isBlank()) sortedVerifications
-        else {
-            val query = searchQuery.trim().lowercase()
-            sortedVerifications.filter {
-                it.residentName?.lowercase()?.contains(query) == true ||
-                it.flatNumber?.lowercase()?.contains(query) == true ||
-                it.title?.lowercase()?.contains(query) == true ||
-                it.transactionReference?.lowercase()?.contains(query) == true ||
-                it.utrNumber?.lowercase()?.contains(query) == true
+    val filteredVerifications = remember(sortedVerifications, searchQuery, statusFilter) {
+        sortedVerifications.filter { payment ->
+            val statusMatches = when (statusFilter) {
+                "Pending" -> payment.verificationStatus.isPaymentVerificationPending()
+                "Approved" -> payment.verificationStatus.normalizePaymentStatus() == "APPROVED"
+                "Rejected" -> payment.verificationStatus.isPaymentVerificationRejected()
+                "Clarification" -> payment.verificationStatus.normalizePaymentStatus() == "NEEDS_CLARIFICATION"
+                else -> true
             }
+            val query = searchQuery.trim().lowercase()
+            val searchMatches = query.isBlank() ||
+                payment.residentName?.lowercase()?.contains(query) == true ||
+                payment.flatNumber?.lowercase()?.contains(query) == true ||
+                payment.title?.lowercase()?.contains(query) == true ||
+                payment.transactionReference?.lowercase()?.contains(query) == true ||
+                payment.utrNumber?.lowercase()?.contains(query) == true
+            statusMatches && searchMatches
         }
     }
 
@@ -1106,6 +1717,19 @@ private fun PaymentVerificationSection(
                     singleLine = true
                 )
 
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf("All", "Pending", "Approved", "Rejected", "Clarification").forEach { label ->
+                        FilterChip(
+                            selected = statusFilter == label,
+                            onClick = { statusFilter = label },
+                            label = { Text(label) }
+                        )
+                    }
+                }
+
                 if (pendingVerifications.isNotEmpty()) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -1147,7 +1771,7 @@ private fun PaymentVerificationSection(
         }
 
         if (filteredVerifications.isEmpty()) {
-            EmptyState("No payment submissions waiting for verification.", "Submitted resident payment screenshots will appear here.")
+            EmptyState("No $statusFilter payments", "Try another status or search term.")
         } else {
             filteredVerifications.forEach { payment ->
                 PaymentVerificationCard(
@@ -1300,7 +1924,22 @@ private fun PaymentVerificationSection(
                     Text("No image available")
                 }
             },
-            confirmButton = { TextButton(onClick = { screenshotPayment = null }) { Text("Close") } }
+            confirmButton = {
+                Row {
+                    if (!proofImage.isNullOrBlank()) {
+                        TextButton(onClick = {
+                            scope.launch {
+                                val saved = savePaymentProof(context, proofImage, payment.submissionId)
+                                Toast.makeText(context, if (saved) "Payment proof saved to Downloads" else "Unable to download payment proof", Toast.LENGTH_LONG).show()
+                            }
+                        }) {
+                            Icon(Icons.Filled.Download, null)
+                            Text("Download", modifier = Modifier.padding(start = 6.dp))
+                        }
+                    }
+                    TextButton(onClick = { screenshotPayment = null }) { Text("Close") }
+                }
+            }
         )
     }
 
@@ -1337,6 +1976,29 @@ private fun PaymentVerificationSection(
             dismissButton = { TextButton(onClick = { bulkReject = false }) { Text("Cancel") } }
         )
     }
+}
+
+private suspend fun savePaymentProof(context: Context, image: String, paymentId: String?): Boolean = withContext(Dispatchers.IO) {
+    runCatching {
+        val (bytes, mime) = if (image.startsWith("data:", ignoreCase = true)) {
+            val header = image.substringBefore(',')
+            Base64.decode(image.substringAfter(','), Base64.DEFAULT) to header.substringAfter("data:").substringBefore(';').ifBlank { "image/jpeg" }
+        } else {
+            java.net.URL(image).openConnection().run {
+                connectTimeout = 15_000
+                readTimeout = 20_000
+                getInputStream().use { it.readBytes() } to (contentType?.substringBefore(';') ?: "image/jpeg")
+            }
+        }
+        val extension = when (mime.lowercase()) { "image/png" -> "png"; "image/webp" -> "webp"; else -> "jpg" }
+        val values = ContentValues().apply {
+            put(MediaStore.Downloads.DISPLAY_NAME, "payment-proof-${paymentId ?: System.currentTimeMillis()}.$extension")
+            put(MediaStore.Downloads.MIME_TYPE, mime)
+            put(MediaStore.Downloads.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS)
+        }
+        val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: error("Cannot create download")
+        context.contentResolver.openOutputStream(uri)?.use { it.write(bytes) } ?: error("Cannot write download")
+    }.isSuccess
 }
 
 @Composable
@@ -1496,11 +2158,7 @@ private fun PaymentDetailsDialog(
                             enabled = !submitting,
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
                         ) {
-                            if (submitting) {
-                                CircularProgressIndicator(modifier = Modifier.size(20.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
-                            } else {
-                                Text("Approve")
-                            }
+                            Text(if (submitting) "Approving..." else "Approve", fontWeight = FontWeight.Bold)
                         }
 
                         OutlinedButton(
@@ -1527,11 +2185,7 @@ private fun PaymentDetailsDialog(
                         enabled = !submitting,
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
                     ) {
-                        if (submitting) {
-                            CircularProgressIndicator(modifier = Modifier.size(20.dp), color = MaterialTheme.colorScheme.onSecondary, strokeWidth = 2.dp)
-                        } else {
-                            Text("Reconsider")
-                        }
+                        Text(if (submitting) "Reconsidering..." else "Reconsider", fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -1643,19 +2297,26 @@ private fun PaymentVerificationCard(
                             .clip(RoundedCornerShape(8.dp))
                             .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp))
                             .clickable { onOpenScreenshot() },
-                        contentScale = ContentScale.Crop
+                        contentScale = ContentScale.Crop,
+                        isThumbnail = true
                     )
                 }
             }
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            Button(
-                onClick = onViewDetails,
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer)
-            ) {
-                Text("View Details")
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = onViewDetails,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer)
+                ) { Text("View Details") }
+                if (!proofImage.isNullOrBlank()) {
+                    OutlinedButton(onClick = onOpenScreenshot, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Filled.OpenInNew, null, modifier = Modifier.size(17.dp))
+                        Text("Screenshot Proof", modifier = Modifier.padding(start = 5.dp))
+                    }
+                }
             }
         }
     }
@@ -1756,6 +2417,7 @@ private fun BillCard(
     onReminder: () -> Unit = {},
     onWaive: () -> Unit = {},
     onWriteOff: () -> Unit = {},
+    onEdit: () -> Unit = {},
     onDelete: () -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -1830,6 +2492,11 @@ private fun BillCard(
 
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (admin && !finished) {
+                    OutlinedButton(onClick = onEdit, shape = RoundedCornerShape(10.dp)) {
+                        Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Edit")
+                    }
                     OutlinedButton(onClick = onPay, shape = RoundedCornerShape(10.dp)) {
                         Icon(Icons.Filled.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
@@ -2047,6 +2714,8 @@ private sealed interface MaintenanceDialog {
     data class ApplyPenalty(val bill: MaintenanceBillDto) : MaintenanceDialog
     data class ApplyWaiver(val bill: MaintenanceBillDto?) : MaintenanceDialog
     data class WriteOff(val bill: MaintenanceBillDto) : MaintenanceDialog
+    data class EditBill(val bill: MaintenanceBillDto) : MaintenanceDialog
+    data class DeleteBill(val bill: MaintenanceBillDto) : MaintenanceDialog
     data class CancelBill(val bill: MaintenanceBillDto) : MaintenanceDialog
     data object Settings : MaintenanceDialog
     data object LateFee : MaintenanceDialog
@@ -2059,77 +2728,160 @@ private sealed interface ResidentDialog {
     data class Dispute(val bill: MaintenanceBillDto) : ResidentDialog
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MaintenanceDialogHost(dialog: MaintenanceDialog?, onDismiss: () -> Unit, viewModel: AdminMaintenanceViewModel) {
     val viewState by viewModel.state.collectAsStateWithLifecycle()
     when (dialog) {
         MaintenanceDialog.Generate -> SimpleFormDialog("Generate Bills", onDismiss) {
-            val settings = viewState.data?.settings
-            var month by remember { mutableStateOf("${LocalDate.now().monthValue}") }
-            var year by remember { mutableStateOf("${LocalDate.now().year}") }
-            var amount by remember(settings?.fixedAmount) { mutableStateOf(settings?.fixedAmount.orEmpty()) }
-            var dueDate by remember(settings?.dueDay, month, year) {
-                val day = settings?.dueDay?.toIntOrNull()?.coerceIn(1, 28) ?: 10
-                mutableStateOf("${year.padStart(4, '0')}-${month.padStart(2, '0')}-$day".replace("-$day", "-${day.toString().padStart(2, '0')}"))
-            }
-            var title by remember(settings?.title) { mutableStateOf(settings?.title ?: "Monthly Maintenance") }
-            var notes by remember { mutableStateOf("") }
-            var penaltyType by remember { mutableStateOf("") }
-            var penaltyValue by remember { mutableStateOf("") }
-            var penaltyGraceDays by remember { mutableStateOf("") }
-            var residentId by remember { mutableStateOf("") }
-            var flatId by remember { mutableStateOf("") }
-            var wing by remember { mutableStateOf("") }
-            var building by remember { mutableStateOf("") }
-            var floor by remember { mutableStateOf("") }
-            var flatTypeId by remember { mutableStateOf("") }
-            if (settings == null || settings.fixedAmount.toMoneyDecimal() <= BigDecimal.ZERO) {
-                SectionCard("Maintenance rule required", "Set a fixed maintenance amount before generating monthly bills.") {
-                    Text("Backend skips residents when it cannot calculate a valid bill amount. Configure Maintenance Settings first, then generate bills.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Button(onClick = { viewModel.setTab("Settings"); onDismiss() }, modifier = Modifier.fillMaxWidth()) { Text("Open Settings") }
+            val existingBills = viewState.data?.bills.orEmpty()
+
+            var latestMonth = 0
+            var latestYear = 0
+            var maxCombined = 0
+            existingBills.forEach { b ->
+                val m = b.month?.toIntOrNull() ?: monthNameToNumber(b.month) ?: 0
+                val y = b.year?.toIntOrNull() ?: 0
+                if (m in 1..12 && y >= 2000) {
+                    val combined = y * 12 + m
+                    if (combined > maxCombined) {
+                        maxCombined = combined
+                        latestMonth = m
+                        latestYear = y
+                    }
                 }
-                return@SimpleFormDialog
             }
-            SectionCard("Default billing rule") {
-                KeyValue("Title", settings.title ?: "Monthly Maintenance")
-                KeyValue("Fixed charge", DashboardFormatters.money(settings.fixedAmount.toMoneyDecimal()))
-                KeyValue("Due day", settings.dueDay ?: "10")
-                KeyValue("Late fee", "${settings.lateFeeValue ?: "0"} (${settings.lateFeeType ?: "fixed"})")
+
+            val (defaultMonth, defaultYear) = if (latestMonth > 0 && latestYear > 0) {
+                if (latestMonth == 12) 1 to (latestYear + 1) else (latestMonth + 1) to latestYear
+            } else {
+                LocalDate.now().monthValue to LocalDate.now().year
             }
-            BasicAppTextField(month, { month = it }, "Month number")
-            BasicAppTextField(year, { year = it }, "Year")
-            BasicAppTextField(title, { title = it }, "Bill title")
-            BasicAppTextField(amount, { amount = it }, "Amount")
-            BasicAppTextField(dueDate, { dueDate = it }, "Due date YYYY-MM-DD")
-            BasicAppTextField(penaltyType, { penaltyType = it }, "Penalty type optional")
-            BasicAppTextField(penaltyValue, { penaltyValue = it }, "Penalty value optional")
-            BasicAppTextField(penaltyGraceDays, { penaltyGraceDays = it }, "Penalty grace days optional")
-            BasicAppTextField(residentId, { residentId = it }, "Resident ID optional")
-            BasicAppTextField(flatId, { flatId = it }, "Flat ID optional")
-            BasicAppTextField(wing, { wing = it }, "Wing optional")
-            BasicAppTextField(building, { building = it }, "Building optional")
-            BasicAppTextField(floor, { floor = it }, "Floor optional")
-            BasicAppTextField(flatTypeId, { flatTypeId = it }, "Flat type ID optional")
-            BasicAppTextField(notes, { notes = it }, "Notes optional")
+
+            var month by remember { mutableStateOf("$defaultMonth") }
+            var year by remember { mutableStateOf("$defaultYear") }
+
+            val selM = month.toIntOrNull() ?: 0
+            val selY = year.toIntOrNull() ?: 0
+
+            val expectedMonth = if (latestMonth == 12) 1 else latestMonth + 1
+            val expectedYear = if (latestMonth == 12) latestYear + 1 else latestYear
+
+            val isSkippingMonth = latestMonth > 0 && latestYear > 0 && selM > 0 && selY >= 2000 &&
+                (selY * 12 + selM) > (expectedYear * 12 + expectedMonth)
+
+            val isAlreadyGenerated = latestMonth > 0 && latestYear > 0 && selM > 0 && selY >= 2000 &&
+                (selY * 12 + selM) <= (latestYear * 12 + latestMonth)
+
+            val monthNamesList = listOf(
+                "1 - January", "2 - February", "3 - March", "4 - April",
+                "5 - May", "6 - June", "7 - July", "8 - August",
+                "9 - September", "10 - October", "11 - November", "12 - December"
+            )
+
+            Text(
+                text = "Select billing month and year to generate maintenance bills for all society flats.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color(0xFF64748B)
+            )
+
+            var monthExpanded by remember { mutableStateOf(false) }
+            ExposedDropdownMenuBox(
+                expanded = monthExpanded,
+                onExpandedChange = { monthExpanded = !monthExpanded }
+            ) {
+                OutlinedTextField(
+                    value = monthNamesList.getOrNull(selM - 1) ?: "Select Month",
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Month") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = monthExpanded) },
+                    modifier = Modifier.fillMaxWidth().menuAnchor(),
+                    shape = RoundedCornerShape(12.dp)
+                )
+                ExposedDropdownMenu(
+                    expanded = monthExpanded,
+                    onDismissRequest = { monthExpanded = false }
+                ) {
+                    monthNamesList.forEachIndexed { idx, name ->
+                        DropdownMenuItem(
+                            text = { Text(name) },
+                            onClick = {
+                                month = "${idx + 1}"
+                                monthExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
+
+            OutlinedTextField(
+                value = year,
+                onValueChange = { year = it.filter { char -> char.isDigit() }.take(4) },
+                label = { Text("Year") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp)
+            )
+
+            if (isSkippingMonth) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFFFEF2F2),
+                    border = BorderStroke(1.dp, Color(0xFFFCA5A5)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Filled.Warning, contentDescription = "Alert", tint = Color(0xFFDC2626))
+                        Text(
+                            text = "Bills for ${monthName(expectedMonth)} $expectedYear have not been generated yet! Please generate ${monthName(expectedMonth)} $expectedYear bills first before generating for ${monthName(selM)} $selY.",
+                            color = Color(0xFF991B1B),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            } else if (isAlreadyGenerated) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFFFFFBEB),
+                    border = BorderStroke(1.dp, Color(0xFFFDE68A)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Filled.Info, contentDescription = "Info", tint = Color(0xFFD97706))
+                        Text(
+                            text = "Bills for ${monthName(selM)} $selY have already been generated.",
+                            color = Color(0xFF92400E),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+            }
+
             Button(
                 onClick = {
-                    viewModel.generateBills(
-                        month.toIntOrNull() ?: 0,
-                        year.toIntOrNull() ?: 0,
-                        amount.ifBlank { null }, dueDate, title, notes.ifBlank { null },
-                        residentId = residentId.ifBlank { null }, flatId = flatId.ifBlank { null },
-                        wing = wing.ifBlank { null }, building = building.ifBlank { null }, floor = floor.ifBlank { null }, flatTypeId = flatTypeId.ifBlank { null },
-                        penaltyType = penaltyType.ifBlank { null }, penaltyValue = penaltyValue.ifBlank { null }, penaltyGraceDays = penaltyGraceDays.ifBlank { null }
-                    )
+                    viewModel.generateBills(month = selM, year = selY)
                     onDismiss()
                 },
                 enabled = !viewState.submitting &&
-                    month.toIntOrNull()?.let { it in 1..12 } == true &&
-                    year.toIntOrNull()?.let { it >= 2000 } == true &&
-                    amount.toMoneyDecimal() > BigDecimal.ZERO &&
-                    dueDate.matches(Regex("\\d{4}-\\d{2}-\\d{2}")),
+                    selM in 1..12 &&
+                    selY >= 2000 &&
+                    !isSkippingMonth &&
+                    !isAlreadyGenerated,
                 modifier = Modifier.fillMaxWidth()
-            ) { Text(if (viewState.submitting) "Generating…" else "Generate") }
+            ) {
+                Text(if (viewState.submitting) "Generating…" else "Generate Bills")
+            }
         }
         MaintenanceDialog.ManualBill -> SimpleFormDialog("Create Manual Bill", onDismiss) {
             var title by remember { mutableStateOf("Monthly Maintenance") }
@@ -2325,6 +3077,53 @@ private fun MaintenanceDialogHost(dialog: MaintenanceDialog?, onDismiss: () -> U
                 enabled = !submitting && bill.id != null && currentDue > BigDecimal.ZERO && totalWriteOff > BigDecimal.ZERO && validationError == null,
                 modifier = Modifier.fillMaxWidth()
             ) { Text(if (submitting) "Applying..." else "Apply Write-off") }
+        }
+        is MaintenanceDialog.EditBill -> SimpleFormDialog("Edit Maintenance Bill", onDismiss) {
+            val bill = dialog.bill
+            var amount by remember { mutableStateOf(bill.amount ?: "") }
+            var reason by remember { mutableStateOf("") }
+            Text("Edit base maintenance amount for Flat ${bill.flatNo ?: "-"}", style = MaterialTheme.typography.bodySmall, color = Color(0xFF64748B))
+            KeyValue("Resident", bill.residentName ?: "-")
+            KeyValue("Current Base Amount", DashboardFormatters.money(bill.amount.toMoneyDecimal()))
+            OutlinedTextField(
+                value = amount,
+                onValueChange = { amount = it },
+                label = { Text("Maintenance Base Amount (₹)") },
+                modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+            )
+            OutlinedTextField(
+                value = reason,
+                onValueChange = { reason = it },
+                label = { Text("Reason for Override (Optional)") },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 2
+            )
+            Button(
+                onClick = {
+                    bill.id?.let { id -> viewModel.editBill(id, amount, reason) }
+                    onDismiss()
+                },
+                enabled = amount.isNotBlank() && amount.toDoubleOrNull() != null,
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Save Changes") }
+        }
+        is MaintenanceDialog.DeleteBill -> SimpleFormDialog("Delete Maintenance Bill", onDismiss) {
+            val bill = dialog.bill
+            Text(
+                "Are you sure you want to delete the bill for Flat ${bill.flatNo ?: "-"} (${bill.residentName ?: "Resident"}) for ${monthName(bill.month?.toIntOrNull() ?: 1)} ${bill.year ?: ""}? This action cannot be undone.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color(0xFF0F172A)
+            )
+            Spacer(Modifier.height(8.dp))
+            Button(
+                onClick = {
+                    bill.id?.let { id -> viewModel.deleteBill(id) }
+                    onDismiss()
+                },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+            ) { Text("Delete Bill Permanently") }
         }
         is MaintenanceDialog.CancelBill -> SimpleFormDialog("Cancel Bill", onDismiss) {
             var reason by remember { mutableStateOf("") }
@@ -2797,12 +3596,20 @@ private fun PaymentProofImage(
     image: String?,
     contentDescription: String,
     modifier: Modifier = Modifier,
-    contentScale: ContentScale = ContentScale.Crop
+    contentScale: ContentScale = ContentScale.Crop,
+    isThumbnail: Boolean = false
 ) {
     val dataBitmap = remember(image) { decodePaymentDataImage(image) }
     val resolvedUrl = remember(image) { fullMediaUrl(image) }
     var isLoading by remember(resolvedUrl) { mutableStateOf(!resolvedUrl.isNullOrBlank() && dataBitmap == null) }
     var loadFailed by remember(resolvedUrl) { mutableStateOf(false) }
+    var retryAttempt by remember(resolvedUrl) { mutableStateOf(0) }
+    val requestUrl = remember(resolvedUrl, retryAttempt) {
+        resolvedUrl?.let { url ->
+            val separator = if ('?' in url) '&' else '?'
+            "$url${separator}proofRetry=$retryAttempt"
+        }
+    }
 
     if (dataBitmap != null) {
         Image(
@@ -2814,7 +3621,7 @@ private fun PaymentProofImage(
     } else {
         Box(modifier = modifier, contentAlignment = Alignment.Center) {
             AsyncImage(
-                model = resolvedUrl,
+                model = requestUrl,
                 contentDescription = contentDescription,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = contentScale,
@@ -2832,28 +3639,39 @@ private fun PaymentProofImage(
                 }
             )
 
-            when {
-                resolvedUrl.isNullOrBlank() -> Text("No payment proof uploaded", textAlign = TextAlign.Center)
-                isLoading -> CircularProgressIndicator(modifier = Modifier.size(28.dp))
-                loadFailed -> Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier.padding(12.dp)
-                ) {
-                    Icon(Icons.Filled.Warning, contentDescription = null, tint = Color(0xFFE58A00))
-                    Text(
-                        "Unable to load proof image",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        textAlign = TextAlign.Center
-                    )
-                    Text(
-                        resolvedUrl,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                        maxLines = 2
-                    )
+            if (isThumbnail) {
+                when {
+                    resolvedUrl.isNullOrBlank() -> Icon(Icons.Filled.Warning, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                    isLoading -> com.example.application.ui.components.SkeletonCircle(size = 16.dp)
+                    loadFailed -> Icon(Icons.Filled.Warning, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                }
+            } else {
+                when {
+                    resolvedUrl.isNullOrBlank() -> Text("No payment proof uploaded", textAlign = TextAlign.Center)
+                    isLoading -> com.example.application.ui.components.SkeletonBox(height = 120.dp)
+                    loadFailed -> Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.padding(12.dp)
+                    ) {
+                        Icon(Icons.Filled.Warning, contentDescription = null, tint = Color(0xFFE58A00))
+                        Text(
+                            "Unable to load proof image",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            textAlign = TextAlign.Center
+                        )
+                        TextButton(onClick = { retryAttempt += 1; loadFailed = false; isLoading = true }) {
+                            Text("Retry")
+                        }
+                        Text(
+                            resolvedUrl,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                            maxLines = 2
+                        )
+                    }
                 }
             }
         }
@@ -3095,6 +3913,25 @@ private fun monthName(value: String?): String {
 
 private fun monthName(value: Int): String = monthName(value.toString())
 
+private fun monthNameToNumber(name: String?): Int? {
+    if (name.isNullOrBlank()) return null
+    return when (name.trim().lowercase()) {
+        "january", "jan" -> 1
+        "february", "feb" -> 2
+        "march", "mar" -> 3
+        "april", "apr" -> 4
+        "may" -> 5
+        "june", "jun" -> 6
+        "july", "jul" -> 7
+        "august", "aug" -> 8
+        "september", "sep", "sept" -> 9
+        "october", "oct" -> 10
+        "november", "nov" -> 11
+        "december", "dec" -> 12
+        else -> name.toIntOrNull()
+    }
+}
+
 private fun String?.toLocalDateOrNull(): LocalDate? {
     val date = orEmpty().take(10)
     return runCatching { LocalDate.parse(date) }.getOrNull()
@@ -3264,30 +4101,21 @@ private fun AdminInlineMessage(message: String, fg: Color, bg: Color, modifier: 
 }
 
 @Composable
-private fun AdminStatusPill(text: String, fg: Color, bg: Color) {
-    Text(
-        text,
-        modifier = Modifier
-            .clip(RoundedCornerShape(50))
-            .background(bg)
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-        color = fg,
-        style = MaterialTheme.typography.labelLarge,
-        fontWeight = FontWeight.SemiBold
-    )
+private fun AdminStatusPill(text: String, fg: Color = Color.Unspecified, bg: Color = Color.Unspecified) {
+    StatusBadge(status = text)
 }
 
 @Composable
-private fun AdminAmountRow(label: String, value: String, strong: Boolean = false, valueColor: Color = Color(0xFF101828)) {
+private fun AdminAmountRow(label: String, value: String, strong: Boolean = false, valueColor: Color = Color.Unspecified) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Text(
             label,
-            color = if (strong) Color(0xFF101828) else Color(0xFF667085),
+            color = if (strong) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
             fontWeight = if (strong) FontWeight.SemiBold else FontWeight.Normal
         )
         Text(
             value,
-            color = valueColor,
+            color = if (valueColor == Color.Unspecified || valueColor == Color(0xFF101828)) MaterialTheme.colorScheme.onSurface else valueColor,
             fontWeight = if (strong) FontWeight.Bold else FontWeight.SemiBold
         )
     }
@@ -3422,6 +4250,104 @@ private fun saveAdminBillReceiptPdf(context: Context, bill: MaintenanceBillDto) 
     }
 }
 
+private fun shareVerificationCsv(context: Context, payments: List<MaintenancePaymentVerificationDto>, fileName: String) {
+    val header = listOf("Payment ID", "Bill ID", "Resident", "Flat", "Wing", "Title", "Amount", "Status", "Method", "UTR", "Payment Date", "Submitted At")
+    val rows = payments.map { payment ->
+        listOf(
+            payment.submissionId.orEmpty(), payment.billId.orEmpty(), payment.residentName.orEmpty(),
+            payment.flatNumber.orEmpty(), payment.wing.orEmpty(), payment.title.orEmpty(), payment.submittedAmount.orEmpty(),
+            friendlyPaymentStatus(payment.verificationStatus), payment.paymentMethod.orEmpty(),
+            (payment.transactionReference ?: payment.utrNumber).orEmpty(), payment.paymentDate.orEmpty(), payment.submittedAt.orEmpty()
+        )
+    }
+    val csv = (listOf(header) + rows).joinToString("\n") { row -> row.joinToString(",") { it.csvCell() } }
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/csv"
+        putExtra(Intent.EXTRA_SUBJECT, fileName)
+        putExtra(Intent.EXTRA_TEXT, csv)
+    }
+    runCatching { context.startActivity(Intent.createChooser(intent, "Export payment report")) }
+        .onFailure { Toast.makeText(context, "Unable to export payment report.", Toast.LENGTH_LONG).show() }
+}
+
+private fun shareVerificationPdf(context: Context, payments: List<MaintenancePaymentVerificationDto>) {
+    runCatching {
+        val document = PdfDocument()
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = android.graphics.Color.BLACK; textSize = 10f }
+        var pageNumber = 1
+        var page = document.startPage(PdfDocument.PageInfo.Builder(842, 595, pageNumber).create())
+        var canvas = page.canvas
+        var y = 42f
+        fun heading() {
+            paint.textSize = 18f; paint.isFakeBoldText = true
+            canvas.drawText("Maintenance Payment Report", 35f, y, paint)
+            y += 28f; paint.textSize = 10f; paint.isFakeBoldText = false
+            canvas.drawText("Resident / Flat / Amount / Status / UTR / Date", 35f, y, paint); y += 22f
+        }
+        heading()
+        payments.forEach { payment ->
+            if (y > 555f) {
+                document.finishPage(page)
+                pageNumber += 1
+                page = document.startPage(PdfDocument.PageInfo.Builder(842, 595, pageNumber).create())
+                canvas = page.canvas; y = 42f; heading()
+            }
+            val row = "${payment.residentName ?: "-"} | ${payment.wing ?: ""}-${payment.flatNumber ?: "-"} | ₹${payment.submittedAmount ?: "0"} | ${friendlyPaymentStatus(payment.verificationStatus)} | ${payment.transactionReference ?: payment.utrNumber ?: "-"} | ${payment.paymentDate?.take(10) ?: "-"}"
+            canvas.drawText(row.take(135), 35f, y, paint); y += 18f
+        }
+        document.finishPage(page)
+        val file = java.io.File(context.cacheDir, "payment-report-${System.currentTimeMillis()}.pdf")
+        file.outputStream().use(document::writeTo); document.close()
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+            type = "application/pdf"; putExtra(Intent.EXTRA_STREAM, uri); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }, "Print or share payment report"))
+    }.onFailure { Toast.makeText(context, "Unable to create payment PDF.", Toast.LENGTH_LONG).show() }
+}
+
+private fun saveWriteOffReceiptPdf(context: Context, receipt: com.example.application.data.remote.dto.WriteOffReceiptDto) {
+    val document = PdfDocument()
+    val page = document.startPage(PdfDocument.PageInfo.Builder(595, 842, 1).create())
+    val canvas = page.canvas
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 16f; color = android.graphics.Color.BLACK }
+    var y = 60f
+    fun line(value: String, bold: Boolean = false) {
+        paint.isFakeBoldText = bold
+        canvas.drawText(value, 48f, y, paint)
+        y += 30f
+    }
+    line("Society Management System", true)
+    line("Official Maintenance Write-off Receipt", true)
+    y += 10f
+    line("Bill: ${receipt.billNumber ?: receipt.billId ?: "-"}")
+    line("Resident: ${receipt.residentName ?: "-"}")
+    line("Flat: ${receipt.flatNo ?: "-"}")
+    line("Billing: ${receipt.month ?: "-"} / ${receipt.year ?: "-"}")
+    line("Base amount: ${DashboardFormatters.money(receipt.baseMaintenanceCharge.toMoneyDecimal())}")
+    line("Late fee: ${DashboardFormatters.money(receipt.lateFee.toMoneyDecimal())}")
+    line("Total amount: ${DashboardFormatters.money(receipt.totalAmount.toMoneyDecimal())}")
+    line("Written off: ${DashboardFormatters.money(receipt.writeOffAmount.toMoneyDecimal())}", true)
+    line("Remaining: ${DashboardFormatters.money(receipt.remainingAmount.toMoneyDecimal())}")
+    line("Reason: ${receipt.reason ?: "Approved write-off"}")
+    line("Approved by: ${receipt.approvedBy ?: "Admin"}")
+    line("Approval date: ${DashboardFormatters.date(receipt.approvalDate)}")
+    document.finishPage(page)
+    try {
+        val values = ContentValues().apply {
+            put(MediaStore.Downloads.DISPLAY_NAME, "write-off-receipt-${receipt.billId ?: System.currentTimeMillis()}.pdf")
+            put(MediaStore.Downloads.MIME_TYPE, "application/pdf")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) put(MediaStore.Downloads.RELATIVE_PATH, "Download")
+        }
+        val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: error("Unable to create receipt")
+        context.contentResolver.openOutputStream(uri)?.use { document.writeTo(it) } ?: error("Unable to write receipt")
+        Toast.makeText(context, "Official write-off receipt downloaded", Toast.LENGTH_SHORT).show()
+    } catch (_: Exception) {
+        Toast.makeText(context, "Unable to download write-off receipt", Toast.LENGTH_SHORT).show()
+    } finally {
+        document.close()
+    }
+}
+
 private fun String?.toMoneyDecimal(): BigDecimal {
     return this?.toBigDecimalOrNull() ?: BigDecimal.ZERO
 }
@@ -3440,12 +4366,18 @@ fun InfoItem(label: String, value: String) {
 
 @Composable
 fun StatusBadge(status: String) {
-    val (bgColor, textColor) = when (status.uppercase().replace(" ", "_").replace("-", "_")) {
-        "PAID", "APPROVED" -> MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer
-        "PENDING_REVIEW", "PENDING_VERIFICATION", "PENDING" -> MaterialTheme.colorScheme.secondaryContainer to MaterialTheme.colorScheme.onSecondaryContainer
-        "REJECTED", "OVERDUE" -> MaterialTheme.colorScheme.errorContainer to MaterialTheme.colorScheme.onErrorContainer
-        "NEEDS_CLARIFICATION" -> MaterialTheme.colorScheme.tertiaryContainer to MaterialTheme.colorScheme.onTertiaryContainer
-        else -> MaterialTheme.colorScheme.surfaceVariant to MaterialTheme.colorScheme.onSurfaceVariant
+    val normalized = status.uppercase().replace(" ", "_").replace("-", "_")
+    val (bgColor, textColor) = when {
+        normalized in setOf("PAID", "APPROVED", "SETTLED") ->
+            MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer
+        normalized in setOf("PENDING", "PENDING_REVIEW", "PENDING_VERIFICATION", "UNPAID", "UNDER_REVIEW") ->
+            MaterialTheme.colorScheme.secondaryContainer to MaterialTheme.colorScheme.onSecondaryContainer
+        normalized in setOf("REJECTED", "OVERDUE", "CANCELLED") ->
+            MaterialTheme.colorScheme.errorContainer to MaterialTheme.colorScheme.onErrorContainer
+        normalized in setOf("NEEDS_CLARIFICATION", "CLARIFICATION_REQUIRED", "PARTIALLY_PAID", "PARTIAL", "PARTIAL_WRITE_OFF", "WAIVED", "WRITTEN_OFF") ->
+            MaterialTheme.colorScheme.tertiaryContainer to MaterialTheme.colorScheme.onTertiaryContainer
+        else ->
+            MaterialTheme.colorScheme.surfaceVariant to MaterialTheme.colorScheme.onSurfaceVariant
     }
     Surface(
         color = bgColor,
@@ -3456,7 +4388,8 @@ fun StatusBadge(status: String) {
             text = status.replace("_", " "),
             color = textColor,
             style = MaterialTheme.typography.labelSmall,
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
         )
     }
 }

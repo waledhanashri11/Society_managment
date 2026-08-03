@@ -1,6 +1,9 @@
 package com.example.application.ui.screens.admin
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -28,6 +31,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -222,8 +227,8 @@ fun ResidentFormScreen(
     LaunchedEffect(state.done) { if (state.done) onBack() }
     ManagementFormScaffold(title, onBack, state.isLoading, state.error) {
         BasicAppTextField(state.name, viewModel::updateName, "Full name")
-        BasicAppTextField(state.email, viewModel::updateEmail, "Email", enabled = true)
-        BasicAppTextField(state.phone, viewModel::updatePhone, "Phone")
+        BasicAppTextField(state.email, viewModel::updateEmail, "Email", enabled = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email))
+        BasicAppTextField(state.phone, viewModel::updatePhone, "Phone", keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone))
         if (state.id == null) {
             OutlinedTextField(
                 value = state.password,
@@ -389,7 +394,7 @@ fun FlatFormScreen(
             selected = state.flatTypeId,
             onSelected = viewModel::updateFlatType
         )
-        BasicAppTextField(state.maintenanceCharge, viewModel::updateMaintenance, "Maintenance charge")
+        BasicAppTextField(state.maintenanceCharge, viewModel::updateMaintenance, "Maintenance charge", keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
         SelectChips(
             label = "Assigned resident",
             options = listOf("" to "Unassigned") + state.residents.mapNotNull { user -> user.id?.let { it to "${user.name ?: "Resident"} (${user.email ?: "-"})" } },
@@ -478,7 +483,7 @@ fun StaffFormScreen(
         BasicAppTextField(state.name, viewModel::updateName, "Name")
         BasicAppTextField(state.role, viewModel::updateRole, "Role / designation")
         BasicAppTextField(state.phone, viewModel::updatePhone, "Phone")
-        BasicAppTextField(state.salary, viewModel::updateSalary, "Salary")
+        BasicAppTextField(state.salary, viewModel::updateSalary, "Salary", keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
         PrimaryAppButton(if (state.id == null) "Add Staff" else "Save Staff", viewModel::submit, enabled = !state.isSubmitting)
     }
 }
@@ -516,6 +521,7 @@ private fun ManagementListScaffold(
         PullToRefreshBox(
             isRefreshing = isRefreshing,
             onRefresh = onRefresh,
+            indicator = {},
             modifier = Modifier.fillMaxSize().padding(padding)
         ) {
             LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -533,7 +539,7 @@ private fun ManagementListScaffold(
                     error?.let { RetryState(it, onRetry) }
                 }
                 if (loading) {
-                    item { DashboardSkeleton() }
+                    items(5) { com.example.application.ui.components.SkeletonListItem() }
                 } else if (empty && error == null) {
                     item { EmptyState("No records found", "Try refresh or clear filters.") }
                 } else {
@@ -679,7 +685,7 @@ private fun FlatTypeEditorDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 BasicAppTextField(form.name, { form = form.copy(name = it) }, "Profile name, e.g. 2BHK")
-                BasicAppTextField(form.defaultMaintenanceAmount, { form = form.copy(defaultMaintenanceAmount = it) }, "Default maintenance amount")
+                BasicAppTextField(form.defaultMaintenanceAmount, { form = form.copy(defaultMaintenanceAmount = it) }, "Default maintenance amount", keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
                 BasicAppTextField(form.description, { form = form.copy(description = it) }, "Description")
                 SelectTextChips("Status", listOf("Active", "Inactive"), form.status, { form = form.copy(status = it) })
             }
@@ -707,6 +713,9 @@ private fun StaffCard(staff: StaffDto, busy: Boolean, onOpen: () -> Unit, onEdit
 private fun ManagementCard(onClick: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp), content = content)

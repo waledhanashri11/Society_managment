@@ -43,6 +43,28 @@ data class NocTypeDto(
     val active: Boolean?
 )
 
+data class NocReportsDto(
+    val summary: NocReportSummaryDto? = null,
+    @SerializedName("by_type") val byType: List<NocReportGroupDto> = emptyList(),
+    @SerializedName("by_month") val byMonth: List<NocReportGroupDto> = emptyList()
+)
+
+data class NocReportSummaryDto(
+    val total: Int? = 0,
+    val pending: Int? = 0,
+    @SerializedName("under_review") val underReview: Int? = 0,
+    val approved: Int? = 0,
+    val rejected: Int? = 0,
+    val completed: Int? = 0,
+    val expired: Int? = 0
+)
+
+data class NocReportGroupDto(
+    @SerializedName("noc_type") val nocType: String? = null,
+    val month: String? = null,
+    val count: Int? = 0
+)
+
 data class PublicNocCertificateDto(
     val society: PublicNocSocietyDto?,
     val certificate: PublicNocCertificateDetailsDto?

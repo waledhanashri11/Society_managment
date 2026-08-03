@@ -14,6 +14,14 @@ object DashboardFormatters {
         return currency.format(value ?: BigDecimal.ZERO)
     }
 
+    fun money(value: Double?): String {
+        return currency.format(value?.toBigDecimal() ?: BigDecimal.ZERO)
+    }
+
+    fun money(value: String?): String {
+        return currency.format(value?.toBigDecimalOrNull() ?: BigDecimal.ZERO)
+    }
+
     fun date(value: String?): String {
         if (value.isNullOrBlank()) return "—"
         return try {

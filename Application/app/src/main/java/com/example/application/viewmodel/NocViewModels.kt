@@ -4,8 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.application.data.remote.dto.CreateNocRequest
 import com.example.application.data.remote.dto.NocRequestDto
+import com.example.application.data.remote.dto.NocReportsDto
 import com.example.application.data.remote.dto.PublicNocCertificateDto
 import com.example.application.data.repository.NocRepository
+import com.example.application.util.AppError
 import com.example.application.util.NetworkResult
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -23,7 +25,8 @@ data class NocUiState(
     val error: String? = null,
     val message: String? = null,
     val submitting: Boolean = false,
-    val certificateUri: String? = null
+    val certificateUri: String? = null,
+    val reports: NocReportsDto? = null
 )
 
 data class PublicNocUiState(
@@ -73,7 +76,14 @@ class ResidentNocViewModel @Inject constructor(
             _state.update { it.copy(isLoading = it.items.isEmpty(), isRefreshing = refresh, error = null, message = null) }
             when (val result = repository.getMyNocs(refresh)) {
                 is NetworkResult.Success -> _state.update { it.copy(isLoading = false, isRefreshing = false, items = result.data) }
-                is NetworkResult.Error -> _state.update { it.copy(isLoading = false, isRefreshing = false, error = repository.userMessageFor(result.error)) }
+                is NetworkResult.Error -> _state.update {
+                    val errMessage = repository.userMessageFor(result.error)
+                    val isTimeout = result.error is AppError.Timeout ||
+                            errMessage.contains("time out", ignoreCase = true) ||
+                            errMessage.contains("timed out", ignoreCase = true)
+                    val safeError = if (isTimeout || (it.items.isNotEmpty() && refresh)) null else errMessage
+                    it.copy(isLoading = false, isRefreshing = false, error = safeError)
+                }
                 NetworkResult.Loading -> Unit
             }
         }
@@ -146,7 +156,22 @@ class AdminNocViewModel @Inject constructor(
     private val _state = MutableStateFlow(NocUiState())
     val state: StateFlow<NocUiState> = _state.asStateFlow()
 
-    init { load() }
+    init {
+        load()
+        loadReports()
+    }
+
+    private fun loadReports() {
+        viewModelScope.launch {
+            when (val result = repository.getReports()) {
+                is NetworkResult.Success -> _state.update { it.copy(reports = result.data) }
+                is NetworkResult.Error -> if (_state.value.items.isEmpty()) {
+                    _state.update { it.copy(error = repository.userMessageFor(result.error)) }
+                }
+                NetworkResult.Loading -> Unit
+            }
+        }
+    }
 
     fun setFilter(value: String) {
         _state.update { it.copy(filter = value) }
@@ -154,6 +179,7 @@ class AdminNocViewModel @Inject constructor(
     }
 
     fun load(refresh: Boolean = false, status: String = _state.value.filter) {
+        if (refresh) loadReports()
         viewModelScope.launch {
             _state.update { it.copy(isLoading = it.items.isEmpty(), isRefreshing = refresh, error = null, message = null) }
             when (val result = repository.getAllNocs(status.takeIf { it != "All" }, refresh)) {
