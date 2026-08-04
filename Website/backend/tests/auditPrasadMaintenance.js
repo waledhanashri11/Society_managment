@@ -10,8 +10,7 @@ const { pool } = require('../database/client');
     JOIN users u ON u.id = m.resident_id
     JOIN flats f ON f.id = m.flat_id
     WHERE LOWER(u.name) LIKE '%prasad%' AND f.flat_no = '103'
-      AND m.month = 8 AND m.year = 2026
-    ORDER BY m.id
+    ORDER BY m.year DESC, m.month DESC, m.id DESC
   `);
   const billIds = bills.rows.map((row) => row.bill_id);
   const writeoffs = billIds.length === 0 ? { rows: [] } : await pool.query(`

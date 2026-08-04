@@ -90,9 +90,9 @@ const getDashboard = async (req, res) => {
     const [billSummaryRows] = await promisePool.query(
       `SELECT
          COUNT(*) AS total_bills,
-         SUM(CASE WHEN status NOT IN ('Paid', 'PAID', 'Settled', 'SETTLED', 'WRITTEN_OFF', 'Written Off', 'Fully Written Off') THEN 1 ELSE 0 END) AS pending_bills,
+         SUM(CASE WHEN status NOT IN ('Paid', 'PAID', 'Settled', 'SETTLED', 'WRITTEN_OFF', 'Written Off', 'Fully Written Off', 'Cancelled', 'Canceled') THEN 1 ELSE 0 END) AS pending_bills,
          SUM(CASE WHEN status IN ('Paid', 'PAID', 'Settled', 'SETTLED', 'WRITTEN_OFF', 'Written Off', 'Fully Written Off') THEN 1 ELSE 0 END) AS paid_bills,
-         SUM(CASE WHEN status NOT IN ('Paid', 'PAID', 'Settled', 'SETTLED', 'WRITTEN_OFF', 'Written Off', 'Fully Written Off') THEN GREATEST(0, COALESCE(original_amount, amount, total_amount, 0) + COALESCE(penalty_amount, 0) - COALESCE(maintenance_write_off_amount, 0) - COALESCE(penalty_write_off_amount, 0) - COALESCE(paid_amount, 0)) ELSE 0 END) AS pending_amount,
+         SUM(CASE WHEN status NOT IN ('Paid', 'PAID', 'Settled', 'SETTLED', 'WRITTEN_OFF', 'Written Off', 'Fully Written Off', 'Cancelled', 'Canceled') THEN GREATEST(0, COALESCE(original_amount, amount, total_amount, 0) + COALESCE(penalty_amount, 0) - COALESCE(maintenance_write_off_amount, 0) - COALESCE(penalty_write_off_amount, 0) - COALESCE(paid_amount, 0)) ELSE 0 END) AS pending_amount,
          SUM(CASE WHEN status IN ('Paid', 'PAID') THEN COALESCE(paid_amount, 0) ELSE 0 END) AS paid_amount
        FROM maintenance
        WHERE resident_id = ?`,
@@ -110,7 +110,7 @@ const getDashboard = async (req, res) => {
               COALESCE(paid_amount, 0) AS paid_amount,
               GREATEST(0, COALESCE(original_amount, amount, total_amount, 0) + COALESCE(penalty_amount, 0) - COALESCE(maintenance_write_off_amount, 0) - COALESCE(penalty_write_off_amount, 0) - COALESCE(paid_amount, 0)) AS final_remaining_amount
        FROM maintenance
-       WHERE resident_id = ? AND status NOT IN ('Paid', 'PAID', 'Settled', 'SETTLED', 'WRITTEN_OFF', 'Written Off', 'Fully Written Off')`,
+       WHERE resident_id = ? AND status NOT IN ('Paid', 'PAID', 'Settled', 'SETTLED', 'WRITTEN_OFF', 'Written Off', 'Fully Written Off', 'Cancelled', 'Canceled')`,
       [userId]
     );
     debugBills.forEach(b => {
@@ -139,7 +139,7 @@ const getDashboard = async (req, res) => {
        ) app_p ON app_p.bill_id = m.id
        WHERE m.resident_id = ?
          AND app_p.bill_id IS NULL
-         AND m.status NOT IN ('Paid', 'PAID', 'Settled', 'SETTLED', 'WRITTEN_OFF', 'Written Off', 'Fully Written Off')
+         AND m.status NOT IN ('Paid', 'PAID', 'Settled', 'SETTLED', 'WRITTEN_OFF', 'Written Off', 'Fully Written Off', 'Cancelled', 'Canceled')
          AND GREATEST(0, COALESCE(m.original_amount, m.amount, m.total_amount, 0) + COALESCE(m.penalty_amount, 0) - COALESCE(m.maintenance_write_off_amount, 0) - COALESCE(m.penalty_write_off_amount, 0) - COALESCE(m.paid_amount, 0)) > 0
        ORDER BY m.year DESC, m.month DESC, m.due_date DESC, m.created_at DESC
        LIMIT 1`,

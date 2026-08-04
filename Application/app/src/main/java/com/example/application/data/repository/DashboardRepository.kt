@@ -174,13 +174,14 @@ class DashboardRepository @Inject constructor(
         val complaints = complaintsDeferred.await().getOrNull()?.takeIf { it.isSuccessful }?.body() ?: emptyList<ComplaintDto>().also { warnings.add("Complaints unavailable") }
         val notices = noticesDeferred.await().getOrNull()?.takeIf { it.isSuccessful }?.body() ?: emptyList<NoticeDto>().also { warnings.add("Notices unavailable") }
         val settledStatuses = setOf("paid", "approved", "settled", "written_off", "written off", "fully_written_off")
+        val ignoredStatuses = setOf("cancelled", "canceled", "deleted", "void")
         val pendingBills = bills.filterNot { bill ->
             val status = (bill.paymentStatus ?: bill.latestPaymentStatus ?: bill.status).orEmpty().trim().lowercase()
-            status in settledStatuses || bill.netPayableAmount() <= BigDecimal.ZERO
+            status in settledStatuses || status in ignoredStatuses || bill.netPayableAmount() <= BigDecimal.ZERO
         }
         val paidBills = bills.filter { bill ->
             val status = (bill.paymentStatus ?: bill.latestPaymentStatus ?: bill.status).orEmpty().trim().lowercase()
-            status in settledStatuses || (bill.netPayableAmount() <= BigDecimal.ZERO && status != "pending")
+            status !in ignoredStatuses && (status in settledStatuses || (bill.netPayableAmount() <= BigDecimal.ZERO && status != "pending"))
         }
         val currentBill = pendingBills.firstOrNull()
 

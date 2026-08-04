@@ -1521,16 +1521,45 @@ const updateMaintenance = async (req, res) => {
 };
 
 const deleteMaintenance = async (req, res) => {
+  const connection = await promisePool.getConnection();
   try {
     const { id } = req.params;
-    await promisePool.query('DELETE FROM maintenance_writeoffs WHERE bill_id = ?', [id]);
-    await promisePool.query('DELETE FROM payment_maintenance WHERE maintenance_id = ?', [id]);
-    await promisePool.query('DELETE FROM payments WHERE bill_id = ?', [id]);
-    await promisePool.query('UPDATE maintenance SET status = \'Cancelled\', updated_at = NOW() WHERE id = ?', [id]);
-    return sendResponse(res, 200, 'Bill cancelled successfully');
+    await connection.beginTransaction();
+    const [bills] = await connection.query('SELECT id FROM maintenance WHERE id = ? FOR UPDATE', [id]);
+    if (!bills.length) {
+      await connection.rollback();
+      return sendResponse(res, 404, 'Maintenance bill not found');
+    }
+    const [linkedPayments] = await connection.query(
+      `SELECT DISTINCT p.id FROM payments p
+       LEFT JOIN payment_maintenance pm ON pm.payment_id = p.id
+       WHERE p.bill_id = ? OR pm.maintenance_id = ?`,
+      [id, id]
+    );
+    const paymentIds = linkedPayments.map((row) => row.id);
+    await connection.query('DELETE FROM payment_maintenance WHERE maintenance_id = ?', [id]);
+    await connection.query('DELETE FROM payment_status_history WHERE bill_id = ?', [id]);
+    if (paymentIds.length) {
+      await connection.query('UPDATE payments SET bill_id = NULL WHERE bill_id = ?', [id]);
+      await connection.query(
+        `DELETE FROM payments p
+         WHERE p.id = ANY(?)
+           AND p.bill_id IS NULL
+           AND NOT EXISTS (SELECT 1 FROM payment_maintenance pm WHERE pm.payment_id = p.id)`,
+        [paymentIds]
+      );
+    }
+    await connection.query('DELETE FROM maintenance_writeoffs WHERE bill_id = ?', [id]);
+    await connection.query('DELETE FROM write_offs WHERE bill_id = ?', [id]);
+    const [result] = await connection.query('DELETE FROM maintenance WHERE id = ?', [id]);
+    await connection.commit();
+    return sendResponse(res, 200, 'Bill deleted permanently', { deletedBillId: Number(id), deletedCount: result.affectedRows });
   } catch (error) {
+    try { await connection.rollback(); } catch (_) {}
     console.error('Delete maintenance error:', error);
     return sendResponse(res, 500, 'Server error', null, ['Unable to delete maintenance']);
+  } finally {
+    connection.release();
   }
 };
 
@@ -1670,7 +1699,7 @@ const getUserMaintenance = async (req, res) => {
         LIMIT 1
       ) approved_payment ON true
       LEFT JOIN LATERAL (
-        SELECT w.reason AS write_off_reason, w.type AS write_off_type, w.remarks AS write_off_remarks
+        SELECT w.reason AS write_off_reason, w.type AS write_off_type, NULL::text AS write_off_remarks
         FROM write_offs w
         WHERE w.bill_id = m.id
         ORDER BY w.created_at DESC

@@ -59,6 +59,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import com.example.application.R
 import com.example.application.data.remote.dto.MaintenanceBillDto
 import com.example.application.data.remote.dto.netPayableAmount
@@ -90,6 +92,10 @@ fun ResidentDashboardScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val data = state.data
 
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        viewModel.load(refresh = true)
+    }
+
     Scaffold(
         topBar = {
             ResidentDashboardTopBar(
@@ -118,7 +124,6 @@ fun ResidentDashboardScreen(
         PullToRefreshBox(
             isRefreshing = state.isRefreshing,
             onRefresh = { viewModel.load(refresh = true) },
-            indicator = {},
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
