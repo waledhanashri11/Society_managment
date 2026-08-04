@@ -2861,15 +2861,18 @@ const getWriteOffHistory = async (req, res) => {
              COALESCE(w.type, mw.writeoff_type, 'PARTIAL') AS type,
              COALESCE(w.created_at, mw.created_at, m.updated_at) AS created_at,
              CONCAT('BILL-', m.id) AS bill_number
-      FROM maintenance m
-      LEFT JOIN write_offs w ON w.bill_id = m.id
-      LEFT JOIN maintenance_writeoffs mw ON mw.bill_id = m.id
+      FROM maintenance_writeoffs mw
+      JOIN maintenance m ON m.id = mw.bill_id
+      LEFT JOIN write_offs w
+        ON w.bill_id = mw.bill_id
+       AND w.amount = mw.amount
+       AND w.reason IS NOT DISTINCT FROM mw.reason
       LEFT JOIN users u ON m.resident_id = u.id
       LEFT JOIN flats f ON m.flat_id = f.id
       LEFT JOIN users mw_u ON mw.resident_id = mw_u.id
       LEFT JOIN flats mw_f ON mw.flat_id = mw_f.id
-      LEFT JOIN users admin_u ON COALESCE(w.approved_by, mw.admin_id) = admin_u.id
-      WHERE (m.write_off_amount > 0 OR w.id IS NOT NULL OR mw.id IS NOT NULL)
+      LEFT JOIN users admin_u ON COALESCE(w.admin_id, mw.admin_id) = admin_u.id
+      WHERE mw.id IS NOT NULL
     `;
     const params = [];
 
