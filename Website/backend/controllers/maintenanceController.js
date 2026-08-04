@@ -773,21 +773,22 @@ const reconcilePaidPayments = async (pool = promisePool, userId = null) => {
   try {
     let query = `
       UPDATE maintenance m
-      JOIN (
+      SET status = 'Paid',
+          paid_amount = GREATEST(COALESCE(m.paid_amount, 0), COALESCE(approved.total_paid, m.total_amount)),
+          remaining_amount = 0,
+          remaining_due = 0,
+          current_due = 0,
+          updated_at = NOW()
+      FROM (
         SELECT COALESCE(pm.maintenance_id, p.bill_id) AS bill_id,
                SUM(p.amount) AS total_paid
         FROM payments p
         LEFT JOIN payment_maintenance pm ON pm.payment_id = p.id
         WHERE p.payment_status IN ('Approved', 'Paid')
         GROUP BY COALESCE(pm.maintenance_id, p.bill_id)
-      ) approved ON m.id = approved.bill_id
-      SET m.status = 'Paid',
-          m.paid_amount = GREATEST(COALESCE(m.paid_amount, 0), COALESCE(approved.total_paid, m.total_amount)),
-          m.remaining_amount = 0,
-          m.remaining_due = 0,
-          m.current_due = 0,
-          m.updated_at = NOW()
-      WHERE m.status NOT IN ('Paid', 'PAID', 'Settled', 'SETTLED')
+      ) approved
+      WHERE m.id = approved.bill_id
+        AND m.status NOT IN ('Paid', 'PAID', 'Settled', 'SETTLED')
     `;
     const params = [];
     if (userId) {
@@ -799,17 +800,18 @@ const reconcilePaidPayments = async (pool = promisePool, userId = null) => {
     try {
       await pool.query(`
         UPDATE maintenance m
-        JOIN (
+        SET maintenance_write_off_amount = GREATEST(COALESCE(m.maintenance_write_off_amount, 0), wo.sum_maint_wo),
+            penalty_write_off_amount = GREATEST(COALESCE(m.penalty_write_off_amount, 0), wo.sum_pen_wo),
+            write_off_amount = GREATEST(COALESCE(m.write_off_amount, 0), wo.sum_wo, wo.sum_maint_wo + wo.sum_pen_wo)
+        FROM (
           SELECT bill_id,
                  SUM(COALESCE(maintenance_write_off_amount, 0)) AS sum_maint_wo,
                  SUM(COALESCE(penalty_write_off_amount, 0)) AS sum_pen_wo,
                  SUM(COALESCE(amount, 0)) AS sum_wo
           FROM write_offs
           GROUP BY bill_id
-        ) wo ON m.id = wo.bill_id
-        SET m.maintenance_write_off_amount = GREATEST(COALESCE(m.maintenance_write_off_amount, 0), wo.sum_maint_wo),
-            m.penalty_write_off_amount = GREATEST(COALESCE(m.penalty_write_off_amount, 0), wo.sum_pen_wo),
-            m.write_off_amount = GREATEST(COALESCE(m.write_off_amount, 0), wo.sum_wo, wo.sum_maint_wo + wo.sum_pen_wo)
+        ) wo
+        WHERE m.id = wo.bill_id
       `);
     } catch (_) {}
 
@@ -1856,23 +1858,14 @@ const createPayment = async (req, res) => {
 
     await connection.beginTransaction();
 
-    let finalBillIds = requestedBillIds.length ? requestedBillIds : (billId ? [Number(billId)] : []);
-    if (!requestedBillIds.length && req.user?.id) {
-      const [unpaidRows] = await connection.query(
-        "SELECT id FROM maintenance WHERE resident_id = ? AND status NOT IN ('Paid', 'PAID', 'SETTLED', 'WRITTEN_OFF', 'Pending Verification', 'Under Review') ORDER BY year ASC, month ASC, id ASC",
-        [req.user.id]
-      );
-      if (unpaidRows.length > 0) {
-        finalBillIds = Array.from(new Set([...unpaidRows.map((r) => r.id), ...finalBillIds]));
-      }
-    }
+    const finalBillIds = Array.from(new Set(requestedBillIds.length ? requestedBillIds : [Number(billId)]));
 
     const [billRows] = finalBillIds.length
-      ? await connection.query('SELECT * FROM maintenance WHERE id IN (?) ORDER BY year ASC, month ASC, due_date ASC, id ASC', [finalBillIds])
+      ? await connection.query('SELECT * FROM maintenance WHERE id = ANY(?::int[]) ORDER BY year ASC, month ASC, due_date ASC, id ASC', [finalBillIds])
       : await connection.query('SELECT * FROM maintenance WHERE id = ?', [billId]);
-    if (billRows.length === 0) {
+    if (billRows.length !== finalBillIds.length) {
       await connection.rollback();
-      return sendResponse(res, 404, 'Bill not found');
+      return sendResponse(res, 404, 'One or more selected bills were not found');
     }
 
     if (billRows.some((row) => Number(row.resident_id) !== Number(req.user.id))) {
@@ -1880,9 +1873,10 @@ const createPayment = async (req, res) => {
       return sendResponse(res, 403, 'You can only access your own bills');
     }
 
-    if (billRows.some((row) => ['Paid', 'PAID', 'SETTLED', 'WRITTEN_OFF'].includes(row.status))) {
+    const nonPayableStatuses = ['Paid', 'PAID', 'Settled', 'SETTLED', 'WRITTEN_OFF', 'Written Off', 'Fully Written Off', 'Cancelled'];
+    if (billRows.some((row) => nonPayableStatuses.includes(row.status))) {
       await connection.rollback();
-      return sendResponse(res, 400, 'One or more selected bills are already paid');
+      return sendResponse(res, 400, 'One or more selected bills are not available for payment');
     }
 
     const bill = billRows[billRows.length - 1];
@@ -1894,10 +1888,18 @@ const createPayment = async (req, res) => {
       await connection.rollback();
       return sendResponse(res, 400, 'Valid payment amount is required');
     }
+    if (Math.abs(paidAmount - totalAmount) > 0.009) {
+      await connection.rollback();
+      return sendResponse(
+        res,
+        409,
+        `Bill balance changed. Current payable amount is ₹${totalAmount.toLocaleString('en-IN')}. Please refresh and try again.`
+      );
+    }
 
     // Delete any old pending unapproved payments for these bill IDs so new payment takes over
     await connection.query(
-      `DELETE FROM payment_maintenance WHERE maintenance_id IN (?) AND payment_id IN (SELECT id FROM payments WHERE payment_status NOT IN ('Approved', 'Paid'))`,
+      `DELETE FROM payment_maintenance WHERE maintenance_id = ANY(?::int[]) AND payment_id IN (SELECT id FROM payments WHERE payment_status NOT IN ('Approved', 'Paid'))`,
       [selectedBillIds]
     );
 
@@ -1909,8 +1911,8 @@ const createPayment = async (req, res) => {
         return sendResponse(res, 409, 'Duplicate payment transaction', null, ['This UTR number has already been used for an approved payment']);
       } else {
         const oldIds = paymentRows.map((p) => p.id);
-        await connection.query('DELETE FROM payment_maintenance WHERE payment_id IN (?)', [oldIds]);
-        await connection.query('DELETE FROM payments WHERE id IN (?)', [oldIds]);
+        await connection.query('DELETE FROM payment_maintenance WHERE payment_id = ANY(?::int[])', [oldIds]);
+        await connection.query('DELETE FROM payments WHERE id = ANY(?::int[])', [oldIds]);
       }
     }
 
