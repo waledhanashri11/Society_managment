@@ -34,19 +34,6 @@ const getAdminNotifications = async (req, res) => {
     });
 
     res.json({ notifications, unreadCount: notifications.length });
-
-      return {
-        id: item.id,
-        title: item.title,
-        message: item.message,
-        type: item.type,
-        path,
-        is_read: item.is_read,
-        created_at: item.created_at
-      };
-    });
-
-    res.json({ notifications, unreadCount: notifications.length });
   } catch (error) {
     console.error('Get notifications error:', error);
     res.status(500).json({ message: 'Server error' });
