@@ -1,4 +1,5 @@
 const { promisePool } = require('../config/database');
+const { withMaintenanceBillBreakdown } = require('../utils/maintenanceBill');
 
 const normalizeStatus = (status) => {
   if (!status) return null;
@@ -11,55 +12,17 @@ const sanitizeForResident = (data) => {
   if (data instanceof Date) return data;
   if (Array.isArray(data)) return data.map(sanitizeForResident);
   if (typeof data === 'object') {
-    const writeOffAmt = Number(data.write_off_amount || data.writeoff_amount || data.writeOffAmount || 0);
     const cleaned = {};
     for (const [key, val] of Object.entries(data)) {
       if (
-        /write_?off/i.test(key) ||
-        /written_?off/i.test(key) ||
-        key === 'approvedWriteOffs' ||
-        key === 'writeOffs' ||
         key === 'internalAdjustment' ||
         key === 'adminNotes' ||
         key === 'admin_notes'
       ) {
         continue;
       }
-      let value = sanitizeForResident(val);
-      if (
-        (key === 'status' || key === 'payment_status' || key === 'paymentStatus' || key === 'calculated_status' || key === 'maintenance_status') &&
-        typeof value === 'string' &&
-        /write_?off|written_?off|waived/i.test(value)
-      ) {
-        const rem = Number(data.remaining_amount ?? data.remainingPayable ?? data.remainingAmount ?? 0) - writeOffAmt;
-        value = rem <= 0 ? (value === value.toUpperCase() ? 'PAID' : 'Paid') : (value === value.toUpperCase() ? 'PENDING' : 'Pending');
-      }
-      cleaned[key] = value;
+      cleaned[key] = sanitizeForResident(val);
     }
-
-    if (writeOffAmt > 0) {
-      if (cleaned.paid_amount !== undefined) cleaned.paid_amount = Number(cleaned.paid_amount || 0) + writeOffAmt;
-      if (cleaned.paidAmount !== undefined) cleaned.paidAmount = Number(cleaned.paidAmount || 0) + writeOffAmt;
-
-      if (cleaned.remaining_amount !== undefined) cleaned.remaining_amount = Math.max(0, Number(cleaned.remaining_amount || 0) - writeOffAmt);
-      if (cleaned.remainingAmount !== undefined) cleaned.remainingAmount = Math.max(0, Number(cleaned.remainingAmount || 0) - writeOffAmt);
-      if (cleaned.pending_amount !== undefined) cleaned.pending_amount = Math.max(0, Number(cleaned.pending_amount || 0) - writeOffAmt);
-      if (cleaned.pendingAmount !== undefined) cleaned.pendingAmount = Math.max(0, Number(cleaned.pendingAmount || 0) - writeOffAmt);
-      if (cleaned.outstanding_amount !== undefined) cleaned.outstanding_amount = Math.max(0, Number(cleaned.outstanding_amount || 0) - writeOffAmt);
-
-      const finalRem = Number(cleaned.remaining_amount ?? cleaned.pending_amount ?? cleaned.pendingAmount ?? cleaned.remainingAmount ?? 0);
-      const finalPaid = Number(cleaned.paid_amount ?? cleaned.paidAmount ?? 0);
-      for (const stKey of ['status', 'payment_status', 'paymentStatus', 'calculated_status', 'maintenance_status']) {
-        if (cleaned[stKey] !== undefined) {
-          if (finalRem <= 0) {
-            cleaned[stKey] = typeof cleaned[stKey] === 'string' && cleaned[stKey] === cleaned[stKey].toUpperCase() ? 'PAID' : 'Paid';
-          } else if (finalPaid > 0) {
-            cleaned[stKey] = typeof cleaned[stKey] === 'string' && cleaned[stKey] === cleaned[stKey].toUpperCase() ? 'PARTIALLY_PAID' : 'Partial';
-          }
-        }
-      }
-    }
-
     return cleaned;
   }
   return data;
@@ -106,8 +69,15 @@ const getDashboard = async (req, res) => {
     const userId = req.user.id;
     const societyName = process.env.SOCIETY_NAME || 'Green Valley Society';
 
+    try {
+      const { reconcilePaidPayments } = require('./maintenanceController');
+      if (typeof reconcilePaidPayments === 'function') {
+        await reconcilePaidPayments(promisePool, userId);
+      }
+    } catch (_) {}
+
     const [userRows] = await promisePool.query(
-      `SELECT u.id, u.name, u.email, u.phone, u.flat_id,
+      `SELECT u.id, u.name, u.email, u.phone, u.flat_id, u.role, u.status,
               f.flat_no, f.wing, f.floor_no, f.maintenance_charge, f.status AS flat_status
        FROM users u
        LEFT JOIN flats f ON f.id = u.flat_id
@@ -120,10 +90,10 @@ const getDashboard = async (req, res) => {
     const [billSummaryRows] = await promisePool.query(
       `SELECT
          COUNT(*) AS total_bills,
-         SUM(CASE WHEN status != 'Paid' THEN 1 ELSE 0 END) AS pending_bills,
-         SUM(CASE WHEN status = 'Paid' THEN 1 ELSE 0 END) AS paid_bills,
-         SUM(CASE WHEN status != 'Paid' THEN remaining_amount ELSE 0 END) AS pending_amount,
-         SUM(CASE WHEN status = 'Paid' THEN paid_amount ELSE 0 END) AS paid_amount
+         SUM(CASE WHEN status NOT IN ('Paid', 'PAID', 'Settled', 'SETTLED', 'WRITTEN_OFF', 'Written Off', 'Fully Written Off') THEN 1 ELSE 0 END) AS pending_bills,
+         SUM(CASE WHEN status IN ('Paid', 'PAID', 'Settled', 'SETTLED', 'WRITTEN_OFF', 'Written Off', 'Fully Written Off') THEN 1 ELSE 0 END) AS paid_bills,
+         SUM(CASE WHEN status NOT IN ('Paid', 'PAID', 'Settled', 'SETTLED', 'WRITTEN_OFF', 'Written Off', 'Fully Written Off') THEN GREATEST(0, COALESCE(original_amount, amount, total_amount, 0) + COALESCE(penalty_amount, 0) - COALESCE(maintenance_write_off_amount, 0) - COALESCE(penalty_write_off_amount, 0) - COALESCE(paid_amount, 0)) ELSE 0 END) AS pending_amount,
+         SUM(CASE WHEN status IN ('Paid', 'PAID') THEN COALESCE(paid_amount, 0) ELSE 0 END) AS paid_amount
        FROM maintenance
        WHERE resident_id = ?`,
       [userId]
@@ -131,20 +101,47 @@ const getDashboard = async (req, res) => {
 
     const billSummary = billSummaryRows[0] || {};
 
+    const [debugBills] = await promisePool.query(
+      `SELECT id, resident_id,
+              COALESCE(original_amount, amount, total_amount, 0) AS original_amount,
+              COALESCE(penalty_amount, 0) AS penalty_amount,
+              COALESCE(maintenance_write_off_amount, 0) AS maintenance_write_off_amount,
+              COALESCE(penalty_write_off_amount, 0) AS penalty_write_off_amount,
+              COALESCE(paid_amount, 0) AS paid_amount,
+              GREATEST(0, COALESCE(original_amount, amount, total_amount, 0) + COALESCE(penalty_amount, 0) - COALESCE(maintenance_write_off_amount, 0) - COALESCE(penalty_write_off_amount, 0) - COALESCE(paid_amount, 0)) AS final_remaining_amount
+       FROM maintenance
+       WHERE resident_id = ? AND status NOT IN ('Paid', 'PAID', 'Settled', 'SETTLED', 'WRITTEN_OFF', 'Written Off', 'Fully Written Off')`,
+      [userId]
+    );
+    debugBills.forEach(b => {
+      console.log(`[DEBUG_PAYMENT_FLOW] residentId=${b.resident_id}, billId=${b.id}, originalAmount=${b.original_amount}, penalty=${b.penalty_amount}, maintenanceWriteOff=${b.maintenance_write_off_amount}, penaltyWriteOff=${b.penalty_write_off_amount}, approvedPaidAmount=${b.paid_amount}, finalRemainingAmount=${b.final_remaining_amount}`);
+    });
+
     const [currentBillRows] = await promisePool.query(
       `SELECT m.*, 
               m.amount AS "maintenanceAmount", m.amount AS maintenance_amount,
               m.penalty_amount AS "penaltyAmount", m.penalty_amount AS penalty_amount,
-              m.total_amount AS "originalAmount", m.total_amount AS original_amount,
-              m.maintenance_write_off_amount AS "maintenanceWrittenOff", m.maintenance_write_off_amount AS maintenance_written_off,
-              m.penalty_write_off_amount AS "penaltyWrittenOff", m.penalty_write_off_amount AS penalty_written_off,
-              m.write_off_amount AS "totalWrittenOff", m.write_off_amount AS total_written_off,
-              m.remaining_amount AS "remainingPayable", m.remaining_amount AS remaining_payable,
+              COALESCE(m.original_amount, m.amount, m.total_amount, 0) AS "originalAmount", COALESCE(m.original_amount, m.amount, m.total_amount, 0) AS original_amount,
+              COALESCE(m.maintenance_write_off_amount, 0) AS "maintenanceWrittenOff", COALESCE(m.maintenance_write_off_amount, 0) AS maintenance_written_off,
+              COALESCE(m.penalty_write_off_amount, 0) AS "penaltyWrittenOff", COALESCE(m.penalty_write_off_amount, 0) AS penalty_written_off,
+              COALESCE(m.write_off_amount, 0) AS "totalWrittenOff", COALESCE(m.write_off_amount, 0) AS total_written_off,
+              GREATEST(0, COALESCE(m.original_amount, m.amount, m.total_amount, 0) + COALESCE(m.penalty_amount, 0) - COALESCE(m.maintenance_write_off_amount, 0) - COALESCE(m.penalty_write_off_amount, 0) - COALESCE(m.paid_amount, 0)) AS "remainingPayable",
+              GREATEST(0, COALESCE(m.original_amount, m.amount, m.total_amount, 0) + COALESCE(m.penalty_amount, 0) - COALESCE(m.maintenance_write_off_amount, 0) - COALESCE(m.penalty_write_off_amount, 0) - COALESCE(m.paid_amount, 0)) AS remaining_payable,
+              GREATEST(0, COALESCE(m.original_amount, m.amount, m.total_amount, 0) + COALESCE(m.penalty_amount, 0) - COALESCE(m.maintenance_write_off_amount, 0) - COALESCE(m.penalty_write_off_amount, 0) - COALESCE(m.paid_amount, 0)) AS remaining_amount,
               m.status AS payment_status, f.flat_no
        FROM maintenance m
        LEFT JOIN flats f ON m.flat_id = f.id
-       WHERE m.resident_id = ? AND m.status != 'Paid'
-       ORDER BY m.due_date ASC, m.created_at DESC
+       LEFT JOIN (
+         SELECT COALESCE(pm.maintenance_id, p.bill_id) AS bill_id
+         FROM payments p
+         LEFT JOIN payment_maintenance pm ON pm.payment_id = p.id
+         WHERE p.payment_status IN ('Approved', 'Paid')
+       ) app_p ON app_p.bill_id = m.id
+       WHERE m.resident_id = ?
+         AND app_p.bill_id IS NULL
+         AND m.status NOT IN ('Paid', 'PAID', 'Settled', 'SETTLED', 'WRITTEN_OFF', 'Written Off', 'Fully Written Off')
+         AND GREATEST(0, COALESCE(m.original_amount, m.amount, m.total_amount, 0) + COALESCE(m.penalty_amount, 0) - COALESCE(m.maintenance_write_off_amount, 0) - COALESCE(m.penalty_write_off_amount, 0) - COALESCE(m.paid_amount, 0)) > 0
+       ORDER BY m.year DESC, m.month DESC, m.due_date DESC, m.created_at DESC
        LIMIT 1`,
       [userId]
     );
@@ -192,6 +189,8 @@ const getDashboard = async (req, res) => {
         pending_bills: Number(billSummary.pending_bills || 0),
         paid_bills: Number(billSummary.paid_bills || 0),
         pending_amount: Number(billSummary.pending_amount || 0),
+        total_due: Number(billSummary.pending_amount || 0),
+        totalDue: Number(billSummary.pending_amount || 0),
         paid_amount: Number(billSummary.paid_amount || 0),
         family_members: 1,
         registered_vehicles: 0,
@@ -203,7 +202,11 @@ const getDashboard = async (req, res) => {
         delivered_parcels: Number(parcelSummaryRows[0]?.delivered_parcels || 0),
         total_activities: Number(activityCountRows[0]?.total_activities || 0),
       },
-      currentBill: currentBillRows[0] || null,
+      currentBill: (() => {
+        const rawBill = currentBillRows[0];
+        if (!rawBill) return null;
+        return withMaintenanceBillBreakdown(rawBill);
+      })(),
     }));
   } catch (error) {
     console.error('Resident dashboard error:', error);
@@ -218,7 +221,8 @@ const getMaintenance = async (req, res) => {
       `SELECT m.*, 
               m.amount AS "maintenanceAmount", m.amount AS maintenance_amount,
               m.penalty_amount AS "penaltyAmount", m.penalty_amount AS penalty_amount,
-              m.total_amount AS "originalAmount", m.total_amount AS original_amount,
+              COALESCE(m.original_amount, m.amount, 0) AS "originalAmount",
+              COALESCE(m.original_amount, m.amount, 0) AS original_amount,
               m.remaining_amount AS "remainingPayable", m.remaining_amount AS remaining_payable,
               m.status AS payment_status, f.flat_no
        FROM maintenance m
@@ -227,7 +231,7 @@ const getMaintenance = async (req, res) => {
        ORDER BY m.created_at DESC`,
       [userId]
     );
-    res.json(sanitizeForResident(maintenance));
+    res.json(sanitizeForResident(maintenance.map((bill) => withMaintenanceBillBreakdown(bill))));
   } catch (error) {
     console.error('Resident maintenance error:', error);
     res.status(500).json({ message: 'Server error' });
@@ -389,10 +393,15 @@ const getReportSummary = async (req, res) => {
     res.json({
       flat: userRows[0] || null,
       totalBills: Number(summaryRows[0]?.total_bills || 0),
+      total_bills: Number(summaryRows[0]?.total_bills || 0),
       totalPaidAmount: Number(summaryRows[0]?.total_paid_amount || 0),
+      total_paid_amount: Number(summaryRows[0]?.total_paid_amount || 0),
       totalPendingAmount: Number(summaryRows[0]?.total_pending_amount || 0),
+      total_pending_amount: Number(summaryRows[0]?.total_pending_amount || 0),
       totalPenaltyAmount: Number(summaryRows[0]?.total_penalty_amount || 0),
-      currentMonthStatus: currentMonthRows[0]?.status || 'No Bill'
+      total_penalty_amount: Number(summaryRows[0]?.total_penalty_amount || 0),
+      currentMonthStatus: currentMonthRows[0]?.status || 'No Bill',
+      current_month_status: currentMonthRows[0]?.status || 'No Bill'
     });
   } catch (error) {
     console.error('Resident report summary error:', error);
@@ -494,12 +503,19 @@ const getSocietyReportSummary = async (req, res) => {
 
     res.json({
       totalSocietyCollection: totalCollection,
+      total_society_collection: totalCollection,
       totalSocietyExpenses: totalExpenses,
+      total_society_expenses: totalExpenses,
       netBalance: totalCollection - totalExpenses,
+      net_balance: totalCollection - totalExpenses,
       collectionRate: totalBillable > 0 ? Math.round((totalCollection / totalBillable) * 100) : 0,
+      collection_rate: totalBillable > 0 ? Math.round((totalCollection / totalBillable) * 100) : 0,
       paidBillsCount: Number(bills.paid_bills || 0),
+      paid_bills_count: Number(bills.paid_bills || 0),
       pendingBillsCount: Number(bills.pending_bills || 0) + Number(bills.partial_bills || 0),
-      overdueBillsCount: Number(bills.overdue_bills || 0)
+      pending_bills_count: Number(bills.pending_bills || 0) + Number(bills.partial_bills || 0),
+      overdueBillsCount: Number(bills.overdue_bills || 0),
+      overdue_bills_count: Number(bills.overdue_bills || 0)
     });
   } catch (error) {
     console.error('Resident society report error:', error);
@@ -766,6 +782,7 @@ const getResidentAccountReport = async (req, res) => {
       resident: {
         name: resident.name,
         flatNo: resident.flat_no,
+        flat_no: resident.flat_no,
         wing: resident.wing
       },
       summary: {

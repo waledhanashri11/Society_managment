@@ -287,7 +287,7 @@ const saveLateFeeRule = async (req, res) => {
 const waiveLateFee = async (req, res) => {
   try {
     const [result] = await promisePool.query(
-      `UPDATE maintenance_bills SET total_amount = total_amount - late_fee,
+      `UPDATE maintenance SET total_amount = total_amount - late_fee,
        remaining_amount = GREATEST(0, remaining_amount - late_fee), late_fee = 0,
        remarks = CONCAT(COALESCE(remarks, ''), ' Late fee waived.') WHERE id = ?`,
       [req.params.id]

@@ -74,6 +74,7 @@ import com.example.application.data.remote.dto.MembersMaintenanceReportDto
 import com.example.application.util.DashboardFormatters
 import com.example.application.ui.components.EmptyState
 import com.example.application.ui.components.RetryState
+import com.example.application.ui.components.SkeletonListItem
 import com.example.application.viewmodel.ResidentMaintenanceViewModel
 import com.example.application.viewmodel.ResidentMembersViewModel
 import java.math.BigDecimal
@@ -98,15 +99,18 @@ fun ResidentPaymentHistoryScreen(
         isRefreshing = state.isRefreshing,
         onRefresh = { viewModel.load(refresh = true) }
     ) {
-        if (state.error != null && bills.isEmpty()) {
-            item { RetryState(message = state.error ?: "Unable to load payment history.", onRetry = { viewModel.load(refresh = true) }) }
-        }
-        if (paymentBills.isEmpty()) {
-            item {
-                EmptyState(
-                    title = if (state.isLoading) "Preparing payment history" else "No payment records",
-                    message = if (state.isLoading) "Your screen is ready. Latest records are refreshing silently." else "Paid bills will appear here after admin approval."
-                )
+        if (state.isLoading && paymentBills.isEmpty()) {
+            items(5) { SkeletonListItem() }
+        } else if (paymentBills.isEmpty()) {
+            if (state.error != null) {
+                item { RetryState(message = state.error ?: "Unable to load payment history.", onRetry = { viewModel.load(refresh = true) }) }
+            } else {
+                item {
+                    EmptyState(
+                        title = "No payment records",
+                        message = "Paid bills will appear here after admin approval."
+                    )
+                }
             }
         } else {
             item {
@@ -151,15 +155,18 @@ fun ResidentMembersScreen(
         isRefreshing = state.refreshing,
         onRefresh = { viewModel.load(refresh = true) }
     ) {
-        if (state.error != null && members.isEmpty()) {
-            item { RetryState(message = state.error ?: "Unable to load members.", onRetry = { viewModel.load(refresh = true) }) }
-        }
-        if (members.isEmpty()) {
-            item {
-                EmptyState(
-                    title = if (state.loading) "Preparing members list" else "No members found",
-                    message = if (state.loading) "The screen is ready. Latest members are refreshing silently." else "No approved residents were returned by the directory."
-                )
+        if (state.loading && members.isEmpty()) {
+            items(5) { SkeletonListItem() }
+        } else if (members.isEmpty()) {
+            if (state.error != null) {
+                item { RetryState(message = state.error ?: "Unable to load members.", onRetry = { viewModel.load(refresh = true) }) }
+            } else {
+                item {
+                    EmptyState(
+                        title = "No members found",
+                        message = "No approved residents were returned by the directory."
+                    )
+                }
             }
         } else {
             items(members, key = { it.id ?: "${it.flatNo}-${it.name}" }) { member ->
@@ -357,6 +364,27 @@ private fun ResidentReceiptDialog(bill: MaintenanceBillDto, onDismiss: () -> Uni
                                 Text(amountStr, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold, color = Color(0xFF15803D))
                             }
                         }
+
+                        // Write-Off Section (If Write-Off Applied)
+                        val wAmt = (bill.writeOffAmount ?: bill.maintenanceWriteOffAmount).toMoneyDecimal()
+                        if (wAmt > java.math.BigDecimal.ZERO || bill.isWrittenOff == true) {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = Color(0xFFEDE9FE),
+                                border = BorderStroke(1.dp, Color(0xFFDDD6FE)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(14.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Text("WRITE-OFF / WAIVER APPLIED 🏷️", style = MaterialTheme.typography.labelSmall, color = Color(0xFF6D28D9), fontWeight = FontWeight.Bold)
+                                    Text(DashboardFormatters.money(wAmt), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold, color = Color(0xFF6D28D9))
+                                    Text("Reason: ${bill.writeOffReason ?: bill.writeOffType ?: "Admin Adjustment"}", style = MaterialTheme.typography.bodySmall, color = Color(0xFF5B21B6), fontWeight = FontWeight.Medium)
+                                }
+                            }
+                        }
                         
                         // Payment Details Breakdown
                         Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -365,6 +393,9 @@ private fun ResidentReceiptDialog(bill: MaintenanceBillDto, onDismiss: () -> Uni
                             InfoRow("Billing Month", "${bill.month ?: "-"}/${bill.year ?: "-"}")
                             InfoRow("Maintenance Title", bill.title ?: "Maintenance Bill")
                             InfoRow("Transaction Ref", bill.transactionId ?: "-")
+                            if (wAmt > java.math.BigDecimal.ZERO || bill.isWrittenOff == true) {
+                                InfoRow("Write-Off Amount", DashboardFormatters.money(wAmt))
+                            }
                             InfoRow("Verification Status", "APPROVED & VERIFIED ✅")
                         }
                         
@@ -533,6 +564,11 @@ private fun createResidentReceiptPdfFile(context: Context, bill: MaintenanceBill
     line("Billing Month/Year", "${bill.month ?: "-"}/${bill.year ?: "-"}")
     line("Base Amount", DashboardFormatters.money(bill.amount.toMoneyDecimal()))
     line("Late Fee / Penalty", DashboardFormatters.money((bill.penaltyAmount ?: bill.lateFee).toMoneyDecimal()))
+    val wAmtPdf = (bill.writeOffAmount ?: bill.maintenanceWriteOffAmount).toMoneyDecimal()
+    if (wAmtPdf > java.math.BigDecimal.ZERO || bill.isWrittenOff == true) {
+        line("Write-Off Amount", DashboardFormatters.money(wAmtPdf))
+        line("Write-Off Reason", bill.writeOffReason ?: bill.writeOffType ?: "Admin Waiver")
+    }
     line("Total Paid", DashboardFormatters.money((bill.paidAmount ?: bill.totalAmount ?: bill.amount).toMoneyDecimal()))
     line("Payment Date", DashboardFormatters.date(bill.paymentDate ?: bill.paidAt))
     line("Transaction Reference", bill.transactionId ?: "-")

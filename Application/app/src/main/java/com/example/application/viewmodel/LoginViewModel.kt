@@ -89,6 +89,10 @@ class LoginViewModel @Inject constructor(
         _uiState.update { it.copy(loggedInSession = null) }
     }
 
+    fun clearError() {
+        _uiState.update { it.copy(errorMessage = null) }
+    }
+
     private fun validateEmail(email: String): String? {
         return when {
             email.isBlank() -> "Email is required."

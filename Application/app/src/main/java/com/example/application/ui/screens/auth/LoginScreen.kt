@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.Login
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -32,6 +33,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -39,6 +44,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,9 +62,9 @@ import com.example.application.R
 import com.example.application.data.local.datastore.UserSession
 import com.example.application.ui.components.AppRoleTheme
 import com.example.application.ui.components.BuildingIllustration
-import com.example.application.ui.components.ErrorMessageCard
 import com.example.application.ui.components.rolePrimary
 import com.example.application.viewmodel.LoginViewModel
+import kotlinx.coroutines.launch
 
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -77,6 +83,8 @@ fun LoginScreen(
     var selectedRole by remember { mutableStateOf(AppRoleTheme.Admin) }
     val primary = rolePrimary(selectedRole)
     val scrollState = rememberScrollState()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(uiState.loggedInSession) {
         uiState.loggedInSession?.let { session ->
@@ -85,6 +93,29 @@ fun LoginScreen(
         }
     }
 
+    // Show error as Snackbar instead of a disruptive red banner
+    LaunchedEffect(uiState.errorMessage) {
+        uiState.errorMessage?.let { msg ->
+            scope.launch {
+                snackbarHostState.showSnackbar(message = msg)
+                viewModel.clearError()
+            }
+        }
+    }
+
+    Scaffold(
+        snackbarHost = {
+            SnackbarHost(hostState = snackbarHostState) { data ->
+                Snackbar(
+                    snackbarData = data,
+                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                    shape = RoundedCornerShape(16.dp)
+                )
+            }
+        },
+        containerColor = androidx.compose.ui.graphics.Color.Transparent
+    ) { innerPadding ->
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -99,6 +130,7 @@ fun LoginScreen(
             )
             .imePadding()
             .verticalScroll(scrollState)
+            .padding(innerPadding)
             .padding(20.dp),
         contentAlignment = Alignment.Center
     ) {
@@ -178,10 +210,6 @@ fun LoginScreen(
                     )
                 }
 
-                uiState.errorMessage?.let {
-                    ErrorMessageCard(message = it)
-                    Spacer(modifier = Modifier.height(14.dp))
-                }
 
                 OutlinedTextField(
                     value = uiState.email,
@@ -267,5 +295,6 @@ fun LoginScreen(
                 }
             }
         }
-    }
+    } // end Box
+    } // end Scaffold
 }

@@ -27,7 +27,7 @@ data class AdvancedUiState(
 @HiltViewModel
 class AdvancedFeaturesViewModel @Inject constructor(
     private val api: AdvancedApiService,
-    @ApplicationContext private val context: Context
+    @param:ApplicationContext private val context: Context
 ) : ViewModel() {
     private val gson = GsonBuilder().setPrettyPrinting().create()
     private val _state = MutableStateFlow(AdvancedUiState())

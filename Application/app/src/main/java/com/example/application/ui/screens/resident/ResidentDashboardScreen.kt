@@ -61,6 +61,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.application.R
 import com.example.application.data.remote.dto.MaintenanceBillDto
+import com.example.application.data.remote.dto.netPayableAmount
 import com.example.application.ui.components.DashboardSkeleton
 import com.example.application.ui.components.MetricGrid
 import com.example.application.ui.components.SectionCard
@@ -170,7 +171,7 @@ fun ResidentDashboardScreen(
                                 Text(stringResource(R.string.no_pending_bills), color = MaterialTheme.colorScheme.onSurfaceVariant)
                             } else {
                                 KeyValue(stringResource(R.string.rules_title), bill.title ?: stringResource(R.string.maintenance))
-                                KeyValue(stringResource(R.string.submitted_amount), DashboardFormatters.money((bill.remainingAmount ?: bill.totalAmount).toMoneyDecimal()))
+                                KeyValue(stringResource(R.string.submitted_amount), DashboardFormatters.money(bill.netPayableAmount()))
                                 KeyValue(stringResource(R.string.rules_status), bill.residentFriendlyStatus())
                                 KeyValue(stringResource(R.string.meeting_date), DashboardFormatters.date(bill.dueDate ?: bill.maintenanceDueDate))
                             }

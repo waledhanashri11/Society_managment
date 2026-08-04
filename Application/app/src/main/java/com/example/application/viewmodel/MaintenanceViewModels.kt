@@ -120,7 +120,6 @@ class AdminMaintenanceViewModel @Inject constructor(
     fun sendReminder(id: String) = action { repository.sendReminder(id) }
     fun applyPenalty() = action { repository.applyPenalty() }
     fun applyPenaltyToBill(id: String, amount: String, reason: String?) = action { repository.applyPenaltyToBill(id, amount, reason) }
-    fun waiveLateFee(id: String) = action { repository.waiveLateFee(id) }
     fun applyWaiver(id: String, amount: String, reason: String, type: String, reference: String?, date: String?, note: String?) =
         action { repository.applyWaiver(id, amount, reason, type, reference, date, note) }
     fun createWriteOff(id: String, type: String, amount: String?, reason: String, remarks: String?) =

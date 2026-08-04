@@ -40,12 +40,15 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Report
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -451,17 +454,28 @@ fun ErrorMessageCard(message: String, modifier: Modifier = Modifier) {
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f)),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
-        Text(
-            message,
-            modifier = Modifier.padding(14.dp),
-            color = MaterialTheme.colorScheme.onErrorContainer,
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Medium
-        )
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Info,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(20.dp)
+            )
+            Text(
+                text = message,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium
+            )
+        }
     }
 }
 
@@ -528,9 +542,20 @@ fun EmptyState(title: String, message: String, modifier: Modifier = Modifier) {
 
 @Composable
 fun RetryState(message: String, onRetry: () -> Unit, modifier: Modifier = Modifier) {
-    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        ErrorMessageCard(message)
-        PrimaryAppButton(text = "Retry", onClick = onRetry)
+    Column(
+        modifier = modifier.fillMaxWidth().padding(vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        SkeletonList(count = 3)
+        OutlinedButton(
+            onClick = onRetry,
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Tap to refresh")
+        }
     }
 }
 
@@ -550,7 +575,18 @@ fun DashboardSkeleton() {
 
 @Composable
 fun DashboardError(message: String, onRetry: () -> Unit) {
-    RetryState(message = message, onRetry = onRetry)
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        DashboardSkeleton()
+        OutlinedButton(onClick = onRetry, shape = RoundedCornerShape(12.dp)) {
+            Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Tap to refresh dashboard")
+        }
+    }
 }
 
 @Composable
@@ -634,7 +670,9 @@ fun StatusBadge(
             if (isDark) Color(0xFF064E3B) to Color(0xFF6EE7B7) else Color(0xFFDCFCE7) to Color(0xFF15803D)
         upper in listOf("PENDING", "UNDER_REVIEW", "IN_PROGRESS", "VERIFICATION_PENDING", "PARTIALLY_PAID", "ADVANCE_PAID") || "PENDING" in upper || "VERIFICATION" in upper ->
             if (isDark) Color(0xFF78350F) to Color(0xFFFDE68A) else Color(0xFFFEF3C7) to Color(0xFFB45309)
-        upper in listOf("REJECTED", "OVERDUE", "CANCELLED", "WRITE_OFF", "WRITE_OFFS") || "OVERDUE" in upper || "WRITE" in upper ->
+        upper in listOf("WRITTEN_OFF", "WRITTEN OFF", "PARTIALLY_WRITTEN_OFF", "PARTIALLY WRITTEN OFF", "WRITE_OFF", "WRITE OFF") || "WRITE" in upper ->
+            if (isDark) Color(0xFF4C1D95) to Color(0xFFDDD6FE) else Color(0xFFEDE9FE) to Color(0xFF6D28D9)
+        upper in listOf("REJECTED", "OVERDUE", "CANCELLED") || "OVERDUE" in upper ->
             if (isDark) Color(0xFF7F1D1D) to Color(0xFFFCA5A5) else Color(0xFFFEE2E2) to Color(0xFF991B1B)
         else ->
             MaterialTheme.colorScheme.surfaceVariant to MaterialTheme.colorScheme.onSurfaceVariant

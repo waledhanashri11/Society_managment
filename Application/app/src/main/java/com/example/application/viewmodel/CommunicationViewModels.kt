@@ -188,4 +188,24 @@ class NotificationsViewModel @Inject constructor(private val repository: Communi
             }
         }
     }
+    fun deleteNotification(id: String) {
+        viewModelScope.launch {
+            _state.update { it.copy(submitting = true, error = null) }
+            when (val result = repository.deleteNotification(id)) {
+                is NetworkResult.Success -> { _state.update { it.copy(submitting = false, message = result.data) }; load(true) }
+                is NetworkResult.Error -> _state.update { it.copy(submitting = false, error = repository.userMessageFor(result.error)) }
+                NetworkResult.Loading -> Unit
+            }
+        }
+    }
+    fun deleteAll() {
+        viewModelScope.launch {
+            _state.update { it.copy(submitting = true, error = null) }
+            when (val result = repository.deleteAllNotifications()) {
+                is NetworkResult.Success -> { _state.update { it.copy(submitting = false, message = result.data) }; load(true) }
+                is NetworkResult.Error -> _state.update { it.copy(submitting = false, error = repository.userMessageFor(result.error)) }
+                NetworkResult.Loading -> Unit
+            }
+        }
+    }
 }

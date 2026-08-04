@@ -117,6 +117,16 @@ class CommunicationRepository @Inject constructor(
             .also { if (it is NetworkResult.Success) notificationsCache = null }
     }
 
+    suspend fun deleteNotification(id: String): NetworkResult<String> {
+        return messageCall { api.deleteNotification(id) }
+            .also { if (it is NetworkResult.Success) notificationsCache = null }
+    }
+
+    suspend fun deleteAllNotifications(): NetworkResult<String> {
+        return messageCall { api.deleteAllNotifications() }
+            .also { if (it is NetworkResult.Success) notificationsCache = null }
+    }
+
     private fun clearComplaintCache() {
         adminComplaintsCache = null
         residentComplaintsCache = null

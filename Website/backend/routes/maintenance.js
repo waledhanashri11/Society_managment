@@ -33,6 +33,7 @@ const {
   getSettings,
   saveSettings,
   applyPenalty,
+  applyPenaltyToBill,
   createDetailedWriteOff,
   getWriteOffHistory,
   getAGMReport,
@@ -58,6 +59,7 @@ router.delete('/cleanup-orphaned', auth, adminAuth, deleteOrphanedMaintenance);
 router.get('/settings', auth, adminAuth, getSettings);
 router.post('/settings', auth, adminAuth, saveSettings);
 router.post('/apply-penalty', auth, adminAuth, applyPenalty);
+router.post('/bills/:id/penalty', auth, adminAuth, applyPenaltyToBill);
 router.get('/dashboard', auth, adminAuth, moduleController.dashboard);
 router.get('/resident-categories', auth, adminAuth, moduleController.getResidentCategories);
 router.get('/flats/:flatId/categories', auth, adminAuth, moduleController.getFlatCategories);
@@ -102,7 +104,7 @@ router.get('/user/my-maintenance', auth, getUserMaintenance);
 router.post('/bills/:id/write-off', auth, adminAuth, createDetailedWriteOff);
 router.get('/write-offs', auth, adminAuth, getWriteOffHistory);
 router.get('/agm-report', auth, adminAuth, getAGMReport);
-router.get('/bills/:id/write-off-receipt', auth, adminAuth, getWriteOffReceipt);
+router.get('/bills/:id/write-off-receipt', auth, getWriteOffReceipt);
 router.delete('/write-offs/:id', auth, adminAuth, reverseWriteOff);
 router.put('/write-offs/:id', auth, adminAuth, editWriteOff);
 router.get('/:id', auth, adminAuth, getMaintenanceById);

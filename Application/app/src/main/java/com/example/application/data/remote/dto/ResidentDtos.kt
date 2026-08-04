@@ -11,7 +11,7 @@ data class FlatDto(
     @SerializedName("flat_type_id") val flatTypeId: String? = null,
     @SerializedName("flat_type_name") val flatTypeName: String? = null,
     val status: String?,
-    @SerializedName("owner_id") val ownerId: String? = null,
+    @SerializedName(value = "owner_id", alternate = ["current_resident_id"]) val ownerId: String? = null,
     @SerializedName("owner_name") val ownerName: String? = null,
     @SerializedName("assigned_resident_name") val assignedResidentName: String? = null,
     @SerializedName("owner_email") val ownerEmail: String? = null

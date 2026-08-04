@@ -29,6 +29,7 @@ import com.example.application.data.remote.dto.SubmitPaymentRequest
 import com.example.application.data.remote.dto.UpdatePaymentRequest
 import com.example.application.data.remote.dto.WriteOffRequest
 import com.example.application.data.remote.dto.LedgerWriteOffRequest
+import com.example.application.data.remote.dto.DetailedWriteOffRequest
 import com.example.application.data.remote.dto.WriteOffResultDto
 import com.example.application.data.remote.dto.WriteOffReceiptDto
 import retrofit2.Response
@@ -50,8 +51,8 @@ interface MaintenanceApiService {
     @PUT("api/maintenance/bills/{id}/waive-late-fee")
     suspend fun applyAdminWaiver(@Path("id") id: String, @Body request: ApplyWaiverRequest): Response<ApiResponse<Map<String, String>>>
 
-    @POST("api/reports/maintenance/write-off")
-    suspend fun createWriteOff(@Body request: LedgerWriteOffRequest): Response<ApiResponse<WriteOffResultDto>>
+    @POST("api/maintenance/bills/{id}/write-off")
+    suspend fun createWriteOff(@Path("id") id: String, @Body request: DetailedWriteOffRequest): Response<ApiResponse<WriteOffResultDto>>
 
     @GET("api/maintenance/write-offs")
     suspend fun getWriteOffHistory(
@@ -98,8 +99,6 @@ interface MaintenanceApiService {
     @POST("api/maintenance/bills/{id}/penalty")
     suspend fun applyPenaltyToBill(@Path("id") id: String, @Body body: Map<String, String>): Response<ApiResponse<Unit>>
 
-    @PUT("api/maintenance/bills/{id}/waive-late-fee")
-    suspend fun waiveLateFee(@Path("id") id: String): Response<ApiResponse<Unit>>
 
     @GET("api/maintenance/payments")
     suspend fun getPayments(): Response<ApiResponse<List<MaintenancePaymentDto>>>
@@ -113,10 +112,10 @@ interface MaintenanceApiService {
     @PUT("api/maintenance/payments/{id}")
     suspend fun updatePayment(@Path("id") id: String, @Body request: UpdatePaymentRequest): Response<ApiResponse<Unit>>
 
-    @PUT("api/reports/maintenance/payments/{id}/approve")
+    @PUT("api/maintenance/payments/{id}/approve")
     suspend fun approvePayment(@Path("id") id: String): Response<ApiResponse<Map<String, String>>>
 
-    @PUT("api/reports/maintenance/payments/{id}/reject")
+    @PUT("api/maintenance/payments/{id}/reject")
     suspend fun rejectPayment(@Path("id") id: String, @Body request: Map<String, String>): Response<ApiResponse<Unit>>
 
     @GET("api/maintenance/user/my-maintenance")

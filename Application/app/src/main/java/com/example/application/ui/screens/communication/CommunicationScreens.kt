@@ -852,14 +852,47 @@ fun NoticesScreen(onBack: () -> Unit, admin: Boolean, viewModel: NoticesViewMode
 fun NotificationsScreen(onBack: () -> Unit, viewModel: NotificationsViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val notifications = state.data?.notifications.orEmpty()
-    ListShell("Notifications", onBack, state.isRefreshing, { viewModel.load(true) }, state.isLoading, state.error, { viewModel.load(true) }, action = { IconButton(onClick = viewModel::markAllRead) { Icon(Icons.Filled.MarkEmailRead, contentDescription = "Mark all read") } }) {
+    ListShell(
+        title = "Notifications",
+        onBack = onBack,
+        refreshing = state.isRefreshing,
+        onRefresh = { viewModel.load(true) },
+        loading = state.isLoading,
+        error = state.error,
+        onRetry = { viewModel.load(true) },
+        action = {
+            if (notifications.isNotEmpty()) {
+                IconButton(onClick = viewModel::deleteAll) {
+                    Icon(Icons.Filled.Delete, contentDescription = "Delete all notifications", tint = MaterialTheme.colorScheme.error)
+                }
+            }
+        }
+    ) {
         item {
-            Text("Unread: ${state.data?.unreadCount ?: 0}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Total: ${notifications.size}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                if (notifications.isNotEmpty()) {
+                    TextButton(onClick = viewModel::deleteAll) {
+                        Icon(Icons.Filled.Delete, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.error)
+                        Spacer(Modifier.width(4.dp))
+                        Text("Delete all", color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            }
             state.message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
         }
-        if (notifications.isEmpty()) item { EmptyState("No notifications", "Admin alerts will appear here.") }
+        if (notifications.isEmpty()) item { EmptyState("No notifications", "You have no notifications.") }
         else items(notifications, key = { it.id ?: it.title.orEmpty() }) { item ->
-            NotificationCard(item, enabled = !state.submitting, onMarkRead = { item.id?.let(viewModel::markRead) })
+            NotificationCard(
+                item = item,
+                enabled = !state.submitting,
+                onMarkRead = { item.id?.let(viewModel::markRead) },
+                onDelete = { item.id?.let(viewModel::deleteNotification) }
+            )
         }
     }
 }
@@ -1011,7 +1044,12 @@ private fun NoticeCard(
 }
 
 @Composable
-private fun NotificationCard(item: NotificationDto, enabled: Boolean, onMarkRead: () -> Unit) {
+private fun NotificationCard(
+    item: NotificationDto,
+    enabled: Boolean,
+    onMarkRead: () -> Unit,
+    onDelete: () -> Unit = {}
+) {
     val type = item.type?.lowercase().orEmpty()
     val accent = when {
         "complaint" in type -> Color(0xFFE86D00)
@@ -1046,6 +1084,9 @@ private fun NotificationCard(item: NotificationDto, enabled: Boolean, onMarkRead
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(item.title ?: "Notification", modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold, color = Color(0xFF101828))
                     if (item.isRead == false) Box(Modifier.size(9.dp).clip(CircleShape).background(accent))
+                    IconButton(onClick = onDelete, enabled = enabled && item.id != null, modifier = Modifier.size(24.dp)) {
+                        Icon(Icons.Filled.Delete, contentDescription = "Delete notification", tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), modifier = Modifier.size(18.dp))
+                    }
                 }
                 Text(item.message ?: "-", color = Color(0xFF475467), style = MaterialTheme.typography.bodyMedium)
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
@@ -1058,11 +1099,18 @@ private fun NotificationCard(item: NotificationDto, enabled: Boolean, onMarkRead
                     )
                     Text(DashboardFormatters.date(item.createdAt), color = Color(0xFF667085), style = MaterialTheme.typography.bodySmall)
                 }
-                if (item.isRead == false) {
-                    TextButton(onClick = onMarkRead, enabled = enabled && item.id != null) {
-                        Icon(Icons.Filled.MarkEmailRead, contentDescription = null)
-                        Spacer(Modifier.width(6.dp))
-                        Text("Mark as read")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (item.isRead == false) {
+                        TextButton(onClick = onMarkRead, enabled = enabled && item.id != null) {
+                            Icon(Icons.Filled.MarkEmailRead, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Mark read")
+                        }
+                    }
+                    TextButton(onClick = onDelete, enabled = enabled && item.id != null) {
+                        Icon(Icons.Filled.Delete, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.error)
+                        Spacer(Modifier.width(4.dp))
+                        Text("Delete", color = MaterialTheme.colorScheme.error)
                     }
                 }
             }

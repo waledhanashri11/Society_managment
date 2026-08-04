@@ -63,7 +63,6 @@ fun AdminMeetingsScreen(onBack: () -> Unit, viewModel: MeetingsViewModel = hiltV
     var comments by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { viewModel.loadAnalytics() }
     MeetingScaffold(stringResource(R.string.meeting_meetings), onBack, { viewModel.load(true) }) {
-        MeetingFilters(state.query, state.filter, viewModel::setQuery, viewModel::setFilter)
         if (state.error != null && state.meetings.isEmpty()) RetryState(state.error ?: "Unable to load meetings", { viewModel.load(true) })
         else if (state.loading && state.meetings.isEmpty()) Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             repeat(6) { SkeletonListItem() }
@@ -80,7 +79,7 @@ fun AdminMeetingsScreen(onBack: () -> Unit, viewModel: MeetingsViewModel = hiltV
                 }
             } }
             item { Button(onClick = { selected = null; editor = true }, modifier = Modifier.fillMaxWidth(), enabled = !state.submitting) { Icon(Icons.Filled.Add, null); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.meeting_create)) } }
-            items(filteredMeetings(state.meetings, state.query, state.filter), key = { it.id ?: it.title.orEmpty() }) { meeting ->
+            items(state.meetings, key = { it.id ?: it.title.orEmpty() }) { meeting ->
                 MeetingCard(meeting, true,
                     onDetails = { selected = meeting; viewModel.open(meeting.id ?: "") },
                     onEdit = { selected = meeting; editor = true },
@@ -127,14 +126,13 @@ fun ResidentMeetingsScreen(onBack: () -> Unit, viewModel: MeetingsViewModel = hi
     var comments by remember { mutableStateOf(false) }
     val detail = state.selected
     MeetingScaffold(stringResource(R.string.meeting_meetings), onBack, { viewModel.load(true) }) {
-        MeetingFilters(state.query, state.filter, viewModel::setQuery, viewModel::setFilter)
         if (state.error != null && state.meetings.isEmpty()) RetryState(state.error ?: "Unable to load meetings", { viewModel.load(true) })
         else if (state.loading && state.meetings.isEmpty()) Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             repeat(6) { SkeletonListItem() }
         }
         else if (state.meetings.isEmpty() && !state.loading) EmptyState(stringResource(R.string.meeting_no_meetings), "Upcoming society meetings will appear here.")
         else LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
-            items(filteredMeetings(state.meetings, state.query, state.filter), key = { it.id ?: it.title.orEmpty() }) { meeting ->
+            items(state.meetings, key = { it.id ?: it.title.orEmpty() }) { meeting ->
                 MeetingCard(meeting, false, onDetails = { selectedId = meeting.id; meeting.id?.let(viewModel::open) }, onEdit = {}, onDelete = {}, onDuplicate = {}, onAttendance = {}, onReport = {}, onPoll = {}, onFines = {}, onComments = { meeting.id?.let { selectedId = it; viewModel.loadComments(it); comments = true } })
             }
         }

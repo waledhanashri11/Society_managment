@@ -241,8 +241,11 @@ fun AdminWriteOffHistoryScreen(onBack: () -> Unit, viewModel: AdminParityViewMod
             state.error?.let { item { ErrorMessageCard(it) } }
             if (rows.isEmpty()) item { EmptyState("No write-offs", "Write-off activity will appear here.") }
             items(rows, key = { it.text("id").ifBlank { it.hashCode().toString() } }) { row ->
-                SectionCard(row.text("resident_name").ifBlank { "Write-off #${row.text("id")}" }) {
-                    JsonCard(row, preferred = listOf("flat_no", "bill_number", "write_off_amount", "reason", "created_at", "admin_name", "status"))
+                val residentName = row.text("resident_name").ifBlank { row.text("user_name").ifBlank { row.text("name").ifBlank { "Resident" } } }
+                val flatNo = row.text("flat_no").ifBlank { row.text("flat_number").ifBlank { row.text("flat").ifBlank { "N/A" } } }
+                val cardTitle = if (flatNo != "N/A" && flatNo.isNotBlank()) "$residentName (Flat $flatNo)" else residentName
+                SectionCard(cardTitle) {
+                    JsonCard(row, preferred = listOf("resident_name", "flat_no", "bill_number", "write_off_amount", "amount", "reason", "created_at", "admin_name", "status"))
                     row.text("id").takeIf { it.isNotBlank() }?.let {
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             TextButton(onClick = { shareWriteOffReceiptPdf(context, row) }) { Text("Receipt PDF") }

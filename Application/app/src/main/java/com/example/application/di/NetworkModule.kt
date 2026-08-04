@@ -34,10 +34,10 @@ import retrofit2.converter.gson.GsonConverterFactory
 @Module
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
-    private const val CONNECT_TIMEOUT_SECONDS = 10L
-    private const val READ_TIMEOUT_SECONDS = 20L
-    private const val WRITE_TIMEOUT_SECONDS = 20L
-    private const val CALL_TIMEOUT_SECONDS = 30L
+    private const val CONNECT_TIMEOUT_SECONDS = 30L
+    private const val READ_TIMEOUT_SECONDS = 60L
+    private const val WRITE_TIMEOUT_SECONDS = 30L
+    private const val CALL_TIMEOUT_SECONDS = 90L
 
     @Provides
     @Singleton

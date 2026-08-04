@@ -34,6 +34,19 @@ const getAdminNotifications = async (req, res) => {
     });
 
     res.json({ notifications, unreadCount: notifications.length });
+
+      return {
+        id: item.id,
+        title: item.title,
+        message: item.message,
+        type: item.type,
+        path,
+        is_read: item.is_read,
+        created_at: item.created_at
+      };
+    });
+
+    res.json({ notifications, unreadCount: notifications.length });
   } catch (error) {
     console.error('Get notifications error:', error);
     res.status(500).json({ message: 'Server error' });
@@ -43,11 +56,11 @@ const getAdminNotifications = async (req, res) => {
 const markAdminNotificationsRead = async (req, res) => {
   try {
     await promisePool.query(
-      'UPDATE notifications SET is_read = true WHERE resident_id = ? AND is_read = false',
+      'DELETE FROM notifications WHERE resident_id = ?',
       [req.user.id]
     );
 
-    res.json({ message: 'Notifications marked as read', unreadCount: 0 });
+    res.json({ message: 'All notifications deleted', unreadCount: 0 });
   } catch (error) {
     console.error('Mark notifications read error:', error);
     res.status(500).json({ message: 'Server error' });
@@ -60,7 +73,7 @@ const getResidentNotifications = async (req, res) => {
     const [notifications] = await promisePool.query(
       `SELECT id, resident_id, title, message, type, reference_id, is_read, created_at
        FROM notifications
-       WHERE resident_id = ? AND is_read = false
+       WHERE resident_id = ?
        ORDER BY created_at DESC
        LIMIT 20`,
       [residentId]
@@ -109,13 +122,46 @@ const markResidentNotificationsRead = async (req, res) => {
     const residentId = req.user.id;
 
     await promisePool.query(
-      'UPDATE notifications SET is_read = true WHERE resident_id = ?',
+      'DELETE FROM notifications WHERE resident_id = ?',
       [residentId]
     );
 
-    res.json({ message: 'Notifications marked as read', unreadCount: 0 });
+    res.json({ message: 'All notifications deleted', unreadCount: 0 });
   } catch (error) {
     console.error('Mark resident notifications read error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+const deleteNotification = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const residentId = req.user.id;
+
+    await promisePool.query(
+      'DELETE FROM notifications WHERE id = ? AND resident_id = ?',
+      [id, residentId]
+    );
+
+    res.json({ message: 'Notification deleted successfully' });
+  } catch (error) {
+    console.error('Delete notification error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+const deleteAllNotifications = async (req, res) => {
+  try {
+    const residentId = req.user.id;
+
+    await promisePool.query(
+      'DELETE FROM notifications WHERE resident_id = ?',
+      [residentId]
+    );
+
+    res.json({ message: 'All notifications deleted successfully', unreadCount: 0 });
+  } catch (error) {
+    console.error('Delete all notifications error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 };
@@ -125,5 +171,7 @@ module.exports = {
   markAdminNotificationsRead,
   getResidentNotifications,
   markResidentNotificationsRead,
-  markResidentNotificationRead
+  markResidentNotificationRead,
+  deleteNotification,
+  deleteAllNotifications
 };

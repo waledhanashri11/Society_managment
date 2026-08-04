@@ -120,7 +120,6 @@ fun ResidentReportsScreen(
         PullToRefreshBox(
             isRefreshing = state.isRefreshing,
             onRefresh = { viewModel.load(refresh = true) },
-            indicator = {},
             modifier = Modifier.fillMaxSize().padding(padding)
         ) {
             if (state.isLoading && state.data == null) {

@@ -71,6 +71,7 @@ import coil3.compose.AsyncImage
 import com.example.application.BuildConfig
 import com.example.application.data.remote.dto.MaintenanceBillDto
 import com.example.application.data.remote.dto.PaymentSettingsDto
+import com.example.application.data.remote.dto.netPayableAmount
 import com.example.application.util.DashboardFormatters
 import com.example.application.ui.components.RetryState
 import com.example.application.ui.theme.SocietyBlue40
@@ -271,10 +272,11 @@ private fun PaymentSummaryCard(bill: MaintenanceBillDto) {
 
             // Breakdown Rows
             val base = bill.baseAmount?.toDoubleOrNull() ?: bill.amount?.toDoubleOrNull() ?: 0.0
-            val prev = bill.previousDue?.toDoubleOrNull() ?: bill.originalAmount?.toDoubleOrNull()?.let { (it - base).coerceAtLeast(0.0) } ?: 0.0
+            val prev = bill.previousDue?.toDoubleOrNull() ?: 0.0
             val penalty = bill.penaltyAmount?.toDoubleOrNull() ?: bill.lateFee?.toDoubleOrNull() ?: 0.0
             val other = bill.otherCharges?.toDoubleOrNull() ?: 0.0
             val advanceAdj = bill.advanceAdjusted?.toDoubleOrNull() ?: 0.0
+            val writeOff = (bill.writeOffAmount ?: bill.maintenanceWriteOffAmount).toMoneyDecimal().toDouble()
             val total = bill.expectedPayableAmount()
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -300,6 +302,13 @@ private fun PaymentSummaryCard(bill: MaintenanceBillDto) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("Other Charges", color = Ink, style = MaterialTheme.typography.bodyMedium)
                     Text("+${DashboardFormatters.money(other)}", color = Ink, fontWeight = FontWeight.Medium)
+                }
+            }
+
+            if (writeOff > 0) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Write-Off / Waiver", color = Color(0xFF6D28D9), style = MaterialTheme.typography.bodyMedium)
+                    Text("-${DashboardFormatters.money(writeOff)}", color = Color(0xFF6D28D9), fontWeight = FontWeight.Bold)
                 }
             }
 
@@ -589,7 +598,7 @@ private fun MaintenanceBillDto.displayTitle(): String {
 }
 
 private fun MaintenanceBillDto.expectedPayableAmount(): BigDecimal {
-    return (remainingDue ?: currentDue ?: remainingAmount ?: totalAmount ?: amount).toMoneyDecimal()
+    return netPayableAmount()
 }
 
 private fun String?.toMoneyDecimal(): BigDecimal {

@@ -11,6 +11,7 @@ import com.example.application.data.remote.dto.NoticeDto
 import com.example.application.data.remote.dto.PaymentDto
 import com.example.application.data.remote.dto.ProfileDto
 import com.example.application.data.remote.dto.UserSummaryDto
+import com.example.application.data.remote.dto.netPayableAmount
 import java.math.BigDecimal
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -172,13 +173,32 @@ class DashboardRepository @Inject constructor(
         val bills = billsDeferred.await().getOrNull()?.takeIf { it.isSuccessful }?.body()?.data ?: emptyList<MaintenanceBillDto>().also { warnings.add("Maintenance unavailable") }
         val complaints = complaintsDeferred.await().getOrNull()?.takeIf { it.isSuccessful }?.body() ?: emptyList<ComplaintDto>().also { warnings.add("Complaints unavailable") }
         val notices = noticesDeferred.await().getOrNull()?.takeIf { it.isSuccessful }?.body() ?: emptyList<NoticeDto>().also { warnings.add("Notices unavailable") }
-        val pendingBills = bills.filterNot { it.paymentStatus.equals("Paid", true) || it.status.equals("Paid", true) }
-        val paidBills = bills.filter { it.paymentStatus.equals("Paid", true) || it.status.equals("Paid", true) }
+        val settledStatuses = setOf("paid", "approved", "settled", "written_off", "written off", "fully_written_off")
+        val pendingBills = bills.filterNot { bill ->
+            val status = (bill.paymentStatus ?: bill.latestPaymentStatus ?: bill.status).orEmpty().trim().lowercase()
+            status in settledStatuses || bill.netPayableAmount() <= BigDecimal.ZERO
+        }
+        val paidBills = bills.filter { bill ->
+            val status = (bill.paymentStatus ?: bill.latestPaymentStatus ?: bill.status).orEmpty().trim().lowercase()
+            status in settledStatuses || (bill.netPayableAmount() <= BigDecimal.ZERO && status != "pending")
+        }
         val currentBill = pendingBills.firstOrNull()
+
+        pendingBills.forEach { bill ->
+            val orig = (bill.originalAmount ?: bill.amount ?: bill.totalAmount).toMoneyDecimal()
+            val penalty = (bill.penaltyAmount ?: bill.lateFee).toMoneyDecimal()
+            val maintW = bill.maintenanceWriteOffAmount.toMoneyDecimal()
+            val penW = bill.penaltyWriteOffAmount.toMoneyDecimal()
+            val paid = bill.paidAmount.toMoneyDecimal()
+            val net = bill.netPayableAmount()
+            android.util.Log.d("DEBUG_PAYMENT_FLOW", "residentId=${profile.id}, billId=${bill.id}, originalAmount=$orig, penalty=$penalty, maintenanceWriteOff=$maintW, penaltyWriteOff=$penW, approvedPaidAmount=$paid, finalRemainingAmount=$net")
+        }
+
+        val totalDue = pendingBills.fold(BigDecimal.ZERO) { sum, bill -> sum + bill.netPayableAmount() }
         val data = ResidentDashboardData(
             profile = profile,
             currentBill = currentBill,
-            totalDue = pendingBills.fold(BigDecimal.ZERO) { sum, bill -> sum + (bill.remainingAmount ?: bill.totalAmount).toMoneyDecimal() },
+            totalDue = totalDue,
             totalPaid = paidBills.fold(BigDecimal.ZERO) { sum, bill -> sum + (bill.paidAmount ?: bill.totalAmount).toMoneyDecimal() },
             pendingBillCount = pendingBills.size,
             paidBillCount = paidBills.size,
@@ -192,6 +212,11 @@ class DashboardRepository @Inject constructor(
         )
         lastResidentDashboard = data
         DashboardLoadResult.Success(data, fromCache = false)
+    }
+
+    fun clearCache() {
+        lastAdminDashboard = null
+        lastResidentDashboard = null
     }
 }
 

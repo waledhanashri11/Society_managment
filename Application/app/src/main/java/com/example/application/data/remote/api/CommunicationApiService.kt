@@ -81,6 +81,12 @@ interface CommunicationApiService {
     @PUT("api/notifications/{id}/read")
     suspend fun markNotificationRead(@Path("id") id: String): Response<MarkReadResponse>
 
+    @DELETE("api/notifications/{id}")
+    suspend fun deleteNotification(@Path("id") id: String): Response<MarkReadResponse>
+
+    @DELETE("api/notifications/read")
+    suspend fun deleteAllNotifications(): Response<MarkReadResponse>
+
     @GET("api/notifications/admin")
     suspend fun getAdminNotifications(): Response<AdminNotificationsResponse>
 

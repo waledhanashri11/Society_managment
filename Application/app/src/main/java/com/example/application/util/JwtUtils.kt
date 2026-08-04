@@ -5,7 +5,7 @@ import org.json.JSONObject
 
 object JwtUtils {
     fun isExpired(token: String): Boolean {
-        val expirySeconds = getExpirySeconds(token) ?: return false
+        val expirySeconds = getExpirySeconds(token) ?: return true
         val nowSeconds = System.currentTimeMillis() / 1000L
         return expirySeconds <= nowSeconds
     }

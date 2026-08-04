@@ -38,6 +38,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.foundation.rememberScrollState
@@ -130,6 +131,7 @@ import com.example.application.data.remote.dto.MaintenanceCategoryDto
 import com.example.application.data.remote.dto.MaintenancePaymentDto
 import com.example.application.data.remote.dto.MaintenanceWaiverDto
 import com.example.application.data.remote.dto.PaymentSettingsDto
+import com.example.application.data.remote.dto.netPayableAmount
 import com.example.application.ui.components.AppBottomNavigation
 import com.example.application.ui.components.AppRoleTheme
 import com.example.application.ui.components.NotificationDropdown
@@ -624,9 +626,10 @@ private fun ResidentMaintenanceBillCard(
     onDispute: () -> Unit
 ) {
     val status = bill.paymentStatus ?: bill.latestPaymentStatus ?: bill.status
-    val canPay = status.isResidentPayableStatus()
+    val writeOffAmt = (bill.writeOffAmount ?: bill.maintenanceWriteOffAmount).toMoneyDecimal()
+    val settledByWriteOff = status.normalizePaymentStatus() in setOf("WRITTEN_OFF", "SETTLED") || bill.isWrittenOff == true || (writeOffAmt > java.math.BigDecimal.ZERO && (bill.remainingDue ?: bill.remainingAmount ?: bill.totalAmount).toMoneyDecimal() <= java.math.BigDecimal.ZERO)
+    val canPay = status.isResidentPayableStatus() && !settledByWriteOff
     val paid = status.isApprovedStatus()
-    val settledByWriteOff = status.normalizePaymentStatus() in setOf("WRITTEN_OFF", "SETTLED")
     val finished = paid || settledByWriteOff
     val verifying = status.isVerificationPendingStatus()
     val overdue = isBillOverdue(bill) && canPay
@@ -653,13 +656,22 @@ private fun ResidentMaintenanceBillCard(
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(bill.displayTitle(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                 Text("Due ${DashboardFormatters.date(bill.dueDate ?: bill.maintenanceDueDate)}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (writeOffAmt > java.math.BigDecimal.ZERO || settledByWriteOff) {
+                    Text(
+                        text = "Approved write-off benefit: -${DashboardFormatters.money(writeOffAmt)}",
+                        color = Color(0xFF6D28D9),
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
                 if (overdue) Text("Overdue", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold)
             }
             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(DashboardFormatters.money((bill.remainingDue ?: bill.currentDue ?: bill.remainingAmount ?: bill.totalAmount ?: bill.amount).toMoneyDecimal()), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                Text(DashboardFormatters.money(bill.netPayableAmount()), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                 StatusBadge(
                     status = when {
-                        settledByWriteOff -> "Settled"
+                        settledByWriteOff -> "WRITTEN OFF"
+                        writeOffAmt > java.math.BigDecimal.ZERO -> "PARTIALLY WRITTEN OFF"
                         paid -> "Paid"
                         verifying -> "Verification Pending"
                         else -> "Pending"
@@ -671,10 +683,10 @@ private fun ResidentMaintenanceBillCard(
                         Spacer(Modifier.width(6.dp))
                         Text("Pay Now")
                     }
-                    paid -> OutlinedButton(onClick = onDownloadReceipt, shape = RoundedCornerShape(10.dp)) {
+                    paid || settledByWriteOff -> OutlinedButton(onClick = onDownloadReceipt, shape = RoundedCornerShape(10.dp)) {
                         Icon(Icons.Filled.Download, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("Download receipt")
+                        Text("Receipt")
                     }
                     verifying -> OutlinedButton(onClick = onViewStatus, shape = RoundedCornerShape(10.dp)) {
                         Icon(Icons.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -2576,7 +2588,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.penaltiesTab(
             KeyValue("Penalty", DashboardFormatters.money((bill.penaltyAmount ?: bill.lateFee).toMoneyDecimal()))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 TextButton(onClick = { openDialog(MaintenanceDialog.ApplyPenalty(bill)) }) { Text("Add Penalty") }
-                TextButton(onClick = { bill.id?.let(viewModel::waiveLateFee) }) { Text("Waive Penalty") }
+                TextButton(onClick = { openDialog(MaintenanceDialog.ApplyWaiver(bill)) }) { Text("Waive Penalty") }
             }
         }
     }
@@ -3462,7 +3474,7 @@ private fun previousPendingAmount(bill: MaintenanceBillDto): BigDecimal {
 }
 
 private fun MaintenanceBillDto.expectedPayableAmount(): BigDecimal {
-    return (remainingDue ?: currentDue ?: remainingAmount ?: totalAmount ?: amount).toMoneyDecimal()
+    return netPayableAmount()
 }
 
 private fun friendlyPaymentStatus(status: String?): String {
@@ -4039,13 +4051,16 @@ private fun RetryState(
     onRetry: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+    Column(
+        modifier = modifier.fillMaxWidth().padding(vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(message, color = MaterialTheme.colorScheme.onErrorContainer)
-            Button(onClick = onRetry) { Text("Retry") }
+        com.example.application.ui.components.SkeletonList(count = 3)
+        OutlinedButton(onClick = onRetry, shape = RoundedCornerShape(12.dp)) {
+            Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Tap to refresh")
         }
     }
 }

@@ -18,6 +18,7 @@ import com.example.application.data.remote.dto.SubmitPaymentRequest
 import com.example.application.data.remote.dto.UpdatePaymentRequest
 import com.example.application.data.remote.dto.WriteOffRequest
 import com.example.application.data.remote.dto.LedgerWriteOffRequest
+import com.example.application.data.remote.dto.DetailedWriteOffRequest
 import com.example.application.util.AppError
 import com.example.application.util.NetworkResult
 import com.google.gson.Gson
@@ -36,7 +37,8 @@ import kotlinx.coroutines.delay
 @Singleton
 class MaintenanceRepository @Inject constructor(
     private val api: MaintenanceApiService,
-    private val gson: Gson
+    private val gson: Gson,
+    private val dashboardRepository: DashboardRepository
 ) {
     private var adminCache: AdminMaintenanceData? = null
     private var residentCache: ResidentMaintenanceData? = null
@@ -181,25 +183,23 @@ class MaintenanceRepository @Inject constructor(
     suspend fun manualPay(id: String, request: ManualPayRequest) = messageCall { api.payBill(id, request) }
     suspend fun sendReminder(id: String) = messageCall { api.sendReminder(id) }
     suspend fun applyPenalty() = messageCall { api.applyPenalty() }
-    suspend fun waiveLateFee(id: String) = messageCall { api.waiveLateFee(id) }
     suspend fun applyPenaltyToBill(id: String, amount: String, reason: String?) =
         messageCall { api.applyPenaltyToBill(id, mapOf("amount" to amount, "reason" to (reason ?: "Late fee penalty"))) }
     suspend fun applyWaiver(id: String, amount: String, reason: String, type: String, reference: String?, date: String?, note: String?) =
         messageCall { api.applyAdminWaiver(id, ApplyWaiverRequest(amount, reason, type, reference, date, note)) }
     suspend fun createWriteOff(id: String, request: WriteOffRequest): NetworkResult<String> {
-        val amountValue = request.amount?.toDoubleOrNull() ?: 0.0
+        val amountValue = request.amount?.toDoubleOrNull()
         val maintValue = request.maintenanceAmount?.toDoubleOrNull()
         val penaltyValue = request.penaltyAmount?.toDoubleOrNull()
-        val ledgerRequest = LedgerWriteOffRequest(
-            billId = id,
-            writeoffType = request.writeoffType,
+        val detailedRequest = DetailedWriteOffRequest(
+            type = request.writeoffType,
             amount = amountValue,
             maintenanceAmount = maintValue,
             penaltyAmount = penaltyValue,
             reason = request.reason,
             remarks = request.remarks
         )
-        return messageCall { api.createWriteOff(ledgerRequest) }
+        return messageCall { api.createWriteOff(id, detailedRequest) }
     }
     suspend fun getPaymentReceipt(id: String) = safeApiCall { api.getPaymentReceipt(id) }
     suspend fun getWriteOffReceipt(id: String) = safeApiCall { api.getWriteOffReceipt(id) }
@@ -304,9 +304,10 @@ class MaintenanceRepository @Inject constructor(
         }
     }
 
-    private fun clearCaches() {
+    fun clearCaches() {
         adminCache = null
         residentCache = null
+        dashboardRepository.clearCache()
     }
 
     private suspend fun <T> safeApiCall(call: suspend () -> Response<ApiResponse<T>>): NetworkResult<T> {

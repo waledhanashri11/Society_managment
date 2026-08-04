@@ -206,7 +206,11 @@ data class MaintenancePaymentDto(
     @SerializedName("verified_at") val verifiedAt: String?,
     @SerializedName("rejected_at") val rejectedAt: String? = null,
     @SerializedName("verified_by_name") val verifiedByName: String?,
-    @SerializedName("screenshot") val screenshot: String?
+    @SerializedName("screenshot") val screenshot: String?,
+    @SerializedName(value = "write_off_amount", alternate = ["writeOffAmount", "writeoff_amount"]) val writeOffAmount: String? = null,
+    @SerializedName(value = "write_off_reason", alternate = ["writeOffReason", "writeoff_reason", "reason"]) val writeOffReason: String? = null,
+    @SerializedName(value = "write_off_type", alternate = ["writeOffType", "writeoff_type"]) val writeOffType: String? = null,
+    @SerializedName(value = "write_off_remarks", alternate = ["writeOffRemarks"]) val writeOffRemarks: String? = null
 )
 
 data class MaintenanceCategoryDto(
@@ -333,6 +337,15 @@ data class LedgerWriteOffRequest(
     @SerializedName("bill_id") val billId: String,
     @SerializedName("writeoff_type") val writeoffType: String,
     val amount: Double,
+    @SerializedName("maintenance_amount") val maintenanceAmount: Double? = null,
+    @SerializedName("penalty_amount") val penaltyAmount: Double? = null,
+    val reason: String,
+    val remarks: String? = null
+)
+
+data class DetailedWriteOffRequest(
+    val type: String,
+    val amount: Double?,
     @SerializedName("maintenance_amount") val maintenanceAmount: Double? = null,
     @SerializedName("penalty_amount") val penaltyAmount: Double? = null,
     val reason: String,

@@ -24,40 +24,40 @@ data class UserSummaryDto(
 )
 
 data class MaintenanceBillDto(
-    val id: String?,
-    val title: String?,
-    val month: String?,
-    val year: String?,
-    val amount: String?,
-    @SerializedName("penalty_amount") val penaltyAmount: String?,
-    @SerializedName("late_fee") val lateFee: String?,
-    @SerializedName("total_amount") val totalAmount: String?,
-    @SerializedName("paid_amount") val paidAmount: String?,
-    @SerializedName("write_off_amount") val writeOffAmount: String?,
-    @SerializedName("maintenance_write_off_amount") val maintenanceWriteOffAmount: String?,
-    @SerializedName("penalty_write_off_amount") val penaltyWriteOffAmount: String?,
-    @SerializedName("original_amount") val originalAmount: String?,
-    @SerializedName("remaining_due") val remainingDue: String?,
-    @SerializedName("current_due") val currentDue: String?,
-    @SerializedName("remaining_amount") val remainingAmount: String?,
-    val status: String?,
-    @SerializedName("payment_status") val paymentStatus: String?,
-    @SerializedName("payment_date") val paymentDate: String?,
-    @SerializedName("due_date") val dueDate: String?,
-    @SerializedName("maintenance_due_date") val maintenanceDueDate: String?,
-    @SerializedName("resident_name") val residentName: String?,
-    @SerializedName("flat_no") val flatNo: String?,
-    @SerializedName("floor_no") val floorNo: String?,
-    @SerializedName("payment_id") val paymentId: String?,
-    @SerializedName("transaction_id") val transactionId: String?,
-    @SerializedName("payment_method") val paymentMethod: String?,
-    @SerializedName("latest_payment_status") val latestPaymentStatus: String?,
-    @SerializedName(value = "screenshot_url", alternate = ["screenshot", "payment_proof"]) val screenshotUrl: String?,
-    @SerializedName("receipt_number") val receiptNumber: String?,
-    @SerializedName("verified_at") val verifiedAt: String?,
-    @SerializedName("rejection_reason") val rejectionReason: String?,
-    @SerializedName("resident_note") val residentNote: String?,
-    @SerializedName("paid_at") val paidAt: String?,
+    val id: String? = null,
+    val title: String? = null,
+    val month: String? = null,
+    val year: String? = null,
+    val amount: String? = null,
+    @SerializedName("penalty_amount") val penaltyAmount: String? = null,
+    @SerializedName("late_fee") val lateFee: String? = null,
+    @SerializedName("total_amount") val totalAmount: String? = null,
+    @SerializedName("paid_amount") val paidAmount: String? = null,
+    @SerializedName("write_off_amount") val writeOffAmount: String? = null,
+    @SerializedName("maintenance_write_off_amount") val maintenanceWriteOffAmount: String? = null,
+    @SerializedName("penalty_write_off_amount") val penaltyWriteOffAmount: String? = null,
+    @SerializedName("original_amount") val originalAmount: String? = null,
+    @SerializedName("remaining_due") val remainingDue: String? = null,
+    @SerializedName("current_due") val currentDue: String? = null,
+    @SerializedName("remaining_amount") val remainingAmount: String? = null,
+    val status: String? = null,
+    @SerializedName("payment_status") val paymentStatus: String? = null,
+    @SerializedName("payment_date") val paymentDate: String? = null,
+    @SerializedName("due_date") val dueDate: String? = null,
+    @SerializedName("maintenance_due_date") val maintenanceDueDate: String? = null,
+    @SerializedName("resident_name") val residentName: String? = null,
+    @SerializedName("flat_no") val flatNo: String? = null,
+    @SerializedName("floor_no") val floorNo: String? = null,
+    @SerializedName("payment_id") val paymentId: String? = null,
+    @SerializedName("transaction_id") val transactionId: String? = null,
+    @SerializedName("payment_method") val paymentMethod: String? = null,
+    @SerializedName("latest_payment_status") val latestPaymentStatus: String? = null,
+    @SerializedName(value = "screenshot_url", alternate = ["screenshot", "payment_proof"]) val screenshotUrl: String? = null,
+    @SerializedName("receipt_number") val receiptNumber: String? = null,
+    @SerializedName("verified_at") val verifiedAt: String? = null,
+    @SerializedName("rejection_reason") val rejectionReason: String? = null,
+    @SerializedName("resident_note") val residentNote: String? = null,
+    @SerializedName("paid_at") val paidAt: String? = null,
     @SerializedName("base_amount") val baseAmount: String? = null,
     @SerializedName("previous_due") val previousDue: String? = null,
     @SerializedName("other_charges") val otherCharges: String? = null,
@@ -65,7 +65,18 @@ data class MaintenanceBillDto(
     @SerializedName("advance_balance") val advanceBalance: String? = null,
     @SerializedName("flat_type") val flatType: String? = null,
     @SerializedName("flat_type_rate") val flatTypeRate: String? = null,
-    @SerializedName("clarification_note") val clarificationNote: String? = null
+    @SerializedName("clarification_note") val clarificationNote: String? = null,
+    @SerializedName(value = "write_off_reason", alternate = ["writeOffReason", "writeoff_reason"]) val writeOffReason: String? = null,
+    @SerializedName(value = "write_off_type", alternate = ["writeOffType", "writeoff_type"]) val writeOffType: String? = null,
+    @SerializedName(value = "write_off_remarks", alternate = ["writeOffRemarks"]) val writeOffRemarks: String? = null,
+    @SerializedName(value = "is_written_off", alternate = ["isWrittenOff"]) val isWrittenOff: Boolean? = null,
+    @SerializedName(value = "gross_amount", alternate = ["grossAmount"]) val grossAmount: String? = null,
+    @SerializedName(value = "total_approved_write_off", alternate = ["totalApprovedWriteOff"]) val totalApprovedWriteOff: String? = null,
+    @SerializedName(value = "net_bill_amount", alternate = ["netBillAmount"]) val netBillAmount: String? = null,
+    @SerializedName(value = "approved_paid_amount", alternate = ["approvedPaidAmount"]) val approvedPaidAmount: String? = null,
+    @SerializedName(value = "pending_verification_amount", alternate = ["pendingVerificationAmount"]) val pendingVerificationAmount: String? = null,
+    @SerializedName(value = "pending_write_off_amount", alternate = ["pendingWriteOffAmount"]) val pendingWriteOffAmount: String? = null,
+    @SerializedName(value = "bill_status", alternate = ["billStatus"]) val billStatus: String? = null
 )
 
 data class ComplaintDto(
@@ -145,3 +156,52 @@ data class PaymentDto(
     @SerializedName("flat_no") val flatNo: String?,
     @SerializedName("transaction_id") val transactionId: String?
 )
+
+fun String?.toMoneyDecimal(): java.math.BigDecimal {
+    return try {
+        this?.toBigDecimalOrNull() ?: java.math.BigDecimal.ZERO
+    } catch (_: Exception) {
+        java.math.BigDecimal.ZERO
+    }
+}
+
+fun MaintenanceBillDto.maintenanceChargeAmount(): java.math.BigDecimal {
+    return (baseAmount ?: amount ?: originalAmount ?: totalAmount).toMoneyDecimal()
+}
+
+fun MaintenanceBillDto.penaltyChargeAmount(): java.math.BigDecimal {
+    return (penaltyAmount ?: lateFee).toMoneyDecimal()
+}
+
+fun MaintenanceBillDto.grossBillAmount(): java.math.BigDecimal {
+    return grossAmount?.toMoneyDecimal() ?: (maintenanceChargeAmount() + penaltyChargeAmount())
+}
+
+fun MaintenanceBillDto.maintenanceWriteOffAmountValue(): java.math.BigDecimal {
+    return maintenanceWriteOffAmount.toMoneyDecimal()
+}
+
+fun MaintenanceBillDto.penaltyWriteOffAmountValue(): java.math.BigDecimal {
+    return penaltyWriteOffAmount.toMoneyDecimal()
+}
+
+fun MaintenanceBillDto.totalWriteOffAmountValue(): java.math.BigDecimal {
+    totalApprovedWriteOff?.let { return it.toMoneyDecimal() }
+    val m = maintenanceWriteOffAmountValue()
+    val p = penaltyWriteOffAmountValue()
+    return if (m > java.math.BigDecimal.ZERO || p > java.math.BigDecimal.ZERO) m + p else writeOffAmount.toMoneyDecimal()
+}
+
+fun MaintenanceBillDto.netBillAmountValue(): java.math.BigDecimal {
+    return netBillAmount?.toMoneyDecimal()
+        ?: (grossBillAmount() - totalWriteOffAmountValue()).coerceAtLeast(java.math.BigDecimal.ZERO)
+}
+
+fun MaintenanceBillDto.approvedPaidAmountValue(): java.math.BigDecimal {
+    return (approvedPaidAmount ?: paidAmount).toMoneyDecimal()
+}
+
+fun MaintenanceBillDto.netPayableAmount(): java.math.BigDecimal {
+    return (remainingAmount ?: remainingDue ?: currentDue)?.toMoneyDecimal()
+        ?: (netBillAmountValue() - approvedPaidAmountValue()).coerceAtLeast(java.math.BigDecimal.ZERO)
+}

@@ -263,11 +263,17 @@ const getMonthlyReport = async (req, res) => {
       count: responseData.length,
       summary: {
         expectedCollection,
+        expected_collection: expectedCollection,
         totalCollection,
+        total_collection: totalCollection,
         pendingCollection,
+        pending_collection: pendingCollection,
         overdueCollection,
+        overdue_collection: overdueCollection,
         advanceCollection,
+        advance_collection: advanceCollection,
         collectionPercentage: parseFloat(collectionPercentage.toFixed(2)),
+        collection_percentage: parseFloat(collectionPercentage.toFixed(2)),
       },
       data: responseData,
     });

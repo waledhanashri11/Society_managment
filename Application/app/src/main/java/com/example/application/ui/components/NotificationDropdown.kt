@@ -6,8 +6,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -51,18 +53,27 @@ fun NotificationDropdown(
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }, modifier = Modifier.width(330.dp)) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                     Text("Notifications", style = MaterialTheme.typography.titleMedium)
-                    TextButton(onClick = { viewModel.markAllRead() }) { Text("Mark read") }
+                    if (state.data?.notifications.orEmpty().isNotEmpty()) {
+                        TextButton(onClick = { viewModel.deleteAll() }) { Text("Clear all", color = MaterialTheme.colorScheme.error) }
+                    }
                 }
                 val rows = state.data?.notifications.orEmpty().take(5)
                 if (rows.isEmpty()) Text("No notifications yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 rows.forEach { notification ->
                     Card(Modifier.fillMaxWidth()) {
-                        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                            Text(notification.title ?: "Notification", style = MaterialTheme.typography.labelLarge)
-                            Text(notification.message ?: "-", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            notification.createdAt?.let { Text(it.take(16), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary) }
+                        Row(Modifier.padding(10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = androidx.compose.ui.Alignment.Top) {
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                Text(notification.title ?: "Notification", style = MaterialTheme.typography.labelLarge)
+                                Text(notification.message ?: "-", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                notification.createdAt?.let { Text(it.take(16), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary) }
+                            }
+                            notification.id?.let { notifId ->
+                                IconButton(onClick = { viewModel.deleteNotification(notifId) }, modifier = Modifier.size(24.dp)) {
+                                    Icon(androidx.compose.material.icons.Icons.Filled.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), modifier = Modifier.size(16.dp))
+                                }
+                            }
                         }
                     }
                 }

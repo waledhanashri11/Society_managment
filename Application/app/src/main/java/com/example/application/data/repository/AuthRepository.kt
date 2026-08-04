@@ -18,6 +18,7 @@ import com.example.application.util.NetworkResult
 import com.google.gson.Gson
 import com.google.gson.JsonSyntaxException
 import java.io.IOException
+import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import javax.inject.Inject
@@ -62,8 +63,10 @@ class AuthRepository @Inject constructor(
             NetworkResult.Error(AppError.NoInternet)
         } catch (error: SocketTimeoutException) {
             NetworkResult.Error(AppError.Timeout)
+        } catch (error: ConnectException) {
+            NetworkResult.Error(AppError.Server("Unable to reach the server. It may be starting up — please try again in a moment."))
         } catch (error: IOException) {
-            NetworkResult.Error(AppError.NoInternet)
+            NetworkResult.Error(AppError.Server("A network error occurred. Please try again."))
         } catch (error: HttpException) {
             NetworkResult.Error(mapHttpError(error.code(), null))
         } catch (error: JsonSyntaxException) {
@@ -157,8 +160,10 @@ class AuthRepository @Inject constructor(
             NetworkResult.Error(AppError.NoInternet)
         } catch (error: SocketTimeoutException) {
             NetworkResult.Error(AppError.Timeout)
+        } catch (error: ConnectException) {
+            NetworkResult.Error(AppError.Server("Unable to reach the server. It may be starting up — please try again in a moment."))
         } catch (error: IOException) {
-            NetworkResult.Error(AppError.NoInternet)
+            NetworkResult.Error(AppError.Server("A network error occurred. Please try again."))
         } catch (error: HttpException) {
             NetworkResult.Error(mapHttpError(error.code(), null))
         } catch (error: JsonSyntaxException) {

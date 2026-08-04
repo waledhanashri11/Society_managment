@@ -4,25 +4,25 @@ import com.google.gson.annotations.SerializedName
 
 data class ReportSummaryDto(
     val flat: ReportFlatDto?,
-    @SerializedName("total_bills") val totalBills: Int?,
-    @SerializedName("total_paid_amount") val totalPaidAmount: String?,
-    @SerializedName("total_pending_amount") val totalPendingAmount: String?,
-    @SerializedName("total_penalty_amount") val totalPenaltyAmount: String?,
-    @SerializedName("current_month_status") val currentMonthStatus: String?
+    @SerializedName(value = "total_bills", alternate = ["totalBills"]) val totalBills: Int?,
+    @SerializedName(value = "total_paid_amount", alternate = ["totalPaidAmount"]) val totalPaidAmount: String?,
+    @SerializedName(value = "total_pending_amount", alternate = ["totalPendingAmount"]) val totalPendingAmount: String?,
+    @SerializedName(value = "total_penalty_amount", alternate = ["totalPenaltyAmount"]) val totalPenaltyAmount: String?,
+    @SerializedName(value = "current_month_status", alternate = ["currentMonthStatus"]) val currentMonthStatus: String?
 )
 data class ReportFlatDto(@SerializedName("flat_no") val flatNo: String?, val wing: String?, @SerializedName("floor_no") val floorNo: String?)
 data class SocietyReportSummaryDto(
-    @SerializedName("total_society_collection") val totalSocietyCollection: String?,
-    @SerializedName("total_society_expenses") val totalSocietyExpenses: String?,
-    @SerializedName("net_balance") val netBalance: String?,
-    @SerializedName("collection_rate") val collectionRate: Int?,
-    @SerializedName("paid_bills_count") val paidBillsCount: Int?,
-    @SerializedName("pending_bills_count") val pendingBillsCount: Int?,
-    @SerializedName("overdue_bills_count") val overdueBillsCount: Int?
+    @SerializedName(value = "total_society_collection", alternate = ["totalSocietyCollection"]) val totalSocietyCollection: String?,
+    @SerializedName(value = "total_society_expenses", alternate = ["totalSocietyExpenses"]) val totalSocietyExpenses: String?,
+    @SerializedName(value = "net_balance", alternate = ["netBalance"]) val netBalance: String?,
+    @SerializedName(value = "collection_rate", alternate = ["collectionRate"]) val collectionRate: Int?,
+    @SerializedName(value = "paid_bills_count", alternate = ["paidBillsCount"]) val paidBillsCount: Int?,
+    @SerializedName(value = "pending_bills_count", alternate = ["pendingBillsCount"]) val pendingBillsCount: Int?,
+    @SerializedName(value = "overdue_bills_count", alternate = ["overdueBillsCount"]) val overdueBillsCount: Int?
 )
 data class ResidentMaintenanceReportDto(val id: String?, val title: String?, val month: String?, val year: String?, val amount: String?, @SerializedName("penalty_amount") val penaltyAmount: String?, @SerializedName("total_amount") val totalAmount: String?, @SerializedName("paid_amount") val paidAmount: String?, @SerializedName("remaining_amount") val remainingAmount: String?, @SerializedName("due_date") val dueDate: String?, @SerializedName("payment_date") val paymentDate: String?, val status: String?, @SerializedName("flat_no") val flatNo: String?, val wing: String?, @SerializedName("floor_no") val floorNo: String?)
 data class ResidentExpenseReportDto(val id: String?, @SerializedName("expense_number") val expenseNumber: String?, @SerializedName("expense_title") val expenseTitle: String?, val category: String?, val amount: String?, val date: String?, val description: String?)
-data class MembersMaintenanceReportDto(val id: String?, val name: String?, @SerializedName("flat_no") val flatNo: String?, val wing: String?, @SerializedName("floor_no") val floorNo: String?, @SerializedName("total_bills") val totalBills: Int?, @SerializedName("paid_amount") val paidAmount: String?, @SerializedName("pending_amount") val pendingAmount: String?, @SerializedName("penalty_amount") val penaltyAmount: String?, @SerializedName("maintenance_status") val maintenanceStatus: String?)
+data class MembersMaintenanceReportDto(val id: String?, val name: String?, @SerializedName("flat_no") val flatNo: String?, val wing: String?, @SerializedName("floor_no") val floorNo: String?, @SerializedName("total_bills") val totalBills: Int?, @SerializedName("paid_amount") val paidAmount: String?, @SerializedName("pending_amount") val pendingAmount: String?, @SerializedName("penalty_amount") val penaltyAmount: String?, @SerializedName(value = "maintenance_status", alternate = ["payment_status"]) val maintenanceStatus: String?)
 data class AdminReportRowDto(val month: String?, val year: String?, val amount: String?, @SerializedName("total_bills") val totalBills: String?, @SerializedName("paid_bills") val paidBills: String?, @SerializedName("pending_bills") val pendingBills: String?, @SerializedName("overdue_bills") val overdueBills: String?, @SerializedName("total_collection") val totalCollection: String?, @SerializedName("pending_collection") val pendingCollection: String?, @SerializedName("paid_collection") val paidCollection: String?, @SerializedName("resident_name") val residentName: String?, @SerializedName("flat_no") val flatNo: String?, val status: String?, @SerializedName("payment_status") val paymentStatus: String?, @SerializedName("total_amount") val totalAmount: String?, @SerializedName("paid_amount") val paidAmount: String?, @SerializedName("remaining_amount") val remainingAmount: String?, @SerializedName("due_date") val dueDate: String?, @SerializedName("payment_date") val paymentDate: String?)
 
 fun currentFinancialYear(): String {
@@ -136,10 +136,10 @@ data class FlatPaymentReportDto(
 )
 data class FinancialReportDto(val available: Boolean? = null, val reason: String? = null, val financialYear: String? = null, val month: Int? = null, val year: Int? = null, val summary: FinancialSummaryDto?, val months: List<FinancialMonthDto>? = null, val monthlyBreakdown: List<FinancialMonthDto>? = null, val collection: FinancialCollectionDto? = null, val income: List<FinancialBreakdownDto>? = null, val expenses: List<FinancialBreakdownDto>? = null, val bankTransactions: List<FinancialTransactionDto>? = null, val cashTransactions: List<FinancialTransactionDto>? = null, val flatPayments: List<FlatPaymentReportDto>? = null)
 
-data class AccountLedgerDto(@SerializedName("opening_balance") val openingBalance: String?, @SerializedName("closing_balance") val closingBalance: String?, val ledger: List<FinancialTransactionDto>?)
-data class OpeningBalanceRequest(@SerializedName("financial_year") val financialYear: String, @SerializedName("bank_opening") val bankOpening: String, @SerializedName("cash_opening") val cashOpening: String)
+data class AccountLedgerDto(@SerializedName(value = "opening_balance", alternate = ["openingBalance"]) val openingBalance: String?, @SerializedName(value = "closing_balance", alternate = ["closingBalance"]) val closingBalance: String?, val ledger: List<FinancialTransactionDto>?)
+data class OpeningBalanceRequest(@SerializedName("financialYear") val financialYear: String, @SerializedName("bankOpening") val bankOpening: String, @SerializedName("cashOpening") val cashOpening: String)
 data class OpeningBalanceDto(@SerializedName("financial_year") val financialYear: String?, @SerializedName("bank_opening") val bankOpening: String?, @SerializedName("cash_opening") val cashOpening: String?)
-data class ResidentIdentityDto(val name: String?, @SerializedName("flat_no") val flatNo: String?, val wing: String?)
+data class ResidentIdentityDto(val name: String?, @SerializedName(value = "flat_no", alternate = ["flatNo"]) val flatNo: String?, val wing: String?)
 data class ResidentAccountSummaryDto(
     @SerializedName("opening_outstanding") val openingOutstanding: String?,
     @SerializedName("bills_generated") val billsGenerated: String?,
@@ -161,12 +161,12 @@ data class MonthlyMaintenanceReportResponse(
     val data: List<MonthlyMaintenanceRowDto>?, val message: String? = null
 )
 data class MonthlyCollectionSummaryDto(
-    @SerializedName("expected_collection") val expectedCollection: String?,
-    @SerializedName("total_collection") val totalCollection: String?,
-    @SerializedName("pending_collection") val pendingCollection: String?,
-    @SerializedName("overdue_collection") val overdueCollection: String?,
-    @SerializedName("advance_collection") val advanceCollection: String?,
-    @SerializedName("collection_percentage") val collectionPercentage: String?
+    @SerializedName(value = "expected_collection", alternate = ["expectedCollection"]) val expectedCollection: String?,
+    @SerializedName(value = "total_collection", alternate = ["totalCollection"]) val totalCollection: String?,
+    @SerializedName(value = "pending_collection", alternate = ["pendingCollection"]) val pendingCollection: String?,
+    @SerializedName(value = "overdue_collection", alternate = ["overdueCollection"]) val overdueCollection: String?,
+    @SerializedName(value = "advance_collection", alternate = ["advanceCollection"]) val advanceCollection: String?,
+    @SerializedName(value = "collection_percentage", alternate = ["collectionPercentage"]) val collectionPercentage: String?
 )
 data class MonthlyMaintenanceRowDto(
     @SerializedName("bill_id") val billId: String?, @SerializedName("resident_id") val residentId: String?,

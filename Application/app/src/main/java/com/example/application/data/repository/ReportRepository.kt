@@ -31,6 +31,7 @@ import com.example.application.data.remote.dto.PaymentModeReportDto
 import com.example.application.data.remote.dto.ResidentLedgerResponse
 import com.example.application.data.remote.dto.MonthlyReceiptDto
 import com.example.application.data.remote.dto.LedgerWriteOffRequest
+import com.example.application.data.remote.dto.DetailedWriteOffRequest
 import com.example.application.util.AppError
 import com.example.application.util.NetworkResult
 import com.google.gson.Gson
@@ -41,6 +42,8 @@ import java.net.UnknownHostException
 import javax.inject.Inject
 import javax.inject.Singleton
 import retrofit2.Response
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 
 @Singleton
 class ReportRepository @Inject constructor(
@@ -67,45 +70,77 @@ class ReportRepository @Inject constructor(
         val qStatus = filter.status.takeIf { it.isNotBlank() && !it.equals("All", true) }
         val qSearch = filter.search.takeIf { it.isNotBlank() }
 
-        val financial = safeWrapped { reportsApi.getFinancialReport(financialYear) }
-        val monthlyReport = safeMonthlyReport { reportsApi.getMonthlyMaintenanceReport(
-            qMonth, qYear, qWing, qFloor, qFlat, qResident, qStatus, qSearch
-        ) }
-        val monthlyDashboard = safeWrapped { reportsApi.getMonthlyDashboardSummary(qMonth, qYear) }
-        val history12Month = safeWrappedList { reportsApi.get12MonthHistory() }
-        val paymentModes = safeWrapped { reportsApi.getPaymentModes(qMonth, qYear) }
-        val bankLedger = safeWrapped { reportsApi.getBankLedger(financialYear) }
-        val cashLedger = safeWrapped { reportsApi.getCashLedger(financialYear) }
-        val flatCollection = safeWrappedList { reportsApi.getFlatCollectionReport(
-            financialYear, qMonth, qWing, qFlat, qStatus
-        ) }
-        val bills = safeWrappedList { maintenanceApi.getBills() }
-        val expenses = safeWrappedList { maintenanceApi.getExpenses() }
-        val complaints = safeList { communicationApi.getAllComplaints() }
-        val overview = safeWrappedList { reportsApi.getAdminMaintenanceReport() }
-        val monthlyCollection = safeWrappedList { reportsApi.getAdminMaintenanceReport("monthly-collection") }
-        val pendingBills = safeWrappedList { reportsApi.getAdminMaintenanceReport("pending-bills") }
-        val paidBills = safeWrappedList { reportsApi.getAdminMaintenanceReport("paid-bills") }
-        val writeOffs = safeWrappedList { maintenanceApi.getWriteOffHistory(financialYear = financialYear) }
+        // ⚡ All 16 API calls fire IN PARALLEL — total time = slowest single call (~1s vs ~5s sequential)
+        var financial: Any = NetworkResult.Loading
+        var monthlyReport: Any = NetworkResult.Loading
+        var monthlyDashboard: Any = NetworkResult.Loading
+        var history12Month: Any = NetworkResult.Loading
+        var paymentModes: Any = NetworkResult.Loading
+        var bankLedger: Any = NetworkResult.Loading
+        var cashLedger: Any = NetworkResult.Loading
+        var flatCollection: Any = NetworkResult.Loading
+        var bills: Any = NetworkResult.Loading
+        var expenses: Any = NetworkResult.Loading
+        var complaints: Any = NetworkResult.Loading
+        var overview: Any = NetworkResult.Loading
+        var monthlyCollection: Any = NetworkResult.Loading
+        var pendingBills: Any = NetworkResult.Loading
+        var paidBills: Any = NetworkResult.Loading
+        var writeOffs: Any = NetworkResult.Loading
+        coroutineScope {
+            val dFinancial         = async { safeWrapped { reportsApi.getFinancialReport(financialYear) } }
+            val dMonthlyReport     = async { safeMonthlyReport { reportsApi.getMonthlyMaintenanceReport(qMonth, qYear, qWing, qFloor, qFlat, qResident, qStatus, qSearch) } }
+            val dMonthlyDashboard  = async { safeWrapped { reportsApi.getMonthlyDashboardSummary(qMonth, qYear) } }
+            val dHistory12Month    = async { safeWrappedList { reportsApi.get12MonthHistory() } }
+            val dPaymentModes      = async { safeWrapped { reportsApi.getPaymentModes(qMonth, qYear) } }
+            val dBankLedger        = async { safeWrapped { reportsApi.getBankLedger(financialYear) } }
+            val dCashLedger        = async { safeWrapped { reportsApi.getCashLedger(financialYear) } }
+            val dFlatCollection    = async { safeWrappedList { reportsApi.getFlatCollectionReport(financialYear, qMonth, qWing, qFlat, qStatus) } }
+            val dBills             = async { safeWrappedList { maintenanceApi.getBills() } }
+            val dExpenses          = async { safeWrappedList { maintenanceApi.getExpenses() } }
+            val dComplaints        = async { safeList { communicationApi.getAllComplaints() } }
+            val dOverview          = async { safeWrappedList { reportsApi.getAdminMaintenanceReport() } }
+            val dMonthlyCollection = async { safeWrappedList { reportsApi.getAdminMaintenanceReport("monthly-collection") } }
+            val dPendingBills      = async { safeWrappedList { reportsApi.getAdminMaintenanceReport("pending-bills") } }
+            val dPaidBills         = async { safeWrappedList { reportsApi.getAdminMaintenanceReport("paid-bills") } }
+            val dWriteOffs         = async { safeWrappedList { maintenanceApi.getWriteOffHistory(financialYear = financialYear) } }
+            financial        = dFinancial.await()
+            monthlyReport    = dMonthlyReport.await()
+            monthlyDashboard = dMonthlyDashboard.await()
+            history12Month   = dHistory12Month.await()
+            paymentModes     = dPaymentModes.await()
+            bankLedger       = dBankLedger.await()
+            cashLedger       = dCashLedger.await()
+            flatCollection   = dFlatCollection.await()
+            bills            = dBills.await()
+            expenses         = dExpenses.await()
+            complaints       = dComplaints.await()
+            overview         = dOverview.await()
+            monthlyCollection = dMonthlyCollection.await()
+            pendingBills     = dPendingBills.await()
+            paidBills        = dPaidBills.await()
+            writeOffs        = dWriteOffs.await()
+        }
 
+        @Suppress("UNCHECKED_CAST")
         val data = AdminReportsData(
-            bills = (bills as? NetworkResult.Success)?.data.orEmpty(),
-            expenses = (expenses as? NetworkResult.Success)?.data.orEmpty(),
-            complaints = (complaints as? NetworkResult.Success)?.data.orEmpty(),
-            overview = (overview as? NetworkResult.Success)?.data.orEmpty(),
-            monthlyCollection = (monthlyCollection as? NetworkResult.Success)?.data.orEmpty(),
-            pendingBills = (pendingBills as? NetworkResult.Success)?.data.orEmpty(),
-            paidBills = (paidBills as? NetworkResult.Success)?.data.orEmpty(),
-            financial = (financial as? NetworkResult.Success)?.data,
-            bankLedger = (bankLedger as? NetworkResult.Success)?.data,
-            cashLedger = (cashLedger as? NetworkResult.Success)?.data,
-            flatCollection = (flatCollection as? NetworkResult.Success)?.data.orEmpty(),
-            waivers = (writeOffs as? NetworkResult.Success)?.data.orEmpty(),
-            monthlyReport = (monthlyReport as? NetworkResult.Success)?.data?.rows.orEmpty(),
-            monthlySummary = (monthlyReport as? NetworkResult.Success)?.data?.summary,
-            monthlyDashboard = (monthlyDashboard as? NetworkResult.Success)?.data,
-            history12Month = (history12Month as? NetworkResult.Success)?.data.orEmpty(),
-            paymentModes = (paymentModes as? NetworkResult.Success)?.data,
+            bills            = ((bills as? NetworkResult.Success<*>)?.data as? List<MaintenanceBillDto>).orEmpty(),
+            expenses         = ((expenses as? NetworkResult.Success<*>)?.data as? List<ExpenseDto>).orEmpty(),
+            complaints       = ((complaints as? NetworkResult.Success<*>)?.data as? List<ComplaintDto>).orEmpty(),
+            overview         = ((overview as? NetworkResult.Success<*>)?.data as? List<AdminReportRowDto>).orEmpty(),
+            monthlyCollection = ((monthlyCollection as? NetworkResult.Success<*>)?.data as? List<AdminReportRowDto>).orEmpty(),
+            pendingBills     = ((pendingBills as? NetworkResult.Success<*>)?.data as? List<AdminReportRowDto>).orEmpty(),
+            paidBills        = ((paidBills as? NetworkResult.Success<*>)?.data as? List<AdminReportRowDto>).orEmpty(),
+            financial        = (financial as? NetworkResult.Success<*>)?.data as? FinancialReportDto,
+            bankLedger       = (bankLedger as? NetworkResult.Success<*>)?.data as? AccountLedgerDto,
+            cashLedger       = (cashLedger as? NetworkResult.Success<*>)?.data as? AccountLedgerDto,
+            flatCollection   = ((flatCollection as? NetworkResult.Success<*>)?.data as? List<FlatPaymentReportDto>).orEmpty(),
+            waivers          = ((writeOffs as? NetworkResult.Success<*>)?.data as? List<MaintenanceWaiverDto>).orEmpty(),
+            monthlyReport    = (((monthlyReport as? NetworkResult.Success<*>)?.data) as? MonthlyReportBundle)?.rows.orEmpty(),
+            monthlySummary   = (((monthlyReport as? NetworkResult.Success<*>)?.data) as? MonthlyReportBundle)?.summary,
+            monthlyDashboard = (monthlyDashboard as? NetworkResult.Success<*>)?.data as? MonthlyDashboardSummaryDto,
+            history12Month   = ((history12Month as? NetworkResult.Success<*>)?.data as? List<CollectionHistoryDto>).orEmpty(),
+            paymentModes     = (paymentModes as? NetworkResult.Success<*>)?.data as? PaymentModeReportDto,
             warnings = listOfNotNull(
                 if (financial is NetworkResult.Error) "Financial accounting summary unavailable: ${messageFor(financial.error)}" else null,
                 if (monthlyReport is NetworkResult.Error) "Monthly maintenance report unavailable: ${messageFor(monthlyReport.error)}" else null,
@@ -138,23 +173,55 @@ class ReportRepository @Inject constructor(
         val qStatus = filter.status.takeIf { it.isNotBlank() && !it.equals("All", true) }
         val qSearch = filter.search.takeIf { it.isNotBlank() }
 
-        val financial = safeWrapped { reportsApi.getFinancialReport(financialYear) }
-        val bankLedger = safeWrapped { reportsApi.getBankLedger(financialYear) }
-        val cashLedger = safeWrapped { reportsApi.getCashLedger(financialYear) }
-        val flatCollection = safeWrappedList { reportsApi.getFlatCollectionReport(financialYear, qMonth, qWing, null, qStatus) }
-        val monthlyReport = safeMonthlyReport { reportsApi.getMonthlyMaintenanceReport(qMonth, qYear, qWing, null, null, null, qStatus, qSearch) }
+        // ⚡ All 14 API calls fire IN PARALLEL — total time = slowest single call (~1s vs ~4s sequential)
+        var financial: Any = NetworkResult.Loading
+        var bankLedger: Any = NetworkResult.Loading
+        var cashLedger: Any = NetworkResult.Loading
+        var flatCollection: Any = NetworkResult.Loading
+        var monthlyReport: Any = NetworkResult.Loading
+        var accountRaw: Any = NetworkResult.Loading
+        var transparencyRaw: Any = NetworkResult.Loading
+        var mySummary: Any = NetworkResult.Loading
+        var myMaintenance: Any = NetworkResult.Loading
+        var societySummary: Any = NetworkResult.Loading
+        var expenses: Any = NetworkResult.Loading
+        var members: Any = NetworkResult.Loading
+        var allMaintenance: Any = NetworkResult.Loading
+        var complaints: Any = NetworkResult.Loading
+        coroutineScope {
+            val dFinancial      = async { safeWrapped { reportsApi.getFinancialReport(financialYear) } }
+            val dBankLedger     = async { safeWrapped { reportsApi.getBankLedger(financialYear) } }
+            val dCashLedger     = async { safeWrapped { reportsApi.getCashLedger(financialYear) } }
+            val dFlatCollection = async { safeWrappedList { reportsApi.getFlatCollectionReport(financialYear, qMonth, qWing, null, qStatus) } }
+            val dMonthlyReport  = async { safeMonthlyReport { reportsApi.getMonthlyMaintenanceReport(qMonth, qYear, qWing, null, null, null, qStatus, qSearch) } }
+            val dAccount        = async { safeDirect { reportsApi.getResidentAccountSummary(financialYear) } }
+            val dTransparency   = async { safeDirect { reportsApi.getResidentSocietyTransparency(financialYear) } }
+            val dMySummary      = async { safeDirect { reportsApi.getResidentReportSummary() } }
+            val dMyMaintenance  = async { safeList { reportsApi.getResidentMaintenanceReport(qMonth, qYear, qStatus) } }
+            val dSocietySummary = async { safeDirect { reportsApi.getSocietyReportSummary(qMonth, qYear) } }
+            val dExpenses       = async { safeList { reportsApi.getResidentExpenseReport(qMonth, qYear) } }
+            val dMembers        = async { safeList { reportsApi.getMembersMaintenanceReport(qMonth, qYear, qStatus) } }
+            val dAllMaintenance = async { safeList { reportsApi.getAllMaintenanceReport(qMonth, qYear, qStatus) } }
+            val dComplaints     = async { safeList { communicationApi.getMyComplaints() } }
+            financial      = dFinancial.await()
+            bankLedger     = dBankLedger.await()
+            cashLedger     = dCashLedger.await()
+            flatCollection = dFlatCollection.await()
+            monthlyReport  = dMonthlyReport.await()
+            accountRaw     = dAccount.await()
+            transparencyRaw = dTransparency.await()
+            mySummary      = dMySummary.await()
+            myMaintenance  = dMyMaintenance.await()
+            societySummary = dSocietySummary.await()
+            expenses       = dExpenses.await()
+            members        = dMembers.await()
+            allMaintenance = dAllMaintenance.await()
+            complaints     = dComplaints.await()
+        }
+        val account = (accountRaw as? NetworkResult.Success<*>)?.data as? ResidentAccountReportDto
+        val transparency = (transparencyRaw as? NetworkResult.Success<*>)?.data as? ResidentTransparencyReportDto
 
-        val account = (safeDirect { reportsApi.getResidentAccountSummary(financialYear) } as? NetworkResult.Success)?.data
-        val transparency = (safeDirect { reportsApi.getResidentSocietyTransparency(financialYear) } as? NetworkResult.Success)?.data
-        val mySummary = safeDirect { reportsApi.getResidentReportSummary() }
-        val myMaintenance = safeList { reportsApi.getResidentMaintenanceReport(qMonth, qYear, qStatus) }
-        val societySummary = safeDirect { reportsApi.getSocietyReportSummary(qMonth, qYear) }
-        val expenses = safeList { reportsApi.getResidentExpenseReport(qMonth, qYear) }
-        val members = safeList { reportsApi.getMembersMaintenanceReport(qMonth, qYear, qStatus) }
-        val allMaintenance = safeList { reportsApi.getAllMaintenanceReport(qMonth, qYear, qStatus) }
-        val complaints = safeList { communicationApi.getMyComplaints() }
-
-        val finData = (financial as? NetworkResult.Success)?.data ?: FinancialReportDto(
+        val finData = (financial as? NetworkResult.Success<*>)?.data as? FinancialReportDto ?: FinancialReportDto(
             available = true, reason = null, financialYear = financialYear,
             summary = transparency?.summary,
             months = null, collection = null, income = null, expenses = null,
@@ -162,20 +229,21 @@ class ReportRepository @Inject constructor(
             flatPayments = transparency?.flatPayments
         )
 
+        @Suppress("UNCHECKED_CAST")
         val data = ResidentReportsData(
-            summary = (mySummary as? NetworkResult.Success)?.data,
-            myMaintenance = (myMaintenance as? NetworkResult.Success)?.data.orEmpty(),
-            societySummary = (societySummary as? NetworkResult.Success)?.data,
-            expenses = (expenses as? NetworkResult.Success)?.data.orEmpty(),
-            membersMaintenance = (members as? NetworkResult.Success)?.data.orEmpty(),
-            allMaintenance = (allMaintenance as? NetworkResult.Success)?.data.orEmpty(),
-            complaints = (complaints as? NetworkResult.Success)?.data.orEmpty(),
-            financial = finData,
-            bankLedger = (bankLedger as? NetworkResult.Success)?.data,
-            cashLedger = (cashLedger as? NetworkResult.Success)?.data,
-            flatCollection = (flatCollection as? NetworkResult.Success)?.data.orEmpty(),
-            monthlyReport = (monthlyReport as? NetworkResult.Success)?.data?.rows.orEmpty(),
-            accountReport = account,
+            summary          = (mySummary as? NetworkResult.Success<*>)?.data as? ReportSummaryDto,
+            myMaintenance    = ((myMaintenance as? NetworkResult.Success<*>)?.data as? List<ResidentMaintenanceReportDto>).orEmpty(),
+            societySummary   = (societySummary as? NetworkResult.Success<*>)?.data as? SocietyReportSummaryDto,
+            expenses         = ((expenses as? NetworkResult.Success<*>)?.data as? List<ResidentExpenseReportDto>).orEmpty(),
+            membersMaintenance = ((members as? NetworkResult.Success<*>)?.data as? List<MembersMaintenanceReportDto>).orEmpty(),
+            allMaintenance   = ((allMaintenance as? NetworkResult.Success<*>)?.data as? List<ResidentMaintenanceReportDto>).orEmpty(),
+            complaints       = ((complaints as? NetworkResult.Success<*>)?.data as? List<ComplaintDto>).orEmpty(),
+            financial        = finData,
+            bankLedger       = (bankLedger as? NetworkResult.Success<*>)?.data as? AccountLedgerDto,
+            cashLedger       = (cashLedger as? NetworkResult.Success<*>)?.data as? AccountLedgerDto,
+            flatCollection   = ((flatCollection as? NetworkResult.Success<*>)?.data as? List<FlatPaymentReportDto>).orEmpty(),
+            monthlyReport    = (((monthlyReport as? NetworkResult.Success<*>)?.data) as? MonthlyReportBundle)?.rows.orEmpty(),
+            accountReport    = account,
             transparencyReport = transparency,
             warnings = listOfNotNull(
                 if (account == null) "Account summary unavailable." else null,
@@ -230,10 +298,10 @@ class ReportRepository @Inject constructor(
     ): NetworkResult<String> {
         return actionCall {
             maintenanceApi.createWriteOff(
-                LedgerWriteOffRequest(
-                    billId = billId,
-                    writeoffType = type,
-                    amount = amount,
+                id = billId,
+                request = DetailedWriteOffRequest(
+                    type = type,
+                    amount = if (type.uppercase() == "FULL" || type.uppercase() == "TOTAL") null else amount,
                     reason = reason,
                     remarks = remarks?.takeIf { it.isNotBlank() }
                 )

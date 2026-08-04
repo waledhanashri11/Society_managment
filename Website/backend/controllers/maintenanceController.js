@@ -2,6 +2,7 @@ const { promisePool } = require('../config/database');
 const fs = require('fs');
 const path = require('path');
 const { buildPublicFileUrl } = require('../utils/fileUrl');
+const { withMaintenanceBillBreakdown } = require('../utils/maintenanceBill');
 
 const LATE_FEE = 100;
 
@@ -27,15 +28,11 @@ const sanitizeForResident = (data) => {
     const writeOffAmt = Number(data.write_off_amount || data.writeoff_amount || 0);
     const baseAmt = Number(data.amount || 0);
     const penaltyAmt = Number(data.penalty_amount || data.penalty || 0);
-    const dbTotal = Number(data.total_amount || 0);
-    const originalGeneratedBill = Math.max(dbTotal + writeOffAmt, baseAmt + penaltyAmt, dbTotal);
+    const dbTotal = Number(data.total_amount || (baseAmt + penaltyAmt));
+    const originalGeneratedBill = Math.max(dbTotal + writeOffAmt, baseAmt + penaltyAmt + writeOffAmt, dbTotal);
 
     for (const [key, val] of Object.entries(data)) {
       if (
-        /write_?off/i.test(key) ||
-        /written_?off/i.test(key) ||
-        key === 'approvedWriteOffs' ||
-        key === 'writeOffs' ||
         key === 'internalAdjustment' ||
         key === 'adminNotes' ||
         key === 'admin_notes'
@@ -43,50 +40,17 @@ const sanitizeForResident = (data) => {
         continue;
       }
       let value = sanitizeForResident(val);
-      if (
-        (key === 'status' || key === 'payment_status' || key === 'paymentStatus' || key === 'calculated_status' || key === 'maintenance_status') &&
-        typeof value === 'string' &&
-        /write_?off|written_?off|waived/i.test(value)
-      ) {
-        const rem = Number(data.remaining_amount ?? data.remainingPayable ?? data.remainingAmount ?? 0) - writeOffAmt;
-        value = rem <= 0 ? (value === value.toUpperCase() ? 'PAID' : 'Paid') : (value === value.toUpperCase() ? 'PENDING' : 'Pending');
-      }
-      if (isBill && (key === 'total_amount' || key === 'originalAmount' || key === 'original_amount' || key === 'billAmount' || key === 'bill_amount')) {
+      if (isBill && (key === 'originalAmount' || key === 'original_amount')) {
         value = originalGeneratedBill;
       }
       cleaned[key] = value;
     }
 
-    if (writeOffAmt > 0) {
-      if (cleaned.paid_amount !== undefined) cleaned.paid_amount = Number(cleaned.paid_amount || 0) + writeOffAmt;
-      if (cleaned.paidAmount !== undefined) cleaned.paidAmount = Number(cleaned.paidAmount || 0) + writeOffAmt;
-
-      if (cleaned.remaining_amount !== undefined) cleaned.remaining_amount = Math.max(0, Number(cleaned.remaining_amount || 0) - writeOffAmt);
-      if (cleaned.remainingAmount !== undefined) cleaned.remainingAmount = Math.max(0, Number(cleaned.remainingAmount || 0) - writeOffAmt);
-      if (cleaned.pending_amount !== undefined) cleaned.pending_amount = Math.max(0, Number(cleaned.pending_amount || 0) - writeOffAmt);
-      if (cleaned.pendingAmount !== undefined) cleaned.pendingAmount = Math.max(0, Number(cleaned.pendingAmount || 0) - writeOffAmt);
-      if (cleaned.outstanding_amount !== undefined) cleaned.outstanding_amount = Math.max(0, Number(cleaned.outstanding_amount || 0) - writeOffAmt);
-
-      const finalRem = Number(cleaned.remaining_amount ?? cleaned.pending_amount ?? cleaned.pendingAmount ?? cleaned.remainingAmount ?? 0);
-      const finalPaid = Number(cleaned.paid_amount ?? cleaned.paidAmount ?? 0);
-      for (const stKey of ['status', 'payment_status', 'paymentStatus', 'calculated_status', 'maintenance_status']) {
-        if (cleaned[stKey] !== undefined) {
-          if (finalRem <= 0) {
-            cleaned[stKey] = typeof cleaned[stKey] === 'string' && cleaned[stKey] === cleaned[stKey].toUpperCase() ? 'PAID' : 'Paid';
-          } else if (finalPaid > 0) {
-            cleaned[stKey] = typeof cleaned[stKey] === 'string' && cleaned[stKey] === cleaned[stKey].toUpperCase() ? 'PARTIALLY_PAID' : 'Partial';
-          }
-        }
-      }
-    }
-
-    if (Array.isArray(cleaned.status_history)) {
-      cleaned.status_history = cleaned.status_history.filter((h) => {
-        const pSt = String(h.previous_status || '').toLowerCase();
-        const nSt = String(h.new_status || '').toLowerCase();
-        const comment = String(h.comment || h.reason || '').toLowerCase();
-        return !pSt.includes('write') && !nSt.includes('write') && !comment.includes('write');
-      });
+    if (writeOffAmt > 0 || (typeof data.status === 'string' && /write_?off/i.test(data.status))) {
+      cleaned.is_written_off = true;
+      cleaned.isWrittenOff = true;
+      cleaned.write_off_amount = writeOffAmt;
+      cleaned.writeOffAmount = writeOffAmt;
     }
 
     return cleaned;
@@ -805,7 +769,85 @@ const withCoveredPaymentBills = async (db, payments = []) => {
   );
 };
 
-const reconcilePaidPayments = async () => ({ updatedBills: 0 });
+const reconcilePaidPayments = async (pool = promisePool, userId = null) => {
+  try {
+    let query = `
+      UPDATE maintenance m
+      JOIN (
+        SELECT COALESCE(pm.maintenance_id, p.bill_id) AS bill_id,
+               SUM(p.amount) AS total_paid
+        FROM payments p
+        LEFT JOIN payment_maintenance pm ON pm.payment_id = p.id
+        WHERE p.payment_status IN ('Approved', 'Paid')
+        GROUP BY COALESCE(pm.maintenance_id, p.bill_id)
+      ) approved ON m.id = approved.bill_id
+      SET m.status = 'Paid',
+          m.paid_amount = GREATEST(COALESCE(m.paid_amount, 0), COALESCE(approved.total_paid, m.total_amount)),
+          m.remaining_amount = 0,
+          m.remaining_due = 0,
+          m.current_due = 0,
+          m.updated_at = NOW()
+      WHERE m.status NOT IN ('Paid', 'PAID', 'Settled', 'SETTLED')
+    `;
+    const params = [];
+    if (userId) {
+      query += ` AND m.resident_id = ?`;
+      params.push(userId);
+    }
+    const [res] = await pool.query(query, params);
+
+    try {
+      await pool.query(`
+        UPDATE maintenance m
+        JOIN (
+          SELECT bill_id,
+                 SUM(COALESCE(maintenance_write_off_amount, 0)) AS sum_maint_wo,
+                 SUM(COALESCE(penalty_write_off_amount, 0)) AS sum_pen_wo,
+                 SUM(COALESCE(amount, 0)) AS sum_wo
+          FROM write_offs
+          GROUP BY bill_id
+        ) wo ON m.id = wo.bill_id
+        SET m.maintenance_write_off_amount = GREATEST(COALESCE(m.maintenance_write_off_amount, 0), wo.sum_maint_wo),
+            m.penalty_write_off_amount = GREATEST(COALESCE(m.penalty_write_off_amount, 0), wo.sum_pen_wo),
+            m.write_off_amount = GREATEST(COALESCE(m.write_off_amount, 0), wo.sum_wo, wo.sum_maint_wo + wo.sum_pen_wo)
+      `);
+    } catch (_) {}
+
+    await pool.query(`
+      UPDATE maintenance
+      SET original_amount = COALESCE(original_amount, amount, total_amount, 0),
+          remaining_amount = GREATEST(0, COALESCE(original_amount, amount, total_amount, 0) + COALESCE(penalty_amount, 0) - COALESCE(maintenance_write_off_amount, 0) - COALESCE(penalty_write_off_amount, 0) - COALESCE(paid_amount, 0)),
+          remaining_due = GREATEST(0, COALESCE(original_amount, amount, total_amount, 0) + COALESCE(penalty_amount, 0) - COALESCE(maintenance_write_off_amount, 0) - COALESCE(penalty_write_off_amount, 0) - COALESCE(paid_amount, 0)),
+          current_due = GREATEST(0, COALESCE(original_amount, amount, total_amount, 0) + COALESCE(penalty_amount, 0) - COALESCE(maintenance_write_off_amount, 0) - COALESCE(penalty_write_off_amount, 0) - COALESCE(paid_amount, 0)),
+          status = CASE
+            WHEN GREATEST(0, COALESCE(original_amount, amount, total_amount, 0) + COALESCE(penalty_amount, 0) - COALESCE(maintenance_write_off_amount, 0) - COALESCE(penalty_write_off_amount, 0) - COALESCE(paid_amount, 0)) <= 0
+            THEN (CASE WHEN COALESCE(paid_amount, 0) > 0 THEN 'Paid' ELSE 'WRITTEN_OFF' END)
+            WHEN COALESCE(maintenance_write_off_amount, 0) > 0 OR COALESCE(penalty_write_off_amount, 0) > 0 OR COALESCE(write_off_amount, 0) > 0
+            THEN 'PARTIAL_WRITE_OFF'
+            ELSE status
+          END
+      WHERE status NOT IN ('Paid', 'PAID', 'Settled', 'SETTLED', 'WRITTEN_OFF', 'Written Off', 'Fully Written Off', 'Cancelled')
+    `);
+
+    await pool.query(`
+      UPDATE maintenance
+      SET status = 'WRITTEN_OFF',
+          write_off_status = 'Fully Written Off',
+          remaining_amount = 0,
+          remaining_due = 0,
+          current_due = 0,
+          updated_at = NOW()
+      WHERE COALESCE(write_off_amount, maintenance_write_off_amount, 0) > 0
+        AND (remaining_amount <= 0 OR remaining_due <= 0 OR COALESCE(write_off_amount, maintenance_write_off_amount, 0) >= COALESCE(original_amount, amount, total_amount, 0))
+        AND status NOT IN ('Paid', 'PAID', 'WRITTEN_OFF')
+    `);
+
+    return { updatedBills: res ? (res.affectedRows || 0) : 0 };
+  } catch (err) {
+    console.error('Error in reconcilePaidPayments:', err);
+    return { updatedBills: 0 };
+  }
+};
 
 const reconcileLegacyPaidPayments = async (db = promisePool, residentId = null) => {
   const params = [];
@@ -867,17 +909,16 @@ const calculateLateFee = (dueDate) => {
 const applyPenaltyLogic = async () => {
   try {
     const [settingsRows] = await promisePool.query('SELECT * FROM maintenance_settings ORDER BY id DESC LIMIT 1');
-    if (settingsRows.length === 0) return; // No settings defined yet
+    if (settingsRows.length === 0) return;
 
     const settings = settingsRows[0];
     const graceDays = Number(settings.grace_days || 0);
 
-    const [bills] = await promisePool.query("SELECT * FROM maintenance WHERE status NOT IN ('Paid', 'PAID', 'SETTLED', 'WRITTEN_OFF', 'Pending Verification', 'Under Review')");
+    const [bills] = await promisePool.query("SELECT * FROM maintenance WHERE status NOT IN ('Paid', 'PAID', 'Settled', 'SETTLED', 'WRITTEN_OFF', 'Written Off', 'Fully Written Off', 'Cancelled')");
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
     for (const bill of bills) {
-      // Fetch sum of items
       const [itemRows] = await promisePool.query(
         'SELECT COALESCE(SUM(amount), 0) AS items_sum FROM maintenance_bill_items WHERE bill_id = ?',
         [bill.id]
@@ -888,56 +929,49 @@ const applyPenaltyLogic = async () => {
       const cutoffDate = new Date(dueDate);
       cutoffDate.setDate(cutoffDate.getDate() + graceDays);
 
-      if (today > cutoffDate) {
-        let penalty = 0;
+      const baseAmount = Number(bill.original_amount || bill.amount || bill.total_amount || 0);
+      const maintWO = Number(bill.maintenance_write_off_amount || 0);
+      const penWO = Number(bill.penalty_write_off_amount || 0);
+      const totalWriteOff = (maintWO > 0 || penWO > 0) ? (maintWO + penWO) : Number(bill.write_off_amount || 0);
+      const approvedPaid = Number(bill.paid_amount || 0);
+
+      let currentPenalty = Number(bill.penalty_amount || bill.late_fee || 0);
+      if (today > cutoffDate && currentPenalty === 0) {
         if (settings.late_fee_type === 'fixed') {
-          penalty = Number(settings.late_fee_value);
+          currentPenalty = Number(settings.late_fee_value || 0);
         } else if (settings.late_fee_type === 'percentage') {
-          penalty = Number(bill.amount) * (Number(settings.late_fee_value) / 100);
-        }
-
-        const newPenaltyAmount = penalty;
-        const newTotalAmount = Number(bill.amount) + newPenaltyAmount + itemsSum;
-        const newRemainingAmount = Math.max(0, newTotalAmount - Number(bill.paid_amount || 0) - Number(bill.write_off_amount || 0));
-        let status = 'Overdue';
-        if (newRemainingAmount <= 0) {
-          status = 'Paid';
-        } else if (Number(bill.paid_amount) > 0) {
-          status = 'Partial';
-        }
-
-        await promisePool.query(
-          `UPDATE maintenance
-           SET penalty_amount = ?, total_amount = ?, remaining_amount = ?, status = ?, updated_at = NOW()
-           WHERE id = ?`,
-          [newPenaltyAmount, newTotalAmount, newRemainingAmount, status, bill.id]
-        );
-      } else {
-        // Not past grace period, but check if past due date to mark as Overdue (without penalty yet)
-        if (dueDate < today) {
-          const totalAmt = Number(bill.amount) + Number(bill.penalty_amount) + itemsSum;
-          const remaining = Math.max(0, totalAmt - Number(bill.paid_amount || 0) - Number(bill.write_off_amount || 0));
-          let status = 'Overdue';
-          if (remaining <= 0) {
-            status = 'Paid';
-          } else if (Number(bill.paid_amount) > 0) {
-            status = 'Partial';
-          }
-          await promisePool.query(
-            `UPDATE maintenance SET status = ?, total_amount = ?, remaining_amount = ? WHERE id = ?`,
-            [status, totalAmt, remaining, bill.id]
-          );
-        } else {
-          // If not past due date, double check if it is Partial or Pending
-          const totalAmt = Number(bill.amount) + Number(bill.penalty_amount) + itemsSum;
-          const remaining = Math.max(0, totalAmt - Number(bill.paid_amount || 0) - Number(bill.write_off_amount || 0));
-          let status = remaining <= 0 ? 'Paid' : (Number(bill.paid_amount) > 0 ? 'Partial' : 'Pending');
-          await promisePool.query(
-            `UPDATE maintenance SET status = ?, total_amount = ?, remaining_amount = ? WHERE id = ?`,
-            [status, totalAmt, remaining, bill.id]
-          );
+          currentPenalty = baseAmount * (Number(settings.late_fee_value || 0) / 100);
         }
       }
+
+      const totalAmount = baseAmount + currentPenalty + itemsSum;
+      const netRemaining = Math.max(0, totalAmount - totalWriteOff - approvedPaid);
+
+      let newStatus = bill.status || 'Pending';
+      if (netRemaining <= 0) {
+        newStatus = approvedPaid > 0 ? 'Paid' : (totalWriteOff > 0 ? 'WRITTEN_OFF' : 'Paid');
+      } else if (today > cutoffDate || (dueDate < today && !['PARTIAL_WRITE_OFF', 'Partial Write-Off', 'Partially Written Off', 'Under Review'].includes(bill.status))) {
+        if (!['PARTIAL_WRITE_OFF', 'Partial Write-Off', 'Partially Written Off'].includes(bill.status)) {
+          newStatus = approvedPaid > 0 ? 'Partial' : 'Overdue';
+        }
+      } else if (approvedPaid > 0 && !['PARTIAL_WRITE_OFF', 'Partial Write-Off', 'Partially Written Off'].includes(bill.status)) {
+        newStatus = 'Partial';
+      }
+
+      await promisePool.query(
+        `UPDATE maintenance
+         SET original_amount = COALESCE(original_amount, ?),
+             penalty_amount = ?,
+             write_off_amount = ?,
+             total_amount = ?,
+             remaining_amount = ?,
+             remaining_due = ?,
+             current_due = ?,
+             status = ?,
+             updated_at = NOW()
+         WHERE id = ?`,
+        [baseAmount, currentPenalty, totalWriteOff, totalAmount, netRemaining, netRemaining, netRemaining, newStatus, bill.id]
+      );
     }
   } catch (error) {
     if (error.code === '42P01') return;
@@ -1093,11 +1127,17 @@ const getWriteOffs = async (req, res) => {
   try {
     const [rows] = await promisePool.query(
       `SELECT w.*, COALESCE(m.bill_number, CONCAT('BILL-', m.id)) AS bill_number,
-              u.name AS resident_name, f.flat_no, m.month, m.year, m.status
+              COALESCE(u.name, u2.name, 'Resident') AS resident_name,
+              COALESCE(f.flat_no, f2.flat_no, 'N/A') AS flat_no,
+              COALESCE(w.amount, 0) AS amount,
+              COALESCE(w.amount, 0) AS write_off_amount,
+              m.month, m.year, m.status
        FROM maintenance_writeoffs w
        LEFT JOIN maintenance m ON m.id = w.bill_id
        LEFT JOIN users u ON u.id = w.resident_id
        LEFT JOIN flats f ON f.id = w.flat_id
+       LEFT JOIN users u2 ON u2.id = m.resident_id
+       LEFT JOIN flats f2 ON f2.id = m.flat_id
        ORDER BY w.created_at DESC`
     );
     return sendResponse(res, 200, 'Write-offs fetched successfully', rows);
@@ -1486,8 +1526,8 @@ const deleteMaintenance = async (req, res) => {
     await promisePool.query('DELETE FROM maintenance_writeoffs WHERE bill_id = ?', [id]);
     await promisePool.query('DELETE FROM payment_maintenance WHERE maintenance_id = ?', [id]);
     await promisePool.query('DELETE FROM payments WHERE bill_id = ?', [id]);
-    await promisePool.query('DELETE FROM maintenance WHERE id = ?', [id]);
-    return sendResponse(res, 200, 'Maintenance deleted successfully');
+    await promisePool.query('UPDATE maintenance SET status = \'Cancelled\', updated_at = NOW() WHERE id = ?', [id]);
+    return sendResponse(res, 200, 'Bill cancelled successfully');
   } catch (error) {
     console.error('Delete maintenance error:', error);
     return sendResponse(res, 500, 'Server error', null, ['Unable to delete maintenance']);
@@ -1600,7 +1640,10 @@ const getUserMaintenance = async (req, res) => {
              rejected_payment.rejected_at,
              rejected_payment.rejected_by_name,
              rejected_payment.payment_status AS latest_payment_status,
-             approved_payment.id AS payment_id
+             approved_payment.id AS payment_id,
+             writeoff_info.write_off_reason,
+             writeoff_info.write_off_type,
+             writeoff_info.write_off_remarks
       FROM maintenance m
       JOIN flats f ON m.flat_id = f.id
       LEFT JOIN flat_types ft ON m.flat_type_id = ft.id
@@ -1626,6 +1669,13 @@ const getUserMaintenance = async (req, res) => {
         ORDER BY COALESCE(p.verified_at, p.paid_at, p.updated_at, p.created_at) DESC
         LIMIT 1
       ) approved_payment ON true
+      LEFT JOIN LATERAL (
+        SELECT w.reason AS write_off_reason, w.type AS write_off_type, w.remarks AS write_off_remarks
+        FROM write_offs w
+        WHERE w.bill_id = m.id
+        ORDER BY w.created_at DESC
+        LIMIT 1
+      ) writeoff_info ON true
       WHERE m.resident_id = ?
       ORDER BY m.created_at DESC
     `, [userId]);
@@ -1638,12 +1688,26 @@ const getUserMaintenance = async (req, res) => {
       ORDER BY psh.created_at ASC
     `, [userId]);
 
+    const [pendingVerificationRows] = await promisePool.query(`
+      SELECT COALESCE(pm.maintenance_id, p.bill_id) AS bill_id,
+             SUM(COALESCE(p.amount, 0)) AS pending_verification_amount
+      FROM payments p
+      LEFT JOIN payment_maintenance pm ON pm.payment_id = p.id
+      WHERE p.payment_status IN ('Pending', 'Under Review', 'Verification Pending')
+      GROUP BY COALESCE(pm.maintenance_id, p.bill_id)
+    `);
+
+    const pendingMap = new Map();
+    pendingVerificationRows.forEach((r) => {
+      pendingMap.set(Number(r.bill_id), Number(r.pending_verification_amount || 0));
+    });
+
     const billsWithHistory = bills.map((bill) => {
       const history = historyRows.filter((h) => Number(h.bill_id) === Number(bill.id));
-      return {
-        ...bill,
-        status_history: history
-      };
+      const pendingVerifAmt = pendingMap.get(Number(bill.id)) || 0;
+      const result = withMaintenanceBillBreakdown(bill, { pendingVerificationAmount: pendingVerifAmt });
+      console.log(`[DEBUG_PAYMENT_FLOW] residentId=${userId}, billId=${bill.id}, baseAmount=${result.baseAmount}, penalty=${result.penaltyAmount}, grossAmount=${result.grossAmount}, totalApprovedWriteOff=${result.totalApprovedWriteOff}, approvedPaidAmount=${result.approvedPaidAmount}, pendingVerificationAmount=${result.pendingVerificationAmount}, remainingAmount=${result.remainingAmount}`);
+      return { ...result, status_history: history };
     });
 
     const isResident = req.user?.role === 'resident';
@@ -1775,7 +1839,7 @@ const createPayment = async (req, res) => {
     }
 
     const [billRows] = finalBillIds.length
-      ? await connection.query('SELECT * FROM maintenance WHERE id = ANY(?::int[]) ORDER BY year ASC, month ASC, due_date ASC, id ASC', [finalBillIds])
+      ? await connection.query('SELECT * FROM maintenance WHERE id IN (?) ORDER BY year ASC, month ASC, due_date ASC, id ASC', [finalBillIds])
       : await connection.query('SELECT * FROM maintenance WHERE id = ?', [billId]);
     if (billRows.length === 0) {
       await connection.rollback();
@@ -1804,14 +1868,21 @@ const createPayment = async (req, res) => {
 
     // Delete any old pending unapproved payments for these bill IDs so new payment takes over
     await connection.query(
-      `DELETE FROM payment_maintenance WHERE maintenance_id = ANY(?::int[]) AND payment_id IN (SELECT id FROM payments WHERE payment_status NOT IN ('Approved', 'Paid'))`,
+      `DELETE FROM payment_maintenance WHERE maintenance_id IN (?) AND payment_id IN (SELECT id FROM payments WHERE payment_status NOT IN ('Approved', 'Paid'))`,
       [selectedBillIds]
     );
 
-    const [paymentRows] = await connection.query('SELECT id FROM payments WHERE transaction_id = ?', [utr]);
+    const [paymentRows] = await connection.query('SELECT id, payment_status FROM payments WHERE transaction_id = ?', [utr]);
     if (paymentRows.length > 0) {
-      await connection.rollback();
-      return sendResponse(res, 409, 'Duplicate payment transaction', null, ['This UTR number has already been used']);
+      const isApproved = paymentRows.some((p) => ['Approved', 'Paid'].includes(p.payment_status));
+      if (isApproved) {
+        await connection.rollback();
+        return sendResponse(res, 409, 'Duplicate payment transaction', null, ['This UTR number has already been used for an approved payment']);
+      } else {
+        const oldIds = paymentRows.map((p) => p.id);
+        await connection.query('DELETE FROM payment_maintenance WHERE payment_id IN (?)', [oldIds]);
+        await connection.query('DELETE FROM payments WHERE id IN (?)', [oldIds]);
+      }
     }
 
     const screenshotPath = savePaymentScreenshot(screenshot || screenshotUrl);
@@ -2449,6 +2520,10 @@ const getPaymentReceipt = async (req, res) => {
       `SELECT p.*, p.transaction_id AS utr_number, p.screenshot_url AS screenshot,
               m.resident_id, CONCAT('BILL-', m.id) AS bill_number, m.title, m.month, m.year, m.due_date, m.total_amount, m.payment_date,
               m.amount AS base_maintenance_charge, m.penalty_amount AS late_fee,
+              COALESCE(m.write_off_amount, 0) AS write_off_amount,
+              m.maintenance_write_off_amount, m.penalty_write_off_amount,
+              m.write_off_status,
+              wo.reason AS write_off_reason, wo.type AS write_off_type, wo.remarks AS write_off_remarks,
               u.name AS resident_name, f.flat_no, ft.name AS flat_type_name, verifier.name AS verified_by_name
        FROM payments p
        JOIN maintenance m ON p.bill_id = m.id
@@ -2456,6 +2531,9 @@ const getPaymentReceipt = async (req, res) => {
        JOIN flats f ON m.flat_id = f.id
        LEFT JOIN flat_types ft ON m.flat_type_id = ft.id
        LEFT JOIN users verifier ON verifier.id = p.verified_by
+       LEFT JOIN LATERAL (
+         SELECT reason, type, remarks FROM write_offs WHERE bill_id = m.id ORDER BY created_at DESC LIMIT 1
+       ) wo ON true
        WHERE p.id = ?`,
       [id]
     );
@@ -2687,7 +2765,7 @@ const createDetailedWriteOff = async (req, res) => {
 
   try {
     const { id } = req.params;
-    const { type, reason, amount } = req.body;
+    const { type, reason, amount, maintenance_amount, penalty_amount, remarks } = req.body;
 
     const normalizedType = String(type || '').trim();
     if (!normalizedType || !reason || !String(reason).trim()) {
@@ -2699,6 +2777,7 @@ const createDetailedWriteOff = async (req, res) => {
       if (lower.includes('full') || lower.includes('total')) return 'Full';
       if (lower.includes('penalty')) return 'Penalty';
       if (lower.includes('maintenance')) return 'Maintenance';
+      if (lower.includes('both')) return 'Both';
       return 'Partial';
     };
 
@@ -2708,10 +2787,10 @@ const createDetailedWriteOff = async (req, res) => {
       id,
       targetType,
       amount,
-      null, // maintenanceAmount
-      null, // penaltyAmount
+      maintenance_amount || null,
+      penalty_amount || null,
       reason,
-      null, // remarks
+      remarks || null,
       req.user,
       req.ip || req.headers['x-forwarded-for'] || null,
       req.headers['user-agent'] || null
@@ -2736,17 +2815,30 @@ const getWriteOffHistory = async (req, res) => {
   try {
     const { resident, flat, wing, month, startDate, endDate, type, financialYear } = req.query;
     let query = `
-      SELECT w.*, m.month, m.year, m.title AS bill_title, m.amount AS bill_amount,
+      SELECT COALESCE(w.id, mw.id) AS id,
+             COALESCE(w.bill_id, mw.bill_id, m.id) AS bill_id,
+             m.month, m.year, m.title AS bill_title, m.amount AS bill_amount,
              m.penalty_amount AS bill_penalty, m.total_amount AS bill_total,
              m.remaining_amount AS bill_remaining, m.paid_amount AS bill_paid,
-             u.name AS resident_name, u.name AS admin_name_ref, f.flat_no, f.wing,
-             admin_u.name AS admin_name
-      FROM write_offs w
-      JOIN maintenance m ON w.bill_id = m.id
-      JOIN users u ON m.resident_id = u.id
-      JOIN flats f ON m.flat_id = f.id
-      LEFT JOIN users admin_u ON w.approved_by = admin_u.id
-      WHERE 1 = 1
+             COALESCE(u.name, mw_u.name, 'Resident') AS resident_name,
+             COALESCE(f.flat_no, mw_f.flat_no, 'N/A') AS flat_no,
+             COALESCE(f.wing, mw_f.wing, '') AS wing,
+             COALESCE(admin_u.name, w.admin_name, mw.admin_name, 'Admin') AS admin_name,
+             COALESCE(w.amount, mw.amount, m.write_off_amount, 0) AS write_off_amount,
+             COALESCE(w.amount, mw.amount, m.write_off_amount, 0) AS amount,
+             COALESCE(w.reason, mw.reason, 'Admin Write-Off') AS reason,
+             COALESCE(w.type, mw.writeoff_type, 'PARTIAL') AS type,
+             COALESCE(w.created_at, mw.created_at, m.updated_at) AS created_at,
+             CONCAT('BILL-', m.id) AS bill_number
+      FROM maintenance m
+      LEFT JOIN write_offs w ON w.bill_id = m.id
+      LEFT JOIN maintenance_writeoffs mw ON mw.bill_id = m.id
+      LEFT JOIN users u ON m.resident_id = u.id
+      LEFT JOIN flats f ON m.flat_id = f.id
+      LEFT JOIN users mw_u ON mw.resident_id = mw_u.id
+      LEFT JOIN flats mw_f ON mw.flat_id = mw_f.id
+      LEFT JOIN users admin_u ON COALESCE(w.approved_by, mw.admin_id) = admin_u.id
+      WHERE (m.write_off_amount > 0 OR w.id IS NOT NULL OR mw.id IS NOT NULL)
     `;
     const params = [];
 
@@ -2762,7 +2854,7 @@ const getWriteOffHistory = async (req, res) => {
     }
 
     if (resident) {
-      query += ` AND (u.name ILIKE ? OR u.id = ?)`;
+      query += ` AND (u.name LIKE ? OR u.id = ?)`;
       params.push(`%${resident}%`, Number(resident) || -1);
     }
     if (flat) {
@@ -2778,19 +2870,19 @@ const getWriteOffHistory = async (req, res) => {
       params.push(Number(month));
     }
     if (type) {
-      query += ` AND w.type = ?`;
-      params.push(type);
+      query += ` AND (w.type = ? OR mw.writeoff_type = ?)`;
+      params.push(type, type);
     }
     if (startDate) {
-      query += ` AND w.created_at >= ?`;
+      query += ` AND COALESCE(w.created_at, mw.created_at) >= ?`;
       params.push(new Date(startDate));
     }
     if (endDate) {
-      query += ` AND w.created_at <= ?`;
+      query += ` AND COALESCE(w.created_at, mw.created_at) <= ?`;
       params.push(new Date(endDate));
     }
 
-    query += ` ORDER BY w.created_at DESC`;
+    query += ` ORDER BY COALESCE(w.created_at, mw.created_at, m.updated_at) DESC`;
 
     const [rows] = await promisePool.query(query, params);
     return sendResponse(res, 200, 'Write-off history fetched successfully', rows);
@@ -3718,7 +3810,9 @@ const getBankLedgerReport = async (req, res) => {
 
     return sendResponse(res, 200, 'Bank ledger generated successfully', {
       openingBalance,
+      opening_balance: openingBalance,
       closingBalance: runningBal,
+      closing_balance: runningBal,
       ledger
     });
   } catch (error) {
@@ -3810,7 +3904,9 @@ const getCashLedgerReport = async (req, res) => {
 
     return sendResponse(res, 200, 'Cash ledger generated successfully', {
       openingBalance,
+      opening_balance: openingBalance,
       closingBalance: runningBal,
+      closing_balance: runningBal,
       ledger
     });
   } catch (error) {
@@ -3955,7 +4051,9 @@ const getFlatCollectionReport = async (req, res) => {
 
 const saveOpeningBalance = async (req, res) => {
   try {
-    const { financialYear, bankOpening, cashOpening } = req.body;
+    const financialYear = req.body.financialYear || req.body.financial_year;
+    const bankOpening = req.body.bankOpening || req.body.bank_opening;
+    const cashOpening = req.body.cashOpening || req.body.cash_opening;
     if (!financialYear) {
       return sendResponse(res, 400, 'Financial year is required');
     }
@@ -3979,6 +4077,30 @@ const saveOpeningBalance = async (req, res) => {
   } catch (error) {
     console.error('Save opening balance error:', error);
     return sendResponse(res, 500, 'Server error saving opening balance');
+  }
+};
+
+const applyPenaltyToBill = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { amount, reason } = req.body;
+    if (!amount || isNaN(parseFloat(amount))) {
+      return sendResponse(res, 400, 'Valid penalty amount is required');
+    }
+    const [existing] = await promisePool.query('SELECT * FROM maintenance WHERE id = ?', [id]);
+    if (!existing.length) return sendResponse(res, 404, 'Bill not found');
+    const bill = existing[0];
+    const penaltyAmt = parseFloat(amount);
+    const newPenalty = parseFloat(bill.penalty_amount || bill.late_fee || 0) + penaltyAmt;
+    const newTotal = parseFloat(bill.total_payable || bill.amount || 0) + penaltyAmt;
+    const newRemaining = Math.max(0, newTotal - parseFloat(bill.paid_amount || 0));
+    await promisePool.query(
+      `UPDATE maintenance SET penalty_amount = ?, late_fee = ?, total_payable = ?, remaining_amount = ?, updated_at = NOW() WHERE id = ?`,
+      [newPenalty, newPenalty, newTotal, newRemaining, id]
+    );
+    return sendResponse(res, 200, 'Penalty applied successfully', { id, penalty_amount: newPenalty });
+  } catch (error) {
+    return sendResponse(res, 500, error.message || 'Server error');
   }
 };
 
@@ -4025,6 +4147,7 @@ module.exports = {
   getCashLedgerReport,
   getFlatCollectionReport,
   saveOpeningBalance,
-  createManualBill
+  createManualBill,
+  applyPenaltyToBill
 };
 
