@@ -57,6 +57,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -109,13 +110,16 @@ fun ResidentPaymentScreen(
     var validationError by remember { mutableStateOf<String?>(null) }
     var proofUri by remember { mutableStateOf<Uri?>(null) }
     var cameraUri by remember { mutableStateOf<Uri?>(null) }
+    var submissionAccepted by rememberSaveable(billId) { mutableStateOf(false) }
 
     LaunchedEffect(bill?.id, bill?.remainingDue, bill?.currentDue, bill?.remainingAmount, bill?.totalAmount) {
         if (bill != null) amount = bill.expectedPayableAmount().toPlainString()
     }
     LaunchedEffect(state.message) {
         if (!state.message.isNullOrBlank()) {
+            submissionAccepted = true
             Toast.makeText(context, "Your payment has been submitted and sent to the admin for approval. It will be marked as paid after verification.", Toast.LENGTH_LONG).show()
+            viewModel.consumeMessage()
         }
     }
 
@@ -180,8 +184,7 @@ fun ResidentPaymentScreen(
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             item { PaymentSummaryCard(bill) }
-            state.message?.let { item { PaymentSubmittedCard() } }
-            if (bill.hasActivePaymentSubmission()) {
+            if (submissionAccepted || bill.hasActivePaymentSubmission()) {
                 item { ExistingPaymentStatusCard(bill) }
             } else {
                 item { PaymentNoticeCard() }

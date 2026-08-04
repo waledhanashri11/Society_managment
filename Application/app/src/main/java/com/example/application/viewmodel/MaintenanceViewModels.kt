@@ -230,9 +230,16 @@ class ResidentMaintenanceViewModel @Inject constructor(
         load(refresh = true)
     }
 
-    fun load(refresh: Boolean = false) {
+    fun load(refresh: Boolean = false, preserveMessage: Boolean = false) {
         viewModelScope.launch {
-            _state.update { it.copy(isLoading = it.data == null, isRefreshing = refresh, error = null, message = null) }
+            _state.update {
+                it.copy(
+                    isLoading = it.data == null,
+                    isRefreshing = refresh,
+                    error = null,
+                    message = if (preserveMessage) it.message else null
+                )
+            }
             when (val result = repository.getResidentData(refresh)) {
                 is NetworkResult.Success -> _state.update { it.copy(isLoading = false, isRefreshing = false, data = result.data) }
                 is NetworkResult.Error -> _state.update {
@@ -250,6 +257,7 @@ class ResidentMaintenanceViewModel @Inject constructor(
 
     fun setQuery(query: String) = _state.update { it.copy(query = query) }
     fun setFilter(filter: String) = _state.update { it.copy(filter = filter) }
+    fun consumeMessage() = _state.update { it.copy(message = null) }
 
     fun submitPayment(
         billId: String,
@@ -298,7 +306,7 @@ class ResidentMaintenanceViewModel @Inject constructor(
             when (val result = block()) {
                 is NetworkResult.Success -> {
                     _state.update { it.copy(submitting = false, message = result.data) }
-                    load(refresh = true)
+                    load(refresh = true, preserveMessage = true)
                 }
                 is NetworkResult.Error -> _state.update { it.copy(submitting = false, error = repository.userMessageFor(result.error)) }
                 NetworkResult.Loading -> Unit
