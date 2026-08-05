@@ -355,22 +355,29 @@ function ResidentMaintenance() {
   };
 
   const printDocument = (type, bill) => {
-    const itemsHtml = bill.items && bill.items.length > 0
+    const isManual = bill.is_manual || bill.bill_type === 'manual';
+    const itemsHtml = !isManual && bill.items && bill.items.length > 0
       ? bill.items.map(item => `<tr><th>${item.name}</th><td>${money(item.amount)}</td></tr>`).join('')
       : '';
       
-    const prevOutstandingHtml = Number(bill.previous_outstanding || 0) > 0
+    const prevOutstandingHtml = !isManual && Number(bill.previous_outstanding || 0) > 0
       ? `<tr><th>Previous Outstanding</th><td>${money(bill.previous_outstanding)}</td></tr>`
       : '';
 
-    const html = `
-      <html><head><title>${type}</title><style>
-      body{font-family:Arial,sans-serif;padding:32px;color:#172033}.box{max-width:760px;margin:0 auto;border:1px solid #dfe5ee;border-radius:14px;padding:28px}
-      h1{margin:0;font-size:26px}.muted{color:#667085;margin-top:6px}table{width:100%;border-collapse:collapse;margin-top:24px}
-      td,th{border-bottom:1px solid #edf0f3;padding:12px;text-align:left}.total{font-size:22px;font-weight:800}.right{text-align:right}
-      </style></head><body><div class="box">
-      <h1>${type}</h1><div class="muted">Society Management System</div>
-      <table>
+    const rows = isManual ? `
+      <tr><th>Bill Title</th><td>${bill.title || 'Manual Bill'}</td></tr>
+      <tr><th>Bill Category</th><td>${bill.category || 'Custom Charges'}</td></tr>
+      <tr><th>Bill No.</th><td>${bill.bill_number || `BILL-${bill.id}`}</td></tr>
+      <tr><th>Resident</th><td>${user?.name || 'Resident'}</td></tr>
+      <tr><th>Flat</th><td>${bill.flat_no || ''}</td></tr>
+      <tr><th>Flat Type</th><td>${bill.flat_type_name || 'Not Assigned'}</td></tr>
+      <tr><th>Due Date</th><td>${fullDate(bill.due_date)}</td></tr>
+      <tr><th>Status</th><td>${bill.payment_status}</td></tr>
+      ${bill.payment_date ? `<tr><th>Payment Date</th><td>${fullDate(bill.payment_date)}</td></tr>` : ''}
+      ${bill.notes || bill.description ? `<tr><th>Description / Notes</th><td>${bill.notes || bill.description}</td></tr>` : ''}
+      <tr><th class="total">Total Bill Amount</th><td class="total">${money(bill.total_amount || bill.amount)}</td></tr>
+      ${Number(bill.paid_amount || 0) > 0 ? `<tr><th>Amount Paid</th><td>${money(bill.paid_amount)}</td></tr>` : ''}
+    ` : `
       <tr><th>Bill No.</th><td>${bill.bill_number || `BILL-${bill.id}`}</td></tr>
       <tr><th>Resident</th><td>${user?.name || 'Resident'}</td></tr>
       <tr><th>Flat</th><td>${bill.flat_no || ''}</td></tr>
@@ -385,6 +392,17 @@ function ResidentMaintenance() {
       ${Number(bill.paid_amount || 0) > 0 ? `<tr><th>Amount Paid</th><td>${money(bill.paid_amount)}</td></tr>` : ''}
       ${prevOutstandingHtml}
       <tr><th class="total">Remaining Payable</th><td class="total">${money(Number(bill.remainingPayable !== undefined ? bill.remainingPayable : bill.remaining_amount) + Number(bill.previous_outstanding || 0))}</td></tr>
+    `;
+
+    const html = `
+      <html><head><title>${type}</title><style>
+      body{font-family:Arial,sans-serif;padding:32px;color:#172033}.box{max-width:760px;margin:0 auto;border:1px solid #dfe5ee;border-radius:14px;padding:28px}
+      h1{margin:0;font-size:26px}.muted{color:#667085;margin-top:6px}table{width:100%;border-collapse:collapse;margin-top:24px}
+      td,th{border-bottom:1px solid #edf0f3;padding:12px;text-align:left}.total{font-size:22px;font-weight:800}.right{text-align:right}
+      </style></head><body><div class="box">
+      <h1>${type}</h1><div class="muted">Society Management System</div>
+      <table>
+      ${rows}
       </table><p class="muted right">Generated on ${new Date().toLocaleString('en-IN')}</p>
       </div><script>window.print();</script></body></html>`;
     const docWindow = window.open('', '_blank', 'width=900,height=700');
@@ -499,8 +517,15 @@ function ResidentMaintenance() {
                     return (
                       <tr key={bill.id}>
                         <td>
-                          <strong>{formatMonthDisplay(bill.month, bill.year)}</strong>
-                          <div className="portal-muted-text">{bill.bill_number || `BILL-${bill.id}`}</div>
+                          <strong>{bill.is_manual || bill.bill_type === 'manual' ? (bill.title || 'Manual Bill') : formatMonthDisplay(bill.month, bill.year)}</strong>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
+                            <span className="portal-muted-text">{bill.bill_number || `BILL-${bill.id}`}</span>
+                            {(bill.is_manual || bill.bill_type === 'manual') && (
+                              <span style={{ fontSize: '10px', background: '#dbeafe', color: '#1e40af', padding: '1px 6px', borderRadius: '4px', fontWeight: '600' }}>
+                                {bill.category || 'Manual Bill'}
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td><strong>{money(bill.total_amount)}</strong></td>
                         <td>{statusBadge(bill, t)}</td>

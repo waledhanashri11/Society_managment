@@ -1084,15 +1084,24 @@ private fun androidx.compose.foundation.lazy.LazyListScope.billsTab(
                         color = Color(0xFF64748B)
                     )
                 }
-                Button(
-                    onClick = { openDialog(MaintenanceDialog.Generate) },
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = SocietyBlue40),
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
-                ) {
-                    Icon(Icons.Filled.Add, contentDescription = "Generate Bills", modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Generate Bills", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = { openDialog(MaintenanceDialog.Generate) },
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = SocietyBlue40),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+                    ) {
+                        Icon(Icons.Filled.Add, contentDescription = "Generate Bills", modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Generate Bills", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                    }
+                    OutlinedButton(
+                        onClick = { openDialog(MaintenanceDialog.ManualBill) },
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+                    ) {
+                        Text("Specific Resident", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }
@@ -2357,14 +2366,47 @@ private fun ReceiptPreview(payment: MaintenancePaymentDto) {
 }
 
 private fun androidx.compose.foundation.lazy.LazyListScope.expensesTab(expenses: List<ExpenseDto>, viewModel: AdminMaintenanceViewModel, openDialog: (MaintenanceDialog) -> Unit) {
+    val totalExpenseAmt = expenses.sumOf { it.amount?.toDoubleOrNull() ?: 0.0 }
+    val bankExpenseAmt = expenses.filter { it.paymentMethod?.uppercase()?.contains("CASH") != true }.sumOf { it.amount?.toDoubleOrNull() ?: 0.0 }
+    val cashExpenseAmt = expenses.filter { it.paymentMethod?.uppercase()?.contains("CASH") == true }.sumOf { it.amount?.toDoubleOrNull() ?: 0.0 }
+
+    item {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+        ) {
+            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Total Expenses: ${DashboardFormatters.money(totalExpenseAmt.toBigDecimal())}", fontWeight = FontWeight.Bold)
+                    Text("${expenses.size} Records", style = MaterialTheme.typography.bodySmall)
+                }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Bank: ${DashboardFormatters.money(bankExpenseAmt.toBigDecimal())}", style = MaterialTheme.typography.bodySmall)
+                    Text("Cash: ${DashboardFormatters.money(cashExpenseAmt.toBigDecimal())}", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+    }
+
     item { Button(onClick = { openDialog(MaintenanceDialog.Expense) }, modifier = Modifier.fillMaxWidth()) { Text("Record Expense") } }
-    if (expenses.isEmpty()) item { EmptyState("No expenses", "Record society maintenance expenses here.") }
+
+    if (expenses.isEmpty()) item { EmptyState("No expenses recorded", "Tap Record Expense above to add society maintenance expenses.") }
     else items(expenses, key = { it.id ?: it.expenseNumber.orEmpty() }) { expense ->
         ManagementCard {
-            Text(expense.expenseNumber ?: "Expense", fontWeight = FontWeight.Bold)
-            Text("${expense.category ?: "-"} \u2022 ${expense.vendor ?: "-"}")
-            Text("${DashboardFormatters.money(expense.amount.toMoneyDecimal())} \u2022 ${DashboardFormatters.date(expense.expenseDate)}")
-            TextButton(onClick = { expense.id?.let(viewModel::deleteExpense) }) { Text("Delete") }
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(expense.expenseNumber ?: "Expense", fontWeight = FontWeight.Bold)
+                    Text("${expense.category ?: "-"} • Vendor: ${expense.vendor ?: "-"}", style = MaterialTheme.typography.bodyMedium)
+                    Text("${DashboardFormatters.date(expense.expenseDate)} • Method: ${expense.paymentMethod ?: "Bank Transfer"}", style = MaterialTheme.typography.bodySmall)
+                    expense.description?.takeIf { it.isNotBlank() }?.let { desc ->
+                        Text("Note: $desc", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(DashboardFormatters.money(expense.amount.toMoneyDecimal()), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
+                    TextButton(onClick = { expense.id?.let(viewModel::deleteExpense) }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+                }
+            }
         }
     }
 }
@@ -2740,7 +2782,7 @@ private sealed interface ResidentDialog {
     data class Dispute(val bill: MaintenanceBillDto) : ResidentDialog
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun MaintenanceDialogHost(dialog: MaintenanceDialog?, onDismiss: () -> Unit, viewModel: AdminMaintenanceViewModel) {
     val viewState by viewModel.state.collectAsStateWithLifecycle()
@@ -2764,11 +2806,9 @@ private fun MaintenanceDialogHost(dialog: MaintenanceDialog?, onDismiss: () -> U
                 }
             }
 
-            val (defaultMonth, defaultYear) = if (latestMonth > 0 && latestYear > 0) {
-                if (latestMonth == 12) 1 to (latestYear + 1) else (latestMonth + 1) to latestYear
-            } else {
-                LocalDate.now().monthValue to LocalDate.now().year
-            }
+            val systemDate = LocalDate.now()
+            val defaultMonth = systemDate.monthValue
+            val defaultYear = systemDate.year
 
             var month by remember { mutableStateOf("$defaultMonth") }
             var year by remember { mutableStateOf("$defaultYear") }
@@ -2779,11 +2819,10 @@ private fun MaintenanceDialogHost(dialog: MaintenanceDialog?, onDismiss: () -> U
             val expectedMonth = if (latestMonth == 12) 1 else latestMonth + 1
             val expectedYear = if (latestMonth == 12) latestYear + 1 else latestYear
 
-            val isSkippingMonth = latestMonth > 0 && latestYear > 0 && selM > 0 && selY >= 2000 &&
-                (selY * 12 + selM) > (expectedYear * 12 + expectedMonth)
-
-            val isAlreadyGenerated = latestMonth > 0 && latestYear > 0 && selM > 0 && selY >= 2000 &&
-                (selY * 12 + selM) <= (latestYear * 12 + latestMonth)
+            val isAlreadyGenerated = existingBills.any { bill ->
+                (bill.month?.toIntOrNull() ?: monthNameToNumber(bill.month)) == selM &&
+                    bill.year?.toIntOrNull() == selY
+            }
 
             val monthNamesList = listOf(
                 "1 - January", "2 - February", "3 - March", "4 - April",
@@ -2792,72 +2831,26 @@ private fun MaintenanceDialogHost(dialog: MaintenanceDialog?, onDismiss: () -> U
             )
 
             Text(
-                text = "Select billing month and year to generate maintenance bills for all society flats.",
+                text = "Bills will be generated for the current system billing cycle: ${monthName(defaultMonth)} $defaultYear.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = Color(0xFF64748B)
             )
 
-            var monthExpanded by remember { mutableStateOf(false) }
-            ExposedDropdownMenuBox(
-                expanded = monthExpanded,
-                onExpandedChange = { monthExpanded = !monthExpanded }
-            ) {
-                OutlinedTextField(
-                    value = monthNamesList.getOrNull(selM - 1) ?: "Select Month",
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text("Month") },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = monthExpanded) },
-                    modifier = Modifier.fillMaxWidth().menuAnchor(),
-                    shape = RoundedCornerShape(12.dp)
-                )
-                ExposedDropdownMenu(
-                    expanded = monthExpanded,
-                    onDismissRequest = { monthExpanded = false }
-                ) {
-                    monthNamesList.forEachIndexed { idx, name ->
-                        DropdownMenuItem(
-                            text = { Text(name) },
-                            onClick = {
-                                month = "${idx + 1}"
-                                monthExpanded = false
-                            }
-                        )
-                    }
-                }
-            }
+            OutlinedTextField(
+                value = monthNamesList.getOrNull(selM - 1) ?: "Current month",
+                onValueChange = {}, readOnly = true, label = { Text("System month") },
+                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)
+            )
 
             OutlinedTextField(
                 value = year,
-                onValueChange = { year = it.filter { char -> char.isDigit() }.take(4) },
-                label = { Text("Year") },
+                onValueChange = {}, readOnly = true, label = { Text("System year") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp)
             )
 
-            if (isSkippingMonth) {
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = Color(0xFFFEF2F2),
-                    border = BorderStroke(1.dp, Color(0xFFFCA5A5)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Filled.Warning, contentDescription = "Alert", tint = Color(0xFFDC2626))
-                        Text(
-                            text = "Bills for ${monthName(expectedMonth)} $expectedYear have not been generated yet! Please generate ${monthName(expectedMonth)} $expectedYear bills first before generating for ${monthName(selM)} $selY.",
-                            color = Color(0xFF991B1B),
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                }
-            } else if (isAlreadyGenerated) {
+            if (isAlreadyGenerated) {
                 Surface(
                     shape = RoundedCornerShape(12.dp),
                     color = Color(0xFFFFFBEB),
@@ -2871,7 +2864,7 @@ private fun MaintenanceDialogHost(dialog: MaintenanceDialog?, onDismiss: () -> U
                     ) {
                         Icon(Icons.Filled.Info, contentDescription = "Info", tint = Color(0xFFD97706))
                         Text(
-                            text = "Bills for ${monthName(selM)} $selY have already been generated.",
+                            text = "Some bills already exist for ${monthName(selM)} $selY. Existing bills will be skipped and only missing resident bills will be created.",
                             color = Color(0xFF92400E),
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Medium
@@ -2887,30 +2880,49 @@ private fun MaintenanceDialogHost(dialog: MaintenanceDialog?, onDismiss: () -> U
                 },
                 enabled = !viewState.submitting &&
                     selM in 1..12 &&
-                    selY >= 2000 &&
-                    !isSkippingMonth &&
-                    !isAlreadyGenerated,
+                    selY >= 2000,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(if (viewState.submitting) "Generating…" else "Generate Bills")
             }
         }
         MaintenanceDialog.ManualBill -> SimpleFormDialog("Create Manual Bill", onDismiss) {
-            var title by remember { mutableStateOf("Monthly Maintenance") }
-            var month by remember { mutableStateOf("${LocalDate.now().monthValue}") }
-            var year by remember { mutableStateOf("${LocalDate.now().year}") }
-            var due by remember { mutableStateOf(LocalDate.now().plusDays(10).toString()) }
-            var amount by remember { mutableStateOf("") }
-            var residentId by remember { mutableStateOf("") }
-            var flatId by remember { mutableStateOf("") }
+            val today = LocalDate.now()
+            val settings = viewState.data?.settings
+            val dueDay = settings?.dueDay?.toIntOrNull()?.coerceIn(1, today.lengthOfMonth()) ?: 10
+            val residents = viewState.residents.filter { !it.id.isNullOrBlank() && !it.flatId.isNullOrBlank() }
+            var title by remember { mutableStateOf(settings?.title ?: "Monthly Maintenance") }
+            var amount by remember { mutableStateOf(settings?.fixedAmount.orEmpty()) }
+            var selectedResident by remember { mutableStateOf<com.example.application.data.remote.dto.UserSummaryDto?>(null) }
+            var residentExpanded by remember { mutableStateOf(false) }
+            val due = today.withDayOfMonth(dueDay).toString()
             BasicAppTextField(title, { title = it }, "Title")
-            BasicAppTextField(month, { month = it }, "Month")
-            BasicAppTextField(year, { year = it }, "Year")
-            BasicAppTextField(due, { due = it }, "Due date YYYY-MM-DD")
+            OutlinedTextField(value = "${monthName(today.monthValue)} ${today.year}", onValueChange = {}, readOnly = true, label = { Text("System billing cycle") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(value = due, onValueChange = {}, readOnly = true, label = { Text("Due date from settings") }, modifier = Modifier.fillMaxWidth())
             BasicAppTextField(amount, { amount = it }, "Amount")
-            BasicAppTextField(residentId, { residentId = it }, "Resident ID")
-            BasicAppTextField(flatId, { flatId = it }, "Flat ID")
-            Button(onClick = { viewModel.createManualBill(title, month.toIntOrNull() ?: 0, year.toIntOrNull() ?: 0, due, amount, residentId.ifBlank { null }, flatId.ifBlank { null }); onDismiss() }, modifier = Modifier.fillMaxWidth()) { Text("Create") }
+            ExposedDropdownMenuBox(expanded = residentExpanded, onExpandedChange = { residentExpanded = !residentExpanded }) {
+                OutlinedTextField(
+                    value = selectedResident?.let { "${it.name ?: "Resident"} • ${it.wing.orEmpty()}-${it.flatNo ?: "Flat"}" }.orEmpty(),
+                    onValueChange = {}, readOnly = true, label = { Text("Select resident") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(residentExpanded) },
+                    modifier = Modifier.fillMaxWidth().menuAnchor()
+                )
+                ExposedDropdownMenu(expanded = residentExpanded, onDismissRequest = { residentExpanded = false }) {
+                    residents.forEach { resident ->
+                        DropdownMenuItem(text = { Text("${resident.name ?: "Resident"} • ${resident.wing.orEmpty()}-${resident.flatNo ?: "Flat"}") }, onClick = { selectedResident = resident; residentExpanded = false })
+                    }
+                }
+            }
+            if (residents.isEmpty()) Text("No approved resident with an assigned flat is available.", color = MaterialTheme.colorScheme.error)
+            Button(
+                onClick = {
+                    val resident = selectedResident ?: return@Button
+                    viewModel.createManualBill(title, today.monthValue, today.year, due, amount, resident.id, resident.flatId)
+                    onDismiss()
+                },
+                enabled = selectedResident != null && amount.toDoubleOrNull()?.let { it > 0 } == true && !viewState.submitting,
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Create Bill for Resident") }
         }
         is MaintenanceDialog.MarkPaid -> SimpleFormDialog("Mark Paid", onDismiss) {
             var amount by remember { mutableStateOf(dialog.bill.expectedPayableAmount().toPlainString()) }
@@ -3187,19 +3199,80 @@ private fun MaintenanceDialogHost(dialog: MaintenanceDialog?, onDismiss: () -> U
             Button(onClick = { viewModel.saveCategory(dialog.category?.id, name, amount, type, true); onDismiss() }, modifier = Modifier.fillMaxWidth()) { Text("Save") }
         }
         MaintenanceDialog.Expense -> SimpleFormDialog("Record Expense", onDismiss) {
-            var category by remember { mutableStateOf("Repairs") }
+            val categories = listOf("Repairs", "Water", "Electricity", "Lift", "Security", "Cleaning", "Event", "Other")
+            val methods = listOf("Bank Transfer", "Cash")
+
+            var selectedCategory by remember { mutableStateOf("Repairs") }
+            var customCategory by remember { mutableStateOf("") }
             var vendor by remember { mutableStateOf("") }
             var amount by remember { mutableStateOf("") }
             var date by remember { mutableStateOf(LocalDate.now().toString()) }
-            var method by remember { mutableStateOf("Bank Transfer") }
+            var selectedMethod by remember { mutableStateOf("Bank Transfer") }
             var description by remember { mutableStateOf("") }
-            BasicAppTextField(category, { category = it }, "Category")
-            BasicAppTextField(vendor, { vendor = it }, "Vendor")
-            BasicAppTextField(amount, { amount = it }, "Amount")
-            BasicAppTextField(date, { date = it }, "Date YYYY-MM-DD")
-            BasicAppTextField(method, { method = it }, "Payment method")
-            BasicAppTextField(description, { description = it }, "Description")
-            Button(onClick = { viewModel.createExpense(category, vendor, amount, date, method, description.ifBlank { null }); onDismiss() }, modifier = Modifier.fillMaxWidth()) { Text("Record") }
+            var formError by remember { mutableStateOf<String?>(null) }
+
+            formError?.let { err ->
+                Text(err, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            }
+
+            Text("Category *", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                categories.forEach { cat ->
+                    FilterChip(
+                        selected = selectedCategory == cat,
+                        onClick = { selectedCategory = cat; formError = null },
+                        label = { Text(cat) }
+                    )
+                }
+            }
+
+            if (selectedCategory == "Other") {
+                BasicAppTextField(customCategory, { customCategory = it; formError = null }, "Custom Category Name *")
+            }
+
+            BasicAppTextField(vendor, { vendor = it; formError = null }, "Vendor / Payee Name *")
+            BasicAppTextField(amount, { amount = it; formError = null }, "Amount (₹) *")
+            BasicAppTextField(date, { date = it; formError = null }, "Expense Date (YYYY-MM-DD) *")
+
+            Text("Payment Method *", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                methods.forEach { m ->
+                    FilterChip(
+                        selected = selectedMethod == m,
+                        onClick = { selectedMethod = m; formError = null },
+                        label = { Text(m) }
+                    )
+                }
+            }
+
+            BasicAppTextField(description, { description = it }, "Description / Remarks (Optional)")
+
+            Button(
+                onClick = {
+                    val catVal = if (selectedCategory == "Other") customCategory.trim() else selectedCategory
+                    val parsedAmt = amount.toDoubleOrNull()
+                    when {
+                        catVal.isBlank() -> formError = "Please specify a category name."
+                        vendor.isBlank() -> formError = "Vendor / Payee name is required."
+                        parsedAmt == null || parsedAmt <= 0 -> formError = "Please enter a valid positive expense amount."
+                        date.isBlank() || !date.matches(Regex("\\d{4}-\\d{2}-\\d{2}")) -> formError = "Expense date must be in YYYY-MM-DD format."
+                        else -> {
+                            viewModel.createExpense(
+                                category = catVal,
+                                vendor = vendor.trim(),
+                                amount = amount.trim(),
+                                date = date.trim(),
+                                method = selectedMethod,
+                                description = description.trim().ifBlank { null }
+                            )
+                            onDismiss()
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Record Expense")
+            }
         }
         null -> Unit
     }

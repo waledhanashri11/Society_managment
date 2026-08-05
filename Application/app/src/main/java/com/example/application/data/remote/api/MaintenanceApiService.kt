@@ -6,6 +6,7 @@ import com.example.application.data.remote.dto.ApplyWaiverRequest
 import com.example.application.data.remote.dto.BillDetailsDto
 import com.example.application.data.remote.dto.CategorySaveRequest
 import com.example.application.data.remote.dto.CreateDisputeRequest
+import com.example.application.data.remote.dto.CreateManualBillRequestDto
 import com.example.application.data.remote.dto.ExpenseCreateRequest
 import com.example.application.data.remote.dto.ExpenseDto
 import com.example.application.data.remote.dto.GenerateBillsRequest
@@ -83,6 +84,9 @@ interface MaintenanceApiService {
 
     @POST("api/maintenance/generate")
     suspend fun generateBills(@Body request: GenerateBillsRequest): Response<ApiResponse<GenerateBillsResultDto>>
+
+    @POST("api/maintenance/manual")
+    suspend fun createManualBill(@Body request: CreateManualBillRequestDto): Response<ApiResponse<Map<String, Any>>>
 
     @PUT("api/maintenance/bills/{id}/mark-paid")
     suspend fun markBillPaid(@Path("id") id: String, @Body request: MarkPaidRequest): Response<ApiResponse<Unit>>

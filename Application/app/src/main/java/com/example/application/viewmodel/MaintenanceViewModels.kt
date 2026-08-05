@@ -15,6 +15,7 @@ import com.example.application.data.remote.dto.SubmitPaymentRequest
 import com.example.application.data.remote.dto.UpdatePaymentRequest
 import com.example.application.data.remote.dto.WriteOffRequest
 import com.example.application.data.repository.AdminMaintenanceData
+import com.example.application.data.repository.AdminManagementRepository
 import com.example.application.data.repository.MaintenanceRepository
 import com.example.application.data.repository.ResidentMaintenanceData
 import com.example.application.util.AppError
@@ -37,7 +38,8 @@ data class AdminMaintenanceUiState(
     val error: String? = null,
     val message: String? = null,
     val activeTab: String = "Overview",
-    val submitting: Boolean = false
+    val submitting: Boolean = false,
+    val residents: List<com.example.application.data.remote.dto.UserSummaryDto> = emptyList()
 )
 
 data class ResidentMaintenanceUiState(
@@ -53,12 +55,26 @@ data class ResidentMaintenanceUiState(
 
 @HiltViewModel
 class AdminMaintenanceViewModel @Inject constructor(
-    private val repository: MaintenanceRepository
+    private val repository: MaintenanceRepository,
+    private val adminManagementRepository: AdminManagementRepository
 ) : ViewModel() {
     private val _state = MutableStateFlow(AdminMaintenanceUiState())
     val state: StateFlow<AdminMaintenanceUiState> = _state.asStateFlow()
 
-    init { loadInitial() }
+    init {
+        loadInitial()
+        loadResidents()
+    }
+
+    private fun loadResidents() {
+        viewModelScope.launch {
+            when (val result = adminManagementRepository.getResidents(refresh = true)) {
+                is NetworkResult.Success -> _state.update { it.copy(residents = result.data) }
+                is NetworkResult.Error -> _state.update { it.copy(error = "Residents could not be loaded for manual billing.") }
+                NetworkResult.Loading -> Unit
+            }
+        }
+    }
 
     private fun loadInitial() {
         _state.update {

@@ -9,6 +9,7 @@ import android.graphics.pdf.PdfDocument
 import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -32,6 +34,8 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.ui.Alignment
 import com.example.application.ui.components.LanguageSelectorCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -104,6 +108,17 @@ fun AdminSettingsScreen(onBack: () -> Unit, viewModel: AdminParityViewModel = hi
     var visitorAlerts by remember(state.settings) { mutableStateOf(state.settings.bool("visitorAlerts", false)) }
     var categoryFlatId by remember { mutableStateOf("") }
     val selectedCategories = remember { mutableStateListOf<Int>() }
+    var showManualBillDialog by remember { mutableStateOf(false) }
+    var manualStep by remember { mutableStateOf(1) }
+    var residentSearch by remember { mutableStateOf("") }
+    var selectedResident by remember { mutableStateOf<com.example.application.data.remote.dto.UserSummaryDto?>(null) }
+    var billTitle by remember { mutableStateOf("") }
+    var billCategory by remember { mutableStateOf("Repair Charges") }
+    var customCategory by remember { mutableStateOf("") }
+    var billAmount by remember { mutableStateOf("") }
+    var dueDate by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
+
     val qrPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let { qrImageFromUri(context, it)?.let { encoded -> qrImage = encoded } }
     }
@@ -112,6 +127,28 @@ fun AdminSettingsScreen(onBack: () -> Unit, viewModel: AdminParityViewModel = hi
         LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             state.error?.let { item { ErrorMessageCard(it) } }
             state.message?.let { item { Text(it, color = MaterialTheme.colorScheme.primary) } }
+            item {
+                SectionCard("Generate Manual Bill", "Generate a custom bill for a specific resident.") {
+                    Button(
+                        onClick = {
+                            showManualBillDialog = true
+                            manualStep = 1
+                            selectedResident = null
+                            residentSearch = ""
+                            billTitle = ""
+                            billCategory = "Repair Charges"
+                            customCategory = ""
+                            billAmount = ""
+                            dueDate = ""
+                            description = ""
+                            viewModel.loadResidentsForSelection()
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Generate Manual Bill")
+                    }
+                }
+            }
             item {
                 SectionCard("Society details") {
                     BasicAppTextField(societyName, { societyName = it }, "Society name")
@@ -183,6 +220,99 @@ fun AdminSettingsScreen(onBack: () -> Unit, viewModel: AdminParityViewModel = hi
                     }
                 }
             }
+        }
+
+        if (showManualBillDialog) {
+            AlertDialog(
+                onDismissRequest = { showManualBillDialog = false },
+                title = { Text(if (manualStep == 1) "Step 1: Select Resident" else "Step 2: Bill Details") },
+                text = {
+                    if (manualStep == 1) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            BasicAppTextField(residentSearch, { residentSearch = it }, "Search resident by name, flat, mobile...")
+                            val filtered = state.residents.filter { r ->
+                                val q = residentSearch.trim().lowercase()
+                                q.isBlank() ||
+                                        (r.name?.lowercase()?.contains(q) == true) ||
+                                        (r.flatNo?.lowercase()?.contains(q) == true) ||
+                                        (r.phone?.lowercase()?.contains(q) == true)
+                            }
+                            if (filtered.isEmpty()) {
+                                Text("No residents found", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            } else {
+                                LazyColumn(modifier = Modifier.heightIn(max = 280.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    items(filtered.size) { idx ->
+                                        val res = filtered[idx]
+                                        Card(
+                                            modifier = Modifier.fillMaxWidth().clickable {
+                                                selectedResident = res
+                                                manualStep = 2
+                                            },
+                                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth().padding(10.dp),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Column {
+                                                    Text(res.name ?: "Unknown", fontWeight = FontWeight.Bold)
+                                                    Text("Flat: ${res.flatNo ?: "N/A"} • Wing: ${res.wing ?: "N/A"}", style = MaterialTheme.typography.bodySmall)
+                                                }
+                                                Text("Select", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.verticalScroll(rememberScrollState())) {
+                            selectedResident?.let { res ->
+                                Text("Resident: ${res.name} (Flat ${res.flatNo ?: "N/A"})", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            }
+                            BasicAppTextField(billTitle, { billTitle = it }, "Bill Title *")
+                            BasicAppTextField(billCategory, { billCategory = it }, "Category (e.g. Repair Charges, Parking...) *")
+                            if (billCategory.trim().equals("Other", ignoreCase = true)) {
+                                BasicAppTextField(customCategory, { customCategory = it }, "Custom Category Name *")
+                            }
+                            BasicAppTextField(billAmount, { billAmount = it }, "Amount (₹) *")
+                            BasicAppTextField(dueDate, { dueDate = it }, "Due Date (YYYY-MM-DD)")
+                            BasicAppTextField(description, { description = it }, "Description / Notes")
+                        }
+                    }
+                },
+                confirmButton = {
+                    if (manualStep == 2) {
+                        Button(
+                            onClick = {
+                                val amt = billAmount.toDoubleOrNull() ?: 0.0
+                                val resId = selectedResident?.id?.toLongOrNull()
+                                if (billTitle.isBlank()) return@Button
+                                if (amt <= 0) return@Button
+                                if (resId == null) return@Button
+                                viewModel.createManualBill(
+                                    title = billTitle.trim(),
+                                    category = billCategory.trim(),
+                                    customCategory = customCategory.trim().ifBlank { null },
+                                    amount = amt,
+                                    dueDate = dueDate.trim().ifBlank { null },
+                                    description = description.trim().ifBlank { null },
+                                    residentId = resId,
+                                    flatId = selectedResident?.flatId?.toLongOrNull()
+                                )
+                                showManualBillDialog = false
+                            },
+                            enabled = !state.submitting
+                        ) { Text("Generate Bill") }
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        if (manualStep == 2) manualStep = 1 else showManualBillDialog = false
+                    }) { Text(if (manualStep == 2) "Back" else "Cancel") }
+                }
+            )
         }
     }
 }

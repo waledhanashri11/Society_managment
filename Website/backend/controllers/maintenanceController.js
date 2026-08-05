@@ -1265,16 +1265,22 @@ const createMaintenance = async (req, res) => {
 // POST /api/maintenance/manual
 const createManualBill = async (req, res) => {
   try {
-    const { title, month, year, dueDate, amount, optionalCharges, residentId, flatId, notes } = req.body;
-    const reqMonth = Number(month);
-    const reqYear = Number(year);
+    const { title, category, customCategory, amount, dueDate, description, notes, residentId, flatId, month, year } = req.body;
+    const now = new Date();
+    const reqMonth = Number(month) || (now.getMonth() + 1);
+    const reqYear = Number(year) || now.getFullYear();
 
-    if (!Number.isInteger(reqMonth) || reqMonth < 1 || reqMonth > 12 || !Number.isInteger(reqYear) || reqYear < 2000) {
-      return sendResponse(res, 400, 'Valid billing month and year are required');
+    if (!title || !String(title).trim()) {
+      return sendResponse(res, 400, 'Bill title is required');
     }
 
     if (!residentId) {
       return sendResponse(res, 400, 'Resident selection is required');
+    }
+
+    const baseAmt = Number(amount);
+    if (!Number.isFinite(baseAmt) || baseAmt <= 0) {
+      return sendResponse(res, 400, 'Bill amount must be a positive number');
     }
 
     let targetResidentId = Number(residentId);
@@ -1303,75 +1309,50 @@ const createManualBill = async (req, res) => {
       return sendResponse(res, 400, 'Selected resident has no flat assigned. Please assign a flat to the resident first.');
     }
 
-    const [duplicates] = await promisePool.query(
-      'SELECT id FROM maintenance WHERE resident_id = ? AND flat_id = ? AND month = ? AND year = ? LIMIT 1',
-      [targetResidentId, targetFlatId, reqMonth, reqYear]
-    );
-
-    if (duplicates.length) {
-      return sendResponse(res, 409, 'A maintenance bill already exists for this resident and billing cycle');
-    }
-
-    const defaultAmt = Number(residentInfo.default_maintenance_amount || 0);
-    const baseAmt = amount !== undefined && amount !== null && String(amount).trim() !== '' 
-      ? Number(amount) 
-      : defaultAmt;
-
-    if (!Number.isFinite(baseAmt) || baseAmt < 0) {
-      return sendResponse(res, 400, 'Maintenance amount must be a non-negative number');
-    }
-
-    const extraAmt = optionalCharges !== undefined && optionalCharges !== null && String(optionalCharges).trim() !== ''
-      ? Number(optionalCharges)
-      : 0;
-
-    if (!Number.isFinite(extraAmt) || extraAmt < 0) {
-      return sendResponse(res, 400, 'Optional charges must be a non-negative number');
-    }
-
-    const totalAmt = baseAmt + extraAmt;
-    if (totalAmt <= 0) {
-      return sendResponse(res, 400, 'Total bill amount must be greater than zero');
-    }
-
     let billDueDate = dueDate;
     if (!billDueDate || !/^\d{4}-\d{2}-\d{2}$/.test(String(billDueDate))) {
       const formattedMonth = String(reqMonth).padStart(2, '0');
       billDueDate = `${reqYear}-${formattedMonth}-10`;
     }
 
-    const billTitle = title && String(title).trim() ? String(title).trim() : 'Manual Maintenance Bill';
-    const isCustom = baseAmt !== defaultAmt || extraAmt > 0;
+    const billTitle = String(title).trim();
+    let categoryVal = category && String(category).trim() ? String(category).trim() : 'Other';
+    if (categoryVal === 'Other' && customCategory && String(customCategory).trim()) {
+      categoryVal = String(customCategory).trim();
+    }
+
+    const notesVal = (notes || description || '').trim() || null;
+    const defaultAmt = Number(residentInfo.default_maintenance_amount || 0);
 
     const [result] = await promisePool.query(
       `INSERT INTO maintenance 
-       (resident_id, flat_id, title, month, year, amount, penalty_amount, total_amount, paid_amount, remaining_amount, status, due_date,
+       (resident_id, flat_id, title, category, bill_type, is_manual, month, year, amount, penalty_amount, total_amount, paid_amount, remaining_amount, status, due_date,
         flat_type_id, default_maintenance_amount, final_maintenance_amount, is_custom_amount, custom_reason, notes, edited_by, edited_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0.00, ?, 'Pending', ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), NOW())`,
+       VALUES (?, ?, ?, ?, 'manual', true, ?, ?, ?, 0.00, ?, 0.00, ?, 'Pending', ?, ?, ?, ?, true, ?, ?, ?, NOW(), NOW(), NOW())`,
       [
         targetResidentId,
         targetFlatId,
         billTitle,
+        categoryVal,
         reqMonth,
         reqYear,
         baseAmt,
-        extraAmt,
-        totalAmt,
-        totalAmt,
+        baseAmt,
+        baseAmt,
         billDueDate,
         residentInfo.flat_type_id || null,
         defaultAmt,
         baseAmt,
-        isCustom,
-        notes || 'Manual bill creation',
-        notes || null,
+        categoryVal,
+        notesVal,
         req.user?.id || null
       ]
     );
 
-    return sendResponse(res, 201, 'Manual maintenance bill created successfully', { id: result.insertId || result.id });
+    const insertedId = result.insertId || result.id;
+    return sendResponse(res, 201, 'Manual bill created successfully', { id: insertedId });
   } catch (error) {
-    console.error('Create manual maintenance error:', error);
+    console.error('Create manual bill error:', error);
     return sendResponse(res, 500, 'Server error', null, [error.message || 'Unable to create manual bill']);
   }
 };
@@ -1809,7 +1790,9 @@ const getBillById = async (req, res) => {
          AND status NOT IN ('Paid', 'PAID', 'SETTLED', 'WRITTEN_OFF', 'Pending Verification', 'Under Review')`,
       [bills[0].resident_id, bills[0].year, bills[0].month, bills[0].id]
     );
-    const previousOutstanding = Number(outstandingRows[0]?.previous_outstanding || 0);
+    const previousOutstanding = bills[0].is_manual || bills[0].bill_type === 'manual'
+      ? 0
+      : Number(outstandingRows[0]?.previous_outstanding || 0);
 
     // Fetch payments for this bill
     const [payments] = await promisePool.query(

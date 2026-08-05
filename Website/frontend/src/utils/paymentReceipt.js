@@ -44,23 +44,53 @@ export const createReceiptElement = (receipt, settings = {}) => {
           <div><div style="font-size:11px;color:#64748b;text-transform:uppercase;font-weight:bold;">Resident</div><strong style="display:block;margin-top:4px;font-size:16px;">${escapeHtml(resident)}</strong><span style="color:#475569;font-size:13px;">Flat ${escapeHtml(receipt.flat_no || '—')} (${escapeHtml(receipt.flat_type_name || 'Not Assigned')})</span></div>
           <div style="text-align:right;"><div style="font-size:11px;color:#64748b;text-transform:uppercase;font-weight:bold;">Payment status</div><strong style="display:inline-block;margin-top:5px;padding:5px 10px;border-radius:999px;background:#dcfce7;color:#166534;font-size:12px;">PAID</strong></div>
         </div>
-        <table style="width:100%;border-collapse:collapse;font-size:14px;">
-          <tbody>
-            <tr><td style="padding:10px 0;border-top:1px solid #e5e7eb;color:#64748b;">Bill Number</td><td style="padding:10px 0;border-top:1px solid #e5e7eb;text-align:right;font-weight:600;">${escapeHtml(billNumber)}</td></tr>
-            <tr><td style="padding:10px 0;border-top:1px solid #e5e7eb;color:#64748b;">Billing Period</td><td style="padding:10px 0;border-top:1px solid #e5e7eb;text-align:right;">${escapeHtml(billingPeriod(receipt))}</td></tr>
-            <tr><td style="padding:10px 0;border-top:1px solid #e5e7eb;color:#64748b;">Due Date</td><td style="padding:10px 0;border-top:1px solid #e5e7eb;text-align:right;">${formatDate(receipt.due_date)}</td></tr>
-            <tr><td style="padding:10px 0;border-top:1px solid #e5e7eb;color:#64748b;">Payment Date</td><td style="padding:10px 0;border-top:1px solid #e5e7eb;text-align:right;">${formatDate(receipt.paid_at || receipt.payment_date)}</td></tr>
-            <tr><td style="padding:10px 0;border-top:1px solid #e5e7eb;color:#64748b;">Base Maintenance Charge</td><td style="padding:10px 0;border-top:1px solid #e5e7eb;text-align:right;">${amount(receipt.base_maintenance_charge ?? receipt.amount_base ?? receipt.maintenance_amount ?? receipt.base_amount ?? receipt.bill_amount)}</td></tr>
-            <tr><td style="padding:10px 0;border-top:1px solid #e5e7eb;color:#64748b;">Late Fee</td><td style="padding:10px 0;border-top:1px solid #e5e7eb;text-align:right;">${amount(receipt.late_fee ?? receipt.penalty_amount)}</td></tr>
-            <tr><td style="padding:10px 0;border-top:1px solid #e5e7eb;color:#64748b;">Payment Mode</td><td style="padding:10px 0;border-top:1px solid #e5e7eb;text-align:right;">${escapeHtml(receipt.payment_method || '—')}</td></tr>
-            <tr><td style="padding:10px 0;border-top:1px solid #e5e7eb;color:#64748b;">Transaction ID</td><td style="padding:10px 0;border-top:1px solid #e5e7eb;text-align:right;font-family:monospace;">${escapeHtml(receipt.utr_number || receipt.transaction_id || '—')}</td></tr>
-          </tbody>
-        </table>
-        <div style="display:flex;justify-content:space-between;align-items:center;background:#eff6ff;margin-top:18px;padding:16px;border-radius:10px;"><span style="font-weight:bold;color:#1e3a5f;">Total Amount Paid</span><strong style="font-size:21px;color:#0f4c81;">${amount(paidAmount)}</strong></div>
-        <p style="margin:22px 0 0;text-align:right;color:#64748b;font-size:11px;">Generated: ${formatDate(new Date(), true)}</p>
-      </div>
-      <div style="padding:15px 28px;background:#f8fafc;border-top:1px solid #e5e7eb;color:#64748b;text-align:center;font-size:11px;">This is a computer-generated receipt. No signature required.</div>
-    </div>`;
+        const isManual = receipt.is_manual || receipt.bill_type === 'manual';
+        const rowsHtml = isManual ? `
+          <tr><td style="padding:10px 0;border-top:1px solid #e5e7eb;color:#64748b;">Bill Title</td><td style="padding:10px 0;border-top:1px solid #e5e7eb;text-align:right;font-weight:600;">${escapeHtml(receipt.title || 'Manual Bill')}</td></tr>
+          <tr><td style="padding:10px 0;border-top:1px solid #e5e7eb;color:#64748b;">Bill Category</td><td style="padding:10px 0;border-top:1px solid #e5e7eb;text-align:right;font-weight:600;">${escapeHtml(receipt.category || 'Custom Charges')}</td></tr>
+          <tr><td style="padding:10px 0;border-top:1px solid #e5e7eb;color:#64748b;">Bill Number</td><td style="padding:10px 0;border-top:1px solid #e5e7eb;text-align:right;font-weight:600;">${escapeHtml(billNumber)}</td></tr>
+          <tr><td style="padding:10px 0;border-top:1px solid #e5e7eb;color:#64748b;">Due Date</td><td style="padding:10px 0;border-top:1px solid #e5e7eb;text-align:right;">${formatDate(receipt.due_date)}</td></tr>
+          <tr><td style="padding:10px 0;border-top:1px solid #e5e7eb;color:#64748b;">Payment Date</td><td style="padding:10px 0;border-top:1px solid #e5e7eb;text-align:right;">${formatDate(receipt.paid_at || receipt.payment_date)}</td></tr>
+          <tr><td style="padding:10px 0;border-top:1px solid #e5e7eb;color:#64748b;">Payment Mode</td><td style="padding:10px 0;border-top:1px solid #e5e7eb;text-align:right;">${escapeHtml(receipt.payment_method || '—')}</td></tr>
+          <tr><td style="padding:10px 0;border-top:1px solid #e5e7eb;color:#64748b;">Transaction ID</td><td style="padding:10px 0;border-top:1px solid #e5e7eb;text-align:right;font-family:monospace;">${escapeHtml(receipt.utr_number || receipt.transaction_id || '—')}</td></tr>
+          ${receipt.notes || receipt.description ? `<tr><td style="padding:10px 0;border-top:1px solid #e5e7eb;color:#64748b;">Description / Notes</td><td style="padding:10px 0;border-top:1px solid #e5e7eb;text-align:right;">${escapeHtml(receipt.notes || receipt.description)}</td></tr>` : ''}
+        ` : `
+          <tr><td style="padding:10px 0;border-top:1px solid #e5e7eb;color:#64748b;">Bill Number</td><td style="padding:10px 0;border-top:1px solid #e5e7eb;text-align:right;font-weight:600;">${escapeHtml(billNumber)}</td></tr>
+          <tr><td style="padding:10px 0;border-top:1px solid #e5e7eb;color:#64748b;">Billing Period</td><td style="padding:10px 0;border-top:1px solid #e5e7eb;text-align:right;">${escapeHtml(billingPeriod(receipt))}</td></tr>
+          <tr><td style="padding:10px 0;border-top:1px solid #e5e7eb;color:#64748b;">Due Date</td><td style="padding:10px 0;border-top:1px solid #e5e7eb;text-align:right;">${formatDate(receipt.due_date)}</td></tr>
+          <tr><td style="padding:10px 0;border-top:1px solid #e5e7eb;color:#64748b;">Payment Date</td><td style="padding:10px 0;border-top:1px solid #e5e7eb;text-align:right;">${formatDate(receipt.paid_at || receipt.payment_date)}</td></tr>
+          <tr><td style="padding:10px 0;border-top:1px solid #e5e7eb;color:#64748b;">Base Maintenance Charge</td><td style="padding:10px 0;border-top:1px solid #e5e7eb;text-align:right;">${amount(receipt.base_maintenance_charge ?? receipt.amount_base ?? receipt.maintenance_amount ?? receipt.base_amount ?? receipt.bill_amount)}</td></tr>
+          <tr><td style="padding:10px 0;border-top:1px solid #e5e7eb;color:#64748b;">Late Fee</td><td style="padding:10px 0;border-top:1px solid #e5e7eb;text-align:right;">${amount(receipt.late_fee ?? receipt.penalty_amount)}</td></tr>
+          <tr><td style="padding:10px 0;border-top:1px solid #e5e7eb;color:#64748b;">Payment Mode</td><td style="padding:10px 0;border-top:1px solid #e5e7eb;text-align:right;">${escapeHtml(receipt.payment_method || '—')}</td></tr>
+          <tr><td style="padding:10px 0;border-top:1px solid #e5e7eb;color:#64748b;">Transaction ID</td><td style="padding:10px 0;border-top:1px solid #e5e7eb;text-align:right;font-family:monospace;">${escapeHtml(receipt.utr_number || receipt.transaction_id || '—')}</td></tr>
+        `;
+
+        element.style.cssText = 'width:760px;background:#fff;color:#172033;font-family:Arial,sans-serif;padding:32px;box-sizing:border-box;';
+        element.innerHTML = `
+          <div style="border:1px solid #dbe5f0;border-radius:16px;overflow:hidden;">
+            <div style="background:#0f4c81;color:#fff;padding:25px 28px;display:flex;justify-content:space-between;align-items:center;gap:20px;">
+              <div style="display:flex;align-items:center;gap:14px;">
+                ${logo ? `<img src="${escapeHtml(logo)}" alt="Society logo" style="width:48px;height:48px;object-fit:contain;background:#fff;border-radius:8px;padding:3px;" />` : ''}
+                <div><div style="font-size:12px;opacity:.82;letter-spacing:.08em;text-transform:uppercase;">${escapeHtml(settings.societyName || 'Society Management System')}</div><h1 style="font-size:28px;margin:5px 0 0;">${isManual ? 'Manual Bill Receipt' : 'Payment Receipt'}</h1></div>
+              </div>
+              <div style="text-align:right;font-size:12px;"><div style="opacity:.8;">RECEIPT NUMBER</div><strong style="font-size:15px;">${escapeHtml(receiptNumber)}</strong></div>
+            </div>
+            <div style="padding:26px 28px;">
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-bottom:22px;">
+                <div><div style="font-size:11px;color:#64748b;text-transform:uppercase;font-weight:bold;">Resident</div><strong style="display:block;margin-top:4px;font-size:16px;">${escapeHtml(resident)}</strong><span style="color:#475569;font-size:13px;">Flat ${escapeHtml(receipt.flat_no || '—')} (${escapeHtml(receipt.flat_type_name || 'Not Assigned')})</span></div>
+                <div style="text-align:right;"><div style="font-size:11px;color:#64748b;text-transform:uppercase;font-weight:bold;">Payment status</div><strong style="display:inline-block;margin-top:5px;padding:5px 10px;border-radius:999px;background:#dcfce7;color:#166534;font-size:12px;">PAID</strong></div>
+              </div>
+              <table style="width:100%;border-collapse:collapse;font-size:14px;">
+                <tbody>
+                  ${rowsHtml}
+                </tbody>
+              </table>
+              <div style="display:flex;justify-content:space-between;align-items:center;background:#eff6ff;margin-top:18px;padding:16px;border-radius:10px;"><span style="font-weight:bold;color:#1e3a5f;">Total Amount Paid</span><strong style="font-size:21px;color:#0f4c81;">${amount(paidAmount)}</strong></div>
+              <p style="margin:22px 0 0;text-align:right;color:#64748b;font-size:11px;">Generated: ${formatDate(new Date(), true)}</p>
+            </div>
+            <div style="padding:15px 28px;background:#f8fafc;border-top:1px solid #e5e7eb;color:#64748b;text-align:center;font-size:11px;">This is a computer-generated receipt. No signature required.</div>
+          </div>`;
+        return element;
   return element;
 };
 

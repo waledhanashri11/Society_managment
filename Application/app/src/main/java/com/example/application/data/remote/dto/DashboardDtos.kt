@@ -76,7 +76,11 @@ data class MaintenanceBillDto(
     @SerializedName(value = "approved_paid_amount", alternate = ["approvedPaidAmount"]) val approvedPaidAmount: String? = null,
     @SerializedName(value = "pending_verification_amount", alternate = ["pendingVerificationAmount"]) val pendingVerificationAmount: String? = null,
     @SerializedName(value = "pending_write_off_amount", alternate = ["pendingWriteOffAmount"]) val pendingWriteOffAmount: String? = null,
-    @SerializedName(value = "bill_status", alternate = ["billStatus"]) val billStatus: String? = null
+    @SerializedName(value = "bill_status", alternate = ["billStatus"]) val billStatus: String? = null,
+    val category: String? = null,
+    @SerializedName("bill_type") val billType: String? = null,
+    @SerializedName("is_manual") val isManual: Boolean? = null,
+    val notes: String? = null
 )
 
 data class ComplaintDto(

@@ -2,11 +2,11 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   Bell, Building2, CheckCircle2, Clock, CreditCard,
   LockKeyhole, Mail, Moon, Phone, QrCode, Save, ShieldCheck, Sun, Upload, UserCog, X,
-  SlidersHorizontal, Users
+  SlidersHorizontal, Users, FilePlus, Search, UserCheck, Receipt
 } from 'lucide-react';
 import { getUser } from '../utils/auth';
 import { useTheme } from '../utils/theme';
-import { authAPI, settingsAPI, maintenanceAPI } from '../services/api';
+import { authAPI, settingsAPI, maintenanceAPI, residentsAPI } from '../services/api';
 import { useTranslation } from 'react-i18next';
 import LanguageSelector from '../components/LanguageSelector';
 import './maintenance.css';
@@ -87,9 +87,113 @@ const AdminSettings = () => {
   const [bulkModalOpen, setBulkModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Manual bill modal state
+  const [manualModalOpen, setManualModalOpen] = useState(false);
+  const [manualStep, setManualStep] = useState(1);
+  const [residentsList, setResidentsList] = useState([]);
+  const [loadingResidents, setLoadingResidents] = useState(false);
+  const [residentSearch, setResidentSearch] = useState('');
+  const [selectedResident, setSelectedResident] = useState(null);
+  const [manualForm, setManualForm] = useState({
+    title: '',
+    category: 'Repair Charges',
+    customCategory: '',
+    amount: '',
+    dueDate: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+    description: ''
+  });
+  const [submittingManual, setSubmittingManual] = useState(false);
+  const [manualError, setManualError] = useState('');
+
   const notify = (message) => {
     setToast(message);
     window.setTimeout(() => setToast(''), 2800);
+  };
+
+  const handleOpenManualBillModal = async () => {
+    setManualModalOpen(true);
+    setManualStep(1);
+    setSelectedResident(null);
+    setResidentSearch('');
+    setManualError('');
+    setManualForm({
+      title: '',
+      category: 'Repair Charges',
+      customCategory: '',
+      amount: '',
+      dueDate: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+      description: ''
+    });
+
+    if (residentsList.length === 0) {
+      setLoadingResidents(true);
+      try {
+        const response = await residentsAPI.getAll();
+        const data = response.data?.data || response.data || response || [];
+        setResidentsList(Array.isArray(data) ? data : []);
+      } catch (err) {
+        setManualError('Failed to load residents list.');
+      } finally {
+        setLoadingResidents(false);
+      }
+    }
+  };
+
+  const filteredResidents = useMemo(() => {
+    if (!residentSearch.trim()) return residentsList;
+    const q = residentSearch.toLowerCase().trim();
+    return residentsList.filter(r => 
+      (r.name && r.name.toLowerCase().includes(q)) ||
+      (r.flat_no && String(r.flat_no).toLowerCase().includes(q)) ||
+      (r.phone && String(r.phone).includes(q)) ||
+      (r.email && r.email.toLowerCase().includes(q))
+    );
+  }, [residentsList, residentSearch]);
+
+  const handleSelectResident = (res) => {
+    setSelectedResident(res);
+    setManualStep(2);
+  };
+
+  const handleManualSubmit = async (e) => {
+    e.preventDefault();
+    if (!selectedResident) {
+      setManualError('Please select a resident.');
+      return;
+    }
+    if (!manualForm.title.trim()) {
+      setManualError('Bill title is required.');
+      return;
+    }
+    if (!manualForm.amount || Number(manualForm.amount) <= 0) {
+      setManualError('Please enter a valid positive bill amount.');
+      return;
+    }
+
+    setSubmittingManual(true);
+    setManualError('');
+
+    try {
+      const payload = {
+        residentId: selectedResident.id,
+        flatId: selectedResident.flat_id,
+        title: manualForm.title.trim(),
+        category: manualForm.category === 'Other' && manualForm.customCategory.trim() ? manualForm.customCategory.trim() : manualForm.category,
+        customCategory: manualForm.customCategory.trim(),
+        amount: Number(manualForm.amount),
+        dueDate: manualForm.dueDate,
+        description: manualForm.description.trim(),
+        notes: manualForm.description.trim()
+      };
+
+      await maintenanceAPI.createManualBill(payload);
+      notify('Manual bill generated successfully!');
+      setManualModalOpen(false);
+    } catch (err) {
+      setManualError(err.response?.data?.message || err.message || 'Could not generate manual bill.');
+    } finally {
+      setSubmittingManual(false);
+    }
   };
 
   useEffect(() => {
@@ -534,6 +638,37 @@ const AdminSettings = () => {
               </div>
               <LanguageSelector />
             </div>
+          <section className="portal-panel settings-card settings-wide" style={{ borderLeft: '4px solid #2563eb' }}>
+            <div className="portal-panel-head">
+              <div>
+                <h2>Generate Manual Bill</h2>
+                <p>Generate a custom bill for a specific resident.</p>
+              </div>
+              <FilePlus size={22} style={{ color: '#2563eb' }} />
+            </div>
+            <div style={{ padding: '16px 0 6px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+              <p style={{ margin: 0, fontSize: '13px', color: '#64748b' }}>
+                Create one-time bills for repairs, events, security deposits, clubhouse charges, or custom resident fees.
+              </p>
+              <button
+                type="button"
+                className="mm-button mm-button-primary"
+                onClick={handleOpenManualBillModal}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+                  padding: '10px 20px',
+                  fontWeight: '600',
+                  borderRadius: '8px',
+                  boxShadow: '0 2px 8px rgba(37,99,235,0.25)',
+                  cursor: 'pointer'
+                }}
+              >
+                <FilePlus size={18} /> Generate Manual Bill
+              </button>
+            </div>
           </section>
 
           <section className="portal-panel settings-card settings-wide">
@@ -925,6 +1060,205 @@ const AdminSettings = () => {
               <button type="submit" className="mm-button mm-button-primary" disabled={saving}>{t('settings.saveBulkAssignments')}</button>
             </div>
           </form>
+        </SettingsModal>
+      )}
+
+      {manualModalOpen && (
+        <SettingsModal
+          title="Generate Manual Bill"
+          subtitle="Generate a custom, one-time bill for a specific resident."
+          onClose={() => setManualModalOpen(false)}
+        >
+          {manualStep === 1 ? (
+            <div>
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: '700', color: '#334155', marginBottom: '8px' }}>
+                  Step 1: Search and Select Resident
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <Search size={17} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+                  <input
+                    type="text"
+                    placeholder="Search by Name, Flat Number, or Mobile Number..."
+                    value={residentSearch}
+                    onChange={(e) => setResidentSearch(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px 10px 38px',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      outline: 'none',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+              </div>
+
+              {manualError && (
+                <div className="settings-mini-error" style={{ marginBottom: '12px' }}>
+                  {manualError}
+                </div>
+              )}
+
+              {loadingResidents ? (
+                <div className="mm-skeleton-grid" style={{ gridTemplateColumns: '1fr', gap: '8px' }}>
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="mm-skeleton" style={{ height: '56px', borderRadius: '8px' }} />
+                  ))}
+                </div>
+              ) : filteredResidents.length > 0 ? (
+                <div style={{ maxHeight: '340px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', paddingRight: '4px' }}>
+                  {filteredResidents.map((res) => (
+                    <div
+                      key={res.id}
+                      onClick={() => handleSelectResident(res)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '12px 14px',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: '8px',
+                        background: '#f8fafc',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease'
+                      }}
+                      className="mm-resident-select-item"
+                    >
+                      <div>
+                        <strong style={{ fontSize: '14px', color: '#1e293b', display: 'block' }}>{res.name}</strong>
+                        <span style={{ fontSize: '12px', color: '#64748b' }}>
+                          Flat {res.flat_no || 'N/A'} {res.wing ? `(Wing ${res.wing})` : ''} • {res.flat_type_name || 'Resident'}
+                        </span>
+                      </div>
+                      <div style={{ textAlignment: 'right', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        {res.phone && <span style={{ fontSize: '12px', color: '#475569', fontWeight: '500' }}>📱 {res.phone}</span>}
+                        <button type="button" className="mm-mini-action blue">Select</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ padding: '30px 15px', textAlign: 'center', color: '#64748b' }}>
+                  <Users size={28} style={{ opacity: 0.5, marginBottom: '6px' }} />
+                  <p style={{ margin: 0, fontSize: '14px' }}>No residents found matching your search.</p>
+                </div>
+              )}
+            </div>
+          ) : (
+            <form onSubmit={handleManualSubmit} className="mm-form" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div style={{ padding: '12px 14px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <span style={{ fontSize: '11px', fontWeight: '700', color: '#1d4ed8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Target Resident</span>
+                  <strong style={{ display: 'block', fontSize: '15px', color: '#1e3a8a', marginTop: '2px' }}>{selectedResident?.name}</strong>
+                  <span style={{ fontSize: '12px', color: '#3b82f6' }}>
+                    Flat {selectedResident?.flat_no || 'N/A'} {selectedResident?.wing ? `• Wing ${selectedResident.wing}` : ''} • Type: {selectedResident?.flat_type_name || 'Standard'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="mm-button mm-button-light"
+                  onClick={() => setManualStep(1)}
+                  style={{ padding: '4px 10px', fontSize: '12px' }}
+                >
+                  Change
+                </button>
+              </div>
+
+              {manualError && <div className="settings-mini-error">{manualError}</div>}
+
+              <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '13px', fontWeight: '600' }}>
+                Bill Title *
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Lift Repair Charges, Water Tank Cleaning"
+                  value={manualForm.title}
+                  onChange={(e) => setManualForm({ ...manualForm, title: e.target.value })}
+                  style={{ width: '100%', padding: '9px 12px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '14px' }}
+                />
+              </label>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '13px', fontWeight: '600' }}>
+                  Bill Category *
+                  <select
+                    value={manualForm.category}
+                    onChange={(e) => setManualForm({ ...manualForm, category: e.target.value })}
+                    style={{ width: '100%', padding: '9px 12px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '14px' }}
+                  >
+                    <option value="Repair Charges">Repair Charges</option>
+                    <option value="Parking Charges">Parking Charges</option>
+                    <option value="Water Charges">Water Charges</option>
+                    <option value="Electricity Charges">Electricity Charges</option>
+                    <option value="Event Charges">Event Charges</option>
+                    <option value="Clubhouse Charges">Clubhouse Charges</option>
+                    <option value="Security Deposit">Security Deposit</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </label>
+
+                {manualForm.category === 'Other' && (
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '13px', fontWeight: '600' }}>
+                    Custom Category Name *
+                    <input
+                      type="text"
+                      required
+                      placeholder="Enter category name"
+                      value={manualForm.customCategory}
+                      onChange={(e) => setManualForm({ ...manualForm, customCategory: e.target.value })}
+                      style={{ width: '100%', padding: '9px 12px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '14px' }}
+                    />
+                  </label>
+                )}
+
+                <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '13px', fontWeight: '600' }}>
+                  Amount (₹) *
+                  <input
+                    type="number"
+                    min="1"
+                    step="any"
+                    required
+                    placeholder="e.g. 500"
+                    value={manualForm.amount}
+                    onChange={(e) => setManualForm({ ...manualForm, amount: e.target.value })}
+                    style={{ width: '100%', padding: '9px 12px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '14px' }}
+                  />
+                </label>
+              </div>
+
+              <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '13px', fontWeight: '600' }}>
+                Due Date
+                <input
+                  type="date"
+                  value={manualForm.dueDate}
+                  onChange={(e) => setManualForm({ ...manualForm, dueDate: e.target.value })}
+                  style={{ width: '100%', padding: '9px 12px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '14px' }}
+                />
+              </label>
+
+              <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '13px', fontWeight: '600' }}>
+                Description / Notes
+                <textarea
+                  rows="3"
+                  placeholder="Add any specific details or reason for this custom bill..."
+                  value={manualForm.description}
+                  onChange={(e) => setManualForm({ ...manualForm, description: e.target.value })}
+                  style={{ width: '100%', padding: '9px 12px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '14px' }}
+                />
+              </label>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
+                <button type="button" className="mm-button mm-button-light" onClick={() => setManualModalOpen(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="mm-button mm-button-primary" disabled={submittingManual}>
+                  {submittingManual ? 'Generating...' : 'Generate Manual Bill'}
+                </button>
+              </div>
+            </form>
+          )}
         </SettingsModal>
       )}
     </div>

@@ -5,6 +5,7 @@ import com.example.application.data.remote.dto.ApiResponse
 import com.example.application.data.remote.dto.ApplyWaiverRequest
 import com.example.application.data.remote.dto.CategorySaveRequest
 import com.example.application.data.remote.dto.CreateDisputeRequest
+import com.example.application.data.remote.dto.CreateManualBillRequestDto
 import com.example.application.data.remote.dto.ErrorResponse
 import com.example.application.data.remote.dto.ExpenseCreateRequest
 import com.example.application.data.remote.dto.GenerateBillsRequest
@@ -221,6 +222,7 @@ class MaintenanceRepository @Inject constructor(
         }
     }
     suspend fun saveSettings(request: MaintenanceSettingsRequest) = messageCall { api.saveSettings(request) }
+    suspend fun createManualBill(request: CreateManualBillRequestDto) = messageCall { api.createManualBill(request) }
     suspend fun saveLateFeeRule(request: LateFeeRuleRequest) = messageCall { api.saveLateFeeRule(request) }
     suspend fun createCategory(request: CategorySaveRequest) = messageCall { api.createCategory(request) }
     suspend fun updateCategory(id: String, request: CategorySaveRequest) = messageCall { api.updateCategory(id, request) }

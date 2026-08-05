@@ -445,3 +445,17 @@ data class MaintenancePaymentVerificationDto(
     val adminNote: String? get() = remarks
     val penaltyAmount: String? get() = null
 }
+
+data class CreateManualBillRequestDto(
+    val title: String,
+    val category: String,
+    val customCategory: String? = null,
+    val amount: Double,
+    val dueDate: String? = null,
+    val description: String? = null,
+    val notes: String? = null,
+    val residentId: Long,
+    val flatId: Long? = null,
+    val month: Int? = null,
+    val year: Int? = null
+)

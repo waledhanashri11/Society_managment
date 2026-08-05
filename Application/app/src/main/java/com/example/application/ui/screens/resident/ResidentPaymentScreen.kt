@@ -255,6 +255,7 @@ fun ResidentPaymentScreen(
 
 @Composable
 private fun PaymentSummaryCard(bill: MaintenanceBillDto) {
+    val isManual = bill.isManual == true || bill.billType == "manual"
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -263,62 +264,69 @@ private fun PaymentSummaryCard(bill: MaintenanceBillDto) {
     ) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text(bill.displayTitle(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Ink)
-                bill.flatType?.let { ft ->
+                Text(if (isManual) (bill.title ?: "Manual Bill") else bill.displayTitle(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Ink)
+                val badgeText = if (isManual) (bill.category ?: "Manual Bill") else bill.flatType
+                badgeText?.let { tag ->
                     Surface(shape = RoundedCornerShape(8.dp), color = Color(0xFFEFF6FF)) {
-                        Text(ft, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), color = SocietyBlue40, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                        Text(tag, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), color = SocietyBlue40, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                     }
                 }
             }
 
             HorizontalDivider(color = Color(0xFFF1F5F9))
 
-            // Breakdown Rows
-            val base = bill.baseAmount?.toDoubleOrNull() ?: bill.amount?.toDoubleOrNull() ?: 0.0
-            val prev = bill.previousDue?.toDoubleOrNull() ?: 0.0
-            val penalty = bill.penaltyAmount?.toDoubleOrNull() ?: bill.lateFee?.toDoubleOrNull() ?: 0.0
-            val other = bill.otherCharges?.toDoubleOrNull() ?: 0.0
-            val advanceAdj = bill.advanceAdjusted?.toDoubleOrNull() ?: 0.0
-            val writeOff = (bill.writeOffAmount ?: bill.maintenanceWriteOffAmount).toMoneyDecimal().toDouble()
             val total = bill.expectedPayableAmount()
 
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Base Maintenance", color = Muted, style = MaterialTheme.typography.bodyMedium)
-                Text(DashboardFormatters.money(base), color = Ink, fontWeight = FontWeight.Medium)
-            }
-
-            if (prev > 0) {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Previous Dues", color = Color(0xFFD97706), style = MaterialTheme.typography.bodyMedium)
-                    Text("+${DashboardFormatters.money(prev)}", color = Color(0xFFD97706), fontWeight = FontWeight.Medium)
+            if (isManual) {
+                bill.notes?.takeIf { it.isNotBlank() }?.let { notes ->
+                    Text("Description / Notes: $notes", style = MaterialTheme.typography.bodyMedium, color = Muted)
                 }
-            }
+            } else {
+                val base = bill.baseAmount?.toDoubleOrNull() ?: bill.amount?.toDoubleOrNull() ?: 0.0
+                val prev = bill.previousDue?.toDoubleOrNull() ?: 0.0
+                val penalty = bill.penaltyAmount?.toDoubleOrNull() ?: bill.lateFee?.toDoubleOrNull() ?: 0.0
+                val other = bill.otherCharges?.toDoubleOrNull() ?: 0.0
+                val advanceAdj = bill.advanceAdjusted?.toDoubleOrNull() ?: 0.0
+                val writeOff = (bill.writeOffAmount ?: bill.maintenanceWriteOffAmount).toMoneyDecimal().toDouble()
 
-            if (penalty > 0) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Penalty / Late Fee", color = Color(0xFFDC2626), style = MaterialTheme.typography.bodyMedium)
-                    Text("+${DashboardFormatters.money(penalty)}", color = Color(0xFFDC2626), fontWeight = FontWeight.Medium)
+                    Text("Base Maintenance", color = Muted, style = MaterialTheme.typography.bodyMedium)
+                    Text(DashboardFormatters.money(base), color = Ink, fontWeight = FontWeight.Medium)
                 }
-            }
 
-            if (other > 0) {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Other Charges", color = Ink, style = MaterialTheme.typography.bodyMedium)
-                    Text("+${DashboardFormatters.money(other)}", color = Ink, fontWeight = FontWeight.Medium)
+                if (prev > 0) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Previous Dues", color = Color(0xFFD97706), style = MaterialTheme.typography.bodyMedium)
+                        Text("+${DashboardFormatters.money(prev)}", color = Color(0xFFD97706), fontWeight = FontWeight.Medium)
+                    }
                 }
-            }
 
-            if (writeOff > 0) {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Write-Off / Waiver", color = Color(0xFF6D28D9), style = MaterialTheme.typography.bodyMedium)
-                    Text("-${DashboardFormatters.money(writeOff)}", color = Color(0xFF6D28D9), fontWeight = FontWeight.Bold)
+                if (penalty > 0) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Penalty / Late Fee", color = Color(0xFFDC2626), style = MaterialTheme.typography.bodyMedium)
+                        Text("+${DashboardFormatters.money(penalty)}", color = Color(0xFFDC2626), fontWeight = FontWeight.Medium)
+                    }
                 }
-            }
 
-            if (advanceAdj > 0) {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Advance Adjusted", color = Color(0xFF16A34A), style = MaterialTheme.typography.bodyMedium)
-                    Text("-${DashboardFormatters.money(advanceAdj)}", color = Color(0xFF16A34A), fontWeight = FontWeight.Bold)
+                if (other > 0) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Other Charges", color = Ink, style = MaterialTheme.typography.bodyMedium)
+                        Text("+${DashboardFormatters.money(other)}", color = Ink, fontWeight = FontWeight.Medium)
+                    }
+                }
+
+                if (writeOff > 0) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Write-Off / Waiver", color = Color(0xFF6D28D9), style = MaterialTheme.typography.bodyMedium)
+                        Text("-${DashboardFormatters.money(writeOff)}", color = Color(0xFF6D28D9), fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                if (advanceAdj > 0) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Advance Adjusted", color = Color(0xFF16A34A), style = MaterialTheme.typography.bodyMedium)
+                        Text("-${DashboardFormatters.money(advanceAdj)}", color = Color(0xFF16A34A), fontWeight = FontWeight.Bold)
+                    }
                 }
             }
 

@@ -5,10 +5,11 @@ const getResidents = async (req, res) => {
   try {
     const [residents] = await promisePool.query(
       `SELECT u.id, u.name, u.email, u.phone, u.status, u.role, u.created_at,
-              f.id AS flat_id, f.flat_no, f.wing
+              f.id AS flat_id, f.flat_no, f.wing, f.flat_type_id, ft.name AS flat_type_name
        FROM users u
-       LEFT JOIN flats f ON u.flat_id = f.id
-       WHERE u.role = 'resident'
+       LEFT JOIN flats f ON (f.current_resident_id = u.id OR f.id = u.flat_id)
+       LEFT JOIN flat_types ft ON ft.id = f.flat_type_id
+       WHERE LOWER(u.role) = 'resident'
        ORDER BY u.name ASC`
     );
     res.json(residents);

@@ -164,6 +164,51 @@ class AdminParityViewModel @Inject constructor(
         }.onFailure { error -> _state.update { it.copy(submitting = false, error = error.cleanMessage("Unable to transfer flat.")) } }
     }
 
+    fun loadResidentsForSelection() = viewModelScope.launch {
+        if (_state.value.residents.isNotEmpty()) return@launch
+        _state.update { it.copy(loading = true, error = null) }
+        when (val result = adminRepository.getResidents(refresh = true)) {
+            is NetworkResult.Success -> _state.update { it.copy(loading = false, residents = result.data.orEmpty()) }
+            is NetworkResult.Error -> _state.update { it.copy(loading = false, error = adminRepository.userMessageFor(result.error)) }
+            NetworkResult.Loading -> _state.update { it.copy(loading = true) }
+        }
+    }
+
+    fun createManualBill(
+        title: String,
+        category: String,
+        customCategory: String?,
+        amount: Double,
+        dueDate: String?,
+        description: String?,
+        residentId: Long,
+        flatId: Long?
+    ) = viewModelScope.launch {
+        _state.update { it.copy(submitting = true, error = null, message = null) }
+        runCatching {
+            val req = com.example.application.data.remote.dto.CreateManualBillRequestDto(
+                title = title,
+                category = category,
+                customCategory = customCategory,
+                amount = amount,
+                dueDate = dueDate,
+                description = description,
+                notes = description,
+                residentId = residentId,
+                flatId = flatId
+            )
+            val res = maintenanceApi.createManualBill(req)
+            if (res.isSuccessful && (res.body()?.success == true || res.body() != null)) {
+                _state.update { it.copy(submitting = false, message = "Manual bill generated successfully") }
+            } else {
+                val errMsg = res.body()?.message ?: res.errorBody()?.string() ?: "Failed to generate manual bill"
+                _state.update { it.copy(submitting = false, error = errMsg) }
+            }
+        }.onFailure { error ->
+            _state.update { it.copy(submitting = false, error = error.cleanMessage("Unable to generate manual bill.")) }
+        }
+    }
+
     private fun showError(message: String) {
         _state.update { it.copy(error = message) }
     }
