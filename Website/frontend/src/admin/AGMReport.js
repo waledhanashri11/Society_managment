@@ -71,7 +71,7 @@ export default function AGMReportScreen() {
       if (filters.type !== 'All') params.type = filters.type;
 
       const [resReport, resSettings] = await Promise.all([
-        maintenanceAPI.getAGMReport(params),
+        maintenanceAPI.getAGMReport(params, { force: true }),
         settingsAPI.get().catch(() => ({ data: {} }))
       ]);
 

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   Bell, Building2, CheckCircle2, Clock, CreditCard,
   LockKeyhole, Mail, Moon, Phone, QrCode, Save, ShieldCheck, Sun, Upload, UserCog, X,
-  SlidersHorizontal, Users, FilePlus, Search, UserCheck, Receipt
+  SlidersHorizontal, Users, FilePlus, Search
 } from 'lucide-react';
 import { getUser } from '../utils/auth';
 import { useTheme } from '../utils/theme';
@@ -638,6 +638,7 @@ const AdminSettings = () => {
               </div>
               <LanguageSelector />
             </div>
+          </section>
           <section className="portal-panel settings-card settings-wide" style={{ borderLeft: '4px solid #2563eb' }}>
             <div className="portal-panel-head">
               <div>

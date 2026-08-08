@@ -2914,73 +2914,139 @@ const getAGMReport = async (req, res) => {
   try {
     const { financialYear, startDate, endDate, resident, flat, wing, month, type } = req.query;
     
-    let whereClause = 'WHERE 1=1';
-    const params = [];
-    
-    if (financialYear) {
-      const parts = financialYear.split('-');
-      if (parts.length === 2) {
-        const startY = Number(parts[0]);
-        const endY = Number(parts[1]);
-        whereClause += ` AND ((m.year = ? AND m.month >= 4) OR (m.year = ? AND m.month <= 3))`;
-        params.push(startY, endY);
-      } else {
-        whereClause += ` AND m.year = ?`;
-        params.push(Number(financialYear));
-      }
+    const fyStr = financialYear || '2026-2027';
+    let startY = 2026;
+    let endY = 2027;
+    if (fyStr !== 'All') {
+      const parts = fyStr.split('-');
+      startY = Number(parts[0]) || 2026;
+      endY = parts[1] ? Number(parts[1]) : startY + 1;
     }
-    
+    const fyStart = `${startY}-04-01`;
+    const fyEnd = `${endY}-03-31`;
+
+    // 1. Fetch Bills
+    let billsWhere = 'WHERE 1=1';
+    const billsParams = [];
+    if (fyStr !== 'All') {
+      billsWhere += ` AND (
+        (m.year = ? AND m.month >= 4) OR 
+        (m.year = ? AND m.month <= 3) OR 
+        (m.created_at >= ? AND m.created_at <= ?)
+      )`;
+      billsParams.push(startY, endY, fyStart, fyEnd);
+    }
     if (startDate) {
-      whereClause += ` AND m.created_at >= ?`;
-      params.push(new Date(startDate));
+      billsWhere += ` AND m.created_at >= ?`;
+      billsParams.push(new Date(startDate));
     }
     if (endDate) {
-      whereClause += ` AND m.created_at <= ?`;
-      params.push(new Date(endDate));
+      billsWhere += ` AND m.created_at <= ?`;
+      billsParams.push(new Date(endDate));
     }
     if (resident) {
-      whereClause += ` AND (u.name ILIKE ? OR u.id = ?)`;
-      params.push(`%${resident}%`, Number(resident) || -1);
+      billsWhere += ` AND (u.name ILIKE ? OR u.id = ?)`;
+      billsParams.push(`%${resident}%`, Number(resident) || -1);
     }
     if (flat) {
-      whereClause += ` AND f.flat_no = ?`;
-      params.push(flat);
+      billsWhere += ` AND f.flat_no = ?`;
+      billsParams.push(flat);
     }
     if (wing) {
-      whereClause += ` AND f.wing = ?`;
-      params.push(wing);
+      billsWhere += ` AND f.wing = ?`;
+      billsParams.push(wing);
     }
-    if (month) {
-      whereClause += ` AND m.month = ?`;
-      params.push(Number(month));
+    if (month && month !== 'All') {
+      billsWhere += ` AND m.month = ?`;
+      billsParams.push(Number(month));
     }
 
-    // 1. Financial Summary:
-    const [[financialSummary]] = await promisePool.query(`
-      SELECT 
-        COALESCE(SUM(m.total_amount), 0) AS total_bills_generated,
-        COALESCE(SUM(m.paid_amount), 0) AS total_amount_collected,
-        COALESCE(SUM(m.remaining_amount), 0) AS outstanding_amount
+    const [bills] = await promisePool.query(`
+      SELECT m.id, COALESCE(m.total_amount, m.amount, 0) AS total_amount, COALESCE(m.paid_amount, 0) AS paid_amount, m.remaining_amount
       FROM maintenance m
-      JOIN users u ON m.resident_id = u.id
-      JOIN flats f ON m.flat_id = f.id
-      ${whereClause}
-    `, params);
+      LEFT JOIN users u ON m.resident_id = u.id
+      LEFT JOIN flats f ON m.flat_id = f.id
+      ${billsWhere}
+    `, billsParams);
 
-    // 2. Write-Off Summary & Counts calculated directly from write_offs table:
+    // 2. Fetch Payments (Approved / Paid only)
+    let paymentsWhere = "WHERE LOWER(COALESCE(p.payment_status, '')) IN ('paid', 'approved')";
+    const paymentsParams = [];
+    if (fyStr !== 'All') {
+      paymentsWhere += ` AND (
+        (m.year = ? AND m.month >= 4) OR 
+        (m.year = ? AND m.month <= 3) OR 
+        (p.paid_at >= ? AND p.paid_at <= ?) OR 
+        (p.created_at >= ? AND p.created_at <= ?)
+      )`;
+      paymentsParams.push(startY, endY, fyStart, fyEnd, fyStart, fyEnd);
+    }
+    if (startDate) {
+      paymentsWhere += ` AND p.created_at >= ?`;
+      paymentsParams.push(new Date(startDate));
+    }
+    if (endDate) {
+      paymentsWhere += ` AND p.created_at <= ?`;
+      paymentsParams.push(new Date(endDate));
+    }
+    if (resident) {
+      paymentsWhere += ` AND (u.name ILIKE ? OR u.id = ?)`;
+      paymentsParams.push(`%${resident}%`, Number(resident) || -1);
+    }
+    if (flat) {
+      paymentsWhere += ` AND f.flat_no = ?`;
+      paymentsParams.push(flat);
+    }
+    if (wing) {
+      paymentsWhere += ` AND f.wing = ?`;
+      paymentsParams.push(wing);
+    }
+
+    const [payments] = await promisePool.query(`
+      SELECT p.id, p.amount
+      FROM payments p
+      LEFT JOIN maintenance m ON p.bill_id = m.id
+      LEFT JOIN users u ON m.resident_id = u.id
+      LEFT JOIN flats f ON m.flat_id = f.id
+      ${paymentsWhere}
+    `, paymentsParams);
+
+    // 3. Fetch Expenses
+    let expenseWhere = 'WHERE 1=1';
+    const expenseParams = [];
+    if (fyStr !== 'All') {
+      expenseWhere += ` AND (
+        (expense_date >= ? AND expense_date <= ?) OR
+        (EXTRACT(YEAR FROM expense_date) = ? AND EXTRACT(MONTH FROM expense_date) >= 4) OR
+        (EXTRACT(YEAR FROM expense_date) = ? AND EXTRACT(MONTH FROM expense_date) <= 3)
+      )`;
+      expenseParams.push(fyStart, fyEnd, startY, endY);
+    }
+    if (startDate) {
+      expenseWhere += ` AND expense_date >= ?`;
+      expenseParams.push(new Date(startDate));
+    }
+    if (endDate) {
+      expenseWhere += ` AND expense_date <= ?`;
+      expenseParams.push(new Date(endDate));
+    }
+
+    const [expenses] = await promisePool.query(`
+      SELECT id, amount 
+      FROM maintenance_expenses
+      ${expenseWhere}
+    `, expenseParams);
+
+    // 4. Fetch Write-Offs & Detailed Ledger Table
     let writeOffsWhere = 'WHERE 1=1';
     const writeOffsParams = [];
-    if (financialYear && financialYear !== 'All') {
-      const parts = financialYear.split('-');
-      if (parts.length === 2) {
-        const startY = Number(parts[0]);
-        const endY = Number(parts[1]);
-        writeOffsWhere += ` AND ((m.year = ? AND m.month >= 4) OR (m.year = ? AND m.month <= 3))`;
-        writeOffsParams.push(startY, endY);
-      } else {
-        writeOffsWhere += ` AND m.year = ?`;
-        writeOffsParams.push(Number(financialYear));
-      }
+    if (fyStr !== 'All') {
+      writeOffsWhere += ` AND (
+        (m.year = ? AND m.month >= 4) OR 
+        (m.year = ? AND m.month <= 3) OR 
+        (w.created_at >= ? AND w.created_at <= ?)
+      )`;
+      writeOffsParams.push(startY, endY, fyStart, fyEnd);
     }
     if (startDate) {
       writeOffsWhere += ` AND w.created_at >= ?`;
@@ -3002,90 +3068,84 @@ const getAGMReport = async (req, res) => {
       writeOffsWhere += ` AND f.wing = ?`;
       writeOffsParams.push(wing);
     }
-    if (month) {
+    if (month && month !== 'All') {
       writeOffsWhere += ` AND m.month = ?`;
       writeOffsParams.push(Number(month));
     }
-    if (type) {
+    if (type && type !== 'All') {
       writeOffsWhere += ` AND w.type = ?`;
       writeOffsParams.push(type);
     }
 
-    const [[writeOffSummary]] = await promisePool.query(`
-      SELECT 
-        COALESCE(SUM(w.maintenance_write_off_amount), 0) AS total_maintenance_write_off,
-        COALESCE(SUM(w.penalty_write_off_amount), 0) AS total_penalty_write_off,
-        COALESCE(SUM(w.amount), 0) AS total_write_off,
-        COUNT(w.id) AS total_write_off_count,
-        COUNT(CASE WHEN w.type = 'Full' THEN 1 END) AS number_fully_written_off,
-        COUNT(CASE WHEN w.maintenance_write_off_amount > 0 THEN 1 END) AS number_maint_write_offs,
-        COUNT(CASE WHEN w.penalty_write_off_amount > 0 THEN 1 END) AS number_penalty_write_offs
+    const [writeOffs] = await promisePool.query(`
+      SELECT w.*, 
+             COALESCE(m.month, EXTRACT(MONTH FROM w.created_at)) AS month, 
+             COALESCE(m.year, EXTRACT(YEAR FROM w.created_at)) AS year, 
+             m.title AS bill_title, 
+             COALESCE(m.amount, 0) AS bill_amount, 
+             COALESCE(m.penalty_amount, 0) AS bill_penalty, 
+             COALESCE(m.total_amount, m.amount, 0) AS bill_total, 
+             COALESCE(m.paid_amount, 0) AS bill_paid, 
+             COALESCE(m.remaining_amount, m.remaining_due, m.current_due, 0) AS bill_remaining,
+             COALESCE(u.name, 'Resident') AS resident_name, 
+             COALESCE(f.flat_no, '—') AS flat_no, 
+             COALESCE(f.wing, '—') AS wing
       FROM write_offs w
       JOIN maintenance m ON w.bill_id = m.id
-      JOIN users u ON m.resident_id = u.id
-      JOIN flats f ON m.flat_id = f.id
-      ${writeOffsWhere}
-    `, writeOffsParams);
-
-    // Detailed write-off table with exact amount collected (paid_amount)
-    const [detailedTable] = await promisePool.query(`
-      SELECT w.*, m.month, m.year, m.title AS bill_title, m.amount AS bill_amount, m.penalty_amount AS bill_penalty, m.total_amount AS bill_total, m.paid_amount AS bill_paid, m.remaining_amount AS bill_remaining,
-             u.name AS resident_name, f.flat_no, f.wing
-      FROM write_offs w
-      JOIN maintenance m ON w.bill_id = m.id
-      JOIN users u ON m.resident_id = u.id
-      JOIN flats f ON m.flat_id = f.id
+      LEFT JOIN users u ON m.resident_id = u.id
+      LEFT JOIN flats f ON m.flat_id = f.id
       ${writeOffsWhere}
       ORDER BY w.created_at DESC
     `, writeOffsParams);
 
-    let expenseWhere = 'WHERE 1=1';
-    const expenseParams = [];
-    if (financialYear && financialYear !== 'All') {
-      const parts = financialYear.split('-');
-      if (parts.length === 2) {
-        expenseWhere += ` AND expense_date >= ? AND expense_date <= ?`;
-        expenseParams.push(`${parts[0]}-04-01`, `${parts[1]}-03-31`);
-      } else {
-        expenseWhere += ` AND EXTRACT(YEAR FROM expense_date) = ?`;
-        expenseParams.push(Number(financialYear));
-      }
-    }
-    if (startDate) {
-      expenseWhere += ` AND expense_date >= ?`;
-      expenseParams.push(new Date(startDate));
-    }
-    if (endDate) {
-      expenseWhere += ` AND expense_date <= ?`;
-      expenseParams.push(new Date(endDate));
-    }
+    // Business Logic Calculations (matching Reports reference):
+    const totalBillsGenerated = bills.reduce((sum, b) => sum + Number(b.total_amount || 0), 0);
+    const paymentsCollected = payments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+    const maintenancePaidSum = bills.reduce((sum, b) => sum + Number(b.paid_amount || 0), 0);
+    const totalAmountCollected = Math.max(paymentsCollected, maintenancePaidSum);
 
-    const [[expenseRow]] = await promisePool.query(`
-      SELECT COALESCE(SUM(amount), 0) AS total_expenses 
-      FROM maintenance_expenses
-      ${expenseWhere}
-    `, expenseParams);
-    const totalExpenses = Number(expenseRow?.total_expenses || 0);
-    const totalCollection = Number(financialSummary.total_amount_collected || 0);
+    const totalExpenses = expenses.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+    const totalApprovedWriteOffs = writeOffs.reduce((sum, w) => sum + Number(w.amount || 0), 0);
+    const totalMaintWriteOff = writeOffs.reduce((sum, w) => sum + Number(w.maintenance_write_off_amount || (w.type !== 'Penalty' ? w.amount : 0) || 0), 0);
+    const totalPenaltyWriteOff = writeOffs.reduce((sum, w) => sum + Number(w.penalty_write_off_amount || (w.type === 'Penalty' ? w.amount : 0) || 0), 0);
+
+    // Outstanding = Generated - Collected - Approved Write-Offs
+    const outstandingAmount = Math.max(0, totalBillsGenerated - totalAmountCollected - totalApprovedWriteOffs);
+    // Net Balance = Collected - Expenses
+    const netBalance = totalAmountCollected - totalExpenses;
+
+    // Temporary Debug Logs requested by user:
+    console.log('[AGM REPORT DEBUG] Number of bills found:', bills.length);
+    console.log('[AGM REPORT DEBUG] Number of payments found:', payments.length);
+    console.log('[AGM REPORT DEBUG] Number of expenses found:', expenses.length);
+    console.log('[AGM REPORT DEBUG] Number of write-offs found:', writeOffs.length);
+    console.log('[AGM REPORT DEBUG] Final calculated totals:', {
+      totalBillsGenerated,
+      totalAmountCollected,
+      totalExpenses,
+      totalApprovedWriteOffs,
+      outstandingAmount,
+      netBalance
+    });
 
     return sendResponse(res, 200, 'AGM report fetched successfully', {
       financialSummary: {
-        totalBillsGenerated: Number(financialSummary.total_bills_generated),
-        totalAmountCollected: totalCollection,
-        outstandingAmount: Number(financialSummary.outstanding_amount),
-        totalExpenses: totalExpenses,
-        netBalance: totalCollection - totalExpenses
+        totalBillsGenerated,
+        totalAmountCollected,
+        outstandingAmount,
+        totalExpenses,
+        netBalance
       },
       writeOffSummary: {
-        totalMaintenanceWriteOff: Number(writeOffSummary.total_maintenance_write_off),
-        totalPenaltyWriteOff: Number(writeOffSummary.total_penalty_write_off),
-        totalWriteOff: Number(writeOffSummary.total_write_off),
-        numberMaintenanceWriteOffs: Number(writeOffSummary.number_maint_write_offs),
-        numberPenaltyWriteOffs: Number(writeOffSummary.number_penalty_write_offs),
-        numberFullyWrittenOff: Number(writeOffSummary.number_fully_written_off),
-        numberWriteOffs: Number(writeOffSummary.total_write_off_count)
+        totalMaintenanceWriteOff: totalMaintWriteOff,
+        totalPenaltyWriteOff: totalPenaltyWriteOff,
+        totalWriteOff: totalApprovedWriteOffs,
+        numberMaintenanceWriteOffs: writeOffs.filter(w => Number(w.maintenance_write_off_amount || 0) > 0 || w.type !== 'Penalty').length,
+        numberPenaltyWriteOffs: writeOffs.filter(w => Number(w.penalty_write_off_amount || 0) > 0 || w.type === 'Penalty').length,
+        numberFullyWrittenOff: writeOffs.filter(w => w.type === 'Full' || w.type === 'TOTAL').length,
+        numberWriteOffs: writeOffs.length
       },
-      detailedTable
+      detailedTable: writeOffs || []
     });
   } catch (error) {
     console.error('Get AGM report error:', error);

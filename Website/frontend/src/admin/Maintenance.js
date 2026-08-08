@@ -2030,10 +2030,6 @@ function Maintenance() {
 
             <div className="mm-form-row">
               <label className="mm-field">
-                <span>Maintenance Amount (₹) *</span>
-                <input type="number" min="0" step="any" placeholder="e.g. 1200" value={manualBillForm.amount} onChange={(e) => setManualBillForm({ ...manualBillForm, amount: e.target.value })} required />
-              </label>
-              <label className="mm-field">
                 <span>Optional Charges (₹)</span>
                 <input type="number" min="0" step="any" placeholder="e.g. 200 (extra/penalty)" value={manualBillForm.optionalCharges} onChange={(e) => setManualBillForm({ ...manualBillForm, optionalCharges: e.target.value })} />
               </label>

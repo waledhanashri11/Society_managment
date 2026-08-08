@@ -23,6 +23,11 @@ const localizeNode = (root, textMap, language) => {
     const trimmed = value.trim();
     if (!trimmed) return;
 
+    // Skip pure numbers, amounts, and currency strings (e.g. ₹0, ₹79,100, 100)
+    if (/^[₹$\d\s,.-]+$/.test(trimmed)) {
+      return;
+    }
+
     if (!originalTextMap.has(node)) {
       originalTextMap.set(node, trimmed);
     }

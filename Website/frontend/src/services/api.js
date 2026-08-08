@@ -238,7 +238,7 @@ export const maintenanceAPI = {
   createDispute: (data) => mutate(api.post('/maintenance/disputes', data), '/maintenance'),
   getDisputes: (config = {}) => cachedGet('/maintenance/disputes', config),
   getWriteOffHistory: (params = {}, config = {}) => cachedGet('/maintenance/write-offs', { ...config, params }),
-  getAGMReport: (params = {}, config = {}) => cachedGet('/maintenance/agm-report', { ...config, params }),
+  getAGMReport: (params = {}, config = {}) => cachedGet('/maintenance/agm-report', { ...config, params }, { force: true }),
   getWriteOffReceipt: (id, config = {}) => cachedGet(`/maintenance/bills/${id}/write-off-receipt`, config),
   reverseWriteOff: (id) => mutate(api.delete(`/maintenance/write-offs/${id}`), '/maintenance'),
   editWriteOff: (id, data) => mutate(api.put(`/maintenance/write-offs/${id}`, data), '/maintenance'),
