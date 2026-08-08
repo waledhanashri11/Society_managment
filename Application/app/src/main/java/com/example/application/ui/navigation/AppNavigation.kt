@@ -149,7 +149,10 @@ fun SocietyNavGraph(
         }
 
         composable(AppRoute.Register.route) {
-            RegisterScreen(onBackToLogin = ::navigateToLogin)
+            RegisterScreen(
+                onBackToLogin = ::navigateToLogin,
+                onForgotPasswordClick = { navController.navigate(AppRoute.ForgotPassword.route) }
+            )
         }
 
         composable(AppRoute.ForgotPassword.route) {

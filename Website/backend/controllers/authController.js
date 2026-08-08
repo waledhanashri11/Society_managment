@@ -30,10 +30,16 @@ const sendPasswordResetEmail = async ({ to, name, resetLink }) => {
 
   try {
     const nodemailer = require('nodemailer');
+    const port = Number(process.env.SMTP_PORT || 587);
+    const isSecure = process.env.SMTP_SECURE === 'true' || port === 465;
+
     const transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: Number(process.env.SMTP_PORT || 587),
-      secure: process.env.SMTP_SECURE === 'true',
+      host: process.env.SMTP_HOST || 'smtp.gmail.com',
+      port,
+      secure: isSecure,
+      connectionTimeout: 10000,
+      greetingTimeout: 8000,
+      socketTimeout: 15000,
       auth: {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS

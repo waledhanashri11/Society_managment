@@ -151,7 +151,7 @@ class ResidentRepository @Inject constructor(
             408 -> AppError.Timeout
             429 -> AppError.Server("Too many requests. Please try again later.")
             500 -> AppError.Server("Server error. Please try again later.")
-            502, 503 -> AppError.Server("The server is temporarily unavailable.")
+            502, 503 -> AppError.Server(safeMessage ?: "The server is temporarily unavailable.")
             else -> AppError.Unknown("Request failed. Please try again.")
         }
     }

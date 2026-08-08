@@ -37,14 +37,14 @@ android {
             buildConfigField(
                 "String",
                 "BASE_URL",
-                "\"https://societymanagment-production-e0d3.up.railway.app/\""
+                "\"https://society-managment-5bh7.onrender.com/\""
             )
         }
         release {
             buildConfigField(
                 "String",
                 "BASE_URL",
-                "\"https://societymanagment-production-e0d3.up.railway.app/\""
+                "\"https://society-managment-5bh7.onrender.com/\""
             )
             isMinifyEnabled = true
             isShrinkResources = true

@@ -24,6 +24,10 @@ BACKEND_PUBLIC_URL=https://societymanagment-production-e0d3.up.railway.app
 NODE_ENV=production
 DATABASE_SSL=true
 DB_POOL_SIZE=20
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=dhanashriwale2005@gmail.com
+SMTP_PASS=zphfovwnxeerzvce
 ```
 
 After the frontend is deployed to Vercel, replace `FRONTEND_URL` with the

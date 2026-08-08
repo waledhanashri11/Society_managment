@@ -50,6 +50,7 @@ import com.example.application.viewmodel.ResetPasswordViewModel
 @Composable
 fun RegisterScreen(
     onBackToLogin: () -> Unit,
+    onForgotPasswordClick: () -> Unit = {},
     viewModel: RegistrationViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -117,6 +118,7 @@ fun RegisterScreen(
             Text(if (state.isSubmitting) "Submitting..." else "Register")
         }
         TextButton(onClick = onBackToLogin, modifier = Modifier.fillMaxWidth()) { Text("Already have an account? Login") }
+        TextButton(onClick = onForgotPasswordClick, modifier = Modifier.fillMaxWidth()) { Text("Forgot Password?") }
     }
 }
 

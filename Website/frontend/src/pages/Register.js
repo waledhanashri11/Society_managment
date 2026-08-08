@@ -158,9 +158,13 @@ const Register = () => {
             {loading ? t('auth.submitting', 'Submitting...') : t('auth.register', 'Register')}
           </button>
 
-          <p className="text-center mt-3">
+          <p className="text-center mt-3 mb-1">
             {t('auth.alreadyHaveAccount', 'Already have an account?')}{' '}
             <Link to="/login">{t('auth.login', 'Login')}</Link>
+          </p>
+
+          <p className="text-center mt-1">
+            <Link to="/forgot-password">{t('auth.forgotPasswordLink', 'Forgot password?')}</Link>
           </p>
         </form>
       </div>

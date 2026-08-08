@@ -240,7 +240,7 @@ class AdminManagementRepository @Inject constructor(
             409 -> AppError.Validation(safe ?: "This record conflicts with existing data.")
             429 -> AppError.Server("Too many requests. Please try again later.")
             500 -> AppError.Server("Server error. Please try again later.")
-            502, 503 -> AppError.Server("Railway server is temporarily unavailable.")
+            502, 503 -> AppError.Server(safe ?: "Server is temporarily unavailable.")
             else -> AppError.Unknown("Request failed. Please try again.")
         }
     }

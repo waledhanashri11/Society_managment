@@ -168,8 +168,31 @@ fun AdminMaintenanceScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val data = state.data
     var dialog by remember { mutableStateOf<MaintenanceDialog?>(null) }
-    var selectedMonth by remember { mutableStateOf(LocalDate.now().monthValue) }
-    var selectedYear by remember { mutableStateOf(LocalDate.now().year) }
+    var selectedMonthFilter by remember { mutableStateOf(0) }
+    var selectedYearFilter by remember { mutableStateOf(0) }
+    var statusFilter by remember { mutableStateOf("All") }
+
+    val availableYears = remember(data?.bills) {
+        data?.bills.orEmpty().mapNotNull { it.year?.toIntOrNull() }.distinct().sortedDescending()
+    }
+
+    val filteredBills = remember(data?.bills, selectedMonthFilter, selectedYearFilter, statusFilter) {
+        data?.bills.orEmpty().filter { bill ->
+            val billM = bill.month?.toIntOrNull() ?: monthNameToNumber(bill.month) ?: 0
+            val billY = bill.year?.toIntOrNull() ?: 0
+            val monthMatch = selectedMonthFilter == 0 || billM == selectedMonthFilter
+            val yearMatch = selectedYearFilter == 0 || billY == selectedYearFilter
+            val statusStr = (bill.paymentStatus ?: bill.status ?: "Unpaid").trim()
+            val statusMatch = when (statusFilter.lowercase()) {
+                "all" -> true
+                "pending", "unpaid" -> !(bill.paymentStatus ?: bill.status).isSettledBillStatus()
+                "paid" -> (bill.paymentStatus ?: bill.status).isSettledBillStatus()
+                "overdue" -> bill.isOverdueBill()
+                else -> statusStr.equals(statusFilter, ignoreCase = true)
+            }
+            monthMatch && yearMatch && statusMatch
+        }
+    }
 
     val activeTab = when (state.activeTab) {
         "Overview", "Payments", "Verification" -> "Bills"
@@ -221,16 +244,30 @@ fun AdminMaintenanceScreen(
                     item {
                         AdminMaintenanceStatsRow(
                             data = data,
-                            selectedMonth = selectedMonth,
-                            selectedYear = selectedYear
+                            selectedMonth = if (selectedMonthFilter != 0) selectedMonthFilter else LocalDate.now().monthValue,
+                            selectedYear = if (selectedYearFilter != 0) selectedYearFilter else LocalDate.now().year
                         )
+                    }
+
+                    if (activeTab == "Bills" || activeTab == "Overview") {
+                        item {
+                            MaintenanceMonthYearFilterBar(
+                                selectedMonth = selectedMonthFilter,
+                                onMonthSelected = { selectedMonthFilter = it },
+                                selectedYear = selectedYearFilter,
+                                onYearSelected = { selectedYearFilter = it },
+                                statusFilter = statusFilter,
+                                onStatusSelected = { statusFilter = it },
+                                availableYears = availableYears
+                            )
+                        }
                     }
 
                     when (activeTab) {
                         "Settings" -> settingsTab(data.settings, viewModel, { dialog = it })
                         "Expenses" -> expensesTab(data.expenses, viewModel, { dialog = it })
                         "Reports" -> reportsTab(data)
-                        else -> billsTab(data.bills, viewModel) { dialog = it }
+                        else -> billsTab(filteredBills, viewModel) { dialog = it }
                     }
                 }
             }
@@ -998,6 +1035,126 @@ private fun StatsTileCard(
                 Text(label, style = MaterialTheme.typography.bodySmall, color = Color(0xFF64748B), maxLines = 1)
                 Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A))
                 Text(subtext, style = MaterialTheme.typography.labelSmall, color = Color(0xFF94A3B8))
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MaintenanceMonthYearFilterBar(
+    selectedMonth: Int,
+    onMonthSelected: (Int) -> Unit,
+    selectedYear: Int,
+    onYearSelected: (Int) -> Unit,
+    statusFilter: String,
+    onStatusSelected: (String) -> Unit,
+    availableYears: List<Int>
+) {
+    val monthNames = listOf(
+        "All Months", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+    )
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.FilterList,
+                        contentDescription = null,
+                        tint = SocietyBlue40,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text(
+                        text = "Month & Date Billing Navigation",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF0F172A)
+                    )
+                }
+
+                if (selectedMonth != 0 || selectedYear != 0 || statusFilter != "All") {
+                    TextButton(
+                        onClick = {
+                            onMonthSelected(0)
+                            onYearSelected(0)
+                            onStatusSelected("All")
+                        },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            "Clear Filters",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = SocietyBlue40
+                        )
+                    }
+                }
+            }
+
+            // Month Chips (Horizontal Scroll Navbar)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                monthNames.forEachIndexed { index, monthLabel ->
+                    FilterChip(
+                        selected = selectedMonth == index,
+                        onClick = { onMonthSelected(index) },
+                        label = { Text(monthLabel) }
+                    )
+                }
+            }
+
+            // Year and Status Chips
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val currentYear = LocalDate.now().year
+                val defaultYearsList = listOf(currentYear, currentYear - 1, currentYear - 2)
+                val years = listOf(0) + (availableYears.ifEmpty { defaultYearsList }).distinct().sortedDescending()
+
+                years.forEach { yr ->
+                    val label = if (yr == 0) "All Years" else "$yr"
+                    FilterChip(
+                        selected = selectedYear == yr,
+                        onClick = { onYearSelected(yr) },
+                        label = { Text(label) }
+                    )
+                }
+
+                Spacer(Modifier.width(8.dp))
+
+                val statuses = listOf("All", "Pending", "Paid", "Overdue")
+                statuses.forEach { st ->
+                    FilterChip(
+                        selected = statusFilter.equals(st, ignoreCase = true),
+                        onClick = { onStatusSelected(st) },
+                        label = { Text(st) }
+                    )
+                }
             }
         }
     }
@@ -2830,25 +2987,75 @@ private fun MaintenanceDialogHost(dialog: MaintenanceDialog?, onDismiss: () -> U
                 "9 - September", "10 - October", "11 - November", "12 - December"
             )
 
+            var monthExpanded by remember { mutableStateOf(false) }
+            var yearExpanded by remember { mutableStateOf(false) }
+
             Text(
-                text = "Bills will be generated for the current system billing cycle: ${monthName(defaultMonth)} $defaultYear.",
+                text = "Select billing month and year to generate bills for all assigned resident flats.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = Color(0xFF64748B)
             )
 
-            OutlinedTextField(
-                value = monthNamesList.getOrNull(selM - 1) ?: "Current month",
-                onValueChange = {}, readOnly = true, label = { Text("System month") },
-                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)
-            )
+            ExposedDropdownMenuBox(
+                expanded = monthExpanded,
+                onExpandedChange = { monthExpanded = !monthExpanded }
+            ) {
+                OutlinedTextField(
+                    value = monthNamesList.getOrNull(selM - 1) ?: "Select month",
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Billing month") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(monthExpanded) },
+                    modifier = Modifier.fillMaxWidth().menuAnchor(),
+                    shape = RoundedCornerShape(12.dp)
+                )
+                ExposedDropdownMenu(
+                    expanded = monthExpanded,
+                    onDismissRequest = { monthExpanded = false }
+                ) {
+                    monthNamesList.forEachIndexed { idx, name ->
+                        DropdownMenuItem(
+                            text = { Text(name) },
+                            onClick = {
+                                month = "${idx + 1}"
+                                monthExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
 
-            OutlinedTextField(
-                value = year,
-                onValueChange = {}, readOnly = true, label = { Text("System year") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
-            )
+            val currentYearVal = LocalDate.now().year
+            val yearOptions = (currentYearVal - 2..currentYearVal + 3).map { it.toString() }
+
+            ExposedDropdownMenuBox(
+                expanded = yearExpanded,
+                onExpandedChange = { yearExpanded = !yearExpanded }
+            ) {
+                OutlinedTextField(
+                    value = year,
+                    onValueChange = { year = it },
+                    label = { Text("Billing year") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(yearExpanded) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().menuAnchor(),
+                    shape = RoundedCornerShape(12.dp)
+                )
+                ExposedDropdownMenu(
+                    expanded = yearExpanded,
+                    onDismissRequest = { yearExpanded = false }
+                ) {
+                    yearOptions.forEach { yrOpt ->
+                        DropdownMenuItem(
+                            text = { Text(yrOpt) },
+                            onClick = {
+                                year = yrOpt
+                                yearExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
 
             if (isAlreadyGenerated) {
                 Surface(
