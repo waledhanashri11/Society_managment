@@ -27,6 +27,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apartment
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Engineering
@@ -368,30 +369,59 @@ fun AppTopBar(
     navigationText: String? = null,
     navigationIcon: ImageVector? = null,
     onNavigationClick: (() -> Unit)? = null,
+    onBack: (() -> Unit)? = null,
     actionText: String? = null,
     actionIcon: ImageVector? = null,
     onActionClick: (() -> Unit)? = null
 ) {
+    val effectiveNavClick = onBack ?: onNavigationClick
+    val effectiveNavIcon = when {
+        onBack != null -> Icons.Filled.ArrowBack
+        navigationIcon != null -> navigationIcon
+        navigationText != null -> iconForLabel(navigationText)
+        else -> null
+    }
+
     TopAppBar(
         title = {
             Column {
-                Text(title, fontWeight = FontWeight.Bold)
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
                 subtitle?.let {
-                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
             }
         },
         navigationIcon = {
-            if (onNavigationClick != null) {
-                IconButton(onClick = onNavigationClick) {
-                    Icon(navigationIcon ?: iconForLabel(navigationText ?: "Menu"), contentDescription = navigationText, tint = MaterialTheme.colorScheme.primary)
+            if (effectiveNavClick != null && effectiveNavIcon != null) {
+                IconButton(onClick = effectiveNavClick) {
+                    Icon(
+                        imageVector = effectiveNavIcon,
+                        contentDescription = navigationText ?: "Back",
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
                 }
             }
         },
         actions = {
             if (onActionClick != null) {
                 IconButton(onClick = onActionClick) {
-                    Icon(actionIcon ?: iconForLabel(actionText ?: "Action"), contentDescription = actionText, tint = MaterialTheme.colorScheme.primary)
+                    Icon(
+                        imageVector = actionIcon ?: iconForLabel(actionText ?: "Action"),
+                        contentDescription = actionText,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
                 }
             }
         }
@@ -410,14 +440,16 @@ fun AppBottomNavigation(
         tonalElevation = NavigationBarDefaults.Elevation
     ) {
         items.forEach { item ->
+            val isSelected = item.equals(selected, ignoreCase = true)
             NavigationBarItem(
-                selected = selected == item,
+                selected = isSelected,
                 onClick = { onSelected(item) },
                 icon = { Icon(iconForLabel(item), contentDescription = localizedLabel(item)) },
                 label = {
                     Text(
-                        localizedLabel(item),
+                        text = localizedLabel(item),
                         style = MaterialTheme.typography.labelSmall,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )

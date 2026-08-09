@@ -45,7 +45,10 @@ const {
   getCashLedgerReport,
   getFlatCollectionReport,
   saveOpeningBalance,
-  createManualBill
+  createManualBill,
+  getBillingCycles,
+  getNextBillingCycle,
+  generateBillingCycle
 } = require('../controllers/maintenanceController');
 const moduleController = require('../controllers/maintenanceModuleController');
 
@@ -81,6 +84,9 @@ router.get('/', auth, adminAuth, getAllMaintenance);
 router.post('/', auth, adminAuth, createMaintenance);
 router.post('/generate', auth, adminAuth, generateMaintenanceBills);
 router.post('/manual', auth, adminAuth, createManualBill);
+router.get('/billing-cycles', auth, adminAuth, getBillingCycles);
+router.get('/billing-cycles/next', auth, adminAuth, getNextBillingCycle);
+router.post('/billing-cycles/generate', auth, adminAuth, generateBillingCycle);
 router.get('/bills', auth, adminAuth, getAllBills);
 router.get('/bills/:id', auth, getBillById);
 router.put('/bills/:id/mark-paid', auth, adminAuth, markBillPaid);

@@ -505,10 +505,15 @@ private fun CreateNocDialog(
     }
 
     AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Apply for NOC") },
+        onDismissRequest = { if (!submitting) onDismiss() },
+        title = { Text("Apply for NOC", fontWeight = FontWeight.Bold) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 Text("NOC Type", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                 Box {
                     OutlinedTextField(
@@ -516,42 +521,73 @@ private fun CreateNocDialog(
                         onValueChange = {},
                         readOnly = true,
                         label = { Text("Select NOC type") },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp)
                     )
                     Box(
                         modifier = Modifier
                             .matchParentSize()
-                            .clickable { menuExpanded = !menuExpanded }
+                            .clickable(enabled = !submitting) { menuExpanded = !menuExpanded }
                     )
                     DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
                         NocTypes.forEach { type ->
-                            DropdownMenuItem(text = { Text(type) }, onClick = { selectedType = type; menuExpanded = false })
+                            DropdownMenuItem(
+                                text = { Text(type) },
+                                onClick = { selectedType = type; menuExpanded = false }
+                            )
                         }
                     }
                 }
-                OutlinedTextField(value = purpose, onValueChange = { purpose = it }, label = { Text("Purpose") }, modifier = Modifier.fillMaxWidth(), minLines = 3)
+                OutlinedTextField(
+                    value = purpose,
+                    onValueChange = { purpose = it },
+                    label = { Text("Purpose *") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 2,
+                    maxLines = 4,
+                    enabled = !submitting,
+                    shape = RoundedCornerShape(14.dp)
+                )
                 OutlinedTextField(
                     value = remarks,
                     onValueChange = { remarks = it },
-                    label = { Text("Remarks") },
+                    label = { Text("Additional Details / Remarks (Optional)") },
                     modifier = Modifier.fillMaxWidth(),
-                    minLines = 3
+                    minLines = 2,
+                    maxLines = 4,
+                    enabled = !submitting,
+                    shape = RoundedCornerShape(14.dp)
                 )
-                OutlinedButton(onClick = { picker.launch("*/*") }, modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(
+                    onClick = { picker.launch("*/*") },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !submitting,
+                    shape = RoundedCornerShape(14.dp)
+                ) {
                     Icon(Icons.Filled.UploadFile, contentDescription = null)
-                    Text(if (documentNames.isEmpty()) "Attach documents (optional)" else "${documentNames.size} document(s) selected", modifier = Modifier.padding(start = 8.dp))
+                    Text(
+                        text = if (documentNames.isEmpty()) "Attach Documents (Optional)" else "${documentNames.size} document(s) selected",
+                        modifier = Modifier.padding(start = 8.dp)
+                    )
                 }
-                if (documentNames.isNotEmpty()) Text(documentNames.joinToString("\n"), style = MaterialTheme.typography.bodySmall)
-                localError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                if (documentNames.isNotEmpty()) {
+                    Text(documentNames.joinToString("\n"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                localError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             }
         },
         confirmButton = {
             Button(
                 onClick = { onSubmit(selectedType, purpose, remarks, documentData) },
-                enabled = !submitting && purpose.isNotBlank()
-            ) { Text(if (submitting) "Submitting..." else "Submit Request") }
+                enabled = !submitting && purpose.isNotBlank(),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text(if (submitting) "Submitting NOC Request..." else "Submit Request", fontWeight = FontWeight.Bold)
+            }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !submitting) { Text("Cancel") }
+        }
     )
 }
 
@@ -640,13 +676,20 @@ private fun ReviewNocDialog(
             }
         },
         confirmButton = {
-            Button(onClick = { onSubmit(comments.takeIf { it.isNotBlank() }) }, enabled = !submitting) {
+            Button(
+                onClick = { onSubmit(comments.takeIf { it.isNotBlank() }) },
+                enabled = !submitting,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (status == "Rejected") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                )
+            ) {
                 Text(if (submitting) "Saving..." else status)
             }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }
+
 
 @Composable
 private fun StatusChip(status: String) {

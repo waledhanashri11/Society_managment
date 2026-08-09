@@ -1,5 +1,8 @@
 <resources>
-    <string name="app_name">Society Management</string>
+    <string name="app_name">SocietyHub</string>
+    <string name="app_subtitle">Smart Society. Simple Living.</string>
+    <string name="app_tagline">Smart Society. Simple Living.</string>
+    <string name="welcome_to_society">Welcome to your society</string>
     <string name="back">Back</string>
     <string name="close">Close</string>
     <string name="save">Save</string>
@@ -51,9 +54,9 @@
     <string name="language_hindi">हिंदी</string>
     <string name="language_marathi">मराठी</string>
     <string name="language_hint">Choose app language. The app will refresh after selection.</string>
-    <string name="society_management">Society Management</string>
-    <string name="society_management_system">Society Management System</string>
-    <string name="system">System</string>
+    <string name="society_management">SocietyHub</string>
+    <string name="society_management_system">SocietyHub</string>
+    <string name="system">Smart Society. Simple Living.</string>
     <string name="admin">Admin</string>
     <string name="resident">Resident</string>
     <string name="super_admin">Super Admin</string>
@@ -258,4 +261,57 @@
     <string name="track_complaints">Track your society requests</string>
     <string name="attachments_count">Attachments (%1$d)</string>
     <string name="admin_reply_title">Admin Reply • %1$s %2$s</string>
+
+    <!-- SocietyHub Confirmation Dialog strings -->
+    <string name="confirm_logout_title">Logout?</string>
+    <string name="confirm_logout_message">Are you sure you want to logout from SocietyHub?</string>
+    <string name="confirm_delete_title">Delete?</string>
+    <string name="confirm_delete_message">This action cannot be undone.</string>
+    <string name="confirm_approve_payment_title">Approve Payment?</string>
+    <string name="confirm_approve_payment_message">Are you sure you want to approve this payment? The resident\u2019s payment status will be updated.</string>
+    <string name="confirm_reject_payment_title">Reject Payment?</string>
+    <string name="confirm_reject_payment_message">Are you sure you want to reject this payment submission?</string>
+    <string name="confirm_write_off_title">Apply Write-Off?</string>
+    <string name="confirm_write_off_message">This will reduce the resident\u2019s outstanding balance. This action cannot be easily undone.</string>
+    <string name="confirm_generate_bills_title">Generate Billing Cycle?</string>
+    <string name="confirm_generate_bills_message">Maintenance bills will be generated for all eligible residents. This will create financial records.</string>
+    <string name="confirm_cancel_bill_title">Cancel Bill?</string>
+    <string name="confirm_cancel_bill_message">Are you sure you want to cancel this maintenance bill?</string>
+    <string name="confirm_mark_paid_title">Mark as Paid?</string>
+    <string name="confirm_mark_paid_message">Mark this bill as manually paid by the resident?</string>
+    <string name="confirm_delete_notice_title">Delete Notice?</string>
+    <string name="confirm_delete_notice_message">Are you sure you want to delete this notice? This action cannot be undone.</string>
+    <string name="confirm_delete_meeting_title">Delete Meeting?</string>
+    <string name="confirm_delete_meeting_message">Are you sure you want to delete this meeting? This action cannot be undone.</string>
+    <string name="confirm_delete_complaint_title">Delete Complaint?</string>
+    <string name="confirm_delete_complaint_message">Are you sure you want to delete this complaint? This action cannot be undone.</string>
+    <string name="confirm_reject_noc_title">Reject NOC Request?</string>
+    <string name="confirm_reject_noc_message">Are you sure you want to reject this NOC request?</string>
+    <string name="confirm_delete_rule_title">Delete Rule?</string>
+    <string name="confirm_delete_rule_message">This society rule will be permanently deleted. This action cannot be undone.</string>
+    <string name="confirm_delete_expense_title">Delete Expense?</string>
+    <string name="confirm_delete_expense_message">Are you sure you want to delete this expense record? This action cannot be undone.</string>
+    <!-- SocietyHub Success Message strings -->
+    <string name="success_bills_generated">Maintenance bills generated successfully.</string>
+    <string name="success_payment_submitted">Payment submitted for verification.</string>
+    <string name="success_payment_approved">Payment approved successfully.</string>
+    <string name="success_payment_rejected">Payment rejected successfully.</string>
+    <string name="success_complaint_submitted">Complaint submitted successfully.</string>
+    <string name="success_notice_published">Notice published successfully.</string>
+    <string name="success_notice_deleted">Notice deleted successfully.</string>
+    <string name="success_meeting_created">Meeting created successfully.</string>
+    <string name="success_meeting_updated">Meeting updated successfully.</string>
+    <string name="success_meeting_deleted">Meeting deleted successfully.</string>
+    <string name="success_noc_submitted">NOC request submitted for review.</string>
+    <string name="success_rule_saved">Society rule saved successfully.</string>
+    <string name="success_rule_deleted">Rule deleted successfully.</string>
+    <string name="success_profile_updated">Profile updated successfully.</string>
+    <string name="success_settings_updated">Settings updated successfully.</string>
+    <string name="success_write_off_applied">Write-off applied successfully.</string>
+    <string name="success_expense_added">Expense added successfully.</string>
+    <string name="success_expense_deleted">Expense deleted successfully.</string>
+    <string name="success_resident_added">Resident added successfully.</string>
+    <string name="success_bill_cancelled">Bill cancelled successfully.</string>
+    <string name="success_bill_deleted">Bill deleted successfully.</string>
+    <string name="success_marked_paid">Bill marked as paid successfully.</string>
 </resources>

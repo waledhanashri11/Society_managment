@@ -48,6 +48,7 @@ import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Report
+import androidx.compose.material.icons.filled.ReportProblem
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
@@ -58,12 +59,14 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -84,6 +87,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -114,9 +118,23 @@ import java.time.format.DateTimeFormatter
 fun AdminComplaintsScreen(onBack: () -> Unit, viewModel: AdminComplaintsViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var dialog by remember { mutableStateOf<ComplaintDialog?>(null) }
+    var complaintToDelete by remember { mutableStateOf<com.example.application.data.remote.dto.ComplaintDto?>(null) }
     val items by remember(state.items, state.query, state.filter) {
         derivedStateOf { state.items.filter { it.matchesComplaint(state.query) }.filter { state.filter == "All" || it.status == state.filter } }
     }
+
+    complaintToDelete?.let { complaint ->
+        com.example.application.ui.components.SocietyHubDeleteDialog(
+            itemName = "Complaint",
+            message = "Are you sure you want to delete this complaint? This action cannot be undone.",
+            onConfirm = {
+                complaint.id?.let(viewModel::deleteComplaint)
+                complaintToDelete = null
+            },
+            onDismiss = { complaintToDelete = null }
+        )
+    }
+
     ListShell("Complaints", onBack, state.isRefreshing, { viewModel.load(true) }, state.isLoading, state.error, { viewModel.load(true) }) {
         item {
             SearchAndStatus(state.query, viewModel::setQuery, state.filter, viewModel::setFilter)
@@ -133,7 +151,7 @@ fun AdminComplaintsScreen(onBack: () -> Unit, viewModel: AdminComplaintsViewMode
             }
         } else if (items.isEmpty()) item { EmptyState("No complaints", "Resident complaints will appear here.") }
         else items(items, key = { it.id ?: it.title.orEmpty() }) { complaint ->
-            ComplaintCard(complaint, admin = true, onReply = { dialog = ComplaintDialog.Reply(complaint) }, onDelete = { complaint.id?.let(viewModel::deleteComplaint) })
+            ComplaintCard(complaint, admin = true, onReply = { dialog = ComplaintDialog.Reply(complaint) }, onDelete = { complaintToDelete = complaint })
         }
     }
     if (dialog is ComplaintDialog.Reply) {
@@ -465,6 +483,7 @@ private fun ResidentComplaintCard(
 
                 // Attachments section if present
                 if (images.isNotEmpty()) {
+                    var previewImage by remember { mutableStateOf<String?>(null) }
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(
                             text = "Attachments (${images.size})",
@@ -482,9 +501,16 @@ private fun ResidentComplaintCard(
                                     modifier = Modifier
                                         .size(80.dp)
                                         .clip(RoundedCornerShape(10.dp))
+                                        .clickable { previewImage = image }
                                 )
                             }
                         }
+                    }
+                    previewImage?.let { img ->
+                        ComplaintProofFullPreviewDialog(
+                            image = img,
+                            onDismiss = { previewImage = null }
+                        )
                     }
                 }
 
@@ -704,8 +730,22 @@ fun NoticesScreen(onBack: () -> Unit, admin: Boolean, viewModel: NoticesViewMode
     val state by viewModel.state.collectAsStateWithLifecycle()
     var showCreate by remember { mutableStateOf(false) }
     var editingNotice by remember { mutableStateOf<NoticeDto?>(null) }
+    var noticeToDelete by remember { mutableStateOf<NoticeDto?>(null) }
     val notices by remember(state.items, state.query) { derivedStateOf { state.items.filter { it.matchesNotice(state.query) } } }
     LaunchedEffect(admin) { if (admin) viewModel.loadStats() }
+
+    noticeToDelete?.let { notice ->
+        com.example.application.ui.components.SocietyHubDeleteDialog(
+            itemName = "Notice",
+            message = "Are you sure you want to delete this notice? This action cannot be undone.",
+            onConfirm = {
+                notice.id?.let(viewModel::deleteNotice)
+                noticeToDelete = null
+            },
+            onDismiss = { noticeToDelete = null }
+        )
+    }
+
     ListShell(if (admin) "Notices" else "Society Notices", onBack, state.isRefreshing, { viewModel.load(true) }, state.isLoading, state.error, { viewModel.load(true) }, action = { if (admin) IconButton(onClick = { showCreate = true }) { Icon(Icons.Filled.Add, contentDescription = "Add notice") } }) {
         item {
             if (admin) state.noticeStats?.let { stats ->
@@ -724,7 +764,7 @@ fun NoticesScreen(onBack: () -> Unit, admin: Boolean, viewModel: NoticesViewMode
                 notice = notice,
                 admin = admin,
                 onEdit = { editingNotice = notice },
-                onDelete = { notice.id?.let(viewModel::deleteNotice) },
+                onDelete = { noticeToDelete = notice },
                 onPublish = { notice.id?.let(viewModel::publishNotice) },
                 onClosePoll = { notice.id?.let(viewModel::closePoll) },
                 onVote = { optionIds -> notice.id?.let { viewModel.vote(it, optionIds) } }
@@ -926,41 +966,171 @@ private fun ListShell(
 @Composable
 private fun ComplaintCard(complaint: ComplaintDto, admin: Boolean, onReply: () -> Unit = {}, onDelete: () -> Unit = {}) {
     var previewImage by remember { mutableStateOf<String?>(null) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+    val status = (complaint.status ?: "pending").normalizedComplaintStatus()
+    val residentLabel = listOfNotNull(complaint.userName ?: complaint.residentName, complaint.createdAt?.let { DashboardFormatters.date(it) }).joinToString(" • ")
 
-    ManagementCard {
-        Text(complaint.title ?: "Complaint", fontWeight = FontWeight.Bold)
-        Text(complaint.description ?: "-", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        val complaintImages = complaint.complaintImagesForDisplay()
-        if (complaintImages.isNotEmpty()) {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                complaintImages.take(3).forEach { image ->
-                    ComplaintProofImage(
-                        image = image,
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .height(180.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .clickable { previewImage = image }
-                    )
+                            .size(38.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.primaryContainer),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.ReportProblem,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = complaint.title ?: "Complaint",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        if (residentLabel.isNotBlank()) {
+                            Text(
+                                text = residentLabel,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.width(8.dp))
+                ResidentComplaintStatusBadge(status)
+            }
+
+            if (!complaint.description.isNullOrBlank()) {
+                Text(
+                    text = complaint.description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            val complaintImages = complaint.complaintImagesForDisplay()
+            if (complaintImages.isNotEmpty()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    complaintImages.take(3).forEach { image ->
+                        ComplaintProofImage(
+                            image = image,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(120.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable { previewImage = image }
+                        )
+                    }
+                }
+            }
+
+            if (!complaint.reply.isNullOrBlank()) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = "Admin Reply:",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = complaint.reply,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+            }
+
+            if (admin) {
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedButton(
+                        onClick = onReply,
+                        shape = RoundedCornerShape(12.dp),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+                    ) {
+                        Icon(Icons.Filled.EditNote, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Reply / Status", fontWeight = FontWeight.SemiBold)
+                    }
+                    TextButton(
+                        onClick = { showDeleteConfirm = true },
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                    ) {
+                        Icon(Icons.Filled.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Delete", fontWeight = FontWeight.SemiBold)
+                    }
                 }
             }
         }
-        KeyValue("Status", (complaint.status ?: "pending").replace("_", " "))
-        complaint.userName?.let { KeyValue("Resident", it) }
-        complaint.reply?.takeIf { it.isNotBlank() }?.let { KeyValue("Reply", it) }
-        KeyValue("Created", DashboardFormatters.date(complaint.createdAt))
-        if (admin) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButton(onClick = onReply) {
-                Icon(Icons.Filled.EditNote, contentDescription = null)
-                Spacer(Modifier.width(6.dp))
-                Text("Reply / Status")
+    }
+
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("Delete Complaint?") },
+            text = { Text("Are you sure you want to delete this complaint? This action cannot be undone.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showDeleteConfirm = false
+                        onDelete()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) {
+                    Text("Cancel")
+                }
             }
-            TextButton(onClick = onDelete) {
-                Icon(Icons.Filled.Delete, contentDescription = null)
-                Spacer(Modifier.width(6.dp))
-                Text("Delete")
-            }
-        }
+        )
     }
 
     previewImage?.let { img ->
@@ -1187,10 +1357,29 @@ private fun ComplaintDto.primaryComplaintImage(): String? {
 }
 
 private fun ComplaintDto.complaintImagesForDisplay(): List<String> {
-    return (complaintImageUrls.orEmpty() + listOfNotNull(imageUrl) + complaintImages.orEmpty() + complaintImageData.orEmpty())
+    val rawList = (complaintImageUrls.orEmpty() + listOfNotNull(imageUrl) + complaintImages.orEmpty() + complaintImageData.orEmpty())
         .map { it.trim() }
         .filter { it.isNotBlank() }
-        .distinct()
+
+    val seenKeys = mutableSetOf<String>()
+    val result = mutableListOf<String>()
+
+    for (item in rawList) {
+        val isBase64 = item.startsWith("data:image", ignoreCase = true) || (item.length > 300 && !item.startsWith("http", ignoreCase = true))
+        val key = if (isBase64) {
+            val length = item.length
+            val sample = if (length > 200) item.substring(100, 200) else item
+            "base64_${length}_${sample.hashCode()}"
+        } else {
+            val cleanPath = item.substringBefore('?').substringBefore('#')
+            cleanPath.substringAfterLast('/').substringAfterLast('\\').lowercase().trim()
+        }
+
+        if (key.isNotBlank() && seenKeys.add(key)) {
+            result.add(item)
+        }
+    }
+    return result
 }
 
 @Composable
@@ -1217,51 +1406,83 @@ private fun ComplaintProofImage(image: String, modifier: Modifier = Modifier) {
 
 @Composable
 private fun ComplaintProofFullPreviewDialog(image: String, onDismiss: () -> Unit) {
-    AlertDialog(
+    androidx.compose.ui.window.Dialog(
         onDismissRequest = onDismiss,
-        confirmButton = {},
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Close", fontWeight = FontWeight.Bold)
-            }
-        },
-        text = {
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.92f))
+                .clickable { onDismiss() },
+            contentAlignment = Alignment.Center
+        ) {
             Column(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.SpaceBetween
             ) {
-                Text(
-                    text = "Complaint Attachment Preview",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                val bitmap = remember(image) { decodeDataImage(image) }
-                if (bitmap != null) {
-                    Image(
-                        bitmap = bitmap.asImageBitmap(),
-                        contentDescription = "Full Complaint Attachment",
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(340.dp)
-                            .clip(RoundedCornerShape(16.dp)),
-                        contentScale = ContentScale.Fit
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 20.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Attachment Preview",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
                     )
-                } else {
-                    AsyncImage(
-                        model = fullMediaUrl(image),
-                        contentDescription = "Full Complaint Attachment",
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(340.dp)
-                            .clip(RoundedCornerShape(16.dp)),
-                        contentScale = ContentScale.Fit
-                    )
+                    IconButton(onClick = onDismiss) {
+                        Icon(
+                            imageVector = Icons.Filled.ArrowBack,
+                            contentDescription = "Close preview",
+                            tint = Color.White
+                        )
+                    }
                 }
+
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    val bitmap = remember(image) { decodeDataImage(image) }
+                    if (bitmap != null) {
+                        Image(
+                            bitmap = bitmap.asImageBitmap(),
+                            contentDescription = "Full Complaint Attachment",
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(16.dp)),
+                            contentScale = ContentScale.Fit
+                        )
+                    } else {
+                        AsyncImage(
+                            model = fullMediaUrl(image),
+                            contentDescription = "Full Complaint Attachment",
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(16.dp)),
+                            contentScale = ContentScale.Fit
+                        )
+                    }
+                }
+
+                Text(
+                    text = "Tap anywhere to close",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = 0.7f),
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
             }
         }
-    )
+    }
 }
 
 private fun decodeDataImage(value: String): android.graphics.Bitmap? {

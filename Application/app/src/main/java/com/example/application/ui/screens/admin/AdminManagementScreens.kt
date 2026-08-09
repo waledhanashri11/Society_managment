@@ -757,14 +757,16 @@ private fun ConfirmDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = { Text(message) },
-        confirmButton = { TextButton(onClick = onConfirm) { Text(confirmText, color = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    com.example.application.ui.components.SocietyHubConfirmDialog(
+        title = title,
+        message = message,
+        confirmText = confirmText,
+        isDestructive = destructive,
+        onDismiss = onDismiss,
+        onConfirm = onConfirm
     )
 }
+
 
 private fun UserSummaryDto.matchesResidentQuery(query: String): Boolean {
     if (query.isBlank()) return true

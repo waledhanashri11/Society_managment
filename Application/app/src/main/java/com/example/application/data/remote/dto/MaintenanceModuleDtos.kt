@@ -459,3 +459,65 @@ data class CreateManualBillRequestDto(
     val month: Int? = null,
     val year: Int? = null
 )
+
+// --- Billing Cycle DTOs ---
+
+data class BillingCycleDto(
+    val id: String?,
+    @SerializedName("society_id") val societyId: Int?,
+    @SerializedName("billing_month") val billingMonth: Int?,
+    @SerializedName("billing_year") val billingYear: Int?,
+    @SerializedName("billing_period_key") val billingPeriodKey: String?,
+    @SerializedName("billing_status") val billingStatus: String?,
+    @SerializedName("total_residents") val totalResidents: Int?,
+    @SerializedName("generated_bill_count") val generatedBillCount: Int?,
+    @SerializedName("grace_period_days") val gracePeriodDays: Int?,
+    @SerializedName("due_date") val dueDate: String?,
+    @SerializedName("penalty_start_date") val penaltyStartDate: String?,
+    @SerializedName("generated_by") val generatedBy: Int?,
+    @SerializedName("created_at") val createdAt: String?
+)
+
+data class NextBillingCycleDto(
+    val nextMonth: Int?,
+    val nextYear: Int?,
+    val nextPeriodKey: String?,
+    val suggestedDueDate: String?,
+    val suggestedPenaltyStartDate: String?,
+    val gracePeriodDays: Int?,
+    val isFirstCycle: Boolean?,
+    val lastGeneratedMonth: Int?,
+    val lastGeneratedYear: Int?,
+    val lastGeneratedPeriodKey: String?
+)
+
+data class GenerateBillingCycleRequest(
+    val month: Int,
+    val year: Int,
+    val amount: String? = null,
+    val dueDate: String? = null,
+    val title: String? = null,
+    val notes: String? = null
+)
+
+data class GenerateBillingCycleResultDto(
+    val cycleId: String?,
+    val generatedCount: Int?,
+    val skippedCount: Int?,
+    val duplicateCount: Int?,
+    val failedCount: Int?,
+    val billingPeriodKey: String?,
+    val dueDate: String?,
+    val penaltyStartDate: String?,
+    val failureReasons: List<GenerateBillFailureDto>? = null
+)
+
+data class PaymentVerificationSummaryDto(
+    val pendingCount: Int?,
+    val approvedCount: Int?,
+    val rejectedCount: Int?,
+    val clarificationCount: Int?,
+    val pendingAmount: String?,
+    val approvedAmount: String?,
+    val rejectedAmount: String?
+)

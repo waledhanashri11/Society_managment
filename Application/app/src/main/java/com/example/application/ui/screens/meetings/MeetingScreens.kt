@@ -11,27 +11,41 @@ import android.util.Base64
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Comment
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.HowToVote
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Payments
+import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -43,6 +57,7 @@ import com.example.application.data.remote.dto.*
 import com.example.application.ui.components.BasicAppTextField
 import com.example.application.ui.components.DashboardSkeleton
 import com.example.application.ui.components.EmptyState
+import com.example.application.util.DashboardFormatters
 import com.example.application.ui.components.KeyValue
 import com.example.application.ui.components.RetryState
 import com.example.application.ui.components.SectionCard
@@ -61,7 +76,22 @@ fun AdminMeetingsScreen(onBack: () -> Unit, viewModel: MeetingsViewModel = hiltV
     var poll by remember { mutableStateOf(false) }
     var fines by remember { mutableStateOf(false) }
     var comments by remember { mutableStateOf(false) }
+    var meetingToDelete by remember { mutableStateOf<MeetingDto?>(null) }
+
     LaunchedEffect(Unit) { viewModel.loadAnalytics() }
+
+    meetingToDelete?.let { meeting ->
+        com.example.application.ui.components.SocietyHubDeleteDialog(
+            itemName = "Meeting",
+            message = "Are you sure you want to delete this meeting? This action cannot be undone.",
+            onConfirm = {
+                meeting.id?.let(viewModel::deleteMeeting)
+                meetingToDelete = null
+            },
+            onDismiss = { meetingToDelete = null }
+        )
+    }
+
     MeetingScaffold(stringResource(R.string.meeting_meetings), onBack, { viewModel.load(true) }) {
         if (state.error != null && state.meetings.isEmpty()) RetryState(state.error ?: "Unable to load meetings", { viewModel.load(true) })
         else if (state.loading && state.meetings.isEmpty()) Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -83,7 +113,7 @@ fun AdminMeetingsScreen(onBack: () -> Unit, viewModel: MeetingsViewModel = hiltV
                 MeetingCard(meeting, true,
                     onDetails = { selected = meeting; viewModel.open(meeting.id ?: "") },
                     onEdit = { selected = meeting; editor = true },
-                    onDelete = { meeting.id?.let(viewModel::deleteMeeting) },
+                    onDelete = { meetingToDelete = meeting },
                     onDuplicate = { meeting.id?.let(viewModel::duplicateMeeting) },
                     onAttendance = { meeting.id?.let { viewModel.loadAttendance(it); selected = meeting; attendance = true } },
                     onReport = { selected = meeting; report = true; viewModel.open(meeting.id ?: "") },
@@ -181,20 +211,255 @@ private fun filteredMeetings(items: List<MeetingDto>, query: String, filter: Str
 }
 
 @Composable
-private fun MeetingCard(meeting: MeetingDto, admin: Boolean, onDetails: () -> Unit, onEdit: () -> Unit, onDelete: () -> Unit, onDuplicate: () -> Unit, onAttendance: () -> Unit, onReport: () -> Unit, onPoll: () -> Unit, onFines: () -> Unit, onComments: () -> Unit) {
-    Card(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(meeting.title ?: "Meeting", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium); StatusChip(meeting.status ?: "Scheduled") }
-            Text(meeting.meetingType ?: "Meeting", color = MaterialTheme.colorScheme.primary)
-            KeyValue(stringResource(R.string.meeting_date), meeting.meetingDate?.take(10) ?: "-"); KeyValue(stringResource(R.string.meeting_time), "${meeting.startTime ?: "-"} - ${meeting.endTime ?: "-"}"); KeyValue(stringResource(R.string.meeting_venue), meeting.venue ?: "-")
-            if (meeting.totalCount != null) KeyValue("Attendance", "${meeting.presentCount ?: 0}/${meeting.totalCount}")
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) { OutlinedButton(onClick = onDetails) { Icon(Icons.Filled.Visibility, null); Spacer(Modifier.width(4.dp)); Text("Details") }; TextButton(onClick = onComments) { Text("Comments") }; if (admin) { TextButton(onClick = onEdit) { Icon(Icons.Filled.Edit, null); Text("Edit") }; TextButton(onClick = onDelete) { Icon(Icons.Filled.Delete, null); Text("Delete") } } }
-            if (admin) Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) { TextButton(onClick = onAttendance) { Icon(Icons.Filled.CheckCircle, null); Text(stringResource(R.string.meeting_attendance)) }; TextButton(onClick = onReport) { Text(stringResource(R.string.meeting_minutes)) }; TextButton(onClick = onPoll) { Icon(Icons.Filled.HowToVote, null); Text(stringResource(R.string.meeting_poll)) }; TextButton(onClick = onFines) { Text(stringResource(R.string.meeting_fines)) }; TextButton(onClick = onDuplicate) { Text(stringResource(R.string.meeting_duplicate)) } }
+private fun MeetingCard(
+    meeting: MeetingDto,
+    admin: Boolean,
+    onDetails: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+    onDuplicate: () -> Unit,
+    onAttendance: () -> Unit,
+    onReport: () -> Unit,
+    onPoll: () -> Unit,
+    onFines: () -> Unit,
+    onComments: () -> Unit
+) {
+    var menuExpanded by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color(0xFF7C3AED).copy(alpha = 0.12f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Event,
+                            contentDescription = null,
+                            tint = Color(0xFF7C3AED),
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = meeting.title ?: "Society Meeting",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = meeting.meetingType ?: "General Body",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFF7C3AED),
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+                Spacer(Modifier.width(6.dp))
+                StatusChip(meeting.status ?: "Scheduled")
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Filled.CalendarMonth, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+                        Text(
+                            text = DashboardFormatters.date(meeting.meetingDate),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    if (!meeting.startTime.isNullOrBlank()) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Filled.Schedule, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+                            Text(
+                                text = "${meeting.startTime}${if (!meeting.endTime.isNullOrBlank()) " - ${meeting.endTime}" else ""}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                if (!meeting.venue.isNullOrBlank()) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Filled.Place, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+                        Text(
+                            text = meeting.venue,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                if (meeting.totalCount != null) {
+                    Text(
+                        text = "Attendance: ${meeting.presentCount ?: 0}/${meeting.totalCount}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedButton(
+                    onClick = onDetails,
+                    shape = RoundedCornerShape(12.dp),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+                ) {
+                    Icon(Icons.Filled.Visibility, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("View Details →", fontWeight = FontWeight.SemiBold)
+                }
+
+                Box {
+                    IconButton(onClick = { menuExpanded = true }) {
+                        Icon(Icons.Filled.MoreVert, contentDescription = "More actions")
+                    }
+                    DropdownMenu(
+                        expanded = menuExpanded,
+                        onDismissRequest = { menuExpanded = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Comments / Q&A") },
+                            onClick = { menuExpanded = false; onComments() },
+                            leadingIcon = { Icon(Icons.Filled.Comment, null) }
+                        )
+                        if (admin) {
+                            DropdownMenuItem(
+                                text = { Text("Edit Meeting") },
+                                onClick = { menuExpanded = false; onEdit() },
+                                leadingIcon = { Icon(Icons.Filled.Edit, null) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Attendance") },
+                                onClick = { menuExpanded = false; onAttendance() },
+                                leadingIcon = { Icon(Icons.Filled.CheckCircle, null) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Meeting Minutes") },
+                                onClick = { menuExpanded = false; onReport() },
+                                leadingIcon = { Icon(Icons.Filled.Description, null) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Meeting Poll") },
+                                onClick = { menuExpanded = false; onPoll() },
+                                leadingIcon = { Icon(Icons.Filled.HowToVote, null) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Meeting Fines") },
+                                onClick = { menuExpanded = false; onFines() },
+                                leadingIcon = { Icon(Icons.Filled.Payments, null) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Duplicate") },
+                                onClick = { menuExpanded = false; onDuplicate() },
+                                leadingIcon = { Icon(Icons.Filled.ContentCopy, null) }
+                            )
+                            HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { Text("Delete Meeting", color = MaterialTheme.colorScheme.error) },
+                                onClick = { menuExpanded = false; showDeleteConfirm = true },
+                                leadingIcon = { Icon(Icons.Filled.Delete, null, tint = MaterialTheme.colorScheme.error) }
+                            )
+                        }
+                    }
+                }
+            }
         }
+    }
+
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("Delete Meeting?") },
+            text = { Text("Are you sure you want to delete or cancel this meeting? Members will no longer see it.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showDeleteConfirm = false
+                        onDelete()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Delete Meeting")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) {
+                    Text("Keep Meeting")
+                }
+            }
+        )
     }
 }
 
-@Composable private fun StatusChip(status: String) { AssistChip(onClick = {}, label = { Text(status) }, leadingIcon = { Icon(Icons.Filled.CalendarMonth, null) }) }
+@Composable
+private fun StatusChip(status: String) {
+    val (bgColor, textColor) = when (status.lowercase()) {
+        "scheduled", "upcoming" -> Color(0xFF2563EB).copy(alpha = 0.12f) to Color(0xFF2563EB)
+        "ongoing", "in progress" -> Color(0xFFD97706).copy(alpha = 0.12f) to Color(0xFFD97706)
+        "completed" -> Color(0xFF059669).copy(alpha = 0.12f) to Color(0xFF059669)
+        "cancelled" -> Color(0xFFDC2626).copy(alpha = 0.12f) to Color(0xFFDC2626)
+        else -> Color(0xFF64748B).copy(alpha = 0.12f) to Color(0xFF64748B)
+    }
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = bgColor
+    ) {
+        Text(
+            text = status,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            color = textColor
+        )
+    }
+}
 
 @Composable
 private fun MeetingDetailsDialog(

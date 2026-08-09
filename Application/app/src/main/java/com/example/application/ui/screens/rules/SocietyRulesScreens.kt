@@ -245,8 +245,8 @@ fun ResidentSocietyRulesScreen(
     viewModel: ResidentSocietyRulesViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    val rules by remember(state.items, state.query, state.category, state.priority) {
-        derivedStateOf { state.items.filteredRules(state.copy(status = "published")) }
+    val rules by remember(state.items) {
+        derivedStateOf { state.items.filter { it.status == null || it.status.equals("published", ignoreCase = true) } }
     }
 
     RulesShell(
@@ -268,14 +268,6 @@ fun ResidentSocietyRulesScreen(
                     }
                 }
             }
-            RuleFilters(
-                state = state,
-                admin = false,
-                onQuery = viewModel::setQuery,
-                onCategory = viewModel::setCategory,
-                onPriority = viewModel::setPriority,
-                onStatus = {}
-            )
             StatusText(state.message, state.error)
         }
         if (rules.isEmpty()) {

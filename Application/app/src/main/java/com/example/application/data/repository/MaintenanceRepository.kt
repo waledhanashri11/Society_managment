@@ -20,6 +20,8 @@ import com.example.application.data.remote.dto.UpdatePaymentRequest
 import com.example.application.data.remote.dto.WriteOffRequest
 import com.example.application.data.remote.dto.LedgerWriteOffRequest
 import com.example.application.data.remote.dto.DetailedWriteOffRequest
+import com.example.application.data.remote.dto.GenerateBillingCycleRequest
+import com.example.application.data.remote.dto.GenerateBillingCycleResultDto
 import com.example.application.util.AppError
 import com.example.application.util.NetworkResult
 import com.google.gson.Gson
@@ -81,6 +83,8 @@ class MaintenanceRepository @Inject constructor(
         val lateFeeCall = async { safeApiCall { api.getLateFeeRule() } }
         val disputesCall = async { safeApiCall { api.getDisputes() } }
         val writeOffsCall = async { safeApiCall { api.getWriteOffHistory() } }
+        val billingCyclesCall = async { safeApiCall { api.getBillingCycles() } }
+        val nextCycleCall = async { safeApiCall { api.getNextBillingCycle() } }
 
         val dashboard = dashboardCall.await()
         val bills = billsCall.await()
@@ -92,6 +96,8 @@ class MaintenanceRepository @Inject constructor(
         val lateFee = lateFeeCall.await()
         val disputes = disputesCall.await()
         val writeOffs = writeOffsCall.await()
+        val billingCycles = billingCyclesCall.await()
+        val nextCycle = nextCycleCall.await()
 
         if (dashboard is NetworkResult.Error && bills is NetworkResult.Error) return@coroutineScope dashboard
         val allVerificationRows = mergeVerificationPayments(
@@ -110,6 +116,8 @@ class MaintenanceRepository @Inject constructor(
             lateFeeRule = (lateFee as? NetworkResult.Success)?.data,
             waivers = (writeOffs as? NetworkResult.Success)?.data.orEmpty(),
             disputes = (disputes as? NetworkResult.Success)?.data.orEmpty(),
+            billingCycles = (billingCycles as? NetworkResult.Success)?.data.orEmpty(),
+            nextBillingCycle = (nextCycle as? NetworkResult.Success)?.data,
             warnings = listOfNotNull(
                 if (dashboard is NetworkResult.Error) userMessageFor(dashboard.error) else null,
                 if (bills is NetworkResult.Error) userMessageFor(bills.error) else null,
@@ -224,6 +232,35 @@ class MaintenanceRepository @Inject constructor(
     suspend fun saveSettings(request: MaintenanceSettingsRequest) = messageCall { api.saveSettings(request) }
     suspend fun createManualBill(request: CreateManualBillRequestDto) = messageCall { api.createManualBill(request) }
     suspend fun saveLateFeeRule(request: LateFeeRuleRequest) = messageCall { api.saveLateFeeRule(request) }
+
+    suspend fun generateBillingCycle(
+        month: Int,
+        year: Int,
+        amount: String? = null,
+        dueDate: String? = null,
+        title: String? = null,
+        notes: String? = null
+    ): NetworkResult<String> {
+        return try {
+            val response = api.generateBillingCycle(GenerateBillingCycleRequest(month, year, amount, dueDate, title, notes))
+            if (response.isSuccessful && response.body()?.success != false) {
+                clearCaches()
+                val data = response.body()?.data
+                NetworkResult.Success(response.body()?.message ?: "Generated ${data?.generatedCount ?: 0} bills for ${data?.billingPeriodKey}")
+            } else {
+                val raw = response.errorBody()?.string()
+                NetworkResult.Error(mapHttpError(response.code(), parseErrorMessage(raw) ?: response.body()?.message))
+            }
+        } catch (_: UnknownHostException) {
+            NetworkResult.Error(AppError.NoInternet)
+        } catch (_: SocketTimeoutException) {
+            NetworkResult.Error(AppError.Timeout)
+        } catch (_: IOException) {
+            NetworkResult.Error(AppError.NoInternet)
+        } catch (_: Exception) {
+            NetworkResult.Error(AppError.Unknown("Unable to generate billing cycle. Please try again."))
+        }
+    }
     suspend fun createCategory(request: CategorySaveRequest) = messageCall { api.createCategory(request) }
     suspend fun updateCategory(id: String, request: CategorySaveRequest) = messageCall { api.updateCategory(id, request) }
     suspend fun deleteCategory(id: String) = messageCall { api.deleteCategory(id) }
@@ -403,6 +440,8 @@ data class AdminMaintenanceData(
     val lateFeeRule: com.example.application.data.remote.dto.LateFeeRuleDto?,
     val waivers: List<com.example.application.data.remote.dto.MaintenanceWaiverDto>,
     val disputes: List<com.example.application.data.remote.dto.MaintenanceDisputeDto>,
+    val billingCycles: List<com.example.application.data.remote.dto.BillingCycleDto> = emptyList(),
+    val nextBillingCycle: com.example.application.data.remote.dto.NextBillingCycleDto? = null,
     val warnings: List<String>
 )
 

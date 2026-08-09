@@ -33,6 +33,10 @@ import com.example.application.data.remote.dto.LedgerWriteOffRequest
 import com.example.application.data.remote.dto.DetailedWriteOffRequest
 import com.example.application.data.remote.dto.WriteOffResultDto
 import com.example.application.data.remote.dto.WriteOffReceiptDto
+import com.example.application.data.remote.dto.BillingCycleDto
+import com.example.application.data.remote.dto.NextBillingCycleDto
+import com.example.application.data.remote.dto.GenerateBillingCycleRequest
+import com.example.application.data.remote.dto.GenerateBillingCycleResultDto
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.DELETE
@@ -170,4 +174,14 @@ interface MaintenanceApiService {
 
     @GET("api/maintenance/disputes")
     suspend fun getDisputes(): Response<ApiResponse<List<MaintenanceDisputeDto>>>
+
+    // --- Billing Cycle Endpoints ---
+    @GET("api/maintenance/billing-cycles")
+    suspend fun getBillingCycles(): Response<ApiResponse<List<BillingCycleDto>>>
+
+    @GET("api/maintenance/billing-cycles/next")
+    suspend fun getNextBillingCycle(): Response<ApiResponse<NextBillingCycleDto>>
+
+    @POST("api/maintenance/billing-cycles/generate")
+    suspend fun generateBillingCycle(@Body request: GenerateBillingCycleRequest): Response<ApiResponse<GenerateBillingCycleResultDto>>
 }

@@ -61,7 +61,10 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -100,6 +103,17 @@ fun AdminDashboardScreen(
     val data = state.data
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+    var showLogoutDialog by remember { mutableStateOf(false) }
+
+    if (showLogoutDialog) {
+        com.example.application.ui.components.SocietyHubLogoutDialog(
+            onConfirm = {
+                showLogoutDialog = false
+                sessionViewModel.logout(onLogoutComplete)
+            },
+            onDismiss = { showLogoutDialog = false }
+        )
+    }
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -108,7 +122,7 @@ fun AdminDashboardScreen(
                 adminName = data?.adminName ?: "Admin",
                 onAction = { action ->
                     scope.launch { drawerState.close() }
-                    if (action == "Logout") sessionViewModel.logout(onLogoutComplete) else onQuickAction(action)
+                    if (action == "Logout") showLogoutDialog = true else onQuickAction(action)
                 }
             )
         }
@@ -143,7 +157,7 @@ fun AdminDashboardScreen(
                                 adminName = data?.adminName ?: "Admin",
                                 onMenu = { scope.launch { drawerState.open() } },
                                 onNotifications = { onQuickAction("Notifications") },
-                                onLogout = { sessionViewModel.logout(onLogoutComplete) }
+                                onLogout = { showLogoutDialog = true }
                             )
                         }
                         item {
@@ -173,8 +187,8 @@ private fun AdminHeader(adminName: String, onMenu: () -> Unit, onNotifications: 
             .padding(horizontal = 22.dp, vertical = 18.dp)
     ) {
         Column(modifier = Modifier.align(Alignment.TopStart).padding(top = 6.dp)) {
-            Text(stringResource(R.string.society_management), color = Color.White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            Text(stringResource(R.string.system), color = Color.White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Text("SocietyHub", color = Color.White, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+            Text(stringResource(R.string.app_subtitle), color = Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
         }
         Row(
             modifier = Modifier.align(Alignment.TopEnd),
@@ -222,7 +236,7 @@ private fun AdminDashboardBody(
         Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 24.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
             SectionHeader(stringResource(R.string.overview), stringResource(R.string.view_all)) { onQuickAction("Reports") }
             OverviewGrid(data, isLoading)
-            TodayWorkCard(data = data, isLoading = isLoading, onQuickAction = onQuickAction)
+            NeedsAttentionSection(data = data, isLoading = isLoading, onQuickAction = onQuickAction)
             Text(stringResource(R.string.quick_access), color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
@@ -288,46 +302,69 @@ private fun OverviewCard(item: OverviewItem, isLoading: Boolean, modifier: Modif
 }
 
 @Composable
-private fun TodayWorkCard(data: AdminDashboardData?, isLoading: Boolean, onQuickAction: (String) -> Unit) {
+private fun NeedsAttentionSection(data: AdminDashboardData?, isLoading: Boolean, onQuickAction: (String) -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
     ) {
         Column(
-            modifier = Modifier
-                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp))
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Text("Today's Work", color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Needs Attention",
+                    color = MaterialTheme.colorScheme.onSurface,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFFDC2626).copy(alpha = 0.12f)
+                ) {
+                    Text(
+                        text = "Priority",
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFFDC2626)
+                    )
+                }
+            }
+
             if (isLoading && data == null) {
                 repeat(3) { ActivitySkeletonRow() }
             } else {
                 DailyWorkRow(
-                    title = "Verify payments",
+                    title = "Payment Verifications",
                     value = "${data?.recentPayments?.count { !(it.paymentStatus).equals("Paid", true) && !(it.paymentStatus).equals("Approved", true) } ?: 0}",
-                    note = "resident proofs",
+                    note = "pending review",
                     icon = Icons.Filled.Payments,
                     tint = SocietyBlue40,
                     onClick = { onQuickAction("Dues & Payments") }
                 )
                 DailyWorkRow(
-                    title = "Follow up dues",
+                    title = "Pending Complaints",
+                    value = "${data?.recentComplaints?.count { !(it.status).equals("Resolved", true) } ?: 0}",
+                    note = "requires resolution",
+                    icon = Icons.Filled.WarningAmber,
+                    tint = Color(0xFFFF5A4F),
+                    onClick = { onQuickAction("Complaints") }
+                )
+                DailyWorkRow(
+                    title = "Overdue Dues",
                     value = "${data?.pendingBillCount ?: 0}",
                     note = "${data?.overdueBillCount ?: 0} overdue",
                     icon = Icons.Filled.Assignment,
                     tint = Color(0xFFFF8A00),
                     onClick = { onQuickAction("Maintenance") }
-                )
-                DailyWorkRow(
-                    title = "Resolve complaints",
-                    value = "${data?.recentComplaints?.count { !(it.status).equals("Resolved", true) } ?: 0}",
-                    note = "open complaints",
-                    icon = Icons.Filled.WarningAmber,
-                    tint = Color(0xFFFF5A4F),
-                    onClick = { onQuickAction("Complaints") }
                 )
             }
         }
@@ -343,26 +380,55 @@ private fun DailyWorkRow(
     tint: Color,
     onClick: () -> Unit
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .clickable(onClick = onClick)
-            .background(MaterialTheme.colorScheme.surface)
-            .padding(12.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(14.dp),
+        color = tint.copy(alpha = 0.08f),
+        border = BorderStroke(1.dp, tint.copy(alpha = 0.2f)),
+        modifier = Modifier.fillMaxWidth()
     ) {
-        Surface(modifier = Modifier.size(40.dp), shape = CircleShape, color = tint.copy(alpha = 0.12f)) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
+        Row(
+            modifier = Modifier.padding(14.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(CircleShape)
+                        .background(tint.copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(icon, contentDescription = title, tint = tint, modifier = Modifier.size(20.dp))
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+                    Text(note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = tint
+                ) {
+                    Text(
+                        text = value,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                }
+                Text("→", color = tint, fontWeight = FontWeight.Bold)
             }
         }
-        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(title, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
-            Text(note, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
-        }
-        Text(value, color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
     }
 }
 

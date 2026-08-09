@@ -11,15 +11,21 @@ object DashboardFormatters {
     private val dateFormatter = DateTimeFormatter.ofPattern("dd MMM yyyy", Locale("en", "IN"))
 
     fun money(value: BigDecimal?): String {
-        return currency.format(value ?: BigDecimal.ZERO)
+        val valDecimal = value ?: BigDecimal.ZERO
+        val isWhole = try { valDecimal.remainder(BigDecimal.ONE).compareTo(BigDecimal.ZERO) == 0 } catch (_: Exception) { true }
+        val fmt = (currency.clone() as NumberFormat).apply {
+            maximumFractionDigits = if (isWhole) 0 else 2
+            minimumFractionDigits = if (isWhole) 0 else 2
+        }
+        return fmt.format(valDecimal)
     }
 
     fun money(value: Double?): String {
-        return currency.format(value?.toBigDecimal() ?: BigDecimal.ZERO)
+        return money(value?.toBigDecimal())
     }
 
     fun money(value: String?): String {
-        return currency.format(value?.toBigDecimalOrNull() ?: BigDecimal.ZERO)
+        return money(value?.toBigDecimalOrNull())
     }
 
     fun date(value: String?): String {

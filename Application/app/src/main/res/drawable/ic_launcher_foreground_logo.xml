@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Adaptive icon foreground for SocietyHub.
+  Uses an inset so the logo sits within the 66dp safe zone (108dp total canvas).
+  The inset is ~14% on each side to give breathing room.
+-->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:insetLeft="14%"
+    android:insetTop="14%"
+    android:insetRight="14%"
+    android:insetBottom="14%">
+    <bitmap
+        android:src="@drawable/ic_societyhub_logo"
+        android:gravity="fill" />
+</inset>

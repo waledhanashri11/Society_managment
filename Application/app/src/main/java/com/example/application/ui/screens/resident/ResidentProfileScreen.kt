@@ -229,9 +229,21 @@ fun ResidentProfileScreen(
 
             LanguageSelectorCard()
 
+            var showLogoutDialog by remember { mutableStateOf(false) }
+
+            if (showLogoutDialog) {
+                com.example.application.ui.components.SocietyHubLogoutDialog(
+                    onConfirm = {
+                        showLogoutDialog = false
+                        sessionViewModel.logout(onLogoutComplete)
+                    },
+                    onDismiss = { showLogoutDialog = false }
+                )
+            }
+
             Spacer(Modifier.height(12.dp))
             OutlinedButton(
-                onClick = { sessionViewModel.logout(onLogoutComplete) },
+                onClick = { showLogoutDialog = true },
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
             ) {
@@ -240,6 +252,7 @@ fun ResidentProfileScreen(
         }
     }
 }
+
 
 
 @Composable

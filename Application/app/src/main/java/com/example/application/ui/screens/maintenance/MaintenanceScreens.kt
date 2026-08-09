@@ -1865,12 +1865,7 @@ private fun PaymentVerificationSection(
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        VerificationSummarySection(
-            pendingCount = pendingCount,
-            approvedTodayCount = approvedTodayCount,
-            rejectedTodayCount = rejectedTodayCount,
-            totalSubmittedAmount = totalSubmittedAmount
-        )
+        VerificationSummarySection(verifications = verifications)
 
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -2181,22 +2176,26 @@ private suspend fun savePaymentProof(context: Context, image: String, paymentId:
 
 @Composable
 private fun VerificationSummarySection(
-    pendingCount: Int,
-    approvedTodayCount: Int,
-    rejectedTodayCount: Int,
-    totalSubmittedAmount: BigDecimal
+    verifications: List<MaintenancePaymentVerificationDto>
 ) {
+    val totalPending = verifications.count { it.verificationStatus.isPaymentVerificationPending() }
+    val totalApproved = verifications.count { it.verificationStatus.normalizePaymentStatus() == "APPROVED" }
+    val totalRejected = verifications.count { it.verificationStatus.isPaymentVerificationRejected() }
+    val pendingAmount = verifications
+        .filter { it.verificationStatus.isPaymentVerificationPending() }
+        .fold(BigDecimal.ZERO) { sum, item -> sum + (item.submittedAmount?.toBigDecimalOrNull() ?: BigDecimal.ZERO) }
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            SummaryCard("Pending Review", pendingCount.toString(), MaterialTheme.colorScheme.secondaryContainer)
-            SummaryCard("Rejected Today", rejectedTodayCount.toString(), MaterialTheme.colorScheme.errorContainer)
+            SummaryCard("Pending Review", totalPending.toString(), MaterialTheme.colorScheme.secondaryContainer)
+            SummaryCard("Total Rejected", totalRejected.toString(), MaterialTheme.colorScheme.errorContainer)
         }
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            SummaryCard("Approved Today", approvedTodayCount.toString(), MaterialTheme.colorScheme.primaryContainer)
-            SummaryCard("Total Submitted", "\u20B9${totalSubmittedAmount.toInt()}", MaterialTheme.colorScheme.surfaceVariant)
+            SummaryCard("Total Approved", totalApproved.toString(), MaterialTheme.colorScheme.primaryContainer)
+            SummaryCard("Pending Amount", "\u20B9${DashboardFormatters.money(pendingAmount).removePrefix("₹")}", MaterialTheme.colorScheme.surfaceVariant)
         }
     }
 }
@@ -2944,155 +2943,179 @@ private sealed interface ResidentDialog {
 private fun MaintenanceDialogHost(dialog: MaintenanceDialog?, onDismiss: () -> Unit, viewModel: AdminMaintenanceViewModel) {
     val viewState by viewModel.state.collectAsStateWithLifecycle()
     when (dialog) {
-        MaintenanceDialog.Generate -> SimpleFormDialog("Generate Bills", onDismiss) {
-            val existingBills = viewState.data?.bills.orEmpty()
+        MaintenanceDialog.Generate -> SimpleFormDialog("Generate Billing Cycle", onDismiss) {
+            val nextCycle = viewState.data?.nextBillingCycle
+            val billingCycles = viewState.data?.billingCycles.orEmpty()
+            val settings = viewState.data?.settings
 
-            var latestMonth = 0
-            var latestYear = 0
-            var maxCombined = 0
-            existingBills.forEach { b ->
-                val m = b.month?.toIntOrNull() ?: monthNameToNumber(b.month) ?: 0
-                val y = b.year?.toIntOrNull() ?: 0
-                if (m in 1..12 && y >= 2000) {
-                    val combined = y * 12 + m
-                    if (combined > maxCombined) {
-                        maxCombined = combined
-                        latestMonth = m
-                        latestYear = y
+            val monthNames = listOf(
+                "January", "February", "March", "April", "May", "June",
+                "July", "August", "September", "October", "November", "December"
+            )
+
+            val nextMonth = nextCycle?.nextMonth ?: LocalDate.now().monthValue
+            val nextYear = nextCycle?.nextYear ?: LocalDate.now().year
+            val nextMonthName = monthNames.getOrNull(nextMonth - 1) ?: "Unknown"
+            val graceDays = nextCycle?.gracePeriodDays ?: settings?.graceDays?.toIntOrNull() ?: 10
+            val suggestedDueDate = nextCycle?.suggestedDueDate ?: ""
+            val penaltyStartDate = nextCycle?.suggestedPenaltyStartDate ?: ""
+            val isFirstCycle = nextCycle?.isFirstCycle == true
+
+            val lastGenMonth = nextCycle?.lastGeneratedMonth
+            val lastGenYear = nextCycle?.lastGeneratedYear
+
+            // Current / last cycle info
+            if (lastGenMonth != null && lastGenYear != null) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFFEFF6FF),
+                    border = BorderStroke(1.dp, Color(0xFFBFDBFE)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = "Last Generated Cycle",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFF1D4ED8),
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = "${monthNames.getOrNull(lastGenMonth - 1)} $lastGenYear",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color(0xFF1E40AF),
+                            fontWeight = FontWeight.Bold
+                        )
+                        if (billingCycles.isNotEmpty()) {
+                            val totalGenerated = billingCycles.firstOrNull()?.generatedBillCount ?: 0
+                            Text(
+                                text = "$totalGenerated bills generated • ${billingCycles.size} cycles total",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color(0xFF3B82F6)
+                            )
+                        }
+                    }
+                }
+            } else if (isFirstCycle) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFFF0FDF4),
+                    border = BorderStroke(1.dp, Color(0xFFBBF7D0)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(modifier = Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.Info, contentDescription = null, tint = Color(0xFF16A34A), modifier = Modifier.size(18.dp))
+                        Text(
+                            text = "First billing cycle — no previous cycles found.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color(0xFF166534)
+                        )
                     }
                 }
             }
 
-            val systemDate = LocalDate.now()
-            val defaultMonth = systemDate.monthValue
-            val defaultYear = systemDate.year
-
-            var month by remember { mutableStateOf("$defaultMonth") }
-            var year by remember { mutableStateOf("$defaultYear") }
-
-            val selM = month.toIntOrNull() ?: 0
-            val selY = year.toIntOrNull() ?: 0
-
-            val expectedMonth = if (latestMonth == 12) 1 else latestMonth + 1
-            val expectedYear = if (latestMonth == 12) latestYear + 1 else latestYear
-
-            val isAlreadyGenerated = existingBills.any { bill ->
-                (bill.month?.toIntOrNull() ?: monthNameToNumber(bill.month)) == selM &&
-                    bill.year?.toIntOrNull() == selY
-            }
-
-            val monthNamesList = listOf(
-                "1 - January", "2 - February", "3 - March", "4 - April",
-                "5 - May", "6 - June", "7 - July", "8 - August",
-                "9 - September", "10 - October", "11 - November", "12 - December"
-            )
-
-            var monthExpanded by remember { mutableStateOf(false) }
-            var yearExpanded by remember { mutableStateOf(false) }
-
+            // Next cycle to generate — locked, read-only
             Text(
-                text = "Select billing month and year to generate bills for all assigned resident flats.",
-                style = MaterialTheme.typography.bodyMedium,
+                text = "Next Billing Cycle",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = "The system enforces strict sequential billing. Only the next eligible month can be generated.",
+                style = MaterialTheme.typography.bodySmall,
                 color = Color(0xFF64748B)
             )
 
-            ExposedDropdownMenuBox(
-                expanded = monthExpanded,
-                onExpandedChange = { monthExpanded = !monthExpanded }
-            ) {
-                OutlinedTextField(
-                    value = monthNamesList.getOrNull(selM - 1) ?: "Select month",
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text("Billing month") },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(monthExpanded) },
-                    modifier = Modifier.fillMaxWidth().menuAnchor(),
-                    shape = RoundedCornerShape(12.dp)
-                )
-                ExposedDropdownMenu(
-                    expanded = monthExpanded,
-                    onDismissRequest = { monthExpanded = false }
-                ) {
-                    monthNamesList.forEachIndexed { idx, name ->
-                        DropdownMenuItem(
-                            text = { Text(name) },
-                            onClick = {
-                                month = "${idx + 1}"
-                                monthExpanded = false
-                            }
-                        )
-                    }
-                }
+            var customDueDate by remember { mutableStateOf(suggestedDueDate) }
+            var customGraceDays by remember { mutableStateOf(graceDays.toString()) }
+
+            LaunchedEffect(suggestedDueDate) {
+                if (customDueDate.isBlank()) customDueDate = suggestedDueDate
             }
 
-            val currentYearVal = LocalDate.now().year
-            val yearOptions = (currentYearVal - 2..currentYearVal + 3).map { it.toString() }
+            OutlinedTextField(
+                value = "$nextMonthName $nextYear",
+                onValueChange = {},
+                readOnly = true,
+                enabled = false,
+                label = { Text("Billing period (locked)") },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp)
+            )
 
-            ExposedDropdownMenuBox(
-                expanded = yearExpanded,
-                onExpandedChange = { yearExpanded = !yearExpanded }
-            ) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
-                    value = year,
-                    onValueChange = { year = it },
-                    label = { Text("Billing year") },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(yearExpanded) },
+                    value = customDueDate,
+                    onValueChange = { customDueDate = it },
+                    label = { Text("Due date") },
+                    placeholder = { Text("YYYY-MM-DD") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth().menuAnchor(),
-                    shape = RoundedCornerShape(12.dp)
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp),
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+                    supportingText = { Text("Format: YYYY-MM-DD", style = MaterialTheme.typography.labelSmall) }
                 )
-                ExposedDropdownMenu(
-                    expanded = yearExpanded,
-                    onDismissRequest = { yearExpanded = false }
-                ) {
-                    yearOptions.forEach { yrOpt ->
-                        DropdownMenuItem(
-                            text = { Text(yrOpt) },
-                            onClick = {
-                                year = yrOpt
-                                yearExpanded = false
-                            }
-                        )
-                    }
-                }
+                OutlinedTextField(
+                    value = customGraceDays,
+                    onValueChange = { if (it.length <= 2 && it.all { c -> c.isDigit() }) customGraceDays = it },
+                    label = { Text("Grace days") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp),
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+                    supportingText = { Text("Days after due", style = MaterialTheme.typography.labelSmall) }
+                )
             }
 
-            if (isAlreadyGenerated) {
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = Color(0xFFFFFBEB),
-                    border = BorderStroke(1.dp, Color(0xFFFDE68A)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalAlignment = Alignment.CenterVertically
+            if (customDueDate.isNotBlank() && customGraceDays.isNotBlank()) {
+                val graceDaysInt = customGraceDays.toIntOrNull() ?: graceDays
+                val computedPenaltyDate = try {
+                    val due = java.time.LocalDate.parse(customDueDate)
+                    due.plusDays(graceDaysInt.toLong()).toString()
+                } catch (e: Exception) { "" }
+                if (computedPenaltyDate.isNotBlank()) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color(0xFFFFFBEB),
+                        border = BorderStroke(1.dp, Color(0xFFFDE68A)),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Icon(Icons.Filled.Info, contentDescription = "Info", tint = Color(0xFFD97706))
-                        Text(
-                            text = "Some bills already exist for ${monthName(selM)} $selY. Existing bills will be skipped and only missing resident bills will be created.",
-                            color = Color(0xFF92400E),
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Medium
-                        )
+                        Row(modifier = Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Filled.Warning, contentDescription = null, tint = Color(0xFFD97706), modifier = Modifier.size(18.dp))
+                            Text(
+                                text = "Penalty applies from: $computedPenaltyDate",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Color(0xFF92400E),
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
                     }
                 }
             }
 
             Button(
                 onClick = {
-                    viewModel.generateBills(month = selM, year = selY)
+                    viewModel.generateBillingCycle(
+                        month = nextMonth,
+                        year = nextYear,
+                        dueDate = customDueDate.ifBlank { suggestedDueDate }
+                    )
                     onDismiss()
                 },
-                enabled = !viewState.submitting &&
-                    selM in 1..12 &&
-                    selY >= 2000,
-                modifier = Modifier.fillMaxWidth()
+                enabled = !viewState.submitting && nextMonth in 1..12 && nextYear >= 2000,
+                modifier = Modifier.fillMaxWidth(),
+                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF1D4ED8)
+                )
             ) {
-                Text(if (viewState.submitting) "Generating…" else "Generate Bills")
+                if (viewState.submitting) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                }
+                Text(if (viewState.submitting) "Generating…" else "Generate $nextMonthName $nextYear Bills")
             }
         }
+
         MaintenanceDialog.ManualBill -> SimpleFormDialog("Create Manual Bill", onDismiss) {
             val today = LocalDate.now()
             val settings = viewState.data?.settings

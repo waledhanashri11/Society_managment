@@ -125,6 +125,19 @@ class AdminMaintenanceViewModel @Inject constructor(
     ) = action {
         repository.generateBills(month, year, amount, dueDate, title, notes, residentId, residentIds, flatId, flatIds, wing, building, floor, flatTypeId, penaltyType, penaltyValue, penaltyGraceDays)
     }
+
+    fun generateBillingCycle(
+        month: Int,
+        year: Int,
+        amount: String? = null,
+        dueDate: String? = null,
+        title: String? = null,
+        notes: String? = null
+    ) = action {
+        repository.generateBillingCycle(month, year, amount, dueDate = dueDate, notes = notes, title = title)
+    }
+
+
     fun createManualBill(title: String, month: Int, year: Int, dueDate: String, amount: String, residentId: String?, flatId: String?) =
         action { repository.createMaintenance(MaintenanceCreateRequest(title, month, year, dueDate, amount, residentId, flatId)) }
     fun deleteBill(id: String) = action { repository.deleteMaintenance(id) }

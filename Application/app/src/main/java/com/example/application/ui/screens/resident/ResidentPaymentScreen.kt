@@ -185,6 +185,12 @@ fun ResidentPaymentScreen(
         ) {
             item { PaymentSummaryCard(bill) }
             if (submissionAccepted || bill.hasActivePaymentSubmission()) {
+                item {
+                    com.example.application.ui.components.SocietyHubSuccessCard(
+                        title = "Payment Submitted",
+                        subtitle = "Your payment has been submitted for verification."
+                    )
+                }
                 item { ExistingPaymentStatusCard(bill) }
             } else {
                 item { PaymentNoticeCard() }

@@ -4225,6 +4225,301 @@ module.exports = {
   getFlatCollectionReport,
   saveOpeningBalance,
   createManualBill,
-  applyPenaltyToBill
+  applyPenaltyToBill,
+  getNextBillingCycle,
+  getBillingCycles,
+  generateBillingCycle
+};
+
+// GET /api/maintenance/billing-cycles/next
+const getNextBillingCycle = async (req, res) => {
+  try {
+    const societyId = 1; // Single-society system
+    
+    // Get the latest GENERATED cycle for this society
+    const [latestCycles] = await promisePool.query(
+      `SELECT billing_month, billing_year, billing_status, billing_period_key
+       FROM maintenance_billing_cycles
+       WHERE society_id = ? AND billing_status = 'GENERATED'
+       ORDER BY billing_year DESC, billing_month DESC
+       LIMIT 1`,
+      [societyId]
+    );
+    
+    const [settings] = await promisePool.query('SELECT * FROM maintenance_settings ORDER BY id DESC LIMIT 1');
+    const s = settings[0] || {};
+    
+    if (!latestCycles.length) {
+      // No cycles yet - suggest current month
+      const now = new Date();
+      const nextMonth = now.getMonth() + 1;
+      const nextYear = now.getFullYear();
+      const dueDay = Number(s.due_day || 10);
+      const dueDate = `${nextYear}-${String(nextMonth).padStart(2,'0')}-${String(dueDay).padStart(2,'0')}`;
+      const graceDays = Number(s.grace_days || 10);
+      const penaltyDate = new Date(dueDate);
+      penaltyDate.setDate(penaltyDate.getDate() + graceDays);
+      return sendResponse(res, 200, 'Next billing cycle computed', {
+        nextMonth,
+        nextYear,
+        nextPeriodKey: `${nextYear}-${String(nextMonth).padStart(2,'0')}`,
+        suggestedDueDate: dueDate,
+        suggestedPenaltyStartDate: penaltyDate.toISOString().slice(0, 10),
+        gracePeriodDays: graceDays,
+        isFirstCycle: true,
+        lastGeneratedMonth: null,
+        lastGeneratedYear: null,
+        lastGeneratedPeriodKey: null
+      });
+    }
+    
+    const latest = latestCycles[0];
+    let nextMonth = latest.billing_month + 1;
+    let nextYear = latest.billing_year;
+    if (nextMonth > 12) { nextMonth = 1; nextYear += 1; }
+    
+    const dueDay = Number(s.due_day || 10);
+    const dueDate = `${nextYear}-${String(nextMonth).padStart(2,'0')}-${String(dueDay).padStart(2,'0')}`;
+    const graceDays = Number(s.grace_days || 10);
+    const penaltyDate = new Date(dueDate);
+    penaltyDate.setDate(penaltyDate.getDate() + graceDays);
+    
+    return sendResponse(res, 200, 'Next billing cycle computed', {
+      nextMonth,
+      nextYear,
+      nextPeriodKey: `${nextYear}-${String(nextMonth).padStart(2,'0')}`,
+      suggestedDueDate: dueDate,
+      suggestedPenaltyStartDate: penaltyDate.toISOString().slice(0, 10),
+      gracePeriodDays: graceDays,
+      isFirstCycle: false,
+      lastGeneratedMonth: latest.billing_month,
+      lastGeneratedYear: latest.billing_year,
+      lastGeneratedPeriodKey: latest.billing_period_key
+    });
+  } catch (error) {
+    console.error('Get next billing cycle error:', error);
+    return sendResponse(res, 500, 'Server error', null, [error.message]);
+  }
+};
+
+// GET /api/maintenance/billing-cycles
+const getBillingCycles = async (req, res) => {
+  try {
+    const societyId = 1;
+    const [rows] = await promisePool.query(
+      `SELECT id, society_id, billing_month, billing_year, billing_period_key,
+              billing_status, total_residents, generated_bill_count,
+              grace_period_days, due_date, penalty_start_date, settings_snapshot,
+              generated_by, created_at
+       FROM maintenance_billing_cycles
+       WHERE society_id = ?
+       ORDER BY billing_year DESC, billing_month DESC
+       LIMIT 36`,
+      [societyId]
+    );
+    return sendResponse(res, 200, 'Billing cycles fetched', rows);
+  } catch (error) {
+    console.error('Get billing cycles error:', error);
+    return sendResponse(res, 500, 'Server error', null, [error.message]);
+  }
+};
+
+// POST /api/maintenance/billing-cycles/generate
+const generateBillingCycle = async (req, res) => {
+  const connection = await promisePool.getConnection();
+  try {
+    const body = req.body || {};
+    const reqMonth = Number(body.month);
+    const reqYear = Number(body.year);
+    const societyId = 1;
+
+    if (!Number.isInteger(reqMonth) || reqMonth < 1 || reqMonth > 12 || !Number.isInteger(reqYear) || reqYear < 2000) {
+      return sendResponse(res, 400, 'Valid billing month and year are required');
+    }
+
+    await connection.beginTransaction();
+
+    // --- Sequential Month Validation ---
+    const [latestCycles] = await connection.query(
+      `SELECT billing_month, billing_year FROM maintenance_billing_cycles
+       WHERE society_id = ? AND billing_status = 'GENERATED'
+       ORDER BY billing_year DESC, billing_month DESC LIMIT 1 FOR UPDATE`,
+      [societyId]
+    );
+
+    if (latestCycles.length) {
+      const latest = latestCycles[0];
+      let expectedMonth = latest.billing_month + 1;
+      let expectedYear = latest.billing_year;
+      if (expectedMonth > 12) { expectedMonth = 1; expectedYear += 1; }
+
+      if (reqMonth !== expectedMonth || reqYear !== expectedYear) {
+        await connection.rollback();
+        const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+        if (reqYear * 12 + reqMonth < expectedYear * 12 + expectedMonth) {
+          const lm = monthNames[latest.billing_month - 1];
+          return sendResponse(res, 409,
+            `${monthNames[reqMonth-1]} ${reqYear} maintenance billing cycle has already been generated. The latest generated cycle is ${lm} ${latest.billing_year}.`);
+        }
+        return sendResponse(res, 409,
+          `Cannot skip months. ${monthNames[expectedMonth-1]} ${expectedYear} maintenance billing cycle has not been generated yet. Please generate it first.`);
+      }
+    }
+
+    // --- Idempotency: block duplicate generation ---
+    const [existing] = await connection.query(
+      `SELECT id FROM maintenance_billing_cycles
+       WHERE society_id = ? AND billing_year = ? AND billing_month = ?`,
+      [societyId, reqYear, reqMonth]
+    );
+    if (existing.length) {
+      await connection.rollback();
+      const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+      return sendResponse(res, 409,
+        `${monthNames[reqMonth-1]} ${reqYear} maintenance billing cycle has already been generated.`);
+    }
+
+    // --- Fetch & snapshot current settings ---
+    const [settingsRows] = await connection.query('SELECT * FROM maintenance_settings ORDER BY id DESC LIMIT 1');
+    const settings = settingsRows[0] || {};
+    const graceDays = Number(settings.grace_days || 10);
+    const dueDay = Number(settings.due_day || 10);
+
+    const requestedAmount = body.amount !== undefined && body.amount !== null && String(body.amount).trim() !== '' ? Number(body.amount) : null;
+    if (requestedAmount !== null && (!Number.isFinite(requestedAmount) || requestedAmount <= 0)) {
+      await connection.rollback();
+      return sendResponse(res, 400, 'Maintenance amount must be greater than zero');
+    }
+
+    const dueDateString = body.dueDate ? String(body.dueDate) : `${reqYear}-${String(reqMonth).padStart(2, '0')}-${String(dueDay).padStart(2, '0')}`;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dueDateString) || Number.isNaN(Date.parse(dueDateString))) {
+      await connection.rollback();
+      return sendResponse(res, 400, 'Due date must be a valid YYYY-MM-DD date');
+    }
+
+    const penaltyStartDate = new Date(dueDateString);
+    penaltyStartDate.setDate(penaltyStartDate.getDate() + graceDays);
+    const penaltyStartDateString = penaltyStartDate.toISOString().slice(0, 10);
+
+    const settingsSnapshot = JSON.stringify({
+      fixed_amount: settings.fixed_amount,
+      due_day: settings.due_day,
+      late_fee_type: settings.late_fee_type,
+      late_fee_value: settings.late_fee_value,
+      grace_days: settings.grace_days,
+      title: settings.title,
+      snapshotAt: new Date().toISOString()
+    });
+
+    // --- Fetch eligible residents ---
+    const where = ["u.role = 'resident'", "u.status = 'approved'", 'f.current_resident_id = u.id', "f.status = 'Occupied'", 'f.current_resident_id IS NOT NULL'];
+    const params = [];
+    const [candidates] = await connection.query(
+      `SELECT u.id AS resident_id, f.id AS flat_id, f.flat_type_id,
+              COALESCE(ft.default_maintenance_amount, f.maintenance_charge, s.fixed_amount, 0) AS default_amount
+       FROM users u JOIN flats f ON f.current_resident_id = u.id
+       LEFT JOIN flat_types ft ON ft.id = f.flat_type_id
+       LEFT JOIN (SELECT fixed_amount FROM maintenance_settings ORDER BY id DESC LIMIT 1) s ON TRUE
+       WHERE ${where.join(' AND ')}
+       ORDER BY f.wing, f.floor_no, f.flat_no, u.id`, params);
+
+    const totalResidents = candidates.length;
+    if (!totalResidents) {
+      await connection.rollback();
+      return sendResponse(res, 400, 'No active residents with assigned occupied flats found');
+    }
+
+    // --- Create billing cycle record ---
+    const [cycleResult] = await connection.query(
+      `INSERT INTO maintenance_billing_cycles
+         (society_id, billing_month, billing_year, billing_status, total_residents, generated_bill_count,
+          grace_period_days, due_date, penalty_start_date, settings_snapshot, generated_by)
+       VALUES (?, ?, ?, 'GENERATING', ?, 0, ?, ?, ?, ?::jsonb, ?)
+       RETURNING id`,
+      [societyId, reqMonth, reqYear, totalResidents, graceDays, dueDateString, penaltyStartDateString, settingsSnapshot, req.user?.id || null]
+    );
+    const cycleId = cycleResult.insertId || (Array.isArray(cycleResult) && cycleResult[0]?.id);
+
+    // --- Batch generate bills ---
+    const result = { generatedCount: 0, skippedCount: 0, duplicateCount: 0, failedCount: 0, failureReasons: [], generated: [], skipped: [] };
+    const penaltyType = settings.late_fee_type || null;
+    const penaltyValue = settings.late_fee_value || null;
+
+    for (const candidate of candidates) {
+      const baseAmount = requestedAmount ?? Number(candidate.default_amount || 0);
+      if (!Number.isFinite(baseAmount) || baseAmount <= 0) {
+        result.failedCount += 1;
+        result.failureReasons.push({ residentId: candidate.resident_id, flatId: candidate.flat_id, reason: 'No valid maintenance amount' });
+        continue;
+      }
+      try {
+        const [existingBill] = await connection.query(
+          'SELECT id FROM maintenance WHERE resident_id = ? AND flat_id = ? AND month = ? AND year = ? AND (bill_type IS NULL OR bill_type = \'maintenance\') LIMIT 1',
+          [candidate.resident_id, candidate.flat_id, reqMonth, reqYear]
+        );
+        if (existingBill.length) {
+          result.skippedCount += 1; result.duplicateCount += 1;
+          result.skipped.push({ residentId: candidate.resident_id, flatId: candidate.flat_id, reason: 'Bill already exists' });
+          continue;
+        }
+        const [insertResult] = await connection.query(
+          `INSERT INTO maintenance
+             (resident_id, flat_id, title, month, year, amount, penalty_amount, total_amount, paid_amount, remaining_amount,
+              status, due_date, created_at, updated_at, flat_type_id, default_maintenance_amount, final_maintenance_amount,
+              is_custom_amount, notes, penalty_type, penalty_value, penalty_grace_days, billing_cycle_id, bill_type)
+           VALUES (?, ?, ?, ?, ?, ?, 0, ?, 0, ?, 'Pending', ?, NOW(), NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, 'maintenance')
+           ON CONFLICT DO NOTHING RETURNING id`,
+          [candidate.resident_id, candidate.flat_id,
+           body.title || settings.title || 'Monthly Maintenance',
+           reqMonth, reqYear,
+           baseAmount, baseAmount, baseAmount,
+           dueDateString, candidate.flat_type_id || null,
+           Number(candidate.default_amount || 0), baseAmount,
+           requestedAmount !== null,
+           body.notes || null, penaltyType,
+           penaltyValue === null ? null : Number(penaltyValue),
+           graceDays, cycleId]
+        );
+        const billId = insertResult.insertId || insertResult.id;
+        if (!billId) {
+          result.skippedCount += 1; result.duplicateCount += 1;
+          result.skipped.push({ residentId: candidate.resident_id, flatId: candidate.flat_id, reason: 'Duplicate bill' });
+        } else {
+          result.generatedCount += 1;
+          result.generated.push({ id: billId, residentId: candidate.resident_id, flatId: candidate.flat_id });
+        }
+      } catch (candidateError) {
+        console.error('Generate billing cycle - candidate failed:', candidateError);
+        result.failedCount += 1;
+        result.failureReasons.push({ residentId: candidate.resident_id, flatId: candidate.flat_id, reason: candidateError.message || 'Failed to create bill' });
+      }
+    }
+
+    // --- Update billing cycle status and counts ---
+    const finalStatus = result.generatedCount > 0 ? 'GENERATED' : 'FAILED';
+    await connection.query(
+      `UPDATE maintenance_billing_cycles SET billing_status = ?, generated_bill_count = ?, updated_at = NOW() WHERE id = ?`,
+      [finalStatus, result.generatedCount, cycleId]
+    );
+
+    await connection.commit();
+
+    if (result.generatedCount === 0) {
+      return sendResponse(res, 409, 'No bills were generated. All matching residents were skipped or failed.', result);
+    }
+    return sendResponse(res, 201, 'Maintenance billing cycle generated successfully', {
+      ...result,
+      cycleId,
+      billingPeriodKey: `${reqYear}-${String(reqMonth).padStart(2,'0')}`,
+      dueDate: dueDateString,
+      penaltyStartDate: penaltyStartDateString
+    });
+  } catch (error) {
+    try { await connection.rollback(); } catch (_) { /* no-op */ }
+    console.error('Generate billing cycle error:', error);
+    return sendResponse(res, 500, 'Unable to generate billing cycle', null, [error.message]);
+  } finally {
+    connection.release();
+  }
 };
 

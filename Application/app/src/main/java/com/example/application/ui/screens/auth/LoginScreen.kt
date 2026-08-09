@@ -144,36 +144,28 @@ fun LoginScreen(
                 modifier = Modifier.padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text(
-                    text = "SOCIETY",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = primary,
-                    fontWeight = FontWeight.ExtraBold
+                androidx.compose.foundation.Image(
+                    painter = androidx.compose.ui.res.painterResource(R.drawable.ic_societyhub_logo),
+                    contentDescription = stringResource(R.string.app_name),
+                    modifier = Modifier
+                        .size(72.dp)
+                        .clip(RoundedCornerShape(18.dp))
                 )
+                Spacer(modifier = Modifier.height(10.dp))
                 Text(
-                    text = "MANAGEMENT SYSTEM",
-                    style = MaterialTheme.typography.labelLarge,
+                    text = stringResource(R.string.app_name),
+                    style = MaterialTheme.typography.headlineMedium,
                     color = primary,
                     fontWeight = FontWeight.Bold
                 )
-                BuildingIllustration(
-                    role = selectedRole,
-                    modifier = Modifier.padding(top = 10.dp, bottom = 8.dp)
+                Text(
+                    text = stringResource(R.string.app_subtitle),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = FontWeight.Medium
                 )
-                Box(
-                    modifier = Modifier
-                        .size(58.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(primary),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = if (selectedRole == AppRoleTheme.Admin) Icons.Filled.AdminPanelSettings else Icons.Filled.Person,
-                        contentDescription = stringResource(R.string.login_role),
-                        tint = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.size(30.dp)
-                    )
-                }
+                Spacer(modifier = Modifier.height(16.dp))
+
 
                 Text(
                     text = if (selectedRole == AppRoleTheme.Admin) stringResource(R.string.admin_login) else stringResource(R.string.resident_login),
