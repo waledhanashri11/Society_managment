@@ -1,4 +1,4 @@
-const { promisePool } = require('../config/database');
+const { promisePool, setRequestSocietyId } = require('../config/database');
 
 const parseOwnerId = (ownerId) => {
   if (ownerId === undefined || ownerId === null || ownerId === '') return null;
@@ -38,6 +38,14 @@ const getAllFlats = async (req, res) => {
 
 const getAvailableFlats = async (req, res) => {
   try {
+    const societyCode = String(req.query.societyCode || req.query.society_code || '').trim().toUpperCase();
+    if (!societyCode) return res.status(400).json({ message: 'Society code is required' });
+    const [societies] = await promisePool.query(
+      `SELECT id FROM societies WHERE UPPER(code) = ? AND status = 'active' LIMIT 1`,
+      [societyCode]
+    );
+    if (!societies.length) return res.status(404).json({ message: 'Society code is invalid or inactive' });
+    await setRequestSocietyId(societies[0].id);
     const [flats] = await promisePool.query(`
       SELECT f.id, f.flat_no, f.wing, f.floor_no, f.maintenance_charge, f.status,
              ft.name as flat_type_name

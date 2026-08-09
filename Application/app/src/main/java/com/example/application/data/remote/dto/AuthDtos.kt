@@ -13,7 +13,17 @@ data class RegisterRequest(
     val phone: String?,
     val password: String,
     val role: String = "resident",
+    @SerializedName("society_code") val societyCode: String,
     @SerializedName("flat_id") val flatId: String? = null
+)
+
+data class SocietyDto(
+    val id: String?,
+    val name: String?,
+    val code: String?,
+    @SerializedName("logo_url") val logoUrl: String?,
+    val address: String?,
+    @SerializedName("registration_number") val registrationNumber: String?
 )
 
 data class RegisterResponse(
@@ -42,7 +52,8 @@ data class MessageResponse(
 
 data class LoginResponse(
     val token: String?,
-    val user: UserDto?
+    val user: UserDto?,
+    val society: SocietyDto?
 )
 
 data class UserDto(
@@ -52,7 +63,9 @@ data class UserDto(
     val phone: String?,
     val role: String?,
     val status: String?,
-    @SerializedName("flat_id") val flatId: String?
+    @SerializedName("flat_id") val flatId: String?,
+    @SerializedName("society_id") val societyId: String?,
+    val society: SocietyDto?
 )
 
 data class ErrorResponse(

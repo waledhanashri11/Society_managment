@@ -32,6 +32,12 @@ class AdminManagementRepository @Inject constructor(
     private var cachedFlats: List<FlatDto>? = null
     private var cachedFlatTypes: List<FlatTypeDto>? = null
     private var cachedStaff: List<StaffDto>? = null
+    fun clearTenantCache() {
+        cachedUsers = null
+        cachedFlats = null
+        cachedFlatTypes = null
+        cachedStaff = null
+    }
 
     suspend fun getResidents(refresh: Boolean = false): NetworkResult<List<UserSummaryDto>> {
         cachedUsers?.takeIf { !refresh }?.let { users ->
@@ -86,7 +92,15 @@ class AdminManagementRepository @Inject constructor(
         }
     }
 
-    suspend fun getAvailableFlats(): NetworkResult<List<FlatDto>> = safeApiCall { api.getAvailableFlats() }
+    suspend fun getAvailableFlats(): NetworkResult<List<FlatDto>> {
+        return when (val result = getFlats(refresh = true)) {
+            is NetworkResult.Success -> NetworkResult.Success(
+                result.data.filter { it.ownerId.isNullOrBlank() && !it.status.equals("Occupied", ignoreCase = true) }
+            )
+            is NetworkResult.Error -> result
+            NetworkResult.Loading -> NetworkResult.Loading
+        }
+    }
 
     suspend fun getFlat(id: String): NetworkResult<FlatDto> = safeApiCall { api.getFlat(id) }
 

@@ -100,6 +100,7 @@ fun AdminDashboardScreen(
     sessionViewModel: SessionViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val session by sessionViewModel.session.collectAsStateWithLifecycle()
     val data = state.data
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -155,6 +156,7 @@ fun AdminDashboardScreen(
                         item {
                             AdminHeader(
                                 adminName = data?.adminName ?: "Admin",
+                                societyName = session?.societyName.orEmpty(),
                                 onMenu = { scope.launch { drawerState.open() } },
                                 onNotifications = { onQuickAction("Notifications") },
                                 onLogout = { showLogoutDialog = true }
@@ -177,7 +179,7 @@ fun AdminDashboardScreen(
 }
 
 @Composable
-private fun AdminHeader(adminName: String, onMenu: () -> Unit, onNotifications: () -> Unit, onLogout: () -> Unit) {
+private fun AdminHeader(adminName: String, societyName: String, onMenu: () -> Unit, onNotifications: () -> Unit, onLogout: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -188,7 +190,7 @@ private fun AdminHeader(adminName: String, onMenu: () -> Unit, onNotifications: 
     ) {
         Column(modifier = Modifier.align(Alignment.TopStart).padding(top = 6.dp)) {
             Text("SocietyHub", color = Color.White, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            Text(stringResource(R.string.app_subtitle), color = Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
+            Text(societyName.ifBlank { stringResource(R.string.app_subtitle) }, color = Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
         }
         Row(
             modifier = Modifier.align(Alignment.TopEnd),

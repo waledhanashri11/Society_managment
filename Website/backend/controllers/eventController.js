@@ -7,7 +7,7 @@ const ADMIN_ROLES = ['admin', 'committee'];
 const EVENT_STATUSES = ['Draft', 'Published', 'Cancelled', 'Completed'];
 const EVENT_AUDIENCES = ['All', 'Residents', 'Admins'];
 
-const saveEventImage = (base64Data) => {
+const saveEventImage = (base64Data, societyId) => {
   if (!base64Data) return null;
   const match = String(base64Data).match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
   if (!match) {
@@ -16,10 +16,10 @@ const saveEventImage = (base64Data) => {
 
   const extension = match[1].split('/')[1].replace('jpeg', 'jpg');
   const uniqueName = `event-${Date.now()}-${Math.round(Math.random() * 1e9)}.${extension}`;
-  const uploadDir = path.join(__dirname, '..', 'uploads', 'events');
+  const uploadDir = path.join(__dirname, '..', 'uploads', 'societies', String(societyId), 'events');
   fs.mkdirSync(uploadDir, { recursive: true });
   fs.writeFileSync(path.join(uploadDir, uniqueName), Buffer.from(match[2], 'base64'));
-  return `/uploads/events/${uniqueName}`;
+  return `/uploads/societies/${societyId}/events/${uniqueName}`;
 };
 
 const withPublicImageUrl = (req, event) => {
@@ -118,7 +118,7 @@ const createEvent = async (req, res) => {
     const validation = validateEventPayload(req.body);
     if (validation) return res.status(400).json({ message: validation });
 
-    const imagePath = saveEventImage(req.body.image);
+    const imagePath = saveEventImage(req.body.image, req.user.societyId);
     const [result] = await promisePool.query(
       `INSERT INTO events (title, description, event_date, start_time, end_time, venue, organizer, image_path, status, audience, created_by)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -156,7 +156,7 @@ const updateEvent = async (req, res) => {
     const validation = validateEventPayload(req.body);
     if (validation) return res.status(400).json({ message: validation });
 
-    const imagePath = req.body.image ? saveEventImage(req.body.image) : existing[0].image_path;
+    const imagePath = req.body.image ? saveEventImage(req.body.image, req.user.societyId) : existing[0].image_path;
     await promisePool.query(
       `UPDATE events
        SET title = ?, description = ?, event_date = ?, start_time = ?, end_time = ?, venue = ?, organizer = ?,

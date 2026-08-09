@@ -711,7 +711,8 @@ const approvePaymentWorkflow = async (req, res) => {
     const payment = paymentRows[0];
     const billId = payment.bill_id;
     const paymentAmount = num(payment.amount);
-    const receiptNo = payment.receipt_number || `REC-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const [societies] = await promisePool.query('SELECT code FROM societies WHERE id = ?', [req.user.societyId]);
+    const receiptNo = payment.receipt_number || `${societies[0]?.code || 'SOC'}-${new Date().getFullYear()}-${payment.id}`;
 
     // Update payment record
     await promisePool.query(
@@ -850,8 +851,9 @@ const getPaymentReceipt = async (req, res) => {
     }
 
     const r = rows[0];
+    const [societies] = await promisePool.query('SELECT name, code FROM societies WHERE id = ?', [req.user.societyId]);
     const receipt = {
-      societyName: 'Royal Palms Co-Operative Housing Society',
+      societyName: societies[0]?.name || 'Society',
       receiptNumber: r.receipt_number || `REC-${r.payment_id}`,
       residentName: r.resident_name || 'Resident',
       flatNumber: `${r.wing || ''}-${r.flat_no || ''}`.replace(/^-/, ''),

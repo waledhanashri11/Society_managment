@@ -28,6 +28,8 @@ class SessionPreferences @Inject constructor(
     val userEmail: Flow<String?> = readString(Keys.USER_EMAIL)
     val userPhone: Flow<String?> = readString(Keys.USER_PHONE)
     val userStatus: Flow<String?> = readString(Keys.USER_STATUS)
+    val societyId: Flow<String?> = readString(Keys.SOCIETY_ID)
+    val societyName: Flow<String?> = readString(Keys.SOCIETY_NAME)
     val hasToken: Flow<Boolean> = jwtToken.map { token -> !token.isNullOrBlank() }
 
     suspend fun saveJwtToken(token: String) {
@@ -67,6 +69,10 @@ class SessionPreferences @Inject constructor(
             preferences[Keys.USER_EMAIL] = session.email
             preferences[Keys.USER_ROLE] = session.role
             preferences[Keys.USER_STATUS] = session.status
+            preferences[Keys.SOCIETY_ID] = session.societyId
+            preferences[Keys.SOCIETY_NAME] = session.societyName
+            preferences[Keys.SOCIETY_CODE] = session.societyCode
+            session.societyLogoUrl?.let { preferences[Keys.SOCIETY_LOGO_URL] = it }
             session.phone?.let { preferences[Keys.USER_PHONE] = it }
         }
     }
@@ -85,7 +91,11 @@ class SessionPreferences @Inject constructor(
             email = preferences[Keys.USER_EMAIL].orEmpty(),
             phone = preferences[Keys.USER_PHONE],
             role = role,
-            status = preferences[Keys.USER_STATUS].orEmpty()
+            status = preferences[Keys.USER_STATUS].orEmpty(),
+            societyId = preferences[Keys.SOCIETY_ID].orEmpty(),
+            societyName = preferences[Keys.SOCIETY_NAME].orEmpty(),
+            societyCode = preferences[Keys.SOCIETY_CODE].orEmpty(),
+            societyLogoUrl = preferences[Keys.SOCIETY_LOGO_URL]
         )
         cachedSession = session
         return session
@@ -120,6 +130,10 @@ class SessionPreferences @Inject constructor(
         val USER_EMAIL = stringPreferencesKey("user_email")
         val USER_PHONE = stringPreferencesKey("user_phone")
         val USER_STATUS = stringPreferencesKey("user_status")
+        val SOCIETY_ID = stringPreferencesKey("society_id")
+        val SOCIETY_NAME = stringPreferencesKey("society_name")
+        val SOCIETY_CODE = stringPreferencesKey("society_code")
+        val SOCIETY_LOGO_URL = stringPreferencesKey("society_logo_url")
     }
 }
 
@@ -130,5 +144,9 @@ data class UserSession(
     val email: String,
     val phone: String?,
     val role: String,
-    val status: String
+    val status: String,
+    val societyId: String,
+    val societyName: String,
+    val societyCode: String,
+    val societyLogoUrl: String?
 )

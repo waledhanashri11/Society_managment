@@ -29,7 +29,16 @@ import retrofit2.HttpException
 class AuthRepository @Inject constructor(
     private val authApiService: AuthApiService,
     private val sessionPreferences: SessionPreferences,
-    private val gson: Gson
+    private val gson: Gson,
+    private val dashboardRepository: DashboardRepository,
+    private val maintenanceRepository: MaintenanceRepository,
+    private val adminManagementRepository: AdminManagementRepository,
+    private val communicationRepository: CommunicationRepository,
+    private val meetingsRepository: MeetingsRepository,
+    private val eventsRepository: EventsRepository,
+    private val reportRepository: ReportRepository,
+    private val nocRepository: NocRepository,
+    private val societyRulesRepository: SocietyRulesRepository
 ) {
     suspend fun login(email: String, password: String): NetworkResult<UserSession> {
         return try {
@@ -54,6 +63,7 @@ class AuthRepository @Inject constructor(
                     )
                 }
 
+                clearTenantCaches()
                 sessionPreferences.saveSession(session)
                 NetworkResult.Success(session)
             } else {
@@ -115,6 +125,10 @@ class AuthRepository @Inject constructor(
             sessionPreferences.clearSession()
             return null
         }
+        if (session.societyId.isBlank()) {
+            sessionPreferences.clearSession()
+            return null
+        }
 
         val role = session.role.lowercase()
         if (role != ROLE_ADMIN && role != ROLE_RESIDENT) {
@@ -126,7 +140,20 @@ class AuthRepository @Inject constructor(
     }
 
     suspend fun logout() {
+        clearTenantCaches()
         sessionPreferences.clearSession()
+    }
+
+    private fun clearTenantCaches() {
+        dashboardRepository.clearCache()
+        maintenanceRepository.clearCaches()
+        adminManagementRepository.clearTenantCache()
+        communicationRepository.clearTenantCache()
+        meetingsRepository.clearCache()
+        eventsRepository.clearCache()
+        reportRepository.clearTenantCache()
+        nocRepository.clearTenantCache()
+        societyRulesRepository.clearTenantCache()
     }
 
     private fun UserDto.toSession(token: String): UserSession {
@@ -137,7 +164,11 @@ class AuthRepository @Inject constructor(
             email = email.orEmpty(),
             phone = phone,
             role = role.orEmpty(),
-            status = status ?: "approved"
+            status = status ?: "approved",
+            societyId = societyId.orEmpty(),
+            societyName = society?.name.orEmpty(),
+            societyCode = society?.code.orEmpty(),
+            societyLogoUrl = society?.logoUrl
         )
     }
 

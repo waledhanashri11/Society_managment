@@ -33,6 +33,10 @@ class NocRepository @Inject constructor(
 ) {
     private var residentCache: List<NocRequestDto>? = null
     private var adminCache: List<NocRequestDto>? = null
+    fun clearTenantCache() {
+        residentCache = null
+        adminCache = null
+    }
 
     suspend fun getMyNocs(refresh: Boolean = false): NetworkResult<List<NocRequestDto>> {
         residentCache?.takeIf { !refresh }?.let { return NetworkResult.Success(it) }

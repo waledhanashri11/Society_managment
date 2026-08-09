@@ -96,7 +96,7 @@ router.get('/payments/pending-verification', auth, adminAuth, getPendingVerifica
 router.get('/payments/history', auth, getPaymentHistory);
 router.get('/payments/:id/receipt', auth, getPaymentReceipt);
 router.get('/payment-verifications', auth, adminAuth, getPaymentVerifications);
-router.get('/payments/:id/screenshot', getPaymentScreenshot);
+router.get('/payments/:id/screenshot', auth, getPaymentScreenshot);
 router.put('/payments/:id/approve', auth, adminAuth, approvePayment);
 router.put('/payments/:id/reject', auth, adminAuth, rejectPayment);
 router.put('/payments/:id', auth, adminAuth, updatePayment);

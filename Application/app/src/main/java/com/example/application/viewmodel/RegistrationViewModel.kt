@@ -24,14 +24,15 @@ class RegistrationViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(RegistrationUiState())
     val uiState: StateFlow<RegistrationUiState> = _uiState.asStateFlow()
 
-    init {
-        loadAvailableFlats()
-    }
-
     fun loadAvailableFlats() {
+        val societyCode = _uiState.value.societyCode.trim().uppercase()
+        if (societyCode.isBlank()) {
+            _uiState.update { it.copy(societyCodeError = "Enter your society code first.") }
+            return
+        }
         viewModelScope.launch {
             _uiState.update { it.copy(flatsLoading = true, errorMessage = null) }
-            when (val result = residentRepository.getAvailableFlats()) {
+            when (val result = residentRepository.getAvailableFlats(societyCode)) {
                 is NetworkResult.Success -> _uiState.update {
                     it.copy(flatsLoading = false, availableFlats = result.data)
                 }
@@ -51,6 +52,15 @@ class RegistrationViewModel @Inject constructor(
     fun updatePhone(value: String) = _uiState.update { it.copy(phone = value, phoneError = null, errorMessage = null) }
     fun updatePassword(value: String) = _uiState.update { it.copy(password = value, passwordError = null, errorMessage = null) }
     fun updateConfirmPassword(value: String) = _uiState.update { it.copy(confirmPassword = value, confirmPasswordError = null, errorMessage = null) }
+    fun updateSocietyCode(value: String) = _uiState.update {
+        it.copy(
+            societyCode = value.uppercase().filter(Char::isLetterOrDigit).take(24),
+            societyCodeError = null,
+            flatId = "",
+            availableFlats = emptyList(),
+            errorMessage = null
+        )
+    }
     fun updateFlatId(value: String) = _uiState.update { it.copy(flatId = value, flatError = null, errorMessage = null) }
 
     fun submit() {
@@ -60,6 +70,8 @@ class RegistrationViewModel @Inject constructor(
         val name = state.name.trim()
         val email = state.email.trim()
         val phone = state.phone.trim()
+        val societyCode = state.societyCode.trim().uppercase()
+        val societyCodeError = if (societyCode.isBlank()) "Society code is required." else null
         val nameError = if (name.isBlank()) "Full name is required." else null
         val emailError = when {
             email.isBlank() -> "Email is required."
@@ -81,12 +93,14 @@ class RegistrationViewModel @Inject constructor(
         }
         val flatError = null
 
-        if (listOf(nameError, emailError, phoneError, passwordError, confirmError, flatError).any { it != null }) {
+        if (listOf(societyCodeError, nameError, emailError, phoneError, passwordError, confirmError, flatError).any { it != null }) {
             _uiState.update {
                 it.copy(
                     name = name,
                     email = email,
                     phone = phone,
+                    societyCode = societyCode,
+                    societyCodeError = societyCodeError,
                     nameError = nameError,
                     emailError = emailError,
                     phoneError = phoneError,
@@ -106,6 +120,7 @@ class RegistrationViewModel @Inject constructor(
                 phone = phone.ifBlank { null },
                 password = state.password,
                 role = "resident",
+                societyCode = societyCode,
                 flatId = state.flatId.takeIf { it.isNotBlank() }
             )
 
@@ -131,6 +146,7 @@ class RegistrationViewModel @Inject constructor(
 }
 
 data class RegistrationUiState(
+    val societyCode: String = "",
     val name: String = "",
     val email: String = "",
     val phone: String = "",
@@ -141,6 +157,7 @@ data class RegistrationUiState(
     val flatsLoading: Boolean = false,
     val isSubmitting: Boolean = false,
     val nameError: String? = null,
+    val societyCodeError: String? = null,
     val emailError: String? = null,
     val phoneError: String? = null,
     val passwordError: String? = null,

@@ -55,6 +55,12 @@ class ReportRepository @Inject constructor(
     private var adminCacheKey: String? = null
     private var residentCache: ResidentReportsData? = null
     private var residentCacheKey: String? = null
+    fun clearTenantCache() {
+        adminCache = null
+        adminCacheKey = null
+        residentCache = null
+        residentCacheKey = null
+    }
 
     suspend fun getAdminReports(filter: ReportFilterState, refresh: Boolean = false): NetworkResult<AdminReportsData> {
         val key = filter.cacheKey()

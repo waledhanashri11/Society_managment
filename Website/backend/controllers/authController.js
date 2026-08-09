@@ -1,7 +1,7 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
-const { promisePool } = require('../config/database');
+const { promisePool, setRequestSocietyId } = require('../config/database');
 
 const hashResetToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
 const parseFlatId = (flatId) => {
@@ -73,10 +73,11 @@ const sendPasswordResetEmail = async ({ to, name, resetLink }) => {
 };
 
 const register = async (req, res) => {
-  const connection = await promisePool.getConnection();
+  let connection;
   try {
-    const { name, email, password, role, flat_id, phone } = req.body;
-    const userRole = role || 'resident';
+    const { name, email, password, flat_id, phone } = req.body;
+    const societyCode = String(req.body.societyCode || req.body.society_code || '').trim().toUpperCase();
+    const userRole = 'resident';
     const assignedFlatId = parseFlatId(flat_id);
 
     if (!name || !email || !password) {
@@ -86,6 +87,19 @@ const register = async (req, res) => {
     if (password.length < 6) {
       return res.status(400).json({ message: 'Password must be at least 6 characters' });
     }
+
+    if (!societyCode) {
+      return res.status(400).json({ message: 'Society code is required' });
+    }
+    const [societies] = await promisePool.query(
+      `SELECT id, name, code, logo_url FROM societies
+       WHERE UPPER(code) = ? AND status = 'active' LIMIT 1`,
+      [societyCode]
+    );
+    if (!societies.length) return res.status(404).json({ message: 'Society code is invalid or inactive' });
+    const society = societies[0];
+    await setRequestSocietyId(society.id);
+    connection = await promisePool.getConnection();
 
     await connection.beginTransaction();
 
@@ -146,7 +160,7 @@ const register = async (req, res) => {
     const userStatus = userRole === 'resident' ? 'pending' : 'approved';
     const token = userStatus === 'approved'
       ? jwt.sign(
-        { id: result.insertId, email, role: userRole },
+        { id: result.insertId, email, role: userRole, societyId: Number(society.id) },
         process.env.JWT_SECRET,
         { expiresIn: '24h' }
       )
@@ -162,15 +176,18 @@ const register = async (req, res) => {
         role: userRole,
         phone: phone || null,
         status: userStatus,
-        flat_id: userRole === 'resident' ? assignedFlatId : null
-      }
+        flat_id: userRole === 'resident' ? assignedFlatId : null,
+        society_id: Number(society.id),
+        society
+      },
+      society
     });
   } catch (error) {
-    await connection.rollback();
+    if (connection) await connection.rollback();
     console.error('Register error:', error);
     res.status(500).json({ message: 'Server error' });
   } finally {
-    connection.release();
+    if (connection) connection.release();
   }
 };
 
@@ -179,7 +196,10 @@ const login = async (req, res) => {
     const { email, password } = req.body;
 
     const [users] = await promisePool.query(
-      'SELECT * FROM users WHERE email = ?',
+      `SELECT u.*, s.name AS society_name, s.code AS society_code, s.logo_url AS society_logo_url,
+              s.address AS society_address, s.registration_number AS society_registration_number
+       FROM users u JOIN societies s ON s.id = u.society_id
+       WHERE LOWER(u.email) = LOWER(?) AND s.status = 'active'`,
       [email]
     );
 
@@ -204,7 +224,7 @@ const login = async (req, res) => {
     }
 
     const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role },
+      { id: user.id, email: user.email, role: user.role, societyId: Number(user.society_id) },
       process.env.JWT_SECRET,
       { expiresIn: '24h' }
     );
@@ -218,7 +238,24 @@ const login = async (req, res) => {
         phone: user.phone || null,
         role: user.role,
         status: user.status || 'approved',
-        flat_id: user.flat_id || null
+        flat_id: user.flat_id || null,
+        society_id: Number(user.society_id),
+        society: {
+          id: Number(user.society_id),
+          name: user.society_name,
+          code: user.society_code,
+          logo_url: user.society_logo_url,
+          address: user.society_address,
+          registration_number: user.society_registration_number
+        }
+      },
+      society: {
+        id: Number(user.society_id),
+        name: user.society_name,
+        code: user.society_code,
+        logo_url: user.society_logo_url,
+        address: user.society_address,
+        registration_number: user.society_registration_number
       }
     });
   } catch (error) {
@@ -278,7 +315,7 @@ const forgotPassword = async (req, res) => {
     }
 
     const [users] = await promisePool.query(
-      'SELECT id, name, email FROM users WHERE email = ?',
+      'SELECT id, name, email, society_id FROM users WHERE LOWER(email) = LOWER(?)',
       [email]
     );
 
@@ -287,6 +324,7 @@ const forgotPassword = async (req, res) => {
     }
 
     const user = users[0];
+    await setRequestSocietyId(user.society_id);
     const rawToken = crypto.randomBytes(32).toString('hex');
     const tokenHash = hashResetToken(rawToken);
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';

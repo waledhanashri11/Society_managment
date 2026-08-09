@@ -41,6 +41,12 @@ const getSettings = async (req, res) => {
       'SELECT id, name, email, role, profile_picture FROM users WHERE id = ?',
       [req.user.id]
     );
+    const [societies] = await promisePool.query(
+      `SELECT id, name, code, logo_url, address, city, state, pincode,
+              contact_email, contact_phone, registration_number, status
+       FROM societies WHERE id = ?`,
+      [req.user.societyId]
+    );
 
     const savedSettings = parseSettingValue(settingsRows[0]?.setting_value);
     const currentUser = users[0] || {};
@@ -50,7 +56,9 @@ const getSettings = async (req, res) => {
       ...savedSettings,
       adminName: currentUser.name || DEFAULT_SETTINGS.adminName,
       email: currentUser.email || DEFAULT_SETTINGS.email,
-      profilePicture: currentUser.profile_picture || ''
+      profilePicture: currentUser.profile_picture || '',
+      societyName: societies[0]?.name || savedSettings.societyName || '',
+      society: societies[0] || null
     });
   } catch (error) {
     console.error('Get settings error:', error);
@@ -80,7 +88,7 @@ const updateSettings = async (req, res) => {
     await connection.query(
       `INSERT INTO app_settings (setting_key, setting_value, updated_by)
        VALUES (?, ?, ?)
-       ON CONFLICT (setting_key)
+       ON CONFLICT (society_id, setting_key)
        DO UPDATE SET setting_value = EXCLUDED.setting_value, updated_by = EXCLUDED.updated_by, updated_at = NOW()`,
       [`admin_settings_${req.user.id}`, JSON.stringify(incomingSettings), req.user.id]
     );
@@ -89,6 +97,14 @@ const updateSettings = async (req, res) => {
       await connection.query(
         'UPDATE users SET name = ?, email = ?, profile_picture = ? WHERE id = ? AND role = ?',
         [adminName, email, profilePicture || null, req.user.id, 'admin']
+      );
+    }
+    if (incomingSettings.societyName || incomingSettings.address) {
+      await connection.query(
+        `UPDATE societies
+         SET name = COALESCE(NULLIF(?, ''), name), address = COALESCE(NULLIF(?, ''), address), updated_at = NOW()
+         WHERE id = ?`,
+        [incomingSettings.societyName || null, incomingSettings.address || null, req.user.societyId]
       );
     }
 
@@ -129,8 +145,14 @@ const getPaymentSettings = async (req, res) => {
       savedSettings = parseSettingValue(fallbackRows[0]?.setting_value);
     }
 
+    const [societies] = await promisePool.query(
+      'SELECT name, code, logo_url FROM societies WHERE id = ?',
+      [req.user.societyId]
+    );
     res.json({
-      societyName: savedSettings.societyName || DEFAULT_SETTINGS.societyName,
+      societyName: societies[0]?.name || savedSettings.societyName || DEFAULT_SETTINGS.societyName,
+      societyCode: societies[0]?.code || '',
+      societyLogoUrl: buildPublicFileUrl(req, societies[0]?.logo_url) || '',
       paymentQrImage: buildPublicFileUrl(req, savedSettings.paymentQrImage) || '',
       paymentUpiId: savedSettings.paymentUpiId || '',
       paymentNote: savedSettings.paymentNote || DEFAULT_SETTINGS.paymentNote
@@ -141,4 +163,41 @@ const getPaymentSettings = async (req, res) => {
   }
 };
 
-module.exports = { getSettings, updateSettings, getPaymentSettings };
+const getSocietyProfile = async (req, res) => {
+  try {
+    const [rows] = await promisePool.query(
+      `SELECT id, name, code, logo_url, address, city, state, pincode,
+              contact_email, contact_phone, registration_number, status, created_at, updated_at
+       FROM societies WHERE id = ?`,
+      [req.user.societyId]
+    );
+    if (!rows.length) return res.status(404).json({ message: 'Society profile not found' });
+    res.json(rows[0]);
+  } catch (error) {
+    console.error('Get society profile error:', error);
+    res.status(500).json({ message: 'Unable to fetch society profile' });
+  }
+};
+
+const updateSocietyProfile = async (req, res) => {
+  try {
+    const allowed = ['name','logo_url','address','city','state','pincode','contact_email','contact_phone','registration_number'];
+    const values = allowed.map((key) => req.body[key] ?? req.body[key.replace(/_([a-z])/g, (_, c) => c.toUpperCase())] ?? null);
+    const [result] = await promisePool.query(
+      `UPDATE societies SET
+         name = COALESCE(?, name), logo_url = COALESCE(?, logo_url), address = COALESCE(?, address),
+         city = COALESCE(?, city), state = COALESCE(?, state), pincode = COALESCE(?, pincode),
+         contact_email = COALESCE(?, contact_email), contact_phone = COALESCE(?, contact_phone),
+         registration_number = COALESCE(?, registration_number), updated_at = NOW()
+       WHERE id = ?`,
+      [...values, req.user.societyId]
+    );
+    if (!result.affectedRows) return res.status(404).json({ message: 'Society profile not found' });
+    return getSocietyProfile(req, res);
+  } catch (error) {
+    console.error('Update society profile error:', error);
+    res.status(500).json({ message: 'Unable to update society profile' });
+  }
+};
+
+module.exports = { getSettings, updateSettings, getPaymentSettings, getSocietyProfile, updateSocietyProfile };

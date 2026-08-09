@@ -67,7 +67,11 @@ const maintenanceReportColumns = async () => {
 const getDashboard = async (req, res) => {
   try {
     const userId = req.user.id;
-    const societyName = process.env.SOCIETY_NAME || 'Green Valley Society';
+    const [societyRows] = await promisePool.query(
+      'SELECT name FROM societies WHERE id = ?',
+      [req.user.societyId]
+    );
+    const societyName = societyRows[0]?.name || 'Society';
 
     try {
       const { reconcilePaidPayments } = require('./maintenanceController');

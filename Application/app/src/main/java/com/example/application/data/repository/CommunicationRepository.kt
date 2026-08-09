@@ -33,6 +33,12 @@ class CommunicationRepository @Inject constructor(
     private var residentComplaintsCache: List<ComplaintDto>? = null
     private var noticesCache: List<NoticeDto>? = null
     private var notificationsCache: AdminNotificationsResponse? = null
+    fun clearTenantCache() {
+        adminComplaintsCache = null
+        residentComplaintsCache = null
+        noticesCache = null
+        notificationsCache = null
+    }
 
     suspend fun getAdminComplaints(refresh: Boolean = false): NetworkResult<List<ComplaintDto>> {
         adminComplaintsCache?.takeIf { !refresh }?.let { return NetworkResult.Success(it) }

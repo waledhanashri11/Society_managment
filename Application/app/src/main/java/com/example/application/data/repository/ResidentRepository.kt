@@ -26,8 +26,8 @@ class ResidentRepository @Inject constructor(
     private val sessionPreferences: SessionPreferences,
     private val gson: Gson
 ) {
-    suspend fun getAvailableFlats(): NetworkResult<List<FlatDto>> {
-        return safeApiCall { flatApiService.getAvailableFlats() }
+    suspend fun getAvailableFlats(societyCode: String): NetworkResult<List<FlatDto>> {
+        return safeApiCall { flatApiService.getAvailableFlats(societyCode) }
     }
 
     suspend fun getMembers(): NetworkResult<List<com.example.application.data.remote.dto.MembersMaintenanceReportDto>> =

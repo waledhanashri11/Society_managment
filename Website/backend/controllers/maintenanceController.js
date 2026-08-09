@@ -1899,7 +1899,7 @@ const createPayment = async (req, res) => {
       }
     }
 
-    const screenshotPath = savePaymentScreenshot(screenshot || screenshotUrl);
+    const screenshotPath = savePaymentScreenshot(screenshot || screenshotUrl, req.user.societyId);
     const paidAt = paymentDate || new Date();
     const paymentsHasResidentId = await hasTableColumn('payments', 'resident_id');
     const paymentsHasPaymentProof = await hasTableColumn('payments', 'payment_proof');
@@ -1967,7 +1967,7 @@ const createPayment = async (req, res) => {
   }
 };
 
-const savePaymentScreenshot = (imageData) => {
+const savePaymentScreenshot = (imageData, societyId) => {
   if (!imageData) return null;
   if (!String(imageData).startsWith('data:image/')) return imageData;
 
@@ -1975,12 +1975,12 @@ const savePaymentScreenshot = (imageData) => {
   if (!match) return null;
 
   const extension = match[1].includes('png') ? 'png' : match[1].includes('webp') ? 'webp' : 'jpg';
-  const uploadDir = path.join(__dirname, '..', 'uploads', 'payment-screenshots');
+  const uploadDir = path.join(__dirname, '..', 'uploads', 'societies', String(societyId), 'payment-screenshots');
   fs.mkdirSync(uploadDir, { recursive: true });
 
   const fileName = `payment-${Date.now()}-${Math.round(Math.random() * 1e9)}.${extension}`;
   fs.writeFileSync(path.join(uploadDir, fileName), Buffer.from(match[2], 'base64'));
-  return `/uploads/payment-screenshots/${fileName}`;
+  return `/uploads/societies/${societyId}/payment-screenshots/${fileName}`;
 };
 
 const recordPaymentStatusHistory = async (connection, { paymentId, billId, previousStatus, newStatus, changedBy, changedByName, reason, comment }) => {
@@ -2017,7 +2017,8 @@ const approvePayment = async (req, res) => {
       await connection.rollback();
       return sendResponse(res, 400, `Payment has already been ${String(payment.payment_status).toLowerCase()}`);
     }
-    const receiptNumber = payment.receipt_number || `RCP-${payment.bill_id}-${Date.now()}`;
+    const [societies] = await connection.query('SELECT code FROM societies WHERE id = ?', [req.user.societyId]);
+    const receiptNumber = payment.receipt_number || `${societies[0]?.code || 'SOC'}-${new Date().getFullYear()}-${payment.id}`;
     const adminName = req.user?.name || 'Admin';
 
     const paymentsHasApprovedBy = await hasTableColumn('payments', 'approved_by');
@@ -4231,7 +4232,7 @@ module.exports = {
 // GET /api/maintenance/billing-cycles/next
 const getNextBillingCycle = async (req, res) => {
   try {
-    const societyId = 1; // Single-society system
+    const societyId = req.user.societyId;
     
     // Get the latest GENERATED cycle for this society
     const [latestCycles] = await promisePool.query(
@@ -4302,7 +4303,7 @@ const getNextBillingCycle = async (req, res) => {
 // GET /api/maintenance/billing-cycles
 const getBillingCycles = async (req, res) => {
   try {
-    const societyId = 1;
+    const societyId = req.user.societyId;
     const [rows] = await promisePool.query(
       `SELECT id, society_id, billing_month, billing_year, billing_period_key,
               billing_status, total_residents, generated_bill_count,
@@ -4328,7 +4329,7 @@ const generateBillingCycle = async (req, res) => {
     const body = req.body || {};
     const reqMonth = Number(body.month);
     const reqYear = Number(body.year);
-    const societyId = 1;
+    const societyId = req.user.societyId;
 
     if (!Number.isInteger(reqMonth) || reqMonth < 1 || reqMonth > 12 || !Number.isInteger(reqYear) || reqYear < 2000) {
       return sendResponse(res, 400, 'Valid billing month and year are required');

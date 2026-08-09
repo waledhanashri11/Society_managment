@@ -3,6 +3,7 @@ const cors = require('cors');
 const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 const { initDatabase } = require('./config/database');
+const { auth, databaseContext, publicAuthDatabaseContext, tenantUploadAccess } = require('./middleware/auth');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -40,7 +41,8 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use(databaseContext);
+app.use('/uploads', auth, tenantUploadAccess, express.static(path.join(__dirname, 'uploads')));
 
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/users');
@@ -77,7 +79,7 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/rules', ruleRoutes);
 app.use('/api/events', eventRoutes);
-app.get('/share/noc/:token', nocController.getSharedPdf);
+app.get('/share/noc/:token', publicAuthDatabaseContext, nocController.getSharedPdf);
 app.use('/api/noc', nocRoutes);
 
 app.get('/api/health', (req, res) => {
@@ -97,6 +99,13 @@ app.get('/', (req, res) => {
 const PORT = process.env.PORT || 5000;
 
 const startServer = async () => {
+  try {
+    await initDatabase();
+  } catch (error) {
+    console.error('Database initialization failed; server will not accept requests:', error.message);
+    throw error;
+  }
+
   const server = app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
   });
@@ -106,16 +115,10 @@ const startServer = async () => {
       console.error(`Port ${PORT} is already in use. Stop the existing backend process or run this server on another port.`);
       process.exit(1);
     }
-
     console.error('Server error:', error);
     process.exit(1);
   });
-
-  try {
-    await initDatabase();
-  } catch (error) {
-    console.warn('Database initialization warning (server continues running):', error.message);
-  }
+  return server;
 };
 
 if (require.main === module) {

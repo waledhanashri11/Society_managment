@@ -2,6 +2,9 @@ const path = require('path');
 const dotenv = require('dotenv');
 const { Pool } = require('pg');
 const dns = require('dns');
+const { AsyncLocalStorage } = require('async_hooks');
+
+const requestDatabaseStorage = new AsyncLocalStorage();
 
 const originalLookup = dns.lookup;
 const resolver = new dns.Resolver();
@@ -51,7 +54,7 @@ const useSsl = process.env.DATABASE_SSL !== 'false';
 const pool = new Pool({
   connectionString,
   ssl: useSsl ? { rejectUnauthorized: false } : false,
-  max: 5,
+  max: Number(process.env.DATABASE_POOL_MAX || 20),
   idleTimeoutMillis: 5000,
   connectionTimeoutMillis: 10000,
   keepAlive: true,
@@ -107,12 +110,101 @@ const runQuery = async (executor, sql, values = []) => {
   return [result.rows, result.fields];
 };
 
+const contextExecutor = () => {
+  const context = requestDatabaseStorage.getStore();
+  return context?.client
+    ? (queryText, queryValues) => context.client.query(queryText, queryValues)
+    : (queryText, queryValues) => pool.query(queryText, queryValues);
+};
+
+const configureContext = async (client, { societyId = null, bypass = false } = {}) => {
+  await client.query('SET ROLE society_tenant_app');
+  await client.query("SELECT set_config('app.tenant_bypass', $1, false)", [bypass ? 'on' : 'off']);
+  await client.query("SELECT set_config('app.current_society_id', $1, false)", [societyId == null ? '' : String(societyId)]);
+};
+
+const runWithRequestDatabaseContext = async (options, req, res, next) => {
+  const existing = requestDatabaseStorage.getStore();
+  if (existing?.client) {
+    if (options?.bypass === true) {
+      existing.societyId = null;
+      existing.bypass = true;
+      await configureContext(existing.client, existing);
+    } else if (options?.societyId != null) {
+      existing.societyId = Number(options.societyId);
+      existing.bypass = false;
+      await configureContext(existing.client, existing);
+    }
+    return next();
+  }
+
+  const client = await pool.connect();
+  const context = {
+    client,
+    societyId: options?.societyId == null ? null : Number(options.societyId),
+    bypass: options?.bypass === true,
+    transactionDepth: 0,
+    cleaned: false
+  };
+  await configureContext(client, context);
+
+  const cleanup = async () => {
+    if (context.cleaned) return;
+    context.cleaned = true;
+    try {
+      if (context.transactionDepth > 0) await client.query('ROLLBACK');
+      await client.query('RESET app.current_society_id');
+      await client.query('RESET app.tenant_bypass');
+      await client.query('RESET ROLE');
+    } catch (error) {
+      console.error('Tenant database context cleanup failed:', error.message);
+    } finally {
+      client.release();
+    }
+  };
+
+  res.once('finish', cleanup);
+  res.once('close', cleanup);
+  requestDatabaseStorage.run(context, next);
+};
+
+const setRequestSocietyId = async (societyId) => {
+  const context = requestDatabaseStorage.getStore();
+  if (!context?.client) throw new Error('No request database context is active');
+  const value = Number(societyId);
+  if (!Number.isInteger(value) || value <= 0) throw new Error('A valid society id is required');
+  context.societyId = value;
+  context.bypass = false;
+  await configureContext(context.client, context);
+};
+
 const promisePool = {
   async query(sql, values = []) {
-    return runQuery((queryText, queryValues) => pool.query(queryText, queryValues), sql, values);
+    return runQuery(contextExecutor(), sql, values);
   },
 
   async getConnection() {
+    const requestContext = requestDatabaseStorage.getStore();
+    if (requestContext?.client) {
+      return {
+        async query(sql, values = []) {
+          return runQuery((queryText, queryValues) => requestContext.client.query(queryText, queryValues), sql, values);
+        },
+        async beginTransaction() {
+          await requestContext.client.query('BEGIN');
+          requestContext.transactionDepth += 1;
+        },
+        async commit() {
+          await requestContext.client.query('COMMIT');
+          requestContext.transactionDepth = Math.max(0, requestContext.transactionDepth - 1);
+        },
+        async rollback() {
+          await requestContext.client.query('ROLLBACK');
+          requestContext.transactionDepth = Math.max(0, requestContext.transactionDepth - 1);
+        },
+        release() { /* request middleware owns this connection */ },
+      };
+    }
     const client = await pool.connect();
     return {
       async query(sql, values = []) {
@@ -155,6 +247,9 @@ const initDatabase = async () => {
   const client = await pool.connect();
 
   try {
+    // Migrations are trusted system operations and must remain able to evolve
+    // tenant-protected tables after FORCE ROW LEVEL SECURITY is enabled.
+    await client.query("SELECT set_config('app.tenant_bypass', 'on', false)");
     await client.query(`
       CREATE TABLE IF NOT EXISTS schema_migrations (
         filename TEXT PRIMARY KEY,
@@ -207,4 +302,11 @@ const initDatabase = async () => {
   }
 };
 
-module.exports = { pool, promisePool, initDatabase };
+module.exports = {
+  pool,
+  promisePool,
+  initDatabase,
+  runWithRequestDatabaseContext,
+  setRequestSocietyId,
+  requestDatabaseStorage
+};

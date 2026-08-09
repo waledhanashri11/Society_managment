@@ -64,6 +64,22 @@ fun RegisterScreen(
             return@AuthScaffold
         }
 
+        OutlinedTextField(
+            value = state.societyCode,
+            onValueChange = viewModel::updateSocietyCode,
+            label = { Text("Society Code") },
+            isError = state.societyCodeError != null,
+            supportingText = state.societyCodeError?.let { { Text(it) } },
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !state.isSubmitting,
+            singleLine = true
+        )
+        TextButton(
+            onClick = viewModel::loadAvailableFlats,
+            enabled = !state.isSubmitting && state.societyCode.isNotBlank()
+        ) { Text("Verify Society & Load Flats") }
+        Spacer(Modifier.height(10.dp))
+
         OutlinedTextField(value = state.name, onValueChange = viewModel::updateName, label = { Text("Full Name") }, isError = state.nameError != null, supportingText = state.nameError?.let { { Text(it) } }, modifier = Modifier.fillMaxWidth(), enabled = !state.isSubmitting)
         Spacer(Modifier.height(10.dp))
         OutlinedTextField(value = state.email, onValueChange = viewModel::updateEmail, label = { Text("Email") }, isError = state.emailError != null, supportingText = state.emailError?.let { { Text(it) } }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email), enabled = !state.isSubmitting)

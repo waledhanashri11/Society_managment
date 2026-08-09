@@ -27,6 +27,11 @@ class SocietyRulesRepository @Inject constructor(
     private var adminRulesCache: List<SocietyRuleDto>? = null
     private var residentRulesCache: List<SocietyRuleDto>? = null
     private val reportCache = mutableMapOf<String, SocietyRuleAcknowledgementReportDto>()
+    fun clearTenantCache() {
+        adminRulesCache = null
+        residentRulesCache = null
+        reportCache.clear()
+    }
 
     suspend fun getAdminRules(refresh: Boolean = false): NetworkResult<List<SocietyRuleDto>> {
         adminRulesCache?.takeIf { !refresh }?.let { return NetworkResult.Success(it) }

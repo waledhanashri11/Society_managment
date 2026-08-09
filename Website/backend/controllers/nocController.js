@@ -64,7 +64,8 @@ const logAction = async (requestId, action, actorId, remarks = '') => {
 
 const generateRequestNumber = async () => {
   const year = new Date().getFullYear();
-  const prefix = `NOC-${year}-`;
+  const [societies] = await promisePool.query('SELECT code FROM societies WHERE id = app_current_society_id()');
+  const prefix = `${societies[0]?.code || 'SOC'}-NOC-${year}-`;
   const [rows] = await promisePool.query(
     'SELECT request_number FROM noc_requests WHERE request_number LIKE ? ORDER BY id DESC LIMIT 1',
     [`${prefix}%`]
@@ -631,7 +632,8 @@ const getPdf = async (req, res) => {
       return sendResponse(res, 400, 'NOC PDF is available only after approval');
     }
 
-    const societyName = process.env.SOCIETY_NAME || 'Society Management System';
+    const [societies] = await promisePool.query('SELECT name FROM societies WHERE id = ?', [request.society_id]);
+    const societyName = societies[0]?.name || 'Society Management System';
     const html = generateNocHtml(request, societyName);
 
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -717,7 +719,8 @@ const getSharedPdf = async (req, res) => {
     const request = rows.length ? await getRequestRow(rows[0].id) : null;
     if (!request) return res.status(404).send('<h1>NOC Certificate Not Found</h1>');
 
-    const societyName = process.env.SOCIETY_NAME || 'Society Management System';
+    const [societies] = await promisePool.query('SELECT name FROM societies WHERE id = ?', [request.society_id]);
+    const societyName = societies[0]?.name || 'Society Management System';
     const html = generateNocHtml(request, societyName);
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     return res.send(html);
@@ -733,8 +736,12 @@ const getPublicCertificate = async (req, res) => {
     if (!rows.length) return res.status(404).json({ message: 'Certificate Not Found' });
 
     const request = await getRequestRow(rows[0].id);
+    const [societies] = await promisePool.query(
+      'SELECT name, code, logo_url, address, registration_number FROM societies WHERE id = ?',
+      [request.society_id]
+    );
     return res.json({
-      society: { name: process.env.SOCIETY_NAME || 'Society Management System' },
+      society: societies[0] || { name: 'Society Management System' },
       certificate: {
         request_number: request.request_number,
         noc_type: request.noc_type,

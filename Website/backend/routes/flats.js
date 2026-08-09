@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { auth, adminAuth } = require('../middleware/auth');
+const { auth, adminAuth, publicAuthDatabaseContext } = require('../middleware/auth');
 const { 
   getAllFlats, 
   getAvailableFlats, 
@@ -15,7 +15,7 @@ const {
   transferFlat
 } = require('../controllers/flatController');
 
-router.get('/available', getAvailableFlats);
+router.get('/available', publicAuthDatabaseContext, getAvailableFlats);
 router.get('/', auth, adminAuth, getAllFlats);
 router.post('/transfer', auth, adminAuth, transferFlat);
 router.get('/:id/current-resident', auth, getCurrentResident);

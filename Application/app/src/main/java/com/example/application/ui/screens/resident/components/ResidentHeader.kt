@@ -29,6 +29,7 @@ import com.example.application.ui.components.NotificationDropdown
 @Composable
 fun ResidentHeader(
     residentName: String?,
+    societyName: String?,
     onProfileClick: () -> Unit,
     onNotificationClick: () -> Unit
 ) {
@@ -80,7 +81,7 @@ fun ResidentHeader(
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                text = stringResource(R.string.welcome_to_society),
+                text = societyName?.takeIf { it.isNotBlank() } ?: stringResource(R.string.welcome_to_society),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
             )

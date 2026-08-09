@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node Server.js",
     "dev": "nodemon Server.js",
-    "migrate": "node database/migrate.js"
+    "migrate": "node database/migrate.js",
+    "provision:tenant-admins": "node scripts/provisionTenantAdmins.js",
+    "test:tenant-isolation": "node tests/tenantIsolation.test.js"
   },
   "keywords": [],
   "author": "",

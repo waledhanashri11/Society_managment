@@ -42,7 +42,7 @@ const getTableColumns = async (tableName) => {
   return new Set(columns.map((column) => column.Field || column.field || column.column_name));
 };
 
-const saveComplaintImages = (images = []) => {
+const saveComplaintImages = (images = [], societyId) => {
   if (!Array.isArray(images)) {
     const error = new Error('Complaint images must be sent as a list');
     error.statusCode = 400;
@@ -55,7 +55,7 @@ const saveComplaintImages = (images = []) => {
     throw error;
   }
 
-  const uploadDir = path.join(__dirname, '..', 'uploads', 'complaints');
+  const uploadDir = path.join(__dirname, '..', 'uploads', 'societies', String(societyId), 'complaints');
   fs.mkdirSync(uploadDir, { recursive: true });
 
   return images.map((image, index) => {
@@ -77,7 +77,7 @@ const saveComplaintImages = (images = []) => {
     const extension = match[1].toLowerCase().includes('png') ? 'png' : match[1].toLowerCase().includes('webp') ? 'webp' : 'jpg';
     const fileName = `complaint-${Date.now()}-${index}-${Math.round(Math.random() * 1e9)}.${extension}`;
     fs.writeFileSync(path.join(uploadDir, fileName), buffer);
-    return `/uploads/complaints/${fileName}`;
+    return `/uploads/societies/${societyId}/complaints/${fileName}`;
   });
 };
 
@@ -119,7 +119,7 @@ const createComplaint = async (req, res) => {
   try {
     const { title, description, images = [] } = req.body;
     const userId = req.user.id;
-    const complaintImages = saveComplaintImages(images);
+    const complaintImages = saveComplaintImages(images, req.user.societyId);
     const imageData = Array.isArray(images) ? images.filter((item) => typeof item === 'string' && item.startsWith('data:image/')).slice(0, MAX_COMPLAINT_IMAGES) : [];
     const complaintColumns = await getTableColumns('complaints').catch(() => new Set());
     const hasImageDataColumn = complaintColumns.has('complaint_image_data');

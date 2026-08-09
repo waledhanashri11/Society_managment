@@ -48,6 +48,7 @@ fun ResidentDashboardScreen(
     sessionViewModel: SessionViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val session by sessionViewModel.session.collectAsStateWithLifecycle()
     val data = state.data
 
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
@@ -101,6 +102,7 @@ fun ResidentDashboardScreen(
                         item {
                             ResidentHeader(
                                 residentName = data.profile.name,
+                                societyName = session?.societyName,
                                 onProfileClick = onProfileClick,
                                 onNotificationClick = { onQuickAction("Notifications") }
                             )

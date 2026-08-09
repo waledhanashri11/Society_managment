@@ -3,7 +3,7 @@ const path = require('path');
 const { promisePool } = require('../config/database');
 const { buildPublicFileUrl } = require('../utils/fileUrl');
 
-const saveBase64File = (base64Data, originalFileName) => {
+const saveBase64File = (base64Data, originalFileName, societyId) => {
   const match = base64Data.match(/^data:([^;]+);base64,(.+)$/);
   if (!match) {
     throw new Error('Invalid file format. Must be base64 data url.');
@@ -11,11 +11,11 @@ const saveBase64File = (base64Data, originalFileName) => {
   const fileBuffer = Buffer.from(match[2], 'base64');
   const extension = path.extname(originalFileName);
   const uniqueName = `meeting-doc-${Date.now()}-${Math.round(Math.random() * 1e9)}${extension}`;
-  const uploadDir = path.join(__dirname, '..', 'uploads', 'meetings');
+  const uploadDir = path.join(__dirname, '..', 'uploads', 'societies', String(societyId), 'meetings');
   fs.mkdirSync(uploadDir, { recursive: true });
   fs.writeFileSync(path.join(uploadDir, uniqueName), fileBuffer);
   return {
-    filePath: `/uploads/meetings/${uniqueName}`,
+    filePath: `/uploads/societies/${societyId}/meetings/${uniqueName}`,
     fileName: originalFileName,
     fileType: match[1]
   };
@@ -382,7 +382,7 @@ const createMeeting = async (req, res) => {
       // Handle documents
       for (const doc of documents) {
         if (doc.data && doc.name) {
-          const fileInfo = saveBase64File(doc.data, doc.name);
+          const fileInfo = saveBase64File(doc.data, doc.name, req.user.societyId);
           await connection.query(
             `INSERT INTO meeting_documents (meeting_id, file_path, file_name, file_type) VALUES (?, ?, ?, ?)`,
             [meetingId, fileInfo.filePath, fileInfo.fileName, fileInfo.fileType]
@@ -857,7 +857,7 @@ const saveMeetingReport = async (req, res) => {
       if (Array.isArray(documents) && documents.length > 0) {
         for (const doc of documents) {
           if (doc.data && doc.name) {
-            const fileInfo = saveBase64File(doc.data, doc.name);
+            const fileInfo = saveBase64File(doc.data, doc.name, req.user.societyId);
             await connection.query(
               `INSERT INTO meeting_documents (meeting_id, report_id, file_path, file_name, file_type) VALUES (?, ?, ?, ?, ?)`,
               [id, reportId, fileInfo.filePath, fileInfo.fileName, fileInfo.fileType]
