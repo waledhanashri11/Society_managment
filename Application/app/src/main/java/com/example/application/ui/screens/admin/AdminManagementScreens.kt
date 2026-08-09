@@ -240,10 +240,11 @@ fun ResidentFormScreen(
             )
         }
         SelectTextChips("Status", listOf("approved", "pending", "rejected"), state.status, viewModel::updateStatus)
-        SelectChips(
+        FlatSelectionChips(
             label = "Assigned flat",
-            options = state.flats.mapNotNull { flat -> flat.id?.let { it to "Wing ${flat.wing ?: "A"} - Flat ${flat.flatNo ?: "-"}" } },
+            flats = state.flats,
             selected = state.flatId,
+            originalFlatId = state.originalFlatId,
             onSelected = viewModel::updateFlat
         )
         PrimaryAppButton(if (state.id == null) "Add Resident" else "Save Resident", viewModel::submit, enabled = !state.isSubmitting)
@@ -743,6 +744,36 @@ private fun SelectChips(label: String, options: List<Pair<String, String>>, sele
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             options.forEach { (value, text) ->
                 FilterChip(selected = selected == value, onClick = { onSelected(value) }, label = { Text(text) })
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun FlatSelectionChips(
+    label: String,
+    flats: List<com.example.application.data.remote.dto.FlatDto>,
+    selected: String,
+    originalFlatId: String,
+    onSelected: (String) -> Unit
+) {
+    Column {
+        Text(label, style = MaterialTheme.typography.labelLarge)
+        Spacer(Modifier.height(6.dp))
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            flats.forEach { flat ->
+                val id = flat.id ?: return@forEach
+                val assignedElsewhere = id != originalFlatId &&
+                    (!flat.ownerId.isNullOrBlank() || flat.status.equals("Occupied", ignoreCase = true))
+                FilterChip(
+                    selected = selected == id,
+                    onClick = { onSelected(id) },
+                    enabled = !assignedElsewhere,
+                    label = {
+                        Text("Wing ${flat.wing ?: "A"} - Flat ${flat.flatNo ?: "-"}${if (assignedElsewhere) " • Assigned" else ""}")
+                    }
+                )
             }
         }
     }

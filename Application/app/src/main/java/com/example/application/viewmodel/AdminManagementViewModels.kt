@@ -51,6 +51,7 @@ data class ResidentFormState(
     val password: String = "",
     val status: String = "approved",
     val flatId: String = "",
+    val originalFlatId: String = "",
     val flats: List<FlatDto> = emptyList(),
     val error: String? = null,
     val message: String? = null,
@@ -210,7 +211,7 @@ class ResidentFormViewModel @Inject constructor(
             var flats = emptyList<FlatDto>()
             if (flatsResult is NetworkResult.Success) flats = flatsResult.data
             if (id == null) {
-                _state.update { it.copy(isLoading = false, flats = flats.filter { flat -> flat.ownerId.isNullOrBlank() }) }
+                _state.update { it.copy(isLoading = false, flats = flats) }
                 return@launch
             }
             when (val result = repository.getResident(id)) {
@@ -224,7 +225,8 @@ class ResidentFormViewModel @Inject constructor(
                             phone = resident.phone.orEmpty(),
                             status = resident.status ?: "approved",
                             flatId = resident.flatId.orEmpty(),
-                            flats = flats.filter { flat -> flat.ownerId.isNullOrBlank() || flat.id == resident.flatId }
+                            originalFlatId = resident.flatId.orEmpty(),
+                            flats = flats
                         )
                     }
                 }
@@ -239,7 +241,13 @@ class ResidentFormViewModel @Inject constructor(
     fun updatePhone(value: String) = _state.update { it.copy(phone = value) }
     fun updatePassword(value: String) = _state.update { it.copy(password = value) }
     fun updateStatus(value: String) = _state.update { it.copy(status = value) }
-    fun updateFlat(value: String) = _state.update { it.copy(flatId = value) }
+    fun updateFlat(value: String) = _state.update { state ->
+        val flat = state.flats.firstOrNull { it.id == value }
+        val assignedElsewhere = flat != null && value != state.originalFlatId &&
+            (!flat.ownerId.isNullOrBlank() || flat.status.equals("Occupied", ignoreCase = true))
+        if (assignedElsewhere) state.copy(error = "This flat is already assigned to another resident.")
+        else state.copy(flatId = value, error = null)
+    }
 
     fun submit() {
         val current = _state.value

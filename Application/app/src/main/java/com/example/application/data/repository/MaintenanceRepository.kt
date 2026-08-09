@@ -238,18 +238,34 @@ class MaintenanceRepository @Inject constructor(
         year: Int,
         amount: String? = null,
         dueDate: String? = null,
+        graceDays: Int? = null,
         title: String? = null,
         notes: String? = null
     ): NetworkResult<String> {
         return try {
-            val response = api.generateBillingCycle(GenerateBillingCycleRequest(month, year, amount, dueDate, title, notes))
+            val response = api.generateBillingCycle(GenerateBillingCycleRequest(month, year, amount, dueDate, graceDays, title, notes))
             if (response.isSuccessful && response.body()?.success != false) {
                 clearCaches()
                 val data = response.body()?.data
                 NetworkResult.Success(response.body()?.message ?: "Generated ${data?.generatedCount ?: 0} bills for ${data?.billingPeriodKey}")
             } else {
                 val raw = response.errorBody()?.string()
-                NetworkResult.Error(mapHttpError(response.code(), parseErrorMessage(raw) ?: response.body()?.message))
+                if (response.code() == 404) {
+                    // Compatibility for deployed backends that predate the dedicated
+                    // billing-cycle endpoint. The legacy endpoint has the same
+                    // duplicate protection and supports society-wide generation.
+                    generateBills(
+                        month = month,
+                        year = year,
+                        amount = amount,
+                        dueDate = dueDate,
+                        title = title,
+                        notes = notes,
+                        penaltyGraceDays = graceDays?.toString()
+                    )
+                } else {
+                    NetworkResult.Error(mapHttpError(response.code(), parseErrorMessage(raw) ?: response.body()?.message))
+                }
             }
         } catch (_: UnknownHostException) {
             NetworkResult.Error(AppError.NoInternet)

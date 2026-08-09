@@ -70,7 +70,7 @@ class AdminMaintenanceViewModel @Inject constructor(
         viewModelScope.launch {
             when (val result = adminManagementRepository.getResidents(refresh = true)) {
                 is NetworkResult.Success -> _state.update { it.copy(residents = result.data) }
-                is NetworkResult.Error -> _state.update { it.copy(error = "Residents could not be loaded for manual billing.") }
+                is NetworkResult.Error -> _state.update { it.copy(error = "Residents could not be loaded for specific billing.") }
                 NetworkResult.Loading -> Unit
             }
         }
@@ -103,6 +103,7 @@ class AdminMaintenanceViewModel @Inject constructor(
     fun setTab(tab: String) = _state.update { it.copy(activeTab = tab) }
     fun setQuery(query: String) = _state.update { it.copy(query = query) }
     fun setFilter(filter: String) = _state.update { it.copy(filter = filter) }
+    fun clearFeedback() = _state.update { it.copy(error = null, message = null) }
 
     fun generateBills(
         month: Int,
@@ -131,15 +132,17 @@ class AdminMaintenanceViewModel @Inject constructor(
         year: Int,
         amount: String? = null,
         dueDate: String? = null,
+        graceDays: Int? = null,
         title: String? = null,
-        notes: String? = null
-    ) = action {
-        repository.generateBillingCycle(month, year, amount, dueDate = dueDate, notes = notes, title = title)
+        notes: String? = null,
+        onSuccess: () -> Unit = {}
+    ) = action(onSuccess) {
+        repository.generateBillingCycle(month, year, amount, dueDate = dueDate, graceDays = graceDays, notes = notes, title = title)
     }
 
 
-    fun createManualBill(title: String, month: Int, year: Int, dueDate: String, amount: String, residentId: String?, flatId: String?) =
-        action { repository.createMaintenance(MaintenanceCreateRequest(title, month, year, dueDate, amount, residentId, flatId)) }
+    fun createManualBill(title: String, month: Int, year: Int, dueDate: String, amount: String, residentId: String?, flatId: String?, onSuccess: () -> Unit = {}) =
+        action(onSuccess) { repository.createMaintenance(MaintenanceCreateRequest(title, month, year, dueDate, amount, residentId, flatId)) }
     fun deleteBill(id: String) = action { repository.deleteMaintenance(id) }
     fun editBill(id: String, amount: String, customReason: String?) =
         action { repository.updateMaintenance(id, MaintenanceUpdateRequest(amount = amount, customReason = customReason?.ifBlank { null })) }
@@ -222,12 +225,13 @@ class AdminMaintenanceViewModel @Inject constructor(
         action { repository.createExpense(ExpenseCreateRequest(category, vendor, amount, date, description, method)) }
     fun deleteExpense(id: String) = action { repository.deleteExpense(id) }
 
-    private fun action(block: suspend () -> NetworkResult<String>) {
+    private fun action(onSuccess: () -> Unit = {}, block: suspend () -> NetworkResult<String>) {
         viewModelScope.launch {
             _state.update { it.copy(submitting = true, error = null, message = null) }
             when (val result = block()) {
                 is NetworkResult.Success -> {
                     _state.update { it.copy(submitting = false, message = result.data) }
+                    onSuccess()
                     load(refresh = true)
                 }
                 is NetworkResult.Error -> _state.update { it.copy(submitting = false, error = repository.userMessageFor(result.error)) }

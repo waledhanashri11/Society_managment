@@ -1241,7 +1241,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.billsTab(
                         color = Color(0xFF64748B)
                     )
                 }
-                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(horizontalAlignment = Alignment.End) {
                     Button(
                         onClick = { openDialog(MaintenanceDialog.Generate) },
                         shape = RoundedCornerShape(10.dp),
@@ -1252,6 +1252,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.billsTab(
                         Spacer(Modifier.width(6.dp))
                         Text("Generate Bills", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
                     }
+                    Spacer(Modifier.height(8.dp))
                     OutlinedButton(
                         onClick = { openDialog(MaintenanceDialog.ManualBill) },
                         shape = RoundedCornerShape(10.dp),
@@ -2944,6 +2945,7 @@ private fun MaintenanceDialogHost(dialog: MaintenanceDialog?, onDismiss: () -> U
     val viewState by viewModel.state.collectAsStateWithLifecycle()
     when (dialog) {
         MaintenanceDialog.Generate -> SimpleFormDialog("Generate Billing Cycle", onDismiss) {
+            LaunchedEffect(Unit) { viewModel.clearFeedback() }
             val nextCycle = viewState.data?.nextBillingCycle
             val billingCycles = viewState.data?.billingCycles.orEmpty()
             val settings = viewState.data?.settings
@@ -3013,35 +3015,67 @@ private fun MaintenanceDialogHost(dialog: MaintenanceDialog?, onDismiss: () -> U
                 }
             }
 
-            // Next cycle to generate — locked, read-only
+            // Start from the suggested cycle while allowing administrators to choose the period.
             Text(
-                text = "Next Billing Cycle",
+                text = "Billing Cycle",
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface
             )
             Text(
-                text = "The system enforces strict sequential billing. Only the next eligible month can be generated.",
+                text = "Choose the month and year for which you want to generate bills.",
                 style = MaterialTheme.typography.bodySmall,
                 color = Color(0xFF64748B)
             )
 
             var customDueDate by remember { mutableStateOf(suggestedDueDate) }
             var customGraceDays by remember { mutableStateOf(graceDays.toString()) }
+            var selectedMonth by remember(nextMonth, nextYear) { mutableStateOf(nextMonth) }
+            var selectedYear by remember(nextMonth, nextYear) { mutableStateOf(nextYear.toString()) }
+            var monthExpanded by remember { mutableStateOf(false) }
 
-            LaunchedEffect(suggestedDueDate) {
-                if (customDueDate.isBlank()) customDueDate = suggestedDueDate
+            LaunchedEffect(selectedMonth, selectedYear, settings?.dueDay) {
+                val year = selectedYear.toIntOrNull() ?: return@LaunchedEffect
+                if (year < 2000 || selectedMonth !in 1..12) return@LaunchedEffect
+                val firstDay = LocalDate.of(year, selectedMonth, 1)
+                val configuredDay = settings?.dueDay?.toIntOrNull() ?: 10
+                customDueDate = firstDay.withDayOfMonth(configuredDay.coerceIn(1, firstDay.lengthOfMonth())).toString()
             }
 
-            OutlinedTextField(
-                value = "$nextMonthName $nextYear",
-                onValueChange = {},
-                readOnly = true,
-                enabled = false,
-                label = { Text("Billing period (locked)") },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
-            )
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ExposedDropdownMenuBox(
+                    expanded = monthExpanded,
+                    onExpandedChange = { monthExpanded = !monthExpanded },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    OutlinedTextField(
+                        value = monthNames.getOrElse(selectedMonth - 1) { "" },
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Month") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(monthExpanded) },
+                        modifier = Modifier.fillMaxWidth().menuAnchor(),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    ExposedDropdownMenu(expanded = monthExpanded, onDismissRequest = { monthExpanded = false }) {
+                        monthNames.forEachIndexed { index, name ->
+                            DropdownMenuItem(text = { Text(name) }, onClick = {
+                                selectedMonth = index + 1
+                                monthExpanded = false
+                            })
+                        }
+                    }
+                }
+                OutlinedTextField(
+                    value = selectedYear,
+                    onValueChange = { if (it.length <= 4 && it.all(Char::isDigit)) selectedYear = it },
+                    label = { Text("Year") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp),
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
+                )
+            }
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
@@ -3093,16 +3127,43 @@ private fun MaintenanceDialogHost(dialog: MaintenanceDialog?, onDismiss: () -> U
                 }
             }
 
+            viewState.error?.let { error ->
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = error,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(12.dp)
+                    )
+                }
+            }
+
+            val validDueDate = try {
+                LocalDate.parse(customDueDate)
+                true
+            } catch (_: Exception) {
+                false
+            }
+            val validGraceDays = customGraceDays.toIntOrNull()?.let { it in 0..90 } == true
+
             Button(
                 onClick = {
+                    val year = selectedYear.toIntOrNull() ?: return@Button
+                    val grace = customGraceDays.toIntOrNull() ?: return@Button
                     viewModel.generateBillingCycle(
-                        month = nextMonth,
-                        year = nextYear,
-                        dueDate = customDueDate.ifBlank { suggestedDueDate }
+                        month = selectedMonth,
+                        year = year,
+                        dueDate = customDueDate,
+                        graceDays = grace,
+                        onSuccess = onDismiss
                     )
-                    onDismiss()
                 },
-                enabled = !viewState.submitting && nextMonth in 1..12 && nextYear >= 2000,
+                enabled = !viewState.submitting && selectedMonth in 1..12 &&
+                    (selectedYear.toIntOrNull() ?: 0) >= 2000 && validDueDate && validGraceDays,
                 modifier = Modifier.fillMaxWidth(),
                 colors = androidx.compose.material3.ButtonDefaults.buttonColors(
                     containerColor = Color(0xFF1D4ED8)
@@ -3112,48 +3173,93 @@ private fun MaintenanceDialogHost(dialog: MaintenanceDialog?, onDismiss: () -> U
                     CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
                     Spacer(Modifier.width(8.dp))
                 }
-                Text(if (viewState.submitting) "Generating…" else "Generate $nextMonthName $nextYear Bills")
+                val selectedMonthName = monthNames.getOrElse(selectedMonth - 1) { "" }
+                Text(if (viewState.submitting) "Generating…" else "Generate $selectedMonthName $selectedYear Bills")
             }
         }
 
-        MaintenanceDialog.ManualBill -> SimpleFormDialog("Create Manual Bill", onDismiss) {
-            val today = LocalDate.now()
-            val settings = viewState.data?.settings
-            val dueDay = settings?.dueDay?.toIntOrNull()?.coerceIn(1, today.lengthOfMonth()) ?: 10
+        MaintenanceDialog.ManualBill -> SimpleFormDialog("Bill for Specific Resident", onDismiss) {
+            LaunchedEffect(Unit) { viewModel.clearFeedback() }
             val residents = viewState.residents.filter { !it.id.isNullOrBlank() && !it.flatId.isNullOrBlank() }
-            var title by remember { mutableStateOf(settings?.title ?: "Monthly Maintenance") }
-            var amount by remember { mutableStateOf(settings?.fixedAmount.orEmpty()) }
             var selectedResident by remember { mutableStateOf<com.example.application.data.remote.dto.UserSummaryDto?>(null) }
             var residentExpanded by remember { mutableStateOf(false) }
-            val due = today.withDayOfMonth(dueDay).toString()
-            BasicAppTextField(title, { title = it }, "Title")
-            OutlinedTextField(value = "${monthName(today.monthValue)} ${today.year}", onValueChange = {}, readOnly = true, label = { Text("System billing cycle") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(value = due, onValueChange = {}, readOnly = true, label = { Text("Due date from settings") }, modifier = Modifier.fillMaxWidth())
-            BasicAppTextField(amount, { amount = it }, "Amount")
+            var title by remember { mutableStateOf("") }
+            var amount by remember { mutableStateOf("") }
+            var month by remember { mutableStateOf(LocalDate.now().monthValue.toString()) }
+            var year by remember { mutableStateOf(LocalDate.now().year.toString()) }
+            var dueDate by remember { mutableStateOf("") }
+
             ExposedDropdownMenuBox(expanded = residentExpanded, onExpandedChange = { residentExpanded = !residentExpanded }) {
                 OutlinedTextField(
                     value = selectedResident?.let { "${it.name ?: "Resident"} • ${it.wing.orEmpty()}-${it.flatNo ?: "Flat"}" }.orEmpty(),
-                    onValueChange = {}, readOnly = true, label = { Text("Select resident") },
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Resident") },
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(residentExpanded) },
                     modifier = Modifier.fillMaxWidth().menuAnchor()
                 )
                 ExposedDropdownMenu(expanded = residentExpanded, onDismissRequest = { residentExpanded = false }) {
                     residents.forEach { resident ->
-                        DropdownMenuItem(text = { Text("${resident.name ?: "Resident"} • ${resident.wing.orEmpty()}-${resident.flatNo ?: "Flat"}") }, onClick = { selectedResident = resident; residentExpanded = false })
+                        DropdownMenuItem(
+                            text = { Text("${resident.name ?: "Resident"} • ${resident.wing.orEmpty()}-${resident.flatNo ?: "Flat"}") },
+                            onClick = { selectedResident = resident; residentExpanded = false }
+                        )
                     }
                 }
             }
-            if (residents.isEmpty()) Text("No approved resident with an assigned flat is available.", color = MaterialTheme.colorScheme.error)
+            BasicAppTextField(title, { title = it }, "Bill title")
+            BasicAppTextField(amount, { amount = it.filter { char -> char.isDigit() || char == '.' } }, "Amount")
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = month,
+                    onValueChange = { if (it.length <= 2 && it.all(Char::isDigit)) month = it },
+                    label = { Text("Month (1-12)") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                )
+                OutlinedTextField(
+                    value = year,
+                    onValueChange = { if (it.length <= 4 && it.all(Char::isDigit)) year = it },
+                    label = { Text("Year") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                )
+            }
+            OutlinedTextField(
+                value = dueDate,
+                onValueChange = { dueDate = it },
+                label = { Text("Due date (YYYY-MM-DD)") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+            )
+
+            viewState.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+            val validDate = try { LocalDate.parse(dueDate); true } catch (_: Exception) { false }
+            val validMonth = month.toIntOrNull()?.let { it in 1..12 } == true
+            val validYear = (year.toIntOrNull() ?: 0) >= 2000
+            val validAmount = amount.toDoubleOrNull()?.let { it > 0 } == true
             Button(
                 onClick = {
                     val resident = selectedResident ?: return@Button
-                    viewModel.createManualBill(title, today.monthValue, today.year, due, amount, resident.id, resident.flatId)
-                    onDismiss()
+                    viewModel.createManualBill(
+                        title.trim(), month.toInt(), year.toInt(), dueDate, amount,
+                        resident.id, resident.flatId, onSuccess = onDismiss
+                    )
                 },
-                enabled = selectedResident != null && amount.toDoubleOrNull()?.let { it > 0 } == true && !viewState.submitting,
+                enabled = !viewState.submitting && selectedResident != null && title.isNotBlank() && validAmount && validMonth && validYear && validDate,
                 modifier = Modifier.fillMaxWidth()
-            ) { Text("Create Bill for Resident") }
+            ) {
+                if (viewState.submitting) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                }
+                Text(if (viewState.submitting) "Creating…" else "Create Resident Bill")
+            }
         }
+
         is MaintenanceDialog.MarkPaid -> SimpleFormDialog("Mark Paid", onDismiss) {
             var amount by remember { mutableStateOf(dialog.bill.expectedPayableAmount().toPlainString()) }
             var paymentDate by remember { mutableStateOf(LocalDate.now().toString()) }

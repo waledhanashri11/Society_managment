@@ -4225,10 +4225,7 @@ module.exports = {
   getFlatCollectionReport,
   saveOpeningBalance,
   createManualBill,
-  applyPenaltyToBill,
-  getNextBillingCycle,
-  getBillingCycles,
-  generateBillingCycle
+  applyPenaltyToBill
 };
 
 // GET /api/maintenance/billing-cycles/next
@@ -4339,50 +4336,31 @@ const generateBillingCycle = async (req, res) => {
 
     await connection.beginTransaction();
 
-    // --- Sequential Month Validation ---
-    const [latestCycles] = await connection.query(
-      `SELECT billing_month, billing_year FROM maintenance_billing_cycles
-       WHERE society_id = ? AND billing_status = 'GENERATED'
-       ORDER BY billing_year DESC, billing_month DESC LIMIT 1 FOR UPDATE`,
-      [societyId]
-    );
-
-    if (latestCycles.length) {
-      const latest = latestCycles[0];
-      let expectedMonth = latest.billing_month + 1;
-      let expectedYear = latest.billing_year;
-      if (expectedMonth > 12) { expectedMonth = 1; expectedYear += 1; }
-
-      if (reqMonth !== expectedMonth || reqYear !== expectedYear) {
-        await connection.rollback();
-        const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-        if (reqYear * 12 + reqMonth < expectedYear * 12 + expectedMonth) {
-          const lm = monthNames[latest.billing_month - 1];
-          return sendResponse(res, 409,
-            `${monthNames[reqMonth-1]} ${reqYear} maintenance billing cycle has already been generated. The latest generated cycle is ${lm} ${latest.billing_year}.`);
-        }
-        return sendResponse(res, 409,
-          `Cannot skip months. ${monthNames[expectedMonth-1]} ${expectedYear} maintenance billing cycle has not been generated yet. Please generate it first.`);
-      }
-    }
-
-    // --- Idempotency: block duplicate generation ---
+    // Lock this period so concurrent requests cannot create duplicate cycles.
     const [existing] = await connection.query(
-      `SELECT id FROM maintenance_billing_cycles
-       WHERE society_id = ? AND billing_year = ? AND billing_month = ?`,
+      `SELECT id, billing_status, total_residents, generated_bill_count
+       FROM maintenance_billing_cycles
+       WHERE society_id = ? AND billing_year = ? AND billing_month = ?
+       FOR UPDATE`,
       [societyId, reqYear, reqMonth]
     );
-    if (existing.length) {
+    const existingCycle = existing[0] || null;
+    if (existingCycle?.billing_status === 'GENERATING') {
       await connection.rollback();
-      const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-      return sendResponse(res, 409,
-        `${monthNames[reqMonth-1]} ${reqYear} maintenance billing cycle has already been generated.`);
+      return sendResponse(res, 409, 'This billing cycle is already being generated. Please refresh in a moment.');
     }
 
     // --- Fetch & snapshot current settings ---
     const [settingsRows] = await connection.query('SELECT * FROM maintenance_settings ORDER BY id DESC LIMIT 1');
     const settings = settingsRows[0] || {};
-    const graceDays = Number(settings.grace_days || 10);
+    const requestedGraceDays = body.graceDays === undefined || body.graceDays === null || String(body.graceDays).trim() === ''
+      ? Number(settings.grace_days || 10)
+      : Number(body.graceDays);
+    if (!Number.isInteger(requestedGraceDays) || requestedGraceDays < 0 || requestedGraceDays > 90) {
+      await connection.rollback();
+      return sendResponse(res, 400, 'Grace days must be a whole number between 0 and 90');
+    }
+    const graceDays = requestedGraceDays;
     const dueDay = Number(settings.due_day || 10);
 
     const requestedAmount = body.amount !== undefined && body.amount !== null && String(body.amount).trim() !== '' ? Number(body.amount) : null;
@@ -4392,13 +4370,21 @@ const generateBillingCycle = async (req, res) => {
     }
 
     const dueDateString = body.dueDate ? String(body.dueDate) : `${reqYear}-${String(reqMonth).padStart(2, '0')}-${String(dueDay).padStart(2, '0')}`;
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(dueDateString) || Number.isNaN(Date.parse(dueDateString))) {
+    const dueDateParts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dueDateString);
+    const parsedDueDate = dueDateParts
+      ? new Date(Date.UTC(Number(dueDateParts[1]), Number(dueDateParts[2]) - 1, Number(dueDateParts[3])))
+      : null;
+    const isExactDueDate = parsedDueDate
+      && parsedDueDate.getUTCFullYear() === Number(dueDateParts[1])
+      && parsedDueDate.getUTCMonth() + 1 === Number(dueDateParts[2])
+      && parsedDueDate.getUTCDate() === Number(dueDateParts[3]);
+    if (!isExactDueDate) {
       await connection.rollback();
       return sendResponse(res, 400, 'Due date must be a valid YYYY-MM-DD date');
     }
 
-    const penaltyStartDate = new Date(dueDateString);
-    penaltyStartDate.setDate(penaltyStartDate.getDate() + graceDays);
+    const penaltyStartDate = new Date(parsedDueDate);
+    penaltyStartDate.setUTCDate(penaltyStartDate.getUTCDate() + graceDays);
     const penaltyStartDateString = penaltyStartDate.toISOString().slice(0, 10);
 
     const settingsSnapshot = JSON.stringify({
@@ -4406,7 +4392,7 @@ const generateBillingCycle = async (req, res) => {
       due_day: settings.due_day,
       late_fee_type: settings.late_fee_type,
       late_fee_value: settings.late_fee_value,
-      grace_days: settings.grace_days,
+      grace_days: graceDays,
       title: settings.title,
       snapshotAt: new Date().toISOString()
     });
@@ -4429,16 +4415,27 @@ const generateBillingCycle = async (req, res) => {
       return sendResponse(res, 400, 'No active residents with assigned occupied flats found');
     }
 
-    // --- Create billing cycle record ---
-    const [cycleResult] = await connection.query(
-      `INSERT INTO maintenance_billing_cycles
-         (society_id, billing_month, billing_year, billing_status, total_residents, generated_bill_count,
-          grace_period_days, due_date, penalty_start_date, settings_snapshot, generated_by)
-       VALUES (?, ?, ?, 'GENERATING', ?, 0, ?, ?, ?, ?::jsonb, ?)
-       RETURNING id`,
-      [societyId, reqMonth, reqYear, totalResidents, graceDays, dueDateString, penaltyStartDateString, settingsSnapshot, req.user?.id || null]
-    );
-    const cycleId = cycleResult.insertId || (Array.isArray(cycleResult) && cycleResult[0]?.id);
+    // Reuse failed/cancelled/incomplete cycles; otherwise create the period once.
+    let cycleId = existingCycle?.id || null;
+    if (cycleId) {
+      await connection.query(
+        `UPDATE maintenance_billing_cycles
+         SET billing_status = 'GENERATING', total_residents = ?, grace_period_days = ?, due_date = ?,
+             penalty_start_date = ?, settings_snapshot = ?::jsonb, generated_by = ?, updated_at = NOW()
+         WHERE id = ?`,
+        [totalResidents, graceDays, dueDateString, penaltyStartDateString, settingsSnapshot, req.user?.id || null, cycleId]
+      );
+    } else {
+      const [cycleResult] = await connection.query(
+        `INSERT INTO maintenance_billing_cycles
+           (society_id, billing_month, billing_year, billing_status, total_residents, generated_bill_count,
+            grace_period_days, due_date, penalty_start_date, settings_snapshot, generated_by)
+         VALUES (?, ?, ?, 'GENERATING', ?, 0, ?, ?, ?, ?::jsonb, ?)
+         RETURNING id`,
+        [societyId, reqMonth, reqYear, totalResidents, graceDays, dueDateString, penaltyStartDateString, settingsSnapshot, req.user?.id || null]
+      );
+      cycleId = cycleResult.insertId;
+    }
 
     // --- Batch generate bills ---
     const result = { generatedCount: 0, skippedCount: 0, duplicateCount: 0, failedCount: 0, failureReasons: [], generated: [], skipped: [] };
@@ -4495,21 +4492,37 @@ const generateBillingCycle = async (req, res) => {
       }
     }
 
-    // --- Update billing cycle status and counts ---
-    const finalStatus = result.generatedCount > 0 ? 'GENERATED' : 'FAILED';
+    // Count every bill now attached to this cycle, including bills from a retry.
+    const [cycleBillCountRows] = await connection.query(
+      'SELECT COUNT(*)::int AS count FROM maintenance WHERE billing_cycle_id = ?',
+      [cycleId]
+    );
+    const cycleBillCount = Number(cycleBillCountRows[0]?.count || 0);
+    const finalStatus = cycleBillCount > 0 ? 'GENERATED' : 'FAILED';
     await connection.query(
       `UPDATE maintenance_billing_cycles SET billing_status = ?, generated_bill_count = ?, updated_at = NOW() WHERE id = ?`,
-      [finalStatus, result.generatedCount, cycleId]
+      [finalStatus, cycleBillCount, cycleId]
     );
 
     await connection.commit();
 
-    if (result.generatedCount === 0) {
-      return sendResponse(res, 409, 'No bills were generated. All matching residents were skipped or failed.', result);
+    if (cycleBillCount === 0) {
+      return sendResponse(res, 409, 'No bills were generated. Fix the resident maintenance amounts and retry this cycle.', result);
     }
-    return sendResponse(res, 201, 'Maintenance billing cycle generated successfully', {
+    if (result.generatedCount === 0 && result.failedCount === 0) {
+      return sendResponse(res, 409, 'All eligible residents already have a bill for this period.', {
+        ...result,
+        cycleId,
+        generatedBillCount: cycleBillCount
+      });
+    }
+    const responseMessage = result.failedCount > 0
+      ? `Generated ${result.generatedCount} bill(s); ${result.failedCount} resident bill(s) need attention and can be retried.`
+      : `Successfully generated ${result.generatedCount} maintenance bill(s).`;
+    return sendResponse(res, result.failedCount > 0 ? 200 : 201, responseMessage, {
       ...result,
       cycleId,
+      generatedBillCount: cycleBillCount,
       billingPeriodKey: `${reqYear}-${String(reqMonth).padStart(2,'0')}`,
       dueDate: dueDateString,
       penaltyStartDate: penaltyStartDateString
@@ -4522,4 +4535,12 @@ const generateBillingCycle = async (req, res) => {
     connection.release();
   }
 };
+
+// These handlers are declared after the legacy controller export above.
+// Attach them only after initialization so requiring this module is safe.
+Object.assign(module.exports, {
+  getNextBillingCycle,
+  getBillingCycles,
+  generateBillingCycle
+});
 

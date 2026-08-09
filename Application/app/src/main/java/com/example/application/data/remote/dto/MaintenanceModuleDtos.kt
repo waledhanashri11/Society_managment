@@ -496,6 +496,7 @@ data class GenerateBillingCycleRequest(
     val year: Int,
     val amount: String? = null,
     val dueDate: String? = null,
+    val graceDays: Int? = null,
     val title: String? = null,
     val notes: String? = null
 )
