@@ -277,7 +277,7 @@ class ReportRepository @Inject constructor(
 
     suspend fun saveOpeningBalance(financialYear: String, bank: String, cash: String): NetworkResult<String> {
         return when (val result = safeWrapped { reportsApi.saveOpeningBalance(OpeningBalanceRequest(financialYear, bank, cash)) }) {
-            is NetworkResult.Success -> { clear(); NetworkResult.Success("Opening balance saved") }
+            is NetworkResult.Success -> { clear(); NetworkResult.Success("Balances saved and reports recalculated.") }
             is NetworkResult.Error -> result
             NetworkResult.Loading -> NetworkResult.Loading
         }

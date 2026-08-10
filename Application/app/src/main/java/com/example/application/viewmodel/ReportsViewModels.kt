@@ -37,7 +37,8 @@ data class AdminReportsUiState(
     val monthlyActionLoading: Boolean = false,
     val residentLedger: ResidentLedgerResponse? = null,
     val monthlyReceipt: MonthlyReceiptDto? = null,
-    val actionMessage: String? = null
+    val actionMessage: String? = null,
+    val balanceSaving: Boolean = false
 )
 
 data class ResidentReportsUiState(
@@ -133,11 +134,24 @@ class AdminReportsViewModel @Inject constructor(
 
     fun clearMonthly() = _state.update { it.copy(monthly = null) }
 
+    fun prepareBalanceEdit() {
+        _state.update { it.copy(error = null, actionMessage = null) }
+    }
+
     fun saveOpeningBalance(financialYear: String, bank: String, cash: String) = viewModelScope.launch {
-        _state.update { it.copy(isRefreshing = true, error = null, exportMessage = null) }
+        val bankValue = bank.toDoubleOrNull()
+        val cashValue = cash.toDoubleOrNull()
+        if (bankValue == null || cashValue == null || bankValue < 0 || cashValue < 0) {
+            _state.update { it.copy(error = "Enter valid non-negative bank and cash balances.") }
+            return@launch
+        }
+        _state.update { it.copy(balanceSaving = true, error = null, actionMessage = null) }
         when (val result = repository.saveOpeningBalance(financialYear, bank, cash)) {
-            is NetworkResult.Success -> { _state.update { it.copy(exportMessage = result.data) }; load(refresh = true) }
-            is NetworkResult.Error -> _state.update { it.copy(isRefreshing = false, error = repository.messageFor(result.error)) }
+            is NetworkResult.Success -> {
+                _state.update { it.copy(balanceSaving = false, actionMessage = result.data) }
+                load(refresh = true)
+            }
+            is NetworkResult.Error -> _state.update { it.copy(balanceSaving = false, error = repository.messageFor(result.error)) }
             NetworkResult.Loading -> Unit
         }
     }

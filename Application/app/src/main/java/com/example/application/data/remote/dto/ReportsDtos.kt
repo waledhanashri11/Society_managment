@@ -138,7 +138,11 @@ data class FinancialReportDto(val available: Boolean? = null, val reason: String
 
 data class AccountLedgerDto(@SerializedName(value = "opening_balance", alternate = ["openingBalance"]) val openingBalance: String?, @SerializedName(value = "closing_balance", alternate = ["closingBalance"]) val closingBalance: String?, val ledger: List<FinancialTransactionDto>?)
 data class OpeningBalanceRequest(@SerializedName("financialYear") val financialYear: String, @SerializedName("bankOpening") val bankOpening: String, @SerializedName("cashOpening") val cashOpening: String)
-data class OpeningBalanceDto(@SerializedName("financial_year") val financialYear: String?, @SerializedName("bank_opening") val bankOpening: String?, @SerializedName("cash_opening") val cashOpening: String?)
+data class OpeningBalanceDto(
+    @SerializedName(value = "financialYear", alternate = ["financial_year"]) val financialYear: String?,
+    @SerializedName(value = "bankOpening", alternate = ["bank_opening"]) val bankOpening: String?,
+    @SerializedName(value = "cashOpening", alternate = ["cash_opening"]) val cashOpening: String?
+)
 data class ResidentIdentityDto(val name: String?, @SerializedName(value = "flat_no", alternate = ["flatNo"]) val flatNo: String?, val wing: String?)
 data class ResidentAccountSummaryDto(
     @SerializedName("opening_outstanding") val openingOutstanding: String?,
