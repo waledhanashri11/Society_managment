@@ -22,9 +22,11 @@ class SuperAdminViewModel @Inject constructor(private val repository: SuperAdmin
     private val _state = MutableStateFlow(SuperAdminUiState())
     val state = _state.asStateFlow()
     private var dashboardLoadJob: Job? = null
+    private var dashboardLoadedAt = 0L
 
-    fun load() {
-        dashboardLoadJob?.cancel()
+    fun load(force: Boolean = false) {
+        if (dashboardLoadJob?.isActive == true) return
+        if (!force && _state.value.summary != null && System.currentTimeMillis() - dashboardLoadedAt < DASHBOARD_TTL_MS) return
         dashboardLoadJob = viewModelScope.launch {
             val hasContent = _state.value.summary != null
             _state.update { it.copy(loading = !hasContent, refreshing = hasContent, error = null) }
@@ -45,6 +47,7 @@ class SuperAdminViewModel @Inject constructor(private val repository: SuperAdmin
                         error = null
                     )
                 }
+                dashboardLoadedAt = System.currentTimeMillis()
             } catch (_: TimeoutCancellationException) {
                 _state.update {
                     it.copy(
@@ -95,6 +98,7 @@ class SuperAdminViewModel @Inject constructor(private val repository: SuperAdmin
 
     companion object {
         private const val LOAD_TIMEOUT_MS = 75_000L
+        private const val DASHBOARD_TTL_MS = 30_000L
     }
 }
 

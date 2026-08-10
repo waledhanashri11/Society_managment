@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
 
 data class NocUiState(
     val isLoading: Boolean = false,
@@ -66,14 +67,16 @@ class PublicNocViewModel @Inject constructor(
 class ResidentNocViewModel @Inject constructor(
     private val repository: NocRepository
 ) : ViewModel() {
+    private var loadJob: Job? = null
     private val _state = MutableStateFlow(NocUiState())
     val state: StateFlow<NocUiState> = _state.asStateFlow()
 
     init { load() }
 
     fun load(refresh: Boolean = false) {
-        viewModelScope.launch {
-            _state.update { it.copy(isLoading = it.items.isEmpty(), isRefreshing = refresh, error = null, message = null) }
+        if (loadJob?.isActive == true) return
+        loadJob = viewModelScope.launch {
+            _state.update { it.copy(isLoading = it.items.isEmpty(), isRefreshing = it.items.isNotEmpty(), error = null, message = null) }
             when (val result = repository.getMyNocs(refresh)) {
                 is NetworkResult.Success -> _state.update { it.copy(isLoading = false, isRefreshing = false, items = result.data) }
                 is NetworkResult.Error -> _state.update {
@@ -86,6 +89,7 @@ class ResidentNocViewModel @Inject constructor(
                 }
                 NetworkResult.Loading -> Unit
             }
+            loadJob = null
         }
     }
 
@@ -153,6 +157,7 @@ class ResidentNocViewModel @Inject constructor(
 class AdminNocViewModel @Inject constructor(
     private val repository: NocRepository
 ) : ViewModel() {
+    private var loadJob: Job? = null
     private val _state = MutableStateFlow(NocUiState())
     val state: StateFlow<NocUiState> = _state.asStateFlow()
 
@@ -179,14 +184,16 @@ class AdminNocViewModel @Inject constructor(
     }
 
     fun load(refresh: Boolean = false, status: String = _state.value.filter) {
+        if (loadJob?.isActive == true) return
         if (refresh) loadReports()
-        viewModelScope.launch {
-            _state.update { it.copy(isLoading = it.items.isEmpty(), isRefreshing = refresh, error = null, message = null) }
+        loadJob = viewModelScope.launch {
+            _state.update { it.copy(isLoading = it.items.isEmpty(), isRefreshing = it.items.isNotEmpty(), error = null, message = null) }
             when (val result = repository.getAllNocs(status.takeIf { it != "All" }, refresh)) {
                 is NetworkResult.Success -> _state.update { it.copy(isLoading = false, isRefreshing = false, items = result.data) }
                 is NetworkResult.Error -> _state.update { it.copy(isLoading = false, isRefreshing = false, error = repository.userMessageFor(result.error)) }
                 NetworkResult.Loading -> Unit
             }
+            loadJob = null
         }
     }
 

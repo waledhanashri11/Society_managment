@@ -7,10 +7,14 @@ import com.example.application.data.remote.dto.MaintenanceBillDto
 import com.example.application.data.remote.dto.NoticeDto
 import com.example.application.data.remote.dto.PaymentDto
 import com.example.application.data.remote.dto.UserSummaryDto
+import com.example.application.data.remote.dto.AdminDashboardResponseDto
 import retrofit2.Response
 import retrofit2.http.GET
 
 interface DashboardApiService {
+    @GET("api/admin/dashboard")
+    suspend fun getAdminDashboard(): Response<AdminDashboardResponseDto>
+
     @GET("api/users")
     suspend fun getUsers(): Response<List<UserSummaryDto>>
 

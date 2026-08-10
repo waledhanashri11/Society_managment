@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const compression = require('compression');
 const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 const { initDatabase } = require('./config/database');
@@ -40,6 +41,25 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
+app.use(compression({ threshold: 1024 }));
+app.use((req, res, next) => {
+  const startedAt = process.hrtime.bigint();
+  const originalEnd = res.end;
+  res.end = function timedEnd(...args) {
+    const elapsedMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+    if (!res.headersSent) res.setHeader('Server-Timing', `app;dur=${elapsedMs.toFixed(1)}`);
+    if (elapsedMs >= Number(process.env.SLOW_REQUEST_MS || 750)) {
+      const safePath = req.path
+        .split('/')
+        .slice(0, 5)
+        .map((part) => (/^\d+$/.test(part) || part.length > 32 ? ':id' : part))
+        .join('/');
+      console.info(`[API_TIME] ${req.method} ${safePath || '/'} ${res.statusCode} ${elapsedMs.toFixed(1)}ms`);
+    }
+    return originalEnd.apply(this, args);
+  };
+  next();
+});
 app.use(express.json({ limit: '10mb' }));
 app.use(databaseContext);
 app.use('/uploads', auth, tenantUploadAccess, express.static(path.join(__dirname, 'uploads')));
@@ -62,6 +82,7 @@ const nocRoutes = require('./routes/noc');
 const ruleRoutes = require('./routes/rules');
 const eventRoutes = require('./routes/events');
 const superAdminRoutes = require('./routes/superAdmin');
+const adminRoutes = require('./routes/admin');
 const nocController = require('./controllers/nocController');
 
 app.use('/api/auth', authRoutes);
@@ -81,6 +102,7 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/rules', ruleRoutes);
 app.use('/api/events', eventRoutes);
 app.use('/api/super-admin', superAdminRoutes);
+app.use('/api/admin', adminRoutes);
 app.get('/share/noc/:token', publicAuthDatabaseContext, nocController.getSharedPdf);
 app.use('/api/noc', nocRoutes);
 

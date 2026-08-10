@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
 
 data class AdminMaintenanceUiState(
     val isLoading: Boolean = false,
@@ -58,6 +59,7 @@ class AdminMaintenanceViewModel @Inject constructor(
     private val repository: MaintenanceRepository,
     private val adminManagementRepository: AdminManagementRepository
 ) : ViewModel() {
+    private var loadJob: Job? = null
     private val _state = MutableStateFlow(AdminMaintenanceUiState())
     val state: StateFlow<AdminMaintenanceUiState> = _state.asStateFlow()
 
@@ -68,7 +70,7 @@ class AdminMaintenanceViewModel @Inject constructor(
 
     private fun loadResidents() {
         viewModelScope.launch {
-            when (val result = adminManagementRepository.getResidents(refresh = true)) {
+            when (val result = adminManagementRepository.getResidents(refresh = false)) {
                 is NetworkResult.Success -> _state.update { it.copy(residents = result.data) }
                 is NetworkResult.Error -> _state.update { it.copy(error = "Residents could not be loaded for specific billing.") }
                 NetworkResult.Loading -> Unit
@@ -86,17 +88,19 @@ class AdminMaintenanceViewModel @Inject constructor(
                 message = null
             )
         }
-        load(refresh = true)
+        load(refresh = false)
     }
 
     fun load(refresh: Boolean = false) {
-        viewModelScope.launch {
-            _state.update { it.copy(isLoading = it.data == null, isRefreshing = refresh, error = null, message = null) }
+        if (loadJob?.isActive == true) return
+        loadJob = viewModelScope.launch {
+            _state.update { it.copy(isLoading = it.data == null, isRefreshing = it.data != null, error = null, message = null) }
             when (val result = repository.getAdminData(refresh)) {
                 is NetworkResult.Success -> _state.update { it.copy(isLoading = false, isRefreshing = false, data = result.data) }
                 is NetworkResult.Error -> _state.update { it.copy(isLoading = false, isRefreshing = false, error = repository.userMessageFor(result.error)) }
                 NetworkResult.Loading -> Unit
             }
+            loadJob = null
         }
     }
 
@@ -196,7 +200,7 @@ class AdminMaintenanceViewModel @Inject constructor(
     }
 
     fun userMessageFor(error: com.example.application.util.AppError): String = repository.userMessageFor(error)
-    fun updatePayment(id: String, status: String, reason: String? = null) = action {
+    fun updatePayment(id: String, status: String, reason: String? = null) = financialAction {
         val normalizedStatus = when (status.trim().uppercase()) {
             "APPROVED", "APPROVE", "PAID" -> "Paid"
             "REJECTED", "REJECT" -> "Rejected"
@@ -210,6 +214,24 @@ class AdminMaintenanceViewModel @Inject constructor(
                 rejectionReason = reason
             )
         )
+    }
+
+    private fun financialAction(block: suspend () -> NetworkResult<String>) {
+        viewModelScope.launch {
+            _state.update { it.copy(submitting = true, error = null, message = null) }
+            when (val result = block()) {
+                is NetworkResult.Success -> {
+                    _state.update { it.copy(submitting = false, message = result.data) }
+                    when (val refreshed = repository.refreshAdminFinancialData()) {
+                        is NetworkResult.Success -> _state.update { it.copy(data = refreshed.data) }
+                        is NetworkResult.Error -> _state.update { it.copy(error = repository.userMessageFor(refreshed.error)) }
+                        NetworkResult.Loading -> Unit
+                    }
+                }
+                is NetworkResult.Error -> _state.update { it.copy(submitting = false, error = repository.userMessageFor(result.error)) }
+                NetworkResult.Loading -> Unit
+            }
+        }
     }
     fun saveSettings(title: String, amount: String, dueDay: String, feeType: String, feeValue: String, graceDays: String) =
         action { repository.saveSettings(MaintenanceSettingsRequest(title, amount, dueDay, feeType, feeValue, graceDays)) }
@@ -245,6 +267,7 @@ class AdminMaintenanceViewModel @Inject constructor(
 class ResidentMaintenanceViewModel @Inject constructor(
     private val repository: MaintenanceRepository
 ) : ViewModel() {
+    private var loadJob: Job? = null
     private val _state = MutableStateFlow(ResidentMaintenanceUiState())
     val state: StateFlow<ResidentMaintenanceUiState> = _state.asStateFlow()
 
@@ -260,15 +283,16 @@ class ResidentMaintenanceViewModel @Inject constructor(
                 message = null
             )
         }
-        load(refresh = true)
+        load(refresh = false)
     }
 
     fun load(refresh: Boolean = false, preserveMessage: Boolean = false) {
-        viewModelScope.launch {
+        if (loadJob?.isActive == true) return
+        loadJob = viewModelScope.launch {
             _state.update {
                 it.copy(
                     isLoading = it.data == null,
-                    isRefreshing = refresh,
+                    isRefreshing = it.data != null,
                     error = null,
                     message = if (preserveMessage) it.message else null
                 )
@@ -285,6 +309,7 @@ class ResidentMaintenanceViewModel @Inject constructor(
                 }
                 NetworkResult.Loading -> Unit
             }
+            loadJob = null
         }
     }
 

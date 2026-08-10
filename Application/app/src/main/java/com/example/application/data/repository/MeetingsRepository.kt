@@ -16,11 +16,12 @@ import retrofit2.Response
 @Singleton
 class MeetingsRepository @Inject constructor(private val api: MeetingsApiService, private val gson: Gson) {
     private var cache: List<MeetingDto>? = null
+    private var cacheLoadedAt = 0L
     private val detailsCache = mutableMapOf<String, MeetingDetailsDto>()
 
     suspend fun getMeetings(refresh: Boolean = false): NetworkResult<List<MeetingDto>> {
-        cache?.takeIf { !refresh }?.let { return NetworkResult.Success(it) }
-        return safe { api.getMeetings() }.also { if (it is NetworkResult.Success) cache = it.data }
+        cache?.takeIf { !refresh && System.currentTimeMillis() - cacheLoadedAt < MEETING_CACHE_TTL_MS }?.let { return NetworkResult.Success(it) }
+        return safe { api.getMeetings() }.also { if (it is NetworkResult.Success) { cache = it.data; cacheLoadedAt = System.currentTimeMillis() } }
     }
     suspend fun getAnalytics(): NetworkResult<MeetingAnalyticsDto> = safe { api.getAnalytics() }
     suspend fun getMeeting(id: String, refresh: Boolean = false): NetworkResult<MeetingDetailsDto> {
@@ -48,7 +49,7 @@ class MeetingsRepository @Inject constructor(private val api: MeetingsApiService
     suspend fun waiveFine(id: String, reason: String) = message { api.waiveFine(id, MeetingFineWaiveRequest(reason)) }
     suspend fun comments(id: String): NetworkResult<List<MeetingCommentDto>> = safe { api.getComments(id) }
     suspend fun addComment(id: String, text: String) = message { api.addComment(id, MeetingCommentSaveRequest(text)) }
-    fun clearCache() { cache = null; detailsCache.clear() }
+    fun clearCache() { cache = null; cacheLoadedAt = 0L; detailsCache.clear() }
     fun userMessageFor(error: AppError): String = when (error) {
         AppError.NoInternet -> "No internet connection. Cached meetings may be available."
         AppError.Timeout -> "The request timed out."
@@ -87,3 +88,5 @@ class MeetingsRepository @Inject constructor(private val api: MeetingsApiService
     }
     private fun parseMessage(body: String?): String? = runCatching { gson.fromJson(body, ErrorResponse::class.java)?.message }.getOrNull()
 }
+
+private const val MEETING_CACHE_TTL_MS = 30_000L

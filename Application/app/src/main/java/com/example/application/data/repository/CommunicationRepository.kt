@@ -33,21 +33,29 @@ class CommunicationRepository @Inject constructor(
     private var residentComplaintsCache: List<ComplaintDto>? = null
     private var noticesCache: List<NoticeDto>? = null
     private var notificationsCache: AdminNotificationsResponse? = null
+    private var adminComplaintsLoadedAt = 0L
+    private var residentComplaintsLoadedAt = 0L
+    private var noticesLoadedAt = 0L
+    private var notificationsLoadedAt = 0L
     fun clearTenantCache() {
         adminComplaintsCache = null
         residentComplaintsCache = null
         noticesCache = null
         notificationsCache = null
+        adminComplaintsLoadedAt = 0L
+        residentComplaintsLoadedAt = 0L
+        noticesLoadedAt = 0L
+        notificationsLoadedAt = 0L
     }
 
     suspend fun getAdminComplaints(refresh: Boolean = false): NetworkResult<List<ComplaintDto>> {
-        adminComplaintsCache?.takeIf { !refresh }?.let { return NetworkResult.Success(it) }
-        return safeCall { api.getAllComplaints() }.also { if (it is NetworkResult.Success) adminComplaintsCache = it.data }
+        adminComplaintsCache?.takeIf { !refresh && isFresh(adminComplaintsLoadedAt) }?.let { return NetworkResult.Success(it) }
+        return safeCall { api.getAllComplaints() }.also { if (it is NetworkResult.Success) { adminComplaintsCache = it.data; adminComplaintsLoadedAt = now() } }
     }
 
     suspend fun getResidentComplaints(refresh: Boolean = false): NetworkResult<List<ComplaintDto>> {
-        residentComplaintsCache?.takeIf { !refresh }?.let { return NetworkResult.Success(it) }
-        return safeCall { api.getMyComplaints() }.also { if (it is NetworkResult.Success) residentComplaintsCache = it.data }
+        residentComplaintsCache?.takeIf { !refresh && isFresh(residentComplaintsLoadedAt) }?.let { return NetworkResult.Success(it) }
+        return safeCall { api.getMyComplaints() }.also { if (it is NetworkResult.Success) { residentComplaintsCache = it.data; residentComplaintsLoadedAt = now() } }
     }
 
     suspend fun getComplaint(id: String) = safeCall { api.getComplaint(id) }
@@ -73,8 +81,8 @@ class CommunicationRepository @Inject constructor(
     }
 
     suspend fun getNotices(refresh: Boolean = false): NetworkResult<List<NoticeDto>> {
-        noticesCache?.takeIf { !refresh }?.let { return NetworkResult.Success(it) }
-        return safeCall { api.getNotices() }.also { if (it is NetworkResult.Success) noticesCache = it.data }
+        noticesCache?.takeIf { !refresh && isFresh(noticesLoadedAt) }?.let { return NetworkResult.Success(it) }
+        return safeCall { api.getNotices() }.also { if (it is NetworkResult.Success) { noticesCache = it.data; noticesLoadedAt = now() } }
     }
 
     suspend fun getNotice(id: String) = safeCall { api.getNotice(id) }
@@ -102,10 +110,11 @@ class CommunicationRepository @Inject constructor(
     }
 
     suspend fun getNotifications(refresh: Boolean = false): NetworkResult<AdminNotificationsResponse> {
-        notificationsCache?.takeIf { !refresh }?.let { return NetworkResult.Success(it) }
+        notificationsCache?.takeIf { !refresh && isFresh(notificationsLoadedAt) }?.let { return NetworkResult.Success(it) }
         return safeCall {
-            if (sessionPreferences.readSession()?.role?.lowercase() in setOf("admin", "super_admin")) api.getAdminNotifications() else api.getNotifications()
-        }.also { if (it is NetworkResult.Success) notificationsCache = it.data }
+            val session = sessionPreferences.getCachedSession() ?: sessionPreferences.readSession()
+            if (session?.role?.lowercase() in setOf("admin", "super_admin")) api.getAdminNotifications() else api.getNotifications()
+        }.also { if (it is NetworkResult.Success) { notificationsCache = it.data; notificationsLoadedAt = now() } }
     }
 
     suspend fun markNotificationsRead(): NetworkResult<String> {
@@ -138,6 +147,9 @@ class CommunicationRepository @Inject constructor(
         residentComplaintsCache = null
         notificationsCache = null
     }
+
+    private fun now() = System.currentTimeMillis()
+    private fun isFresh(loadedAt: Long) = now() - loadedAt < COMMUNICATION_CACHE_TTL_MS
 
     private suspend fun <T> messageCall(call: suspend () -> Response<T>): NetworkResult<String> {
         return when (val result = safeCall(call)) {
@@ -206,3 +218,5 @@ class CommunicationRepository @Inject constructor(
         }
     }
 }
+
+private const val COMMUNICATION_CACHE_TTL_MS = 30_000L

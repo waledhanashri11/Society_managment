@@ -2,7 +2,9 @@ const jwt = require('jsonwebtoken');
 const { promisePool, runWithRequestDatabaseContext, setRequestSocietyId } = require('../config/database');
 
 const databaseContext = (req, res, next) => {
-  runWithRequestDatabaseContext({}, req, res, next).catch((error) => {
+  // Defer database role configuration until auth/public-auth chooses the
+  // correct context. This avoids an unused round-trip on every request.
+  runWithRequestDatabaseContext({ defer: true }, req, res, next).catch((error) => {
     console.error('Database request context error:', error);
     if (!res.headersSent) res.status(500).json({ message: 'Unable to initialize secure request context' });
   });
@@ -21,7 +23,10 @@ const auth = (req, res, next) => {
     if (!token) return res.status(401).json({ message: 'No token, authorization denied' });
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    runWithRequestDatabaseContext({ bypass: true }, req, res, async () => {
+    // The outer databaseContext already owns a clean request connection. Read
+    // the server-owned user record first, then configure the final tenant role
+    // once. This removes an unnecessary bypass-role round trip per API call.
+    runWithRequestDatabaseContext({ defer: true }, req, res, async () => {
       try {
         const [users] = await promisePool.query(
           `SELECT id, email, role, status, society_id
@@ -39,7 +44,11 @@ const auth = (req, res, next) => {
         if (!isSuperAdmin && (user.society_id == null || Number(decoded.societyId) !== Number(user.society_id))) {
           return res.status(401).json({ message: 'Token tenant is no longer valid' });
         }
-        if (!isSuperAdmin) await setRequestSocietyId(user.society_id);
+        if (!isSuperAdmin) {
+          await setRequestSocietyId(user.society_id);
+        } else {
+          await runWithRequestDatabaseContext({ bypass: true }, req, res, () => {});
+        }
         req.user = {
           ...decoded,
           id: user.id,

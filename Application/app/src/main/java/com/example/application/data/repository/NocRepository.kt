@@ -33,14 +33,18 @@ class NocRepository @Inject constructor(
 ) {
     private var residentCache: List<NocRequestDto>? = null
     private var adminCache: List<NocRequestDto>? = null
+    private var residentLoadedAt = 0L
+    private var adminLoadedAt = 0L
     fun clearTenantCache() {
         residentCache = null
         adminCache = null
+        residentLoadedAt = 0L
+        adminLoadedAt = 0L
     }
 
     suspend fun getMyNocs(refresh: Boolean = false): NetworkResult<List<NocRequestDto>> {
-        residentCache?.takeIf { !refresh }?.let { return NetworkResult.Success(it) }
-        return listApiCall { api.getMyNocs() }.also { if (it is NetworkResult.Success) residentCache = it.data }
+        residentCache?.takeIf { !refresh && System.currentTimeMillis() - residentLoadedAt < NOC_CACHE_TTL_MS }?.let { return NetworkResult.Success(it) }
+        return listApiCall { api.getMyNocs() }.also { if (it is NetworkResult.Success) { residentCache = it.data; residentLoadedAt = System.currentTimeMillis() } }
     }
 
     suspend fun createNoc(request: CreateNocRequest): NetworkResult<String> {
@@ -52,9 +56,10 @@ class NocRepository @Inject constructor(
     }
 
     suspend fun getAllNocs(status: String? = null, refresh: Boolean = false): NetworkResult<List<NocRequestDto>> {
-        adminCache?.takeIf { !refresh && status.isNullOrBlank() }?.let { return NetworkResult.Success(it) }
-        return listApiCall { api.getAllNocs(status?.takeUnless { it == "All" }) }
-            .also { if (it is NetworkResult.Success && status.isNullOrBlank()) adminCache = it.data }
+        val normalizedStatus = status?.takeUnless { it.equals("All", ignoreCase = true) || it.isBlank() }
+        adminCache?.takeIf { !refresh && normalizedStatus == null && System.currentTimeMillis() - adminLoadedAt < NOC_CACHE_TTL_MS }?.let { return NetworkResult.Success(it) }
+        return listApiCall { api.getAllNocs(normalizedStatus) }
+            .also { if (it is NetworkResult.Success && normalizedStatus == null) { adminCache = it.data; adminLoadedAt = System.currentTimeMillis() } }
     }
 
     suspend fun getReports(): NetworkResult<NocReportsDto> = try {
@@ -267,3 +272,5 @@ class NocRepository @Inject constructor(
         }
     }
 }
+
+private const val NOC_CACHE_TTL_MS = 30_000L

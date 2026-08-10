@@ -19,8 +19,23 @@ data class FlatDto(
 
 data class ResidentDashboardResponse(
     val user: ProfileDto?,
-    val summary: Map<String, Any>?,
-    val currentBill: Map<String, Any>?
+    val summary: ResidentDashboardSummaryDto?,
+    @SerializedName(value = "currentBill", alternate = ["current_bill"])
+    val currentBill: MaintenanceBillDto?,
+    @SerializedName("latest_notices") val latestNotices: List<NoticeDto>?,
+    @SerializedName("recent_complaints") val recentComplaints: List<ComplaintDto>?
+)
+
+data class ResidentDashboardSummaryDto(
+    @SerializedName("total_bills") val totalBills: Int?,
+    @SerializedName("pending_bills") val pendingBills: Int?,
+    @SerializedName("paid_bills") val paidBills: Int?,
+    @SerializedName("pending_amount") val pendingAmount: String?,
+    @SerializedName("paid_amount") val paidAmount: String?,
+    @SerializedName("total_complaints") val totalComplaints: Int?,
+    @SerializedName("open_complaints") val openComplaints: Int?,
+    @SerializedName("in_progress_complaints") val inProgressComplaints: Int?,
+    @SerializedName("resolved_complaints") val resolvedComplaints: Int?
 )
 
 data class ProfileDto(

@@ -52,7 +52,7 @@ fun ResidentDashboardScreen(
     val data = state.data
 
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
-        viewModel.load(refresh = true)
+        viewModel.load(refresh = false)
     }
 
     val currentBillId = data?.currentBill?.id

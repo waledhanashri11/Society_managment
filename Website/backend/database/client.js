@@ -97,7 +97,19 @@ const runQuery = async (executor, sql, values = []) => {
   }
 
   const normalizedSql = normalizeSql(sql);
-  const result = await executor(toPostgresPlaceholders(normalizedSql), values);
+  const startedAt = Date.now();
+  let result;
+  try {
+    result = await executor(toPostgresPlaceholders(normalizedSql), values);
+  } finally {
+    const elapsedMs = Date.now() - startedAt;
+    if (elapsedMs >= Number(process.env.SLOW_QUERY_MS || 250)) {
+      const operation = normalizedSql.trim().match(/^([A-Z]+)/i)?.[1]?.toUpperCase() || 'QUERY';
+      const table = normalizedSql.match(/\b(?:FROM|INTO|UPDATE|JOIN)\s+"?([a-zA-Z0-9_]+)/i)?.[1] || 'unknown';
+      const context = requestDatabaseStorage.getStore();
+      console.warn(`[DB_SLOW] ${operation} ${table} ${elapsedMs}ms tenant=${context?.societyId ?? 'none'}`);
+    }
+  }
 
   if (/^\s*INSERT\s+/i.test(sql)) {
     return [{ insertId: result.rows?.[0]?.id, affectedRows: result.rowCount }, result.fields];
@@ -118,9 +130,13 @@ const contextExecutor = () => {
 };
 
 const configureContext = async (client, { societyId = null, bypass = false } = {}) => {
-  await client.query('SET ROLE society_tenant_app');
-  await client.query("SELECT set_config('app.tenant_bypass', $1, false)", [bypass ? 'on' : 'off']);
-  await client.query("SELECT set_config('app.current_society_id', $1, false)", [societyId == null ? '' : String(societyId)]);
+  // One database round-trip instead of three for every context transition.
+  await client.query(
+    `SELECT set_config('role', 'society_tenant_app', false),
+            set_config('app.tenant_bypass', $1, false),
+            set_config('app.current_society_id', $2, false)`,
+    [bypass ? 'on' : 'off', societyId == null ? '' : String(societyId)]
+  );
 };
 
 const runWithRequestDatabaseContext = async (options, req, res, next) => {
@@ -146,16 +162,18 @@ const runWithRequestDatabaseContext = async (options, req, res, next) => {
     transactionDepth: 0,
     cleaned: false
   };
-  await configureContext(client, context);
+  if (options?.defer !== true) await configureContext(client, context);
 
   const cleanup = async () => {
     if (context.cleaned) return;
     context.cleaned = true;
     try {
       if (context.transactionDepth > 0) await client.query('ROLLBACK');
-      await client.query('RESET app.current_society_id');
-      await client.query('RESET app.tenant_bypass');
-      await client.query('RESET ROLE');
+      await client.query(
+        `SELECT set_config('app.current_society_id', '', false),
+                set_config('app.tenant_bypass', '', false),
+                set_config('role', 'none', false)`
+      );
     } catch (error) {
       console.error('Tenant database context cleanup failed:', error.message);
     } finally {

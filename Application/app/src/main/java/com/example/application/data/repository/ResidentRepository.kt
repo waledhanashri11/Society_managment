@@ -18,6 +18,8 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import retrofit2.HttpException
 import retrofit2.Response
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 @Singleton
 class ResidentRepository @Inject constructor(
@@ -26,12 +28,40 @@ class ResidentRepository @Inject constructor(
     private val sessionPreferences: SessionPreferences,
     private val gson: Gson
 ) {
+    private var membersCache: List<com.example.application.data.remote.dto.MembersMaintenanceReportDto>? = null
+    private var membersLoadedAt = 0L
+    private val membersMutex = Mutex()
     suspend fun getAvailableFlats(societyCode: String): NetworkResult<List<FlatDto>> {
         return safeApiCall { flatApiService.getAvailableFlats(societyCode) }
     }
 
-    suspend fun getMembers(): NetworkResult<List<com.example.application.data.remote.dto.MembersMaintenanceReportDto>> =
-        safeApiCall { residentApiService.getMembers() }
+    fun getMembersSnapshot(): List<com.example.application.data.remote.dto.MembersMaintenanceReportDto> =
+        membersCache.orEmpty()
+
+    suspend fun getMembers(refresh: Boolean = false): NetworkResult<List<com.example.application.data.remote.dto.MembersMaintenanceReportDto>> {
+        val observedLoadedAt = membersLoadedAt
+        return membersMutex.withLock {
+            val cached = membersCache
+            val fresh = System.currentTimeMillis() - membersLoadedAt < MEMBERS_CACHE_TTL_MS
+            if (cached != null && ((!refresh && fresh) || membersLoadedAt > observedLoadedAt)) {
+                return@withLock NetworkResult.Success(cached)
+            }
+            when (val result = safeApiCall { residentApiService.getMembers() }) {
+                is NetworkResult.Success -> {
+                    membersCache = result.data
+                    membersLoadedAt = System.currentTimeMillis()
+                    result
+                }
+                is NetworkResult.Error -> result
+                NetworkResult.Loading -> NetworkResult.Loading
+            }
+        }
+    }
+
+    fun clearTenantCache() {
+        membersCache = null
+        membersLoadedAt = 0L
+    }
 
     suspend fun getProfile(): NetworkResult<ProfileDto> {
         val result = safeApiCall { residentApiService.getDashboard() }
@@ -163,3 +193,5 @@ class ResidentRepository @Inject constructor(
         return if (unsafe.any { lower.contains(it) }) null else message
     }
 }
+
+private const val MEMBERS_CACHE_TTL_MS = 30_000L

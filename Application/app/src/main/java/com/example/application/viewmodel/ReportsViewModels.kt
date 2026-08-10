@@ -75,6 +75,7 @@ class AdminReportsViewModel @Inject constructor(
     }
 
     private var filterDebounceJob: Job? = null
+    private var loadJob: Job? = null
     private val CACHE_TTL_MS = 60_000L // 60 seconds — skip refresh if data is fresh
 
     private fun updateFilter(filter: ReportFilterState) {
@@ -82,6 +83,8 @@ class AdminReportsViewModel @Inject constructor(
         filterDebounceJob?.cancel()
         filterDebounceJob = viewModelScope.launch {
             delay(500) // wait 500ms before firing — avoids a network storm on rapid filter changes
+            loadJob?.cancel()
+            loadJob = null
             load(refresh = true)
         }
     }
@@ -92,7 +95,8 @@ class AdminReportsViewModel @Inject constructor(
                 _state.value.lastLoadedAt != null &&
                 (now - _state.value.lastLoadedAt!!) < CACHE_TTL_MS
         if (!refresh && isFresh) return // skip if data is less than 60s old
-        viewModelScope.launch {
+        if (loadJob?.isActive == true) return
+        loadJob = viewModelScope.launch {
             _state.update { it.copy(isLoading = it.data == null, isRefreshing = refresh && it.data != null, error = null) }
             when (val result = repository.getAdminReports(_state.value.filter, refresh)) {
                 is NetworkResult.Success -> _state.update {
@@ -108,6 +112,7 @@ class AdminReportsViewModel @Inject constructor(
                 }
                 NetworkResult.Loading -> Unit
             }
+            loadJob = null
         }
     }
 
@@ -191,6 +196,8 @@ class AdminReportsViewModel @Inject constructor(
 class ResidentReportsViewModel @Inject constructor(
     private val repository: ReportRepository
 ) : ViewModel() {
+    private var loadJob: Job? = null
+    private var filterDebounceJob: Job? = null
     private val _state = MutableStateFlow(ResidentReportsUiState())
     val state: StateFlow<ResidentReportsUiState> = _state.asStateFlow()
 
@@ -210,11 +217,18 @@ class ResidentReportsViewModel @Inject constructor(
 
     private fun updateFilter(filter: ReportFilterState) {
         _state.update { it.copy(filter = filter, exportMessage = null) }
-        load(refresh = true)
+        filterDebounceJob?.cancel()
+        filterDebounceJob = viewModelScope.launch {
+            delay(500)
+            loadJob?.cancel()
+            loadJob = null
+            load(refresh = true)
+        }
     }
 
     fun load(refresh: Boolean = false) {
-        viewModelScope.launch {
+        if (loadJob?.isActive == true) return
+        loadJob = viewModelScope.launch {
             _state.update { it.copy(isLoading = it.data == null, isRefreshing = refresh && it.data != null, error = null) }
             when (val result = repository.getResidentReports(_state.value.filter, refresh)) {
                 is NetworkResult.Success -> _state.update {
@@ -230,6 +244,7 @@ class ResidentReportsViewModel @Inject constructor(
                 }
                 NetworkResult.Loading -> Unit
             }
+            loadJob = null
         }
     }
 

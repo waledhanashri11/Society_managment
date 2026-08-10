@@ -39,7 +39,8 @@ class AuthRepository @Inject constructor(
     private val eventsRepository: EventsRepository,
     private val reportRepository: ReportRepository,
     private val nocRepository: NocRepository,
-    private val societyRulesRepository: SocietyRulesRepository
+    private val societyRulesRepository: SocietyRulesRepository,
+    private val residentRepository: ResidentRepository
 ) {
     suspend fun login(email: String, password: String): NetworkResult<UserSession> {
         return try {
@@ -161,6 +162,7 @@ class AuthRepository @Inject constructor(
         reportRepository.clearTenantCache()
         nocRepository.clearTenantCache()
         societyRulesRepository.clearTenantCache()
+        residentRepository.clearTenantCache()
     }
 
     private fun UserDto.toSession(token: String, responseSociety: SocietyDto?): UserSession {

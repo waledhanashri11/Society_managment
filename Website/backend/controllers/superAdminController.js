@@ -23,17 +23,15 @@ const validateSociety = (society) => {
 
 const dashboard = async (_req, res) => {
   try {
-    const [summary] = await promisePool.query(
-      `SELECT COUNT(*)::int AS total_societies,
-              COUNT(*) FILTER (WHERE status = 'active')::int AS active_societies,
-              COUNT(*) FILTER (WHERE status <> 'active')::int AS inactive_societies
-       FROM societies`
+    const [rows] = await promisePool.query(
+      `SELECT
+         (SELECT COUNT(*)::int FROM societies) AS total_societies,
+         (SELECT COUNT(*)::int FROM societies WHERE status = 'active') AS active_societies,
+         (SELECT COUNT(*)::int FROM societies WHERE status <> 'active') AS inactive_societies,
+         (SELECT COUNT(*)::int FROM users WHERE role = 'resident') AS total_residents,
+         (SELECT COUNT(*)::int FROM flats) AS total_flats`
     );
-    const [people] = await promisePool.query(
-      `SELECT COUNT(*) FILTER (WHERE role = 'resident')::int AS total_residents FROM users`
-    );
-    const [flats] = await promisePool.query('SELECT COUNT(*)::int AS total_flats FROM flats');
-    res.json({ ...summary[0], ...people[0], ...flats[0] });
+    res.json(rows[0]);
   } catch (error) {
     console.error('Super Admin dashboard error:', error);
     res.status(500).json({ message: 'Unable to load platform dashboard' });

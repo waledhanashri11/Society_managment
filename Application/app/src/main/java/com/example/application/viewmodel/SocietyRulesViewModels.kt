@@ -13,6 +13,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 
 data class SocietyRulesState(
     val isLoading: Boolean = false,
@@ -35,19 +38,22 @@ data class SocietyRulesState(
 class AdminSocietyRulesViewModel @Inject constructor(
     private val repository: SocietyRulesRepository
 ) : ViewModel() {
+    private var loadJob: Job? = null
     private val _state = MutableStateFlow(SocietyRulesState())
     val state: StateFlow<SocietyRulesState> = _state.asStateFlow()
 
     init { load() }
 
     fun load(refresh: Boolean = false) {
-        viewModelScope.launch {
-            _state.update { it.copy(isLoading = it.items.isEmpty(), isRefreshing = refresh, error = null, message = null) }
+        if (loadJob?.isActive == true) return
+        loadJob = viewModelScope.launch {
+            _state.update { it.copy(isLoading = it.items.isEmpty(), isRefreshing = it.items.isNotEmpty(), error = null, message = null) }
             when (val result = repository.getAdminRules(refresh)) {
                 is NetworkResult.Success -> _state.update { it.copy(isLoading = false, isRefreshing = false, items = result.data) }
                 is NetworkResult.Error -> _state.update { it.copy(isLoading = false, isRefreshing = false, error = repository.userMessageFor(result.error)) }
                 NetworkResult.Loading -> Unit
             }
+            loadJob = null
         }
     }
 
@@ -108,24 +114,32 @@ class AdminSocietyRulesViewModel @Inject constructor(
 class ResidentSocietyRulesViewModel @Inject constructor(
     private val repository: SocietyRulesRepository
 ) : ViewModel() {
+    private var loadJob: Job? = null
     private val _state = MutableStateFlow(SocietyRulesState(status = "published"))
     val state: StateFlow<SocietyRulesState> = _state.asStateFlow()
 
     init { load() }
 
     fun load(refresh: Boolean = false) {
-        viewModelScope.launch {
-            _state.update { it.copy(isLoading = it.items.isEmpty(), isRefreshing = refresh, error = null, message = null) }
-            when (val meta = repository.getMeta()) {
+        if (loadJob?.isActive == true) return
+        loadJob = viewModelScope.launch {
+            _state.update { it.copy(isLoading = it.items.isEmpty(), isRefreshing = it.items.isNotEmpty(), error = null, message = null) }
+            val (meta, result) = coroutineScope {
+                val metaCall = async { repository.getMeta(refresh) }
+                val rulesCall = async { repository.getResidentRules(refresh) }
+                metaCall.await() to rulesCall.await()
+            }
+            when (meta) {
                 is NetworkResult.Success -> _state.update { it.copy(rulesVersion = meta.data.version, needsAcceptance = (meta.data.acceptance?.needsAcceptance ?: meta.data.needsAcceptance) == true) }
                 is NetworkResult.Error -> Unit
                 NetworkResult.Loading -> Unit
             }
-            when (val result = repository.getResidentRules(refresh)) {
+            when (result) {
                 is NetworkResult.Success -> _state.update { it.copy(isLoading = false, isRefreshing = false, items = result.data) }
                 is NetworkResult.Error -> _state.update { it.copy(isLoading = false, isRefreshing = false, error = repository.userMessageFor(result.error)) }
                 NetworkResult.Loading -> Unit
             }
+            loadJob = null
         }
     }
 
@@ -142,7 +156,12 @@ class ResidentSocietyRulesViewModel @Inject constructor(
     fun markRead(id: String) {
         viewModelScope.launch {
             when (val result = repository.markRuleRead(id)) {
-                is NetworkResult.Success -> load(true)
+                is NetworkResult.Success -> _state.update { state ->
+                    state.copy(
+                        items = state.items.map { if (it.id == id) it.copy(isRead = true, readAt = "now") else it },
+                        selectedRule = state.selectedRule?.takeIf { it.id == id }?.copy(isRead = true, readAt = "now") ?: state.selectedRule
+                    )
+                }
                 is NetworkResult.Error -> _state.update { it.copy(error = repository.userMessageFor(result.error)) }
                 NetworkResult.Loading -> Unit
             }
@@ -154,8 +173,12 @@ class ResidentSocietyRulesViewModel @Inject constructor(
             _state.update { it.copy(submitting = true, error = null, message = null) }
             when (val result = repository.acknowledgeRule(id)) {
                 is NetworkResult.Success -> {
-                    _state.update { it.copy(submitting = false, message = result.data, selectedRule = it.selectedRule?.copy(isAcknowledged = true, acknowledgedAt = "now")) }
-                    load(true)
+                    _state.update { state -> state.copy(
+                        submitting = false,
+                        message = result.data,
+                        selectedRule = state.selectedRule?.copy(isAcknowledged = true, acknowledgedAt = "now"),
+                        items = state.items.map { if (it.id == id) it.copy(isAcknowledged = true, acknowledgedAt = "now") else it }
+                    ) }
                 }
                 is NetworkResult.Error -> _state.update { it.copy(submitting = false, error = repository.userMessageFor(result.error)) }
                 NetworkResult.Loading -> Unit

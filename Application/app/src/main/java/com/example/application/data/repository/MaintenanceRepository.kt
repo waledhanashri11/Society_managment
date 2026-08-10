@@ -45,6 +45,8 @@ class MaintenanceRepository @Inject constructor(
 ) {
     private var adminCache: AdminMaintenanceData? = null
     private var residentCache: ResidentMaintenanceData? = null
+    private var adminLoadedAt = 0L
+    private var residentLoadedAt = 0L
 
     fun getAdminSnapshot(): AdminMaintenanceData {
         return adminCache ?: AdminMaintenanceData(
@@ -71,7 +73,8 @@ class MaintenanceRepository @Inject constructor(
     }
 
     suspend fun getAdminData(refresh: Boolean = false): NetworkResult<AdminMaintenanceData> = coroutineScope {
-        adminCache?.takeIf { !refresh }?.let { return@coroutineScope NetworkResult.Success(it) }
+        adminCache?.takeIf { !refresh && System.currentTimeMillis() - adminLoadedAt < MAINTENANCE_CACHE_TTL_MS }
+            ?.let { return@coroutineScope NetworkResult.Success(it) }
 
         val dashboardCall = async { safeApiCall { api.getDashboard() } }
         val billsCall = async { safeApiCall { api.getBills() } }
@@ -128,11 +131,13 @@ class MaintenanceRepository @Inject constructor(
             )
         )
         adminCache = data
+        adminLoadedAt = System.currentTimeMillis()
         NetworkResult.Success(data)
     }
 
     suspend fun getResidentData(refresh: Boolean = false): NetworkResult<ResidentMaintenanceData> = coroutineScope {
-        residentCache?.takeIf { !refresh }?.let { return@coroutineScope NetworkResult.Success(it) }
+        residentCache?.takeIf { !refresh && System.currentTimeMillis() - residentLoadedAt < MAINTENANCE_CACHE_TTL_MS }
+            ?.let { return@coroutineScope NetworkResult.Success(it) }
         val billsCall = async { safeApiCall { api.getMyMaintenance() } }
         val settingsCall = async { runCatching { api.getPaymentSettings() }.getOrNull()?.takeIf { it.isSuccessful }?.body() }
         val bills = billsCall.await()
@@ -143,7 +148,35 @@ class MaintenanceRepository @Inject constructor(
             paymentSettings = paymentSettings
         )
         residentCache = data
+        residentLoadedAt = System.currentTimeMillis()
         NetworkResult.Success(data)
+    }
+
+    /** Refresh only payment-sensitive data after verification actions. */
+    suspend fun refreshAdminFinancialData(): NetworkResult<AdminMaintenanceData> = coroutineScope {
+        val existing = adminCache ?: return@coroutineScope getAdminData(refresh = true)
+        val dashboardCall = async { safeApiCall { api.getDashboard() } }
+        val billsCall = async { safeApiCall { api.getBills() } }
+        val paymentsCall = async { safeApiCall { api.getPayments() } }
+        val verificationsCall = async { safeApiCall { api.getPaymentVerifications() } }
+        val dashboard = dashboardCall.await()
+        val bills = billsCall.await()
+        val payments = paymentsCall.await()
+        val verifications = verificationsCall.await()
+        if (dashboard is NetworkResult.Error && bills is NetworkResult.Error) return@coroutineScope dashboard
+        val updated = existing.copy(
+            dashboard = (dashboard as? NetworkResult.Success)?.data ?: existing.dashboard,
+            bills = (bills as? NetworkResult.Success)?.data ?: existing.bills,
+            payments = (payments as? NetworkResult.Success)?.data ?: existing.payments,
+            verifications = mergeVerificationPayments(
+                (verifications as? NetworkResult.Success)?.data.orEmpty(),
+                (payments as? NetworkResult.Success)?.data ?: existing.payments
+            )
+        )
+        adminCache = updated
+        adminLoadedAt = System.currentTimeMillis()
+        dashboardRepository.clearCache()
+        NetworkResult.Success(updated)
     }
 
     suspend fun generateBills(
@@ -216,8 +249,8 @@ class MaintenanceRepository @Inject constructor(
     suspend fun submitPayment(request: SubmitPaymentRequest) = messageCall { api.submitPayment(request) }
     suspend fun updatePayment(id: String, request: UpdatePaymentRequest): NetworkResult<String> {
         return when (request.paymentStatus.trim().lowercase()) {
-            "paid", "approved" -> messageCall { api.approvePayment(id) }
-            "rejected" -> messageCall {
+            "paid", "approved" -> messageCall(invalidateCaches = false) { api.approvePayment(id) }
+            "rejected" -> messageCall(invalidateCaches = false) {
                 api.rejectPayment(
                     id,
                     mapOf(
@@ -225,8 +258,8 @@ class MaintenanceRepository @Inject constructor(
                     )
                 )
             }
-            "needs clarification", "clarification" -> messageCall { api.updatePayment(id, request) }
-            else -> messageCall { api.updatePayment(id, request) }
+            "needs clarification", "clarification" -> messageCall(invalidateCaches = false) { api.updatePayment(id, request) }
+            else -> messageCall(invalidateCaches = false) { api.updatePayment(id, request) }
         }
     }
     suspend fun saveSettings(request: MaintenanceSettingsRequest) = messageCall { api.saveSettings(request) }
@@ -335,7 +368,10 @@ class MaintenanceRepository @Inject constructor(
             .sortedByDescending { it.submittedAt ?: it.paymentDate.orEmpty() }
     }
 
-    private suspend fun <T> messageCall(call: suspend () -> Response<ApiResponse<T>>): NetworkResult<String> {
+    private suspend fun <T> messageCall(
+        invalidateCaches: Boolean = true,
+        call: suspend () -> Response<ApiResponse<T>>
+    ): NetworkResult<String> {
         return try {
             var response = call()
             if (response.code() == 502 || response.code() == 503) {
@@ -343,7 +379,7 @@ class MaintenanceRepository @Inject constructor(
                 response = call()
             }
             if (response.isSuccessful && response.body()?.success != false) {
-                clearCaches()
+                if (invalidateCaches) clearCaches()
                 NetworkResult.Success(response.body()?.message ?: "Saved successfully")
             } else {
                 NetworkResult.Error(mapHttpError(response.code(), parseErrorMessage(response.errorBody()?.string()) ?: response.body()?.message))
@@ -362,6 +398,8 @@ class MaintenanceRepository @Inject constructor(
     fun clearCaches() {
         adminCache = null
         residentCache = null
+        adminLoadedAt = 0L
+        residentLoadedAt = 0L
         dashboardRepository.clearCache()
     }
 
@@ -443,6 +481,8 @@ class MaintenanceRepository @Inject constructor(
         }
     }
 }
+
+private const val MAINTENANCE_CACHE_TTL_MS = 30_000L
 
 data class AdminMaintenanceData(
     val adminSummary: com.example.application.data.remote.dto.AdminMaintenanceSummaryDto?,

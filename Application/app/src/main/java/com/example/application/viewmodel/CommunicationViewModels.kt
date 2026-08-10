@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
 
 data class CommunicationListState<T>(
     val isLoading: Boolean = false,
@@ -39,29 +40,39 @@ data class NotificationState(
 
 @HiltViewModel
 class AdminComplaintsViewModel @Inject constructor(private val repository: CommunicationRepository) : ViewModel() {
+    private var loadJob: Job? = null
     private val _state = MutableStateFlow(CommunicationListState<ComplaintDto>())
     val state: StateFlow<CommunicationListState<ComplaintDto>> = _state.asStateFlow()
     init { load() }
     fun load(refresh: Boolean = false) = loadList(refresh) { repository.getAdminComplaints(refresh) }
     fun setQuery(value: String) = _state.update { it.copy(query = value) }
     fun setFilter(value: String) = _state.update { it.copy(filter = value) }
-    fun updateComplaint(id: String, status: String, reply: String?) = action { repository.updateComplaint(id, status, reply) }
-    fun deleteComplaint(id: String) = action { repository.deleteComplaint(id) }
+    fun updateComplaint(id: String, status: String, reply: String?) = action(
+        onSuccess = { items -> items.map { if (it.id == id) it.copy(status = status, reply = reply) else it } }
+    ) { repository.updateComplaint(id, status, reply) }
+    fun deleteComplaint(id: String) = action(
+        onSuccess = { items -> items.filterNot { it.id == id } }
+    ) { repository.deleteComplaint(id) }
     private fun loadList(refresh: Boolean, call: suspend () -> NetworkResult<List<ComplaintDto>>) {
-        viewModelScope.launch {
-            _state.update { it.copy(isLoading = it.items.isEmpty(), isRefreshing = refresh, error = null, message = null) }
+        if (loadJob?.isActive == true) return
+        loadJob = viewModelScope.launch {
+            _state.update { it.copy(isLoading = it.items.isEmpty(), isRefreshing = it.items.isNotEmpty(), error = null, message = null) }
             when (val result = call()) {
                 is NetworkResult.Success -> _state.update { it.copy(isLoading = false, isRefreshing = false, items = result.data) }
                 is NetworkResult.Error -> _state.update { it.copy(isLoading = false, isRefreshing = false, error = repository.userMessageFor(result.error)) }
                 NetworkResult.Loading -> Unit
             }
+            loadJob = null
         }
     }
-    private fun action(call: suspend () -> NetworkResult<String>) {
+    private fun action(
+        onSuccess: (List<ComplaintDto>) -> List<ComplaintDto>,
+        call: suspend () -> NetworkResult<String>
+    ) {
         viewModelScope.launch {
             _state.update { it.copy(submitting = true, error = null, message = null) }
             when (val result = call()) {
-                is NetworkResult.Success -> { _state.update { it.copy(submitting = false, message = result.data) }; load(true) }
+                is NetworkResult.Success -> _state.update { it.copy(submitting = false, message = result.data, items = onSuccess(it.items)) }
                 is NetworkResult.Error -> _state.update { it.copy(submitting = false, error = repository.userMessageFor(result.error)) }
                 NetworkResult.Loading -> Unit
             }
@@ -71,17 +82,20 @@ class AdminComplaintsViewModel @Inject constructor(private val repository: Commu
 
 @HiltViewModel
 class ResidentComplaintsViewModel @Inject constructor(private val repository: CommunicationRepository) : ViewModel() {
+    private var loadJob: Job? = null
     private val _state = MutableStateFlow(CommunicationListState<ComplaintDto>())
     val state: StateFlow<CommunicationListState<ComplaintDto>> = _state.asStateFlow()
     init { load() }
     fun load(refresh: Boolean = false) {
-        viewModelScope.launch {
-            _state.update { it.copy(isLoading = it.items.isEmpty(), isRefreshing = refresh, error = null, message = null) }
+        if (loadJob?.isActive == true) return
+        loadJob = viewModelScope.launch {
+            _state.update { it.copy(isLoading = it.items.isEmpty(), isRefreshing = it.items.isNotEmpty(), error = null, message = null) }
             when (val result = repository.getResidentComplaints(refresh)) {
                 is NetworkResult.Success -> _state.update { it.copy(isLoading = false, isRefreshing = false, items = result.data) }
                 is NetworkResult.Error -> _state.update { it.copy(isLoading = false, isRefreshing = false, error = repository.userMessageFor(result.error)) }
                 NetworkResult.Loading -> Unit
             }
+            loadJob = null
         }
     }
     fun setQuery(value: String) = _state.update { it.copy(query = value) }
@@ -114,17 +128,20 @@ class ResidentComplaintsViewModel @Inject constructor(private val repository: Co
 
 @HiltViewModel
 class NoticesViewModel @Inject constructor(private val repository: CommunicationRepository) : ViewModel() {
+    private var loadJob: Job? = null
     private val _state = MutableStateFlow(CommunicationListState<NoticeDto>())
     val state: StateFlow<CommunicationListState<NoticeDto>> = _state.asStateFlow()
     init { load() }
     fun load(refresh: Boolean = false) {
-        viewModelScope.launch {
-            _state.update { it.copy(isLoading = it.items.isEmpty(), isRefreshing = refresh, error = null, message = null) }
+        if (loadJob?.isActive == true) return
+        loadJob = viewModelScope.launch {
+            _state.update { it.copy(isLoading = it.items.isEmpty(), isRefreshing = it.items.isNotEmpty(), error = null, message = null) }
             when (val result = repository.getNotices(refresh)) {
                 is NetworkResult.Success -> _state.update { it.copy(isLoading = false, isRefreshing = false, items = result.data) }
                 is NetworkResult.Error -> _state.update { it.copy(isLoading = false, isRefreshing = false, error = repository.userMessageFor(result.error)) }
                 NetworkResult.Loading -> Unit
             }
+            loadJob = null
         }
     }
     fun setQuery(value: String) = _state.update { it.copy(query = value) }
@@ -155,17 +172,20 @@ class NoticesViewModel @Inject constructor(private val repository: Communication
 
 @HiltViewModel
 class NotificationsViewModel @Inject constructor(private val repository: CommunicationRepository) : ViewModel() {
+    private var loadJob: Job? = null
     private val _state = MutableStateFlow(NotificationState())
     val state: StateFlow<NotificationState> = _state.asStateFlow()
     init { load() }
     fun load(refresh: Boolean = false) {
-        viewModelScope.launch {
-            _state.update { it.copy(isLoading = it.data == null, isRefreshing = refresh, error = null, message = null) }
+        if (loadJob?.isActive == true) return
+        loadJob = viewModelScope.launch {
+            _state.update { it.copy(isLoading = it.data == null, isRefreshing = it.data != null, error = null, message = null) }
             when (val result = repository.getNotifications(refresh)) {
                 is NetworkResult.Success -> _state.update { it.copy(isLoading = false, isRefreshing = false, data = result.data) }
                 is NetworkResult.Error -> _state.update { it.copy(isLoading = false, isRefreshing = false, error = repository.userMessageFor(result.error)) }
                 NetworkResult.Loading -> Unit
             }
+            loadJob = null
         }
     }
     fun markAllRead() {

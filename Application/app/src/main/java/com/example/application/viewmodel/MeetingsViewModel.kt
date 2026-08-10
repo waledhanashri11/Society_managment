@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
 
 data class MeetingsUiState(
     val loading: Boolean = false, val refreshing: Boolean = false, val submitting: Boolean = false,
@@ -24,15 +25,20 @@ data class MeetingsUiState(
 
 @HiltViewModel
 class MeetingsViewModel @Inject constructor(private val repository: MeetingsRepository) : ViewModel() {
+    private var loadJob: Job? = null
     private val _state = MutableStateFlow(MeetingsUiState())
     val state: StateFlow<MeetingsUiState> = _state.asStateFlow()
     init { load() }
-    fun load(refresh: Boolean = false) = viewModelScope.launch {
-        _state.update { it.copy(loading = it.meetings.isEmpty(), refreshing = refresh, error = null) }
-        when (val result = repository.getMeetings(refresh)) {
-            is NetworkResult.Success -> _state.update { it.copy(loading = false, refreshing = false, meetings = result.data) }
-            is NetworkResult.Error -> _state.update { it.copy(loading = false, refreshing = false, error = repository.userMessageFor(result.error)) }
-            NetworkResult.Loading -> Unit
+    fun load(refresh: Boolean = false) {
+        if (loadJob?.isActive == true) return
+        loadJob = viewModelScope.launch {
+            _state.update { it.copy(loading = it.meetings.isEmpty(), refreshing = it.meetings.isNotEmpty(), error = null) }
+            when (val result = repository.getMeetings(refresh)) {
+                is NetworkResult.Success -> _state.update { it.copy(loading = false, refreshing = false, meetings = result.data) }
+                is NetworkResult.Error -> _state.update { it.copy(loading = false, refreshing = false, error = repository.userMessageFor(result.error)) }
+                NetworkResult.Loading -> Unit
+            }
+            loadJob = null
         }
     }
     fun setQuery(value: String) = _state.update { it.copy(query = value) }

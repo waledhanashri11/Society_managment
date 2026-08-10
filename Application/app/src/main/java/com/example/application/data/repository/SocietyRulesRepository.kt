@@ -26,32 +26,45 @@ class SocietyRulesRepository @Inject constructor(
 ) {
     private var adminRulesCache: List<SocietyRuleDto>? = null
     private var residentRulesCache: List<SocietyRuleDto>? = null
+    private var metaCache: SocietyRulesMetaDto? = null
+    private var adminLoadedAt = 0L
+    private var residentLoadedAt = 0L
+    private var metaLoadedAt = 0L
     private val reportCache = mutableMapOf<String, SocietyRuleAcknowledgementReportDto>()
     fun clearTenantCache() {
         adminRulesCache = null
         residentRulesCache = null
+        metaCache = null
+        adminLoadedAt = 0L
+        residentLoadedAt = 0L
+        metaLoadedAt = 0L
         reportCache.clear()
     }
 
     suspend fun getAdminRules(refresh: Boolean = false): NetworkResult<List<SocietyRuleDto>> {
-        adminRulesCache?.takeIf { !refresh }?.let { return NetworkResult.Success(it) }
+        adminRulesCache?.takeIf { !refresh && isFresh(adminLoadedAt) }?.let { return NetworkResult.Success(it) }
         return when (val result = safeCall { api.getRules() }) {
-            is NetworkResult.Success -> NetworkResult.Success(result.data.rules).also { adminRulesCache = result.data.rules }
+            is NetworkResult.Success -> NetworkResult.Success(result.data.rules).also { adminRulesCache = result.data.rules; adminLoadedAt = System.currentTimeMillis() }
             is NetworkResult.Error -> result
             NetworkResult.Loading -> NetworkResult.Loading
         }
     }
 
     suspend fun getResidentRules(refresh: Boolean = false): NetworkResult<List<SocietyRuleDto>> {
-        residentRulesCache?.takeIf { !refresh }?.let { return NetworkResult.Success(it) }
+        residentRulesCache?.takeIf { !refresh && isFresh(residentLoadedAt) }?.let { return NetworkResult.Success(it) }
         return when (val result = safeCall { api.getRules(status = "published") }) {
-            is NetworkResult.Success -> NetworkResult.Success(result.data.rules).also { residentRulesCache = result.data.rules }
+            is NetworkResult.Success -> NetworkResult.Success(result.data.rules).also { residentRulesCache = result.data.rules; residentLoadedAt = System.currentTimeMillis() }
             is NetworkResult.Error -> result
             NetworkResult.Loading -> NetworkResult.Loading
         }
     }
 
-    suspend fun getMeta(): NetworkResult<SocietyRulesMetaDto> = safeCall { api.getMeta() }
+    suspend fun getMeta(refresh: Boolean = false): NetworkResult<SocietyRulesMetaDto> {
+        metaCache?.takeIf { !refresh && isFresh(metaLoadedAt) }?.let { return NetworkResult.Success(it) }
+        return safeCall { api.getMeta() }.also { if (it is NetworkResult.Success) { metaCache = it.data; metaLoadedAt = System.currentTimeMillis() } }
+    }
+
+    private fun isFresh(loadedAt: Long) = System.currentTimeMillis() - loadedAt < RULES_CACHE_TTL_MS
 
     suspend fun getRule(id: String): NetworkResult<SocietyRuleDto> = safeCall { api.getRule(id) }
 
@@ -194,3 +207,5 @@ class SocietyRulesRepository @Inject constructor(
         }
     }
 }
+
+private const val RULES_CACHE_TTL_MS = 60_000L

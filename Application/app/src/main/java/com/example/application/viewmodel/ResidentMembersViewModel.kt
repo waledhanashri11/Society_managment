@@ -25,25 +25,26 @@ data class ResidentMembersState(
 
 @HiltViewModel
 class ResidentMembersViewModel @Inject constructor(private val repository: ResidentRepository) : ViewModel() {
-    private val _state = MutableStateFlow(ResidentMembersState())
+    private val _state = MutableStateFlow(
+        ResidentMembersState(members = repository.getMembersSnapshot())
+    )
     val state = _state.asStateFlow()
     private var loadJob: Job? = null
 
     init { load() }
 
     fun load(refresh: Boolean = false) {
-        if (loadJob?.isActive == true && !refresh) return
-        loadJob?.cancel()
+        if (loadJob?.isActive == true) return
         loadJob = viewModelScope.launch {
             _state.update {
                 it.copy(
                     loading = it.members.isEmpty(),
-                    refreshing = refresh,
+                    refreshing = it.members.isNotEmpty(),
                     error = null
                 )
             }
             try {
-                when (val result = withTimeout(MEMBERS_TIMEOUT_MS) { repository.getMembers() }) {
+                when (val result = withTimeout(MEMBERS_TIMEOUT_MS) { repository.getMembers(refresh) }) {
                     is NetworkResult.Success -> _state.update {
                         it.copy(loading = false, refreshing = false, members = result.data, error = null)
                     }
@@ -85,6 +86,6 @@ class ResidentMembersViewModel @Inject constructor(private val repository: Resid
     }
 
     companion object {
-        private const val MEMBERS_TIMEOUT_MS = 45_000L
+        private const val MEMBERS_TIMEOUT_MS = 60_000L
     }
 }

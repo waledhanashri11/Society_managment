@@ -83,6 +83,28 @@ data class MaintenanceBillDto(
     val notes: String? = null
 )
 
+data class AdminDashboardResponseDto(
+    @SerializedName("admin_name") val adminName: String?,
+    @SerializedName("total_residents") val totalResidents: Int?,
+    @SerializedName("total_flats") val totalFlats: Int?,
+    @SerializedName("occupied_flats") val occupiedFlats: Int?,
+    @SerializedName("vacant_flats") val vacantFlats: Int?,
+    @SerializedName("pending_registrations") val pendingRegistrations: Int?,
+    @SerializedName("total_billed") val totalBilled: String?,
+    val collected: String?,
+    val pending: String?,
+    @SerializedName("paid_bill_count") val paidBillCount: Int?,
+    @SerializedName("pending_bill_count") val pendingBillCount: Int?,
+    @SerializedName("overdue_bill_count") val overdueBillCount: Int?,
+    @SerializedName("open_complaints") val openComplaints: Int?,
+    @SerializedName("in_progress_complaints") val inProgressComplaints: Int?,
+    @SerializedName("resolved_complaints") val resolvedComplaints: Int?,
+    @SerializedName("total_notices") val totalNotices: Int?,
+    @SerializedName("latest_notices") val latestNotices: List<NoticeDto>?,
+    @SerializedName("recent_complaints") val recentComplaints: List<ComplaintDto>?,
+    @SerializedName("recent_payments") val recentPayments: List<PaymentDto>?
+)
+
 data class ComplaintDto(
     val id: String?,
     val title: String?,

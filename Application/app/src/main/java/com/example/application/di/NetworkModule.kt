@@ -19,6 +19,7 @@ import com.example.application.data.remote.api.SuperAdminApiService
 import com.example.application.data.remote.interceptor.AcceptHeaderInterceptor
 import com.example.application.data.remote.interceptor.AuthHeaderInterceptor
 import com.example.application.data.remote.interceptor.SessionExpiryInterceptor
+import com.example.application.data.remote.NetworkTimingEventListener
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import dagger.Module
@@ -28,6 +29,7 @@ import dagger.hilt.components.SingletonComponent
 import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
 import okhttp3.OkHttpClient
+import okhttp3.ConnectionPool
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
@@ -69,6 +71,8 @@ object NetworkModule {
         loggingInterceptor: HttpLoggingInterceptor
     ): OkHttpClient {
         return OkHttpClient.Builder()
+            .connectionPool(ConnectionPool(8, 5, TimeUnit.MINUTES))
+            .eventListenerFactory { NetworkTimingEventListener() }
             .connectTimeout(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .readTimeout(READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .writeTimeout(WRITE_TIMEOUT_SECONDS, TimeUnit.SECONDS)

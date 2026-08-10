@@ -67,150 +67,82 @@ const maintenanceReportColumns = async () => {
 const getDashboard = async (req, res) => {
   try {
     const userId = req.user.id;
-    const [societyRows] = await promisePool.query(
-      'SELECT name FROM societies WHERE id = ?',
-      [req.user.societyId]
-    );
-    const societyName = societyRows[0]?.name || 'Society';
-
-    try {
-      const { reconcilePaidPayments } = require('./maintenanceController');
-      if (typeof reconcilePaidPayments === 'function') {
-        await reconcilePaidPayments(promisePool, userId);
-      }
-    } catch (_) {}
-
-    const [userRows] = await promisePool.query(
-      `SELECT u.id, u.name, u.email, u.phone, u.flat_id, u.role, u.status,
-              f.flat_no, f.wing, f.floor_no, f.maintenance_charge, f.status AS flat_status
+    const societyId = req.user.societyId;
+    const [rows] = await promisePool.query(
+      `WITH tenant AS (SELECT ?::bigint AS society_id),
+       bill_stats AS (
+         SELECT COUNT(*)::int AS total_bills,
+                COUNT(*) FILTER (WHERE LOWER(status) NOT IN ('paid','settled','written_off','written off','fully written off','cancelled','canceled'))::int AS pending_bills,
+                COUNT(*) FILTER (WHERE LOWER(status) IN ('paid','settled','written_off','written off','fully written off'))::int AS paid_bills,
+                COALESCE(SUM(CASE WHEN LOWER(status) NOT IN ('paid','settled','written_off','written off','fully written off','cancelled','canceled') THEN GREATEST(0, COALESCE(original_amount, amount, total_amount, 0) + COALESCE(penalty_amount, 0) - COALESCE(maintenance_write_off_amount, 0) - COALESCE(penalty_write_off_amount, 0) - COALESCE(paid_amount, 0)) ELSE 0 END), 0) AS pending_amount,
+                COALESCE(SUM(CASE WHEN LOWER(status) = 'paid' THEN COALESCE(paid_amount, 0) ELSE 0 END), 0) AS paid_amount
+         FROM maintenance m, tenant t WHERE m.resident_id = ? AND m.society_id = t.society_id
+       ), complaint_stats AS (
+         SELECT COUNT(*)::int AS total_complaints,
+                COUNT(*) FILTER (WHERE LOWER(status) = 'pending')::int AS open_complaints,
+                COUNT(*) FILTER (WHERE LOWER(status) = 'in_progress')::int AS in_progress_complaints,
+                COUNT(*) FILTER (WHERE LOWER(status) = 'resolved')::int AS resolved_complaints
+         FROM complaints c, tenant t WHERE c.user_id = ? AND c.society_id = t.society_id
+       )
+       SELECT u.id, u.name, u.email, u.phone, u.flat_id, u.role, u.status,
+              f.flat_no, f.wing, f.floor_no, f.maintenance_charge, f.status AS flat_status,
+              s.name AS society_name, bs.*, cs.*,
+              (SELECT COUNT(*)::int FROM notices n, tenant t WHERE n.society_id = t.society_id AND LOWER(COALESCE(n.status, 'active')) = 'active') AS active_notices,
+              (SELECT COUNT(*)::int FROM visitors v, tenant t WHERE v.resident_id = u.id AND v.society_id = t.society_id AND DATE(v.visit_time) = CURRENT_DATE) AS today_visitors,
+              (SELECT COUNT(*)::int FROM visitors v, tenant t WHERE v.resident_id = u.id AND v.society_id = t.society_id AND v.visit_time > NOW()) AS upcoming_visitors,
+              (SELECT COUNT(*)::int FROM visitors v, tenant t WHERE v.resident_id = u.id AND v.society_id = t.society_id AND v.status = 'approved' AND DATE(v.visit_time) = CURRENT_DATE) AS approved_visitors,
+              (SELECT COUNT(*)::int FROM parcels p, tenant t WHERE p.resident_id = u.id AND p.society_id = t.society_id AND p.status = 'pending') AS pending_parcels,
+              (SELECT COUNT(*)::int FROM parcels p, tenant t WHERE p.resident_id = u.id AND p.society_id = t.society_id AND p.status = 'delivered') AS delivered_parcels,
+              (SELECT COUNT(*)::int FROM activities a, tenant t WHERE a.resident_id = u.id AND a.society_id = t.society_id) AS total_activities,
+              (SELECT to_jsonb(bill_row) FROM (
+                 SELECT m.*, m.status AS payment_status, f2.flat_no,
+                        GREATEST(0, COALESCE(m.original_amount, m.amount, m.total_amount, 0) + COALESCE(m.penalty_amount, 0) - COALESCE(m.maintenance_write_off_amount, 0) - COALESCE(m.penalty_write_off_amount, 0) - COALESCE(m.paid_amount, 0)) AS remaining_amount
+                 FROM maintenance m
+                 LEFT JOIN flats f2 ON f2.id = m.flat_id AND f2.society_id = m.society_id
+                 WHERE m.resident_id = u.id AND m.society_id = u.society_id
+                   AND LOWER(m.status) NOT IN ('paid','settled','written_off','written off','fully written off','cancelled','canceled')
+                   AND NOT EXISTS (SELECT 1 FROM payments p LEFT JOIN payment_maintenance pm ON pm.payment_id = p.id WHERE p.society_id = m.society_id AND COALESCE(pm.maintenance_id, p.bill_id) = m.id AND p.payment_status IN ('Approved','Paid'))
+                   AND GREATEST(0, COALESCE(m.original_amount, m.amount, m.total_amount, 0) + COALESCE(m.penalty_amount, 0) - COALESCE(m.maintenance_write_off_amount, 0) - COALESCE(m.penalty_write_off_amount, 0) - COALESCE(m.paid_amount, 0)) > 0
+                 ORDER BY m.year DESC, m.month DESC, m.due_date DESC, m.created_at DESC LIMIT 1
+              ) bill_row) AS current_bill,
+              COALESCE((SELECT jsonb_agg(notice_row) FROM (SELECT n.id::text AS id, n.title, n.description, NULL::text AS priority, n.status, n.created_at FROM notices n, tenant t WHERE n.society_id = t.society_id ORDER BY n.created_at DESC LIMIT 5) notice_row), '[]'::jsonb) AS latest_notices,
+              COALESCE((SELECT jsonb_agg(complaint_row) FROM (SELECT c.id::text AS id, c.title, c.description, c.status, c.reply, c.created_at FROM complaints c, tenant t WHERE c.user_id = u.id AND c.society_id = t.society_id ORDER BY c.created_at DESC LIMIT 3) complaint_row), '[]'::jsonb) AS recent_complaints
        FROM users u
-       LEFT JOIN flats f ON f.id = u.flat_id
-       WHERE u.id = ?`,
-      [userId]
+       JOIN tenant t ON u.society_id = t.society_id
+       JOIN societies s ON s.id = t.society_id
+       LEFT JOIN flats f ON f.id = u.flat_id AND f.society_id = u.society_id
+       CROSS JOIN bill_stats bs CROSS JOIN complaint_stats cs
+       WHERE u.id = ? LIMIT 1`,
+      [societyId, userId, userId, userId]
     );
-
-    const user = userRows[0] || {};
-
-    const [billSummaryRows] = await promisePool.query(
-      `SELECT
-         COUNT(*) AS total_bills,
-         SUM(CASE WHEN status NOT IN ('Paid', 'PAID', 'Settled', 'SETTLED', 'WRITTEN_OFF', 'Written Off', 'Fully Written Off', 'Cancelled', 'Canceled') THEN 1 ELSE 0 END) AS pending_bills,
-         SUM(CASE WHEN status IN ('Paid', 'PAID', 'Settled', 'SETTLED', 'WRITTEN_OFF', 'Written Off', 'Fully Written Off') THEN 1 ELSE 0 END) AS paid_bills,
-         SUM(CASE WHEN status NOT IN ('Paid', 'PAID', 'Settled', 'SETTLED', 'WRITTEN_OFF', 'Written Off', 'Fully Written Off', 'Cancelled', 'Canceled') THEN GREATEST(0, COALESCE(original_amount, amount, total_amount, 0) + COALESCE(penalty_amount, 0) - COALESCE(maintenance_write_off_amount, 0) - COALESCE(penalty_write_off_amount, 0) - COALESCE(paid_amount, 0)) ELSE 0 END) AS pending_amount,
-         SUM(CASE WHEN status IN ('Paid', 'PAID') THEN COALESCE(paid_amount, 0) ELSE 0 END) AS paid_amount
-       FROM maintenance
-       WHERE resident_id = ?`,
-      [userId]
-    );
-
-    const billSummary = billSummaryRows[0] || {};
-
-    const [debugBills] = await promisePool.query(
-      `SELECT id, resident_id,
-              COALESCE(original_amount, amount, total_amount, 0) AS original_amount,
-              COALESCE(penalty_amount, 0) AS penalty_amount,
-              COALESCE(maintenance_write_off_amount, 0) AS maintenance_write_off_amount,
-              COALESCE(penalty_write_off_amount, 0) AS penalty_write_off_amount,
-              COALESCE(paid_amount, 0) AS paid_amount,
-              GREATEST(0, COALESCE(original_amount, amount, total_amount, 0) + COALESCE(penalty_amount, 0) - COALESCE(maintenance_write_off_amount, 0) - COALESCE(penalty_write_off_amount, 0) - COALESCE(paid_amount, 0)) AS final_remaining_amount
-       FROM maintenance
-       WHERE resident_id = ? AND status NOT IN ('Paid', 'PAID', 'Settled', 'SETTLED', 'WRITTEN_OFF', 'Written Off', 'Fully Written Off', 'Cancelled', 'Canceled')`,
-      [userId]
-    );
-    debugBills.forEach(b => {
-      console.log(`[DEBUG_PAYMENT_FLOW] residentId=${b.resident_id}, billId=${b.id}, originalAmount=${b.original_amount}, penalty=${b.penalty_amount}, maintenanceWriteOff=${b.maintenance_write_off_amount}, penaltyWriteOff=${b.penalty_write_off_amount}, approvedPaidAmount=${b.paid_amount}, finalRemainingAmount=${b.final_remaining_amount}`);
-    });
-
-    const [currentBillRows] = await promisePool.query(
-      `SELECT m.*, 
-              m.amount AS "maintenanceAmount", m.amount AS maintenance_amount,
-              m.penalty_amount AS "penaltyAmount", m.penalty_amount AS penalty_amount,
-              COALESCE(m.original_amount, m.amount, m.total_amount, 0) AS "originalAmount", COALESCE(m.original_amount, m.amount, m.total_amount, 0) AS original_amount,
-              COALESCE(m.maintenance_write_off_amount, 0) AS "maintenanceWrittenOff", COALESCE(m.maintenance_write_off_amount, 0) AS maintenance_written_off,
-              COALESCE(m.penalty_write_off_amount, 0) AS "penaltyWrittenOff", COALESCE(m.penalty_write_off_amount, 0) AS penalty_written_off,
-              COALESCE(m.write_off_amount, 0) AS "totalWrittenOff", COALESCE(m.write_off_amount, 0) AS total_written_off,
-              GREATEST(0, COALESCE(m.original_amount, m.amount, m.total_amount, 0) + COALESCE(m.penalty_amount, 0) - COALESCE(m.maintenance_write_off_amount, 0) - COALESCE(m.penalty_write_off_amount, 0) - COALESCE(m.paid_amount, 0)) AS "remainingPayable",
-              GREATEST(0, COALESCE(m.original_amount, m.amount, m.total_amount, 0) + COALESCE(m.penalty_amount, 0) - COALESCE(m.maintenance_write_off_amount, 0) - COALESCE(m.penalty_write_off_amount, 0) - COALESCE(m.paid_amount, 0)) AS remaining_payable,
-              GREATEST(0, COALESCE(m.original_amount, m.amount, m.total_amount, 0) + COALESCE(m.penalty_amount, 0) - COALESCE(m.maintenance_write_off_amount, 0) - COALESCE(m.penalty_write_off_amount, 0) - COALESCE(m.paid_amount, 0)) AS remaining_amount,
-              m.status AS payment_status, f.flat_no
-       FROM maintenance m
-       LEFT JOIN flats f ON m.flat_id = f.id
-       LEFT JOIN (
-         SELECT COALESCE(pm.maintenance_id, p.bill_id) AS bill_id
-         FROM payments p
-         LEFT JOIN payment_maintenance pm ON pm.payment_id = p.id
-         WHERE p.payment_status IN ('Approved', 'Paid')
-       ) app_p ON app_p.bill_id = m.id
-       WHERE m.resident_id = ?
-         AND app_p.bill_id IS NULL
-         AND m.status NOT IN ('Paid', 'PAID', 'Settled', 'SETTLED', 'WRITTEN_OFF', 'Written Off', 'Fully Written Off', 'Cancelled', 'Canceled')
-         AND GREATEST(0, COALESCE(m.original_amount, m.amount, m.total_amount, 0) + COALESCE(m.penalty_amount, 0) - COALESCE(m.maintenance_write_off_amount, 0) - COALESCE(m.penalty_write_off_amount, 0) - COALESCE(m.paid_amount, 0)) > 0
-       ORDER BY m.year DESC, m.month DESC, m.due_date DESC, m.created_at DESC
-       LIMIT 1`,
-      [userId]
-    );
-
-    const [visitorSummaryRows] = await promisePool.query(
-      `SELECT
-         SUM(CASE WHEN DATE(visit_time) = CURDATE() THEN 1 ELSE 0 END) AS today_visitors,
-         SUM(CASE WHEN visit_time > NOW() THEN 1 ELSE 0 END) AS upcoming_visitors,
-         SUM(CASE WHEN status = 'approved' AND DATE(visit_time) = CURDATE() THEN 1 ELSE 0 END) AS approved_visitors
-       FROM visitors
-       WHERE resident_id = ?`,
-      [userId]
-    );
-
-    const [parcelSummaryRows] = await promisePool.query(
-      `SELECT
-         SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending_parcels,
-         SUM(CASE WHEN status = 'delivered' THEN 1 ELSE 0 END) AS delivered_parcels
-       FROM parcels
-       WHERE resident_id = ?`,
-      [userId]
-    );
-
-    const [activityCountRows] = await promisePool.query(
-      `SELECT COUNT(*) AS total_activities FROM activities WHERE resident_id = ?`,
-      [userId]
-    );
+    const row = rows[0];
+    if (!row) return res.status(404).json({ message: 'Resident profile not found' });
 
     return res.json(sanitizeForResident({
       user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        phone: user.phone || null,
-        flat_id: user.flat_id || null,
-        flat_no: user.flat_no || 'N/A',
-        wing: user.wing || null,
-        floor_no: user.floor_no || null,
-        maintenance_charge: Number(user.maintenance_charge || 0),
-        flat_status: user.flat_status || null,
-        society_name: societyName,
+        id: row.id, name: row.name, email: row.email, phone: row.phone || null,
+        role: row.role, status: row.status, flat_id: row.flat_id || null,
+        flat_no: row.flat_no || 'N/A', wing: row.wing || null,
+        floor_no: row.floor_no || null, maintenance_charge: Number(row.maintenance_charge || 0),
+        flat_status: row.flat_status || null, society_name: row.society_name,
       },
       summary: {
-        total_bills: Number(billSummary.total_bills || 0),
-        pending_bills: Number(billSummary.pending_bills || 0),
-        paid_bills: Number(billSummary.paid_bills || 0),
-        pending_amount: Number(billSummary.pending_amount || 0),
-        total_due: Number(billSummary.pending_amount || 0),
-        totalDue: Number(billSummary.pending_amount || 0),
-        paid_amount: Number(billSummary.paid_amount || 0),
+        total_bills: Number(row.total_bills || 0), pending_bills: Number(row.pending_bills || 0),
+        paid_bills: Number(row.paid_bills || 0), pending_amount: Number(row.pending_amount || 0),
+        total_due: Number(row.pending_amount || 0), totalDue: Number(row.pending_amount || 0),
+        paid_amount: Number(row.paid_amount || 0), total_complaints: Number(row.total_complaints || 0),
+        open_complaints: Number(row.open_complaints || 0), in_progress_complaints: Number(row.in_progress_complaints || 0),
+        resolved_complaints: Number(row.resolved_complaints || 0),
         family_members: 1,
         registered_vehicles: 0,
-        active_notices: 0,
-        today_visitors: Number(visitorSummaryRows[0]?.today_visitors || 0),
-        upcoming_visitors: Number(visitorSummaryRows[0]?.upcoming_visitors || 0),
-        approved_visitors: Number(visitorSummaryRows[0]?.approved_visitors || 0),
-        pending_parcels: Number(parcelSummaryRows[0]?.pending_parcels || 0),
-        delivered_parcels: Number(parcelSummaryRows[0]?.delivered_parcels || 0),
-        total_activities: Number(activityCountRows[0]?.total_activities || 0),
+        active_notices: Number(row.active_notices || 0), today_visitors: Number(row.today_visitors || 0),
+        upcoming_visitors: Number(row.upcoming_visitors || 0), approved_visitors: Number(row.approved_visitors || 0),
+        pending_parcels: Number(row.pending_parcels || 0), delivered_parcels: Number(row.delivered_parcels || 0),
+        total_activities: Number(row.total_activities || 0),
       },
-      currentBill: (() => {
-        const rawBill = currentBillRows[0];
-        if (!rawBill) return null;
-        return withMaintenanceBillBreakdown(rawBill);
-      })(),
+      currentBill: row.current_bill ? withMaintenanceBillBreakdown(row.current_bill) : null,
+      latest_notices: row.latest_notices || [],
+      recent_complaints: row.recent_complaints || [],
     }));
   } catch (error) {
     console.error('Resident dashboard error:', error);

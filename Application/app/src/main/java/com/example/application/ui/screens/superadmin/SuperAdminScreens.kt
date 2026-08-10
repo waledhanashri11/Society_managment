@@ -44,7 +44,7 @@ fun SuperAdminDashboardScreen(
             onLogout = { sessionViewModel.logout(onLogoutComplete) }
         )
     }) { padding ->
-        ContentState(state.loading, state.error, { viewModel.load() }, Modifier.padding(padding), "Loading platform data…") {
+        ContentState(state.loading, state.error, { viewModel.load(force = true) }, Modifier.padding(padding), "Loading platform data…") {
             LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 item {
                     Text("Platform Overview", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)

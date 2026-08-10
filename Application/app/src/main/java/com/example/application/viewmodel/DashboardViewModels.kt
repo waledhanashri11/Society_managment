@@ -12,12 +12,14 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 @HiltViewModel
 class AdminDashboardViewModel @Inject constructor(
     private val dashboardRepository: DashboardRepository
 ) : ViewModel() {
+    private var loadJob: Job? = null
     private val _uiState = MutableStateFlow(AdminDashboardUiState())
     val uiState: StateFlow<AdminDashboardUiState> = _uiState.asStateFlow()
 
@@ -36,17 +38,17 @@ class AdminDashboardViewModel @Inject constructor(
                     errorMessage = null
                 )
             }
-            load(refresh = true)
+            load(refresh = false)
         }
     }
 
     fun load(refresh: Boolean = false) {
-        if (_uiState.value.isRefreshing) return
-        viewModelScope.launch {
+        if (loadJob?.isActive == true) return
+        loadJob = viewModelScope.launch {
             _uiState.update {
                 it.copy(
                     isLoading = it.data == null,
-                    isRefreshing = refresh,
+                    isRefreshing = it.data != null,
                     errorMessage = null
                 )
             }
@@ -64,6 +66,7 @@ class AdminDashboardViewModel @Inject constructor(
                     it.copy(isLoading = false, isRefreshing = false, errorMessage = result.message)
                 }
             }
+            loadJob = null
         }
     }
 }
@@ -72,6 +75,7 @@ class AdminDashboardViewModel @Inject constructor(
 class ResidentDashboardViewModel @Inject constructor(
     private val dashboardRepository: DashboardRepository
 ) : ViewModel() {
+    private var loadJob: Job? = null
     private val _uiState = MutableStateFlow(ResidentDashboardUiState())
     val uiState: StateFlow<ResidentDashboardUiState> = _uiState.asStateFlow()
 
@@ -90,17 +94,17 @@ class ResidentDashboardViewModel @Inject constructor(
                     errorMessage = null
                 )
             }
-            load(refresh = true)
+            load(refresh = false)
         }
     }
 
     fun load(refresh: Boolean = false) {
-        if (_uiState.value.isRefreshing) return
-        viewModelScope.launch {
+        if (loadJob?.isActive == true) return
+        loadJob = viewModelScope.launch {
             _uiState.update {
                 it.copy(
                     isLoading = it.data == null,
-                    isRefreshing = refresh,
+                    isRefreshing = it.data != null,
                     errorMessage = null
                 )
             }
@@ -122,6 +126,7 @@ class ResidentDashboardViewModel @Inject constructor(
                     it.copy(isLoading = false, isRefreshing = false, errorMessage = safeError)
                 }
             }
+            loadJob = null
         }
     }
 }
