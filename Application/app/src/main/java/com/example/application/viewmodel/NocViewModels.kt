@@ -73,6 +73,10 @@ class ResidentNocViewModel @Inject constructor(
 
     init { load() }
 
+    fun prepareCreate() {
+        _state.update { it.copy(error = null, message = null) }
+    }
+
     fun load(refresh: Boolean = false) {
         if (loadJob?.isActive == true) return
         loadJob = viewModelScope.launch {
@@ -94,6 +98,7 @@ class ResidentNocViewModel @Inject constructor(
     }
 
     fun createNoc(nocType: String, purpose: String, remarks: String, documentData: List<String>) {
+        if (_state.value.submitting) return
         viewModelScope.launch {
             _state.update { it.copy(submitting = true, error = null, message = null) }
             val request = CreateNocRequest(

@@ -9,18 +9,10 @@ const sendResponse = (res, statusCode, message, data = null) => {
   return res.status(statusCode).json(payload);
 };
 
-let nocSchemaEnsured = false;
 const ensureNocRuntimeSchema = async () => {
-  if (nocSchemaEnsured) return;
-  try {
-    await promisePool.query('ALTER TABLE noc_requests DROP CONSTRAINT IF EXISTS noc_requests_status_check');
-    await promisePool.query(
-      `ALTER TABLE noc_requests ADD CONSTRAINT noc_requests_status_check CHECK (status IN ('Submitted', 'Pending', 'Under Review', 'Additional Information Required', 'Approved', 'Rejected', 'Completed', 'Cancelled'))`
-    );
-    nocSchemaEnsured = true;
-  } catch (err) {
-    console.error('ensureNocRuntimeSchema error:', err.message);
-  }
+  // Migrations 030 and 030_noc_cancel_status own the lifecycle constraint.
+  // Tenant-scoped requests must never attempt schema DDL at runtime.
+  return undefined;
 };
 
 const escapeHtml = (value = '') => String(value)
@@ -161,7 +153,7 @@ const createRequest = async (req, res) => {
   try {
     await ensureNocRuntimeSchema();
     const userRole = String(req.user?.role || '').toLowerCase();
-    if (userRole === 'admin') {
+    if (userRole !== 'resident') {
       return sendResponse(res, 403, 'Only residents can submit NOC requests');
     }
 

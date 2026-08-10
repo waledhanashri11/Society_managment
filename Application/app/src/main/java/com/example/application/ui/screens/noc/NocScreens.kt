@@ -28,6 +28,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Done
@@ -42,6 +43,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -51,6 +53,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -159,6 +163,22 @@ fun ResidentNocScreen(
     var uploadTarget by remember { mutableStateOf<NocRequestDto?>(null) }
     var previewTarget by remember { mutableStateOf<NocRequestDto?>(null) }
     val context = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    fun openCreateRequest() {
+        viewModel.prepareCreate()
+        showCreate = true
+    }
+
+    LaunchedEffect(state.error, state.message) {
+        (state.error ?: state.message)?.let { snackbarHostState.showSnackbar(it) }
+    }
+
+    LaunchedEffect(state.message) {
+        if (showCreate && state.message?.contains("submitted", ignoreCase = true) == true) {
+            showCreate = false
+        }
+    }
 
     LaunchedEffect(state.certificateUri) {
         state.certificateUri?.let { uri ->
@@ -178,9 +198,17 @@ fun ResidentNocScreen(
                 navigationIcon = Icons.Filled.ArrowBack,
                 navigationText = "Back",
                 onNavigationClick = onBack,
-                actionIcon = Icons.Filled.Description,
-                actionText = "New",
-                onActionClick = { showCreate = true }
+                actionIcon = Icons.Filled.Add,
+                actionText = "Request",
+                onActionClick = ::openCreateRequest
+            )
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        floatingActionButton = {
+            ExtendedFloatingActionButton(
+                onClick = ::openCreateRequest,
+                icon = { Icon(Icons.Filled.Add, contentDescription = null) },
+                text = { Text("Request NOC", fontWeight = FontWeight.Bold) }
             )
         }
     ) { padding ->
@@ -198,7 +226,13 @@ fun ResidentNocScreen(
                     RetryState(message = state.error.orEmpty(), onRetry = { viewModel.load(refresh = true) })
                 }
                 state.items.isEmpty() -> Column(Modifier.padding(20.dp)) {
-                    EmptyState("No NOC requests yet", "Tap the document icon to create your first request.")
+                    EmptyState("No NOC requests yet", "Create your first request and track its approval here.")
+                    Spacer(Modifier.height(16.dp))
+                    Button(onClick = ::openCreateRequest, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Filled.Add, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Request NOC")
+                    }
                 }
                 else -> NocList(
                     items = state.items,
@@ -215,10 +249,10 @@ fun ResidentNocScreen(
     if (showCreate) {
         CreateNocDialog(
             submitting = state.submitting,
+            serverError = state.error,
             onDismiss = { showCreate = false },
             onSubmit = { type, purpose, remarks, documentData ->
                 viewModel.createNoc(type, purpose, remarks, documentData)
-                showCreate = false
             }
         )
     }
@@ -356,7 +390,7 @@ private fun NocList(
 ) {
     LazyColumn(
         modifier = modifier,
-        contentPadding = PaddingValues(20.dp),
+        contentPadding = PaddingValues(start = 20.dp, top = 20.dp, end = 20.dp, bottom = 104.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         items(items, key = { it.id ?: it.hashCode() }) { item ->
@@ -466,6 +500,7 @@ private fun NocCard(
 @Composable
 private fun CreateNocDialog(
     submitting: Boolean,
+    serverError: String?,
     onDismiss: () -> Unit,
     onSubmit: (String, String, String, List<String>) -> Unit
 ) {
@@ -481,6 +516,7 @@ private fun CreateNocDialog(
         runCatching {
             if (uris.size > 3) error("Please select up to 3 documents.")
             val resolver = context.contentResolver
+            var totalBytes = 0L
             val encoded = uris.map { uri ->
                 val size = resolver.query(uri, arrayOf(android.provider.OpenableColumns.SIZE), null, null, null)?.use { cursor ->
                     if (cursor.moveToFirst()) {
@@ -495,6 +531,8 @@ private fun CreateNocDialog(
                     output.toByteArray()
                 } ?: ByteArray(0)
                 if (bytes.size > 5 * 1024 * 1024) error("Each document must be smaller than 5 MB.")
+                totalBytes += bytes.size
+                if (totalBytes > 6 * 1024 * 1024) error("The combined attachments must be smaller than 6 MB.")
                 val mime = resolver.getType(uri) ?: "application/octet-stream"
                 "data:$mime;base64,${Base64.encodeToString(bytes, Base64.NO_WRAP)}"
             }
@@ -574,6 +612,7 @@ private fun CreateNocDialog(
                     Text(documentNames.joinToString("\n"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 localError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                serverError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             }
         },
         confirmButton = {

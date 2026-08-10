@@ -4137,22 +4137,26 @@ const saveOpeningBalance = async (req, res) => {
     const financialYear = req.body.financialYear || req.body.financial_year;
     const bankOpening = req.body.bankOpening || req.body.bank_opening;
     const cashOpening = req.body.cashOpening || req.body.cash_opening;
-    if (!financialYear) {
-      return sendResponse(res, 400, 'Financial year is required');
+    if (!/^\d{4}-\d{4}$/.test(String(financialYear || ''))) {
+      return sendResponse(res, 400, 'Financial year must use YYYY-YYYY format');
     }
 
-    const bOpen = Number(bankOpening || 0);
-    const cOpen = Number(cashOpening || 0);
+    const [startYear, endYear] = String(financialYear).split('-').map(Number);
+    const bOpen = Number(bankOpening);
+    const cOpen = Number(cashOpening);
+    if (endYear !== startYear + 1 || !Number.isFinite(bOpen) || !Number.isFinite(cOpen) || bOpen < 0 || cOpen < 0) {
+      return sendResponse(res, 400, 'Enter valid non-negative bank and cash opening balances');
+    }
 
     await promisePool.query(
-      `INSERT INTO society_opening_balances (financial_year, bank_opening, cash_opening)
-       VALUES (?, ?, ?)
-       ON CONFLICT (financial_year)
+      `INSERT INTO society_opening_balances (society_id, financial_year, bank_opening, cash_opening)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT (society_id, financial_year)
        DO UPDATE SET bank_opening = EXCLUDED.bank_opening, cash_opening = EXCLUDED.cash_opening, updated_at = NOW()`,
-      [financialYear, bOpen, cOpen]
+      [req.user.societyId, financialYear, bOpen, cOpen]
     );
 
-    return sendResponse(res, 200, 'Opening balance saved successfully', {
+    return sendResponse(res, 200, 'Opening balances saved and closing balances recalculated', {
       financialYear,
       bankOpening: bOpen,
       cashOpening: cOpen

@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.RestartAlt
@@ -56,6 +57,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -65,6 +67,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -111,6 +115,23 @@ fun AdminReportsScreen(
     var showOpeningModal by remember { mutableStateOf(false) }
     var openingBank by remember { mutableStateOf("") }
     var openingCash by remember { mutableStateOf("") }
+    var balanceInputError by remember { mutableStateOf<String?>(null) }
+
+    fun openBalanceEditor() {
+        viewModel.prepareBalanceEdit()
+        val summary = state.data?.financial?.summary
+        openingBank = summary?.bankOpening ?: "0"
+        openingCash = summary?.cashOpening ?: "0"
+        balanceInputError = null
+        showOpeningModal = true
+    }
+
+    LaunchedEffect(state.actionMessage) {
+        state.actionMessage?.let {
+            showOpeningModal = false
+            Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
+        }
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -180,7 +201,7 @@ fun AdminReportsScreen(
 
                         when (activeTab) {
                             "summary" -> {
-                                item { AdminFinancialSummarySection(state) }
+                                item { AdminFinancialSummarySection(state, onEditBalances = ::openBalanceEditor) }
                                 item { MonthWiseFinancialBreakdownTable(state = state) }
                             }
                             "monthlyReport" -> {
@@ -220,25 +241,62 @@ fun AdminReportsScreen(
 
     if (showOpeningModal) {
         AlertDialog(
-            onDismissRequest = { showOpeningModal = false },
-            title = { Text("Configure Opening Balance") },
+            onDismissRequest = { if (!state.balanceSaving) showOpeningModal = false },
+            title = { Text("Opening & Closing Balances") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Set initial bank and cash opening balances for FY ${state.filter.financialYear}.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    OutlinedTextField(value = openingBank, onValueChange = { openingBank = it }, label = { Text("Bank Opening Balance (₹)") }, singleLine = true)
-                    OutlinedTextField(value = openingCash, onValueChange = { openingCash = it }, label = { Text("Cash Opening Balance (₹)") }, singleLine = true)
+                    val summary = state.data?.financial?.summary
+                    Text("Financial year ${state.filter.financialYear}", fontWeight = FontWeight.SemiBold)
+                    Text("Edit the starting balances. Closing balances are calculated from opening balance + income - expenses so reports and ledgers remain consistent.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    OutlinedTextField(
+                        value = openingBank,
+                        onValueChange = { openingBank = it; balanceInputError = null },
+                        label = { Text("Bank Opening Balance (₹)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        isError = balanceInputError != null,
+                        enabled = !state.balanceSaving,
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = openingCash,
+                        onValueChange = { openingCash = it; balanceInputError = null },
+                        label = { Text("Cash Opening Balance (₹)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        isError = balanceInputError != null,
+                        enabled = !state.balanceSaving,
+                        singleLine = true
+                    )
+                    balanceInputError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                    state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("Calculated closing balances", fontWeight = FontWeight.SemiBold)
+                            Text("Bank: ${DashboardFormatters.money(summary?.bankClosing ?: "0")}")
+                            Text("Cash: ${DashboardFormatters.money(summary?.cashClosing ?: "0")}")
+                            Text("They will be recalculated automatically after saving.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
                 }
             },
             confirmButton = {
                 Button(
                     onClick = {
-                        viewModel.saveOpeningBalance(state.filter.financialYear, openingBank.ifBlank { "0" }, openingCash.ifBlank { "0" })
-                        showOpeningModal = false
-                        Toast.makeText(context, "Opening balance configuration submitted", Toast.LENGTH_SHORT).show()
-                    }
-                ) { Text("Save Opening") }
+                        val bank = openingBank.toDoubleOrNull()
+                        val cash = openingCash.toDoubleOrNull()
+                        if (bank == null || cash == null || bank < 0 || cash < 0) {
+                            balanceInputError = "Enter valid non-negative bank and cash balances."
+                        } else {
+                            viewModel.saveOpeningBalance(state.filter.financialYear, openingBank, openingCash)
+                        }
+                    },
+                    enabled = !state.balanceSaving
+                ) { Text(if (state.balanceSaving) "Saving..." else "Save & Recalculate") }
             },
-            dismissButton = { TextButton(onClick = { showOpeningModal = false }) { Text("Cancel") } }
+            dismissButton = { TextButton(onClick = { showOpeningModal = false }, enabled = !state.balanceSaving) { Text("Cancel") } }
         )
     }
 }
@@ -357,7 +415,10 @@ fun YearMonthFilterBar(
 }
 
 @Composable
-private fun AdminFinancialSummarySection(state: com.example.application.viewmodel.AdminReportsUiState) {
+private fun AdminFinancialSummarySection(
+    state: com.example.application.viewmodel.AdminReportsUiState,
+    onEditBalances: () -> Unit
+) {
     val summary = state.data?.financial?.summary
     val bankOp = (summary?.bankOpening ?: "0").toDoubleOrNull() ?: 0.0
     val cashOp = (summary?.cashOpening ?: "0").toDoubleOrNull() ?: 0.0
@@ -376,7 +437,24 @@ private fun AdminFinancialSummarySection(state: com.example.application.viewmode
     val totalCl = bankCl + cashCl
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        Text("Financial Accounting Summary", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                "Financial Accounting Summary",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f)
+            )
+            OutlinedButton(onClick = onEditBalances, enabled = !state.balanceSaving) {
+                Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Edit Balances")
+            }
+        }
 
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             SummaryCard(
