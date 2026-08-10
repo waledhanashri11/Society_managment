@@ -315,19 +315,27 @@ const getActivities = async (req, res) => {
 
 const getMembers = async (req, res) => {
   try {
+    const societyId = req.user.societyId;
     const [members] = await promisePool.query(
-      `SELECT u.id, u.name, u.email, u.phone, f.flat_no, f.wing, f.floor_no,
-              COALESCE(
-                MAX(CASE WHEN mb.payment_status != 'Paid' THEN 'pending' END),
-                'paid'
-              ) AS payment_status
+      `SELECT u.id, u.name, f.flat_no, f.wing, f.floor_no,
+              CASE
+                WHEN EXISTS (
+                  SELECT 1 FROM maintenance m
+                  WHERE m.society_id = ? AND m.resident_id = u.id
+                    AND LOWER(COALESCE(m.status, 'pending')) NOT IN ('paid', 'approved')
+                ) THEN 'Pending'
+                WHEN EXISTS (
+                  SELECT 1 FROM maintenance m
+                  WHERE m.society_id = ? AND m.resident_id = u.id
+                ) THEN 'Paid'
+                ELSE 'No Bill'
+              END AS maintenance_status
        FROM users u
-       LEFT JOIN flats f ON f.id = u.flat_id
-       LEFT JOIN maintenance mb ON mb.resident_id = u.id
-       WHERE u.role = ? AND COALESCE(u.status, 'approved') = ?
-       GROUP BY u.id, u.name, u.email, u.phone, f.flat_no, f.wing, f.floor_no
+       LEFT JOIN flats f ON f.id = u.flat_id AND f.society_id = u.society_id
+       WHERE u.society_id = ? AND u.role = 'resident'
+         AND COALESCE(u.status, 'approved') = 'approved'
        ORDER BY f.wing, f.floor_no, f.flat_no, u.name`,
-      ['resident', 'approved']
+      [societyId, societyId, societyId]
     );
 
     res.json(members);

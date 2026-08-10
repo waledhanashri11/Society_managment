@@ -3,6 +3,11 @@ const fs = require('fs');
 const path = require('path');
 const { buildPublicFileUrl } = require('../utils/fileUrl');
 const { withMaintenanceBillBreakdown } = require('../utils/maintenanceBill');
+const {
+  formatBillingCycle,
+  nextBillingCycle,
+  validateSequentialBillingCycle
+} = require('../utils/billingCycle');
 
 const LATE_FEE = 100;
 
@@ -4244,14 +4249,17 @@ const getNextBillingCycle = async (req, res) => {
       [societyId]
     );
     
-    const [settings] = await promisePool.query('SELECT * FROM maintenance_settings ORDER BY id DESC LIMIT 1');
+    const [settings] = await promisePool.query(
+      'SELECT * FROM maintenance_settings WHERE society_id = ? ORDER BY id DESC LIMIT 1',
+      [societyId]
+    );
     const s = settings[0] || {};
     
     if (!latestCycles.length) {
       // No cycles yet - suggest current month
       const now = new Date();
-      const nextMonth = now.getMonth() + 1;
-      const nextYear = now.getFullYear();
+      const nextMonth = now.getUTCMonth() + 1;
+      const nextYear = now.getUTCFullYear();
       const dueDay = Number(s.due_day || 10);
       const dueDate = `${nextYear}-${String(nextMonth).padStart(2,'0')}-${String(dueDay).padStart(2,'0')}`;
       const graceDays = Number(s.grace_days || 10);
@@ -4272,9 +4280,9 @@ const getNextBillingCycle = async (req, res) => {
     }
     
     const latest = latestCycles[0];
-    let nextMonth = latest.billing_month + 1;
-    let nextYear = latest.billing_year;
-    if (nextMonth > 12) { nextMonth = 1; nextYear += 1; }
+    const next = nextBillingCycle(latest.billing_month, latest.billing_year);
+    const nextMonth = next.month;
+    const nextYear = next.year;
     
     const dueDay = Number(s.due_day || 10);
     const dueDate = `${nextYear}-${String(nextMonth).padStart(2,'0')}-${String(dueDay).padStart(2,'0')}`;
@@ -4337,7 +4345,11 @@ const generateBillingCycle = async (req, res) => {
 
     await connection.beginTransaction();
 
-    // Lock this period so concurrent requests cannot create duplicate cycles.
+    // Serialize normal billing generation per tenant. Different societies can
+    // still generate independently, while duplicate/concurrent requests for
+    // the same society cannot race past the sequence check.
+    await connection.query('SELECT pg_advisory_xact_lock(72411, ?)', [societyId]);
+
     const [existing] = await connection.query(
       `SELECT id, billing_status, total_residents, generated_bill_count
        FROM maintenance_billing_cycles
@@ -4346,13 +4358,33 @@ const generateBillingCycle = async (req, res) => {
       [societyId, reqYear, reqMonth]
     );
     const existingCycle = existing[0] || null;
-    if (existingCycle?.billing_status === 'GENERATING') {
+
+    const [latestCycles] = await connection.query(
+      `SELECT id, billing_month, billing_year, billing_status, billing_period_key
+       FROM maintenance_billing_cycles
+       WHERE society_id = ? AND billing_status = 'GENERATED'
+       ORDER BY billing_year DESC, billing_month DESC
+       LIMIT 1
+       FOR UPDATE`,
+      [societyId]
+    );
+    const latestCycle = latestCycles[0] || null;
+    const sequenceValidation = validateSequentialBillingCycle({
+      requestedMonth: reqMonth,
+      requestedYear: reqYear,
+      latestCycle,
+      existingCycle
+    });
+    if (!sequenceValidation.allowed) {
       await connection.rollback();
-      return sendResponse(res, 409, 'This billing cycle is already being generated. Please refresh in a moment.');
+      return sendResponse(res, sequenceValidation.statusCode, sequenceValidation.message);
     }
 
     // --- Fetch & snapshot current settings ---
-    const [settingsRows] = await connection.query('SELECT * FROM maintenance_settings ORDER BY id DESC LIMIT 1');
+    const [settingsRows] = await connection.query(
+      'SELECT * FROM maintenance_settings WHERE society_id = ? ORDER BY id DESC LIMIT 1',
+      [societyId]
+    );
     const settings = settingsRows[0] || {};
     const requestedGraceDays = body.graceDays === undefined || body.graceDays === null || String(body.graceDays).trim() === ''
       ? Number(settings.grace_days || 10)
@@ -4399,16 +4431,22 @@ const generateBillingCycle = async (req, res) => {
     });
 
     // --- Fetch eligible residents ---
-    const where = ["u.role = 'resident'", "u.status = 'approved'", 'f.current_resident_id = u.id', "f.status = 'Occupied'", 'f.current_resident_id IS NOT NULL'];
-    const params = [];
     const [candidates] = await connection.query(
       `SELECT u.id AS resident_id, f.id AS flat_id, f.flat_type_id,
               COALESCE(ft.default_maintenance_amount, f.maintenance_charge, s.fixed_amount, 0) AS default_amount
-       FROM users u JOIN flats f ON f.current_resident_id = u.id
-       LEFT JOIN flat_types ft ON ft.id = f.flat_type_id
-       LEFT JOIN (SELECT fixed_amount FROM maintenance_settings ORDER BY id DESC LIMIT 1) s ON TRUE
-       WHERE ${where.join(' AND ')}
-       ORDER BY f.wing, f.floor_no, f.flat_no, u.id`, params);
+       FROM users u
+       JOIN flats f ON f.current_resident_id = u.id AND f.society_id = u.society_id
+       LEFT JOIN flat_types ft ON ft.id = f.flat_type_id AND ft.society_id = f.society_id
+       LEFT JOIN (
+         SELECT fixed_amount FROM maintenance_settings
+         WHERE society_id = ? ORDER BY id DESC LIMIT 1
+       ) s ON TRUE
+       WHERE u.society_id = ? AND f.society_id = ?
+         AND u.role = 'resident' AND u.status = 'approved'
+         AND f.status = 'Occupied' AND f.current_resident_id IS NOT NULL
+       ORDER BY f.wing, f.floor_no, f.flat_no, u.id`,
+      [societyId, societyId, societyId]
+    );
 
     const totalResidents = candidates.length;
     if (!totalResidents) {
@@ -4423,8 +4461,8 @@ const generateBillingCycle = async (req, res) => {
         `UPDATE maintenance_billing_cycles
          SET billing_status = 'GENERATING', total_residents = ?, grace_period_days = ?, due_date = ?,
              penalty_start_date = ?, settings_snapshot = ?::jsonb, generated_by = ?, updated_at = NOW()
-         WHERE id = ?`,
-        [totalResidents, graceDays, dueDateString, penaltyStartDateString, settingsSnapshot, req.user?.id || null, cycleId]
+         WHERE id = ? AND society_id = ?`,
+        [totalResidents, graceDays, dueDateString, penaltyStartDateString, settingsSnapshot, req.user?.id || null, cycleId, societyId]
       );
     } else {
       const [cycleResult] = await connection.query(
@@ -4452,8 +4490,8 @@ const generateBillingCycle = async (req, res) => {
       }
       try {
         const [existingBill] = await connection.query(
-          'SELECT id FROM maintenance WHERE resident_id = ? AND flat_id = ? AND month = ? AND year = ? AND (bill_type IS NULL OR bill_type = \'maintenance\') LIMIT 1',
-          [candidate.resident_id, candidate.flat_id, reqMonth, reqYear]
+          'SELECT id FROM maintenance WHERE society_id = ? AND resident_id = ? AND flat_id = ? AND month = ? AND year = ? AND (bill_type IS NULL OR bill_type = \'maintenance\') LIMIT 1',
+          [societyId, candidate.resident_id, candidate.flat_id, reqMonth, reqYear]
         );
         if (existingBill.length) {
           result.skippedCount += 1; result.duplicateCount += 1;
@@ -4464,8 +4502,8 @@ const generateBillingCycle = async (req, res) => {
           `INSERT INTO maintenance
              (resident_id, flat_id, title, month, year, amount, penalty_amount, total_amount, paid_amount, remaining_amount,
               status, due_date, created_at, updated_at, flat_type_id, default_maintenance_amount, final_maintenance_amount,
-              is_custom_amount, notes, penalty_type, penalty_value, penalty_grace_days, billing_cycle_id, bill_type)
-           VALUES (?, ?, ?, ?, ?, ?, 0, ?, 0, ?, 'Pending', ?, NOW(), NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, 'maintenance')
+              is_custom_amount, notes, penalty_type, penalty_value, penalty_grace_days, billing_cycle_id, bill_type, society_id)
+           VALUES (?, ?, ?, ?, ?, ?, 0, ?, 0, ?, 'Pending', ?, NOW(), NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, 'maintenance', ?)
            ON CONFLICT DO NOTHING RETURNING id`,
           [candidate.resident_id, candidate.flat_id,
            body.title || settings.title || 'Monthly Maintenance',
@@ -4476,7 +4514,7 @@ const generateBillingCycle = async (req, res) => {
            requestedAmount !== null,
            body.notes || null, penaltyType,
            penaltyValue === null ? null : Number(penaltyValue),
-           graceDays, cycleId]
+            graceDays, cycleId, societyId]
         );
         const billId = insertResult.insertId || insertResult.id;
         if (!billId) {
@@ -4493,16 +4531,26 @@ const generateBillingCycle = async (req, res) => {
       }
     }
 
+    if (result.failedCount > 0) {
+      await connection.rollback();
+      return sendResponse(
+        res,
+        409,
+        `Billing cycle was not generated because ${result.failedCount} resident bill(s) failed. Fix the resident maintenance amounts and retry.`,
+        result
+      );
+    }
+
     // Count every bill now attached to this cycle, including bills from a retry.
     const [cycleBillCountRows] = await connection.query(
-      'SELECT COUNT(*)::int AS count FROM maintenance WHERE billing_cycle_id = ?',
-      [cycleId]
+      'SELECT COUNT(*)::int AS count FROM maintenance WHERE billing_cycle_id = ? AND society_id = ?',
+      [cycleId, societyId]
     );
     const cycleBillCount = Number(cycleBillCountRows[0]?.count || 0);
     const finalStatus = cycleBillCount > 0 ? 'GENERATED' : 'FAILED';
     await connection.query(
-      `UPDATE maintenance_billing_cycles SET billing_status = ?, generated_bill_count = ?, updated_at = NOW() WHERE id = ?`,
-      [finalStatus, cycleBillCount, cycleId]
+      `UPDATE maintenance_billing_cycles SET billing_status = ?, generated_bill_count = ?, updated_at = NOW() WHERE id = ? AND society_id = ?`,
+      [finalStatus, cycleBillCount, cycleId, societyId]
     );
 
     await connection.commit();
@@ -4517,10 +4565,8 @@ const generateBillingCycle = async (req, res) => {
         generatedBillCount: cycleBillCount
       });
     }
-    const responseMessage = result.failedCount > 0
-      ? `Generated ${result.generatedCount} bill(s); ${result.failedCount} resident bill(s) need attention and can be retried.`
-      : `Successfully generated ${result.generatedCount} maintenance bill(s).`;
-    return sendResponse(res, result.failedCount > 0 ? 200 : 201, responseMessage, {
+    const responseMessage = `${formatBillingCycle(reqMonth, reqYear)} billing cycle generated successfully.`;
+    return sendResponse(res, 201, responseMessage, {
       ...result,
       cycleId,
       generatedBillCount: cycleBillCount,

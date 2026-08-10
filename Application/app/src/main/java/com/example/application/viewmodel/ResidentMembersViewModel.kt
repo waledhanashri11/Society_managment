@@ -7,10 +7,14 @@ import com.example.application.data.repository.ResidentRepository
 import com.example.application.util.NetworkResult
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 
 data class ResidentMembersState(
     val loading: Boolean = false,
@@ -23,13 +27,64 @@ data class ResidentMembersState(
 class ResidentMembersViewModel @Inject constructor(private val repository: ResidentRepository) : ViewModel() {
     private val _state = MutableStateFlow(ResidentMembersState())
     val state = _state.asStateFlow()
+    private var loadJob: Job? = null
+
     init { load() }
-    fun load(refresh: Boolean = false) = viewModelScope.launch {
-        _state.update { it.copy(loading = it.members.isEmpty(), refreshing = refresh, error = null) }
-        when (val result = repository.getMembers()) {
-            is NetworkResult.Success -> _state.update { it.copy(loading = false, refreshing = false, members = result.data) }
-            is NetworkResult.Error -> _state.update { it.copy(loading = false, refreshing = false, error = repository.userMessageFor(result.error)) }
-            NetworkResult.Loading -> Unit
+
+    fun load(refresh: Boolean = false) {
+        if (loadJob?.isActive == true && !refresh) return
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
+            _state.update {
+                it.copy(
+                    loading = it.members.isEmpty(),
+                    refreshing = refresh,
+                    error = null
+                )
+            }
+            try {
+                when (val result = withTimeout(MEMBERS_TIMEOUT_MS) { repository.getMembers() }) {
+                    is NetworkResult.Success -> _state.update {
+                        it.copy(loading = false, refreshing = false, members = result.data, error = null)
+                    }
+                    is NetworkResult.Error -> _state.update {
+                        it.copy(
+                            loading = false,
+                            refreshing = false,
+                            error = repository.userMessageFor(result.error)
+                        )
+                    }
+                    NetworkResult.Loading -> _state.update {
+                        it.copy(
+                            loading = false,
+                            refreshing = false,
+                            error = "Unable to load society members. Please try again."
+                        )
+                    }
+                }
+            } catch (_: TimeoutCancellationException) {
+                _state.update {
+                    it.copy(
+                        loading = false,
+                        refreshing = false,
+                        error = "Unable to load society members. The server took too long to respond."
+                    )
+                }
+            } catch (_: CancellationException) {
+                // A user-requested refresh replaced the previous request.
+            } catch (_: Exception) {
+                _state.update {
+                    it.copy(
+                        loading = false,
+                        refreshing = false,
+                        error = "Unable to load society members. Please try again."
+                    )
+                }
+            }
         }
+    }
+
+    companion object {
+        private const val MEMBERS_TIMEOUT_MS = 45_000L
     }
 }

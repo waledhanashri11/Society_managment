@@ -3015,24 +3015,38 @@ private fun MaintenanceDialogHost(dialog: MaintenanceDialog?, onDismiss: () -> U
                 }
             }
 
-            // Start from the suggested cycle while allowing administrators to choose the period.
+            // Normal society-wide billing is intentionally locked to the next
+            // backend-computed cycle. Manual resident bills remain a separate flow.
             Text(
-                text = "Billing Cycle",
+                text = "Next Billing Cycle",
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface
             )
-            Text(
-                text = "Choose the month and year for which you want to generate bills.",
-                style = MaterialTheme.typography.bodySmall,
-                color = Color(0xFF64748B)
-            )
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = Color(0xFFF8FAFC),
+                border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = if (nextCycle == null) "Loading cycle..." else "$nextMonthName $nextYear",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Monthly billing must continue in sequence. Other months cannot be selected here.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF64748B)
+                    )
+                }
+            }
 
-            var customDueDate by remember { mutableStateOf(suggestedDueDate) }
-            var customGraceDays by remember { mutableStateOf(graceDays.toString()) }
-            var selectedMonth by remember(nextMonth, nextYear) { mutableStateOf(nextMonth) }
-            var selectedYear by remember(nextMonth, nextYear) { mutableStateOf(nextYear.toString()) }
-            var monthExpanded by remember { mutableStateOf(false) }
+            var customDueDate by remember(suggestedDueDate, nextMonth, nextYear) { mutableStateOf(suggestedDueDate) }
+            var customGraceDays by remember(graceDays) { mutableStateOf(graceDays.toString()) }
+            val selectedMonth = nextMonth
+            val selectedYear = nextYear.toString()
 
             LaunchedEffect(selectedMonth, selectedYear, settings?.dueDay) {
                 val year = selectedYear.toIntOrNull() ?: return@LaunchedEffect
@@ -3040,41 +3054,6 @@ private fun MaintenanceDialogHost(dialog: MaintenanceDialog?, onDismiss: () -> U
                 val firstDay = LocalDate.of(year, selectedMonth, 1)
                 val configuredDay = settings?.dueDay?.toIntOrNull() ?: 10
                 customDueDate = firstDay.withDayOfMonth(configuredDay.coerceIn(1, firstDay.lengthOfMonth())).toString()
-            }
-
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ExposedDropdownMenuBox(
-                    expanded = monthExpanded,
-                    onExpandedChange = { monthExpanded = !monthExpanded },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    OutlinedTextField(
-                        value = monthNames.getOrElse(selectedMonth - 1) { "" },
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Month") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(monthExpanded) },
-                        modifier = Modifier.fillMaxWidth().menuAnchor(),
-                        shape = RoundedCornerShape(12.dp)
-                    )
-                    ExposedDropdownMenu(expanded = monthExpanded, onDismissRequest = { monthExpanded = false }) {
-                        monthNames.forEachIndexed { index, name ->
-                            DropdownMenuItem(text = { Text(name) }, onClick = {
-                                selectedMonth = index + 1
-                                monthExpanded = false
-                            })
-                        }
-                    }
-                }
-                OutlinedTextField(
-                    value = selectedYear,
-                    onValueChange = { if (it.length <= 4 && it.all(Char::isDigit)) selectedYear = it },
-                    label = { Text("Year") },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(12.dp),
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
-                )
             }
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -3162,7 +3141,7 @@ private fun MaintenanceDialogHost(dialog: MaintenanceDialog?, onDismiss: () -> U
                         onSuccess = onDismiss
                     )
                 },
-                enabled = !viewState.submitting && selectedMonth in 1..12 &&
+                enabled = nextCycle != null && !viewState.submitting && selectedMonth in 1..12 &&
                     (selectedYear.toIntOrNull() ?: 0) >= 2000 && validDueDate && validGraceDays,
                 modifier = Modifier.fillMaxWidth(),
                 colors = androidx.compose.material3.ButtonDefaults.buttonColors(

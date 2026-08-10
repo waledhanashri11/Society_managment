@@ -36,12 +36,14 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.ReceiptLong
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -200,6 +202,15 @@ private fun ResidentSimpleScaffold(
                         Text(title, fontWeight = FontWeight.Bold)
                         Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                },
+                actions = {
+                    IconButton(onClick = onRefresh, enabled = !isRefreshing) {
+                        if (isRefreshing) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        } else {
+                            Icon(Icons.Filled.Refresh, contentDescription = "Refresh")
+                        }
+                    }
                 }
             )
         }
@@ -207,7 +218,6 @@ private fun ResidentSimpleScaffold(
         PullToRefreshBox(
             isRefreshing = isRefreshing,
             onRefresh = onRefresh,
-            indicator = {},
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)

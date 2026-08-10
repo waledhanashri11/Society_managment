@@ -9,6 +9,9 @@
     "migrate": "node database/migrate.js",
     "provision:tenant-admins": "node scripts/provisionTenantAdmins.js",
     "provision:super-admin": "node scripts/provisionSuperAdmin.js",
+    "test:billing-cycle": "node tests/billingCycleSequence.test.js",
+    "test:billing-cycle-api": "node tests/billingCycleEndpoint.test.js",
+    "test:resident-members": "node tests/residentMembersIsolation.test.js",
     "test:tenant-isolation": "node tests/tenantIsolation.test.js",
     "test:super-admin": "node tests/superAdminFlow.test.js"
   },
