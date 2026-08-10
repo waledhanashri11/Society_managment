@@ -198,9 +198,13 @@ const login = async (req, res) => {
     const [users] = await promisePool.query(
       `SELECT u.*, s.name AS society_name, s.code AS society_code, s.logo_url AS society_logo_url,
               s.address AS society_address, s.registration_number AS society_registration_number
-       FROM users u JOIN societies s ON s.id = u.society_id
-       WHERE LOWER(u.email) = LOWER(?) AND s.status = 'active'`,
-      [email]
+       FROM users u LEFT JOIN societies s ON s.id = u.society_id
+       WHERE (LOWER(u.email) = LOWER(?) OR (
+                REGEXP_REPLACE(?, '[^0-9]', '', 'g') <> '' AND
+                REGEXP_REPLACE(COALESCE(u.phone, ''), '[^0-9]', '', 'g') = REGEXP_REPLACE(?, '[^0-9]', '', 'g')
+              ))
+         AND (u.role = 'super_admin' OR s.status = 'active')`,
+      [email, email, email]
     );
 
     if (users.length === 0) {
@@ -223,8 +227,17 @@ const login = async (req, res) => {
       return res.status(400).json({ message: 'Invalid credentials' });
     }
 
+    const societyId = user.society_id == null ? null : Number(user.society_id);
+    const society = societyId == null ? null : {
+      id: societyId,
+      name: user.society_name,
+      code: user.society_code,
+      logo_url: user.society_logo_url,
+      address: user.society_address,
+      registration_number: user.society_registration_number
+    };
     const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role, societyId: Number(user.society_id) },
+      { id: user.id, email: user.email, role: user.role, societyId },
       process.env.JWT_SECRET,
       { expiresIn: '24h' }
     );
@@ -239,24 +252,10 @@ const login = async (req, res) => {
         role: user.role,
         status: user.status || 'approved',
         flat_id: user.flat_id || null,
-        society_id: Number(user.society_id),
-        society: {
-          id: Number(user.society_id),
-          name: user.society_name,
-          code: user.society_code,
-          logo_url: user.society_logo_url,
-          address: user.society_address,
-          registration_number: user.society_registration_number
-        }
+        society_id: societyId,
+        society
       },
-      society: {
-        id: Number(user.society_id),
-        name: user.society_name,
-        code: user.society_code,
-        logo_url: user.society_logo_url,
-        address: user.society_address,
-        registration_number: user.society_registration_number
-      }
+      society
     });
   } catch (error) {
     console.error('Login error:', error);

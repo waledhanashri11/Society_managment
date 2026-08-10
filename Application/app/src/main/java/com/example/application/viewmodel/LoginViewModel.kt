@@ -39,7 +39,7 @@ class LoginViewModel @Inject constructor(
         if (current.isLoading) return
 
         val normalizedEmail = current.email.trim()
-        val emailError = validateEmail(normalizedEmail)
+        val emailError = validateIdentifier(normalizedEmail)
         val passwordError = validatePassword(current.password)
 
         if (emailError != null || passwordError != null) {
@@ -93,10 +93,13 @@ class LoginViewModel @Inject constructor(
         _uiState.update { it.copy(errorMessage = null) }
     }
 
-    private fun validateEmail(email: String): String? {
+    private fun validateIdentifier(identifier: String): String? {
+        val normalizedPhone = identifier.filter(Char::isDigit)
+        val isEmail = Patterns.EMAIL_ADDRESS.matcher(identifier).matches()
+        val isPhone = normalizedPhone.length in 10..15
         return when {
-            email.isBlank() -> "Email is required."
-            !Patterns.EMAIL_ADDRESS.matcher(email).matches() -> "Enter a valid email address."
+            identifier.isBlank() -> "Email or mobile number is required."
+            !isEmail && !isPhone -> "Enter a valid email or mobile number."
             else -> null
         }
     }

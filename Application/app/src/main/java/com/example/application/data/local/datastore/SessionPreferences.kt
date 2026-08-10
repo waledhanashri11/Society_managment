@@ -69,11 +69,19 @@ class SessionPreferences @Inject constructor(
             preferences[Keys.USER_EMAIL] = session.email
             preferences[Keys.USER_ROLE] = session.role
             preferences[Keys.USER_STATUS] = session.status
-            preferences[Keys.SOCIETY_ID] = session.societyId
-            preferences[Keys.SOCIETY_NAME] = session.societyName
-            preferences[Keys.SOCIETY_CODE] = session.societyCode
-            session.societyLogoUrl?.let { preferences[Keys.SOCIETY_LOGO_URL] = it }
-            session.phone?.let { preferences[Keys.USER_PHONE] = it }
+            session.societyId?.let { preferences[Keys.SOCIETY_ID] = it } ?: preferences.remove(Keys.SOCIETY_ID)
+            session.societyName?.let { preferences[Keys.SOCIETY_NAME] = it } ?: preferences.remove(Keys.SOCIETY_NAME)
+            session.societyCode?.let { preferences[Keys.SOCIETY_CODE] = it } ?: preferences.remove(Keys.SOCIETY_CODE)
+            if (session.societyLogoUrl.isNullOrBlank()) {
+                preferences.remove(Keys.SOCIETY_LOGO_URL)
+            } else {
+                preferences[Keys.SOCIETY_LOGO_URL] = session.societyLogoUrl
+            }
+            if (session.phone.isNullOrBlank()) {
+                preferences.remove(Keys.USER_PHONE)
+            } else {
+                preferences[Keys.USER_PHONE] = session.phone
+            }
         }
     }
 
@@ -92,9 +100,9 @@ class SessionPreferences @Inject constructor(
             phone = preferences[Keys.USER_PHONE],
             role = role,
             status = preferences[Keys.USER_STATUS].orEmpty(),
-            societyId = preferences[Keys.SOCIETY_ID].orEmpty(),
-            societyName = preferences[Keys.SOCIETY_NAME].orEmpty(),
-            societyCode = preferences[Keys.SOCIETY_CODE].orEmpty(),
+            societyId = preferences[Keys.SOCIETY_ID],
+            societyName = preferences[Keys.SOCIETY_NAME],
+            societyCode = preferences[Keys.SOCIETY_CODE],
             societyLogoUrl = preferences[Keys.SOCIETY_LOGO_URL]
         )
         cachedSession = session
@@ -145,8 +153,8 @@ data class UserSession(
     val phone: String?,
     val role: String,
     val status: String,
-    val societyId: String,
-    val societyName: String,
-    val societyCode: String,
+    val societyId: String?,
+    val societyName: String?,
+    val societyCode: String?,
     val societyLogoUrl: String?
 )

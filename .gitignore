@@ -9,6 +9,7 @@ node_modules/
 
 # Build and test outputs
 build/
+.kotlin/
 dist/
 coverage/
 

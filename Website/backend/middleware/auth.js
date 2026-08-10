@@ -32,18 +32,21 @@ const auth = (req, res, next) => {
         if (!user || (user.status && user.status !== 'approved')) {
           return res.status(401).json({ message: 'Account is unavailable or no longer approved' });
         }
-        if (decoded.societyId != null && Number(decoded.societyId) !== Number(user.society_id)) {
+        const isSuperAdmin = user.role === 'super_admin';
+        if (isSuperAdmin && user.society_id != null) {
+          return res.status(401).json({ message: 'Super Admin tenant scope is invalid' });
+        }
+        if (!isSuperAdmin && (user.society_id == null || Number(decoded.societyId) !== Number(user.society_id))) {
           return res.status(401).json({ message: 'Token tenant is no longer valid' });
         }
-
-        await setRequestSocietyId(user.society_id);
+        if (!isSuperAdmin) await setRequestSocietyId(user.society_id);
         req.user = {
           ...decoded,
           id: user.id,
           email: user.email,
           role: user.role,
-          societyId: Number(user.society_id),
-          society_id: Number(user.society_id)
+          societyId: isSuperAdmin ? null : Number(user.society_id),
+          society_id: isSuperAdmin ? null : Number(user.society_id)
         };
         // Tenant identity is server-owned. Remove client attempts to influence it
         // before any controller sees the request.
@@ -76,7 +79,7 @@ const adminAuth = (req, res, next) => {
     }
     next();
   };
-  if (req.user?.societyId) return authorize();
+  if (req.user) return authorize();
   auth(req, res, authorize);
 };
 
@@ -87,7 +90,7 @@ const superAdminAuth = (req, res, next) => {
     }
     next();
   };
-  if (req.user?.societyId) return authorize();
+  if (req.user) return authorize();
   auth(req, res, authorize);
 };
 

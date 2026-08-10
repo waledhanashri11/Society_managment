@@ -25,11 +25,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.application.R
 import com.example.application.ui.components.NotificationDropdown
+import com.example.application.ui.components.SocietyIdentityHeader
 
 @Composable
 fun ResidentHeader(
     residentName: String?,
     societyName: String?,
+    societyLogoUrl: String?,
     onProfileClick: () -> Unit,
     onNotificationClick: () -> Unit
 ) {
@@ -80,10 +82,11 @@ fun ResidentHeader(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            Text(
-                text = societyName?.takeIf { it.isNotBlank() } ?: stringResource(R.string.welcome_to_society),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+            SocietyIdentityHeader(
+                societyName = societyName?.takeIf { it.isNotBlank() } ?: stringResource(R.string.welcome_to_society),
+                societyLogoUrl = societyLogoUrl,
+                portalLabel = "Resident Portal",
+                modifier = Modifier.padding(top = 8.dp)
             )
         }
 

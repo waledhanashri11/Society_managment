@@ -60,9 +60,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.application.R
 import com.example.application.data.local.datastore.UserSession
-import com.example.application.ui.components.AppRoleTheme
-import com.example.application.ui.components.BuildingIllustration
-import com.example.application.ui.components.rolePrimary
+import com.example.application.ui.theme.SocietyBlue40
 import com.example.application.viewmodel.LoginViewModel
 import kotlinx.coroutines.launch
 
@@ -80,8 +78,7 @@ fun LoginScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var passwordVisible by remember { mutableStateOf(false) }
-    var selectedRole by remember { mutableStateOf(AppRoleTheme.Admin) }
-    val primary = rolePrimary(selectedRole)
+    val primary = SocietyBlue40
     val scrollState = rememberScrollState()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -164,57 +161,31 @@ fun LoginScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontWeight = FontWeight.Medium
                 )
-                Spacer(modifier = Modifier.height(16.dp))
-
-
+                Spacer(modifier = Modifier.height(22.dp))
                 Text(
-                    text = if (selectedRole == AppRoleTheme.Admin) stringResource(R.string.admin_login) else stringResource(R.string.resident_login),
-                    modifier = Modifier.padding(top = 18.dp),
+                    text = "Welcome Back",
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = stringResource(R.string.login_welcome),
+                    text = "Sign in to access your society account",
                     modifier = Modifier.padding(top = 6.dp, bottom = 20.dp),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    FilterChip(
-                        selected = selectedRole == AppRoleTheme.Admin,
-                        onClick = { selectedRole = AppRoleTheme.Admin },
-                        label = { Text(stringResource(R.string.admin)) },
-                        leadingIcon = { Icon(Icons.Filled.AdminPanelSettings, contentDescription = "Admin role", modifier = Modifier.size(18.dp)) },
-                        modifier = Modifier.weight(1f)
-                    )
-                    FilterChip(
-                        selected = selectedRole == AppRoleTheme.Resident,
-                        onClick = { selectedRole = AppRoleTheme.Resident },
-                        label = { Text(stringResource(R.string.resident)) },
-                        leadingIcon = { Icon(Icons.Filled.Person, contentDescription = "Resident role", modifier = Modifier.size(18.dp)) },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-
                 OutlinedTextField(
                     value = uiState.email,
                     onValueChange = viewModel::onEmailChanged,
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text(stringResource(R.string.email)) },
+                    label = { Text("Email / Mobile Number") },
                     isError = uiState.emailError != null,
                     supportingText = uiState.emailError?.let { { Text(it) } },
                     enabled = !uiState.isLoading,
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
                     leadingIcon = {
-                        Icon(Icons.Filled.Email, contentDescription = stringResource(R.string.email))
+                        Icon(Icons.Filled.Email, contentDescription = "Email or mobile number")
                     }
                 )
 
@@ -268,8 +239,15 @@ fun LoginScreen(
                 ) {
                     Icon(Icons.Filled.Login, contentDescription = "Login", modifier = Modifier.size(20.dp))
                     Spacer(Modifier.size(8.dp))
-                    Text(if (uiState.isLoading) stringResource(R.string.logging_in) else stringResource(R.string.login), fontWeight = FontWeight.Bold)
+                    Text(if (uiState.isLoading) stringResource(R.string.logging_in) else "Sign In", fontWeight = FontWeight.Bold)
                 }
+
+                Text(
+                    text = "Your society and portal are selected securely after sign in.",
+                    modifier = Modifier.padding(top = 14.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
 
                 Row(
                     modifier = Modifier.padding(top = 18.dp),

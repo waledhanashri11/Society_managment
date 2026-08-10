@@ -61,6 +61,7 @@ const notificationRoutes = require('./routes/notifications');
 const nocRoutes = require('./routes/noc');
 const ruleRoutes = require('./routes/rules');
 const eventRoutes = require('./routes/events');
+const superAdminRoutes = require('./routes/superAdmin');
 const nocController = require('./controllers/nocController');
 
 app.use('/api/auth', authRoutes);
@@ -79,6 +80,7 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/rules', ruleRoutes);
 app.use('/api/events', eventRoutes);
+app.use('/api/super-admin', superAdminRoutes);
 app.get('/share/noc/:token', publicAuthDatabaseContext, nocController.getSharedPdf);
 app.use('/api/noc', nocRoutes);
 

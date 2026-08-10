@@ -66,6 +66,10 @@ import com.example.application.ui.screens.rules.ResidentRulesGate
 import com.example.application.ui.screens.meetings.AdminMeetingsScreen
 import com.example.application.ui.screens.meetings.ResidentMeetingsScreen
 import com.example.application.ui.screens.splash.SplashScreen
+import com.example.application.ui.screens.superadmin.SuperAdminDashboardScreen
+import com.example.application.ui.screens.superadmin.SocietyListScreen
+import com.example.application.ui.screens.superadmin.CreateSocietyScreen
+import com.example.application.ui.screens.superadmin.SocietyDetailsScreen
 import com.example.application.viewmodel.SplashViewModel
 import com.example.application.viewmodel.StartupState
 
@@ -75,6 +79,7 @@ fun SocietyNavGraph(
 ) {
     fun dashboardRouteFor(session: UserSession): String {
         return when (session.role.lowercase()) {
+            AuthRepository.ROLE_SUPER_ADMIN -> AppRoute.SuperAdminDashboard.route
             AuthRepository.ROLE_ADMIN -> AppRoute.AdminDashboard.route
             AuthRepository.ROLE_RESIDENT -> AppRoute.ResidentDashboard.route
             else -> AppRoute.Login.route
@@ -205,6 +210,32 @@ fun SocietyNavGraph(
                         else -> navController.navigate(AppRoute.ComingSoon.createRoute(title))
                     }
                 }
+            )
+        }
+
+        composable(AppRoute.SuperAdminDashboard.route) {
+            SuperAdminDashboardScreen(
+                onSocieties = { navController.navigate(AppRoute.SuperAdminSocieties.route) },
+                onSociety = { navController.navigate(AppRoute.SocietyDetails.createRoute(it)) },
+                onLogoutComplete = ::navigateToLogin
+            )
+        }
+        composable(AppRoute.SuperAdminSocieties.route) {
+            SocietyListScreen(
+                onBack = { navController.popBackStack() },
+                onAdd = { navController.navigate(AppRoute.CreateSociety.route) },
+                onSociety = { navController.navigate(AppRoute.SocietyDetails.createRoute(it)) }
+            )
+        }
+        composable(AppRoute.CreateSociety.route) {
+            CreateSocietyScreen(onBack = { navController.popBackStack() }, onCreated = { id ->
+                navController.navigate(AppRoute.SocietyDetails.createRoute(id)) { popUpTo(AppRoute.CreateSociety.route) { inclusive = true } }
+            })
+        }
+        composable(AppRoute.SocietyDetails.route) { entry ->
+            SocietyDetailsScreen(
+                societyId = entry.arguments?.getString("id").orEmpty(),
+                onBack = { navController.popBackStack() }
             )
         }
 

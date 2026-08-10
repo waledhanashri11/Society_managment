@@ -12,6 +12,7 @@ import com.example.application.data.remote.dto.RegisterRequest
 import com.example.application.data.remote.dto.RegisterResponse
 import com.example.application.data.remote.dto.ResetPasswordRequest
 import com.example.application.data.remote.dto.UserDto
+import com.example.application.data.remote.dto.SocietyDto
 import com.example.application.util.AppError
 import com.example.application.util.JwtUtils
 import com.example.application.util.NetworkResult
@@ -53,13 +54,20 @@ class AuthRepository @Inject constructor(
                     return NetworkResult.Error(AppError.Unknown("Unable to read the server response."))
                 }
 
-                val session = user.toSession(token)
+                val session = user.toSession(token, body.society)
                 val normalizedRole = session.role.lowercase()
 
-                if (normalizedRole != ROLE_ADMIN && normalizedRole != ROLE_RESIDENT) {
+                if (normalizedRole !in SUPPORTED_ROLES) {
                     sessionPreferences.clearSession()
                     return NetworkResult.Error(
                         AppError.Forbidden("This account does not have access to the mobile application.")
+                    )
+                }
+
+                if (normalizedRole != ROLE_SUPER_ADMIN && (session.societyId.isNullOrBlank() || session.societyName.isNullOrBlank())) {
+                    sessionPreferences.clearSession()
+                    return NetworkResult.Error(
+                        AppError.Unknown("Your society details are missing. Please contact support.")
                     )
                 }
 
@@ -125,13 +133,12 @@ class AuthRepository @Inject constructor(
             sessionPreferences.clearSession()
             return null
         }
-        if (session.societyId.isBlank()) {
+        val role = session.role.lowercase()
+        if (role != ROLE_SUPER_ADMIN && session.societyId.isNullOrBlank()) {
             sessionPreferences.clearSession()
             return null
         }
-
-        val role = session.role.lowercase()
-        if (role != ROLE_ADMIN && role != ROLE_RESIDENT) {
+        if (role !in SUPPORTED_ROLES) {
             sessionPreferences.clearSession()
             return null
         }
@@ -156,7 +163,8 @@ class AuthRepository @Inject constructor(
         societyRulesRepository.clearTenantCache()
     }
 
-    private fun UserDto.toSession(token: String): UserSession {
+    private fun UserDto.toSession(token: String, responseSociety: SocietyDto?): UserSession {
+        val authenticatedSociety = society ?: responseSociety
         return UserSession(
             token = token,
             userId = id.orEmpty(),
@@ -165,10 +173,10 @@ class AuthRepository @Inject constructor(
             phone = phone,
             role = role.orEmpty(),
             status = status ?: "approved",
-            societyId = societyId.orEmpty(),
-            societyName = society?.name.orEmpty(),
-            societyCode = society?.code.orEmpty(),
-            societyLogoUrl = society?.logoUrl
+            societyId = societyId ?: authenticatedSociety?.id,
+            societyName = authenticatedSociety?.name,
+            societyCode = authenticatedSociety?.code,
+            societyLogoUrl = authenticatedSociety?.logoUrl
         )
     }
 
@@ -253,5 +261,7 @@ class AuthRepository @Inject constructor(
     companion object {
         const val ROLE_ADMIN = "admin"
         const val ROLE_RESIDENT = "resident"
+        const val ROLE_SUPER_ADMIN = "super_admin"
+        val SUPPORTED_ROLES = setOf(ROLE_SUPER_ADMIN, ROLE_ADMIN, ROLE_RESIDENT)
     }
 }

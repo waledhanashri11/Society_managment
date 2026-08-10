@@ -81,6 +81,7 @@ import com.example.application.data.repository.AdminDashboardData
 import com.example.application.R
 import com.example.application.ui.components.LanguageSelector
 import com.example.application.ui.components.NotificationDropdown
+import com.example.application.ui.components.SocietyIdentityHeader
 import com.example.application.ui.components.localizedLabel
 import com.example.application.ui.theme.SocietyBlue40
 import com.example.application.util.DashboardFormatters
@@ -157,6 +158,7 @@ fun AdminDashboardScreen(
                             AdminHeader(
                                 adminName = data?.adminName ?: "Admin",
                                 societyName = session?.societyName.orEmpty(),
+                                societyLogoUrl = session?.societyLogoUrl,
                                 onMenu = { scope.launch { drawerState.open() } },
                                 onNotifications = { onQuickAction("Notifications") },
                                 onLogout = { showLogoutDialog = true }
@@ -179,7 +181,7 @@ fun AdminDashboardScreen(
 }
 
 @Composable
-private fun AdminHeader(adminName: String, societyName: String, onMenu: () -> Unit, onNotifications: () -> Unit, onLogout: () -> Unit) {
+private fun AdminHeader(adminName: String, societyName: String, societyLogoUrl: String?, onMenu: () -> Unit, onNotifications: () -> Unit, onLogout: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -188,10 +190,14 @@ private fun AdminHeader(adminName: String, societyName: String, onMenu: () -> Un
             .statusBarsPadding()
             .padding(horizontal = 22.dp, vertical = 18.dp)
     ) {
-        Column(modifier = Modifier.align(Alignment.TopStart).padding(top = 6.dp)) {
-            Text("SocietyHub", color = Color.White, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            Text(societyName.ifBlank { stringResource(R.string.app_subtitle) }, color = Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
-        }
+        SocietyIdentityHeader(
+            societyName = societyName.ifBlank { stringResource(R.string.app_name) },
+            societyLogoUrl = societyLogoUrl,
+            portalLabel = "Admin Portal",
+            modifier = Modifier.align(Alignment.TopStart).padding(top = 4.dp).fillMaxWidth(0.72f),
+            foregroundColor = Color.White,
+            mutedColor = Color.White.copy(alpha = 0.82f)
+        )
         Row(
             modifier = Modifier.align(Alignment.TopEnd),
             horizontalArrangement = Arrangement.spacedBy(2.dp),
@@ -214,7 +220,7 @@ private fun AdminHeader(adminName: String, societyName: String, onMenu: () -> Un
             }
             Column {
                 Text(adminName.ifBlank { "Admin" }, color = Color.White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                Text(stringResource(R.string.super_admin), color = Color.White.copy(alpha = 0.82f), style = MaterialTheme.typography.titleMedium)
+                Text("Admin Portal", color = Color.White.copy(alpha = 0.82f), style = MaterialTheme.typography.titleMedium)
             }
         }
     }

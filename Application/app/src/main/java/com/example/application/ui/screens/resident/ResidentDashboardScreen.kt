@@ -103,6 +103,7 @@ fun ResidentDashboardScreen(
                             ResidentHeader(
                                 residentName = data.profile.name,
                                 societyName = session?.societyName,
+                                societyLogoUrl = session?.societyLogoUrl,
                                 onProfileClick = onProfileClick,
                                 onNotificationClick = { onQuickAction("Notifications") }
                             )

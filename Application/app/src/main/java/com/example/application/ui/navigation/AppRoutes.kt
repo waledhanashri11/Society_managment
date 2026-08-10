@@ -12,6 +12,12 @@ sealed class AppRoute(val route: String) {
         fun createRoute(token: String = "") = "reset_password?token=$token"
     }
     data object AdminDashboard : AppRoute("admin_dashboard")
+    data object SuperAdminDashboard : AppRoute("super_admin_dashboard")
+    data object SuperAdminSocieties : AppRoute("super_admin_societies")
+    data object CreateSociety : AppRoute("super_admin_societies/create")
+    data object SocietyDetails : AppRoute("super_admin_societies/{id}") {
+        fun createRoute(id: String) = "super_admin_societies/$id"
+    }
     data object AdminResidents : AppRoute("admin_residents")
     data object ResidentDetails : AppRoute("admin_residents/{id}") {
         fun createRoute(id: String) = "admin_residents/$id"
