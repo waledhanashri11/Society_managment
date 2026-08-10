@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const { promisePool, runWithRequestDatabaseContext, setRequestSocietyId } = require('../config/database');
+const { promisePool, runWithRequestDatabaseContext, adoptConfiguredRequestContext } = require('../config/database');
 
 const databaseContext = (req, res, next) => {
   // Defer database role configuration until auth/public-auth chooses the
@@ -29,7 +29,10 @@ const auth = (req, res, next) => {
     runWithRequestDatabaseContext({ defer: true }, req, res, async () => {
       try {
         const [users] = await promisePool.query(
-          `SELECT id, email, role, status, society_id
+          `SELECT id, email, role, status, society_id,
+                  set_config('role', 'society_tenant_app', false) AS configured_role,
+                  set_config('app.tenant_bypass', CASE WHEN role = 'super_admin' THEN 'on' ELSE 'off' END, false) AS configured_bypass,
+                  set_config('app.current_society_id', CASE WHEN role = 'super_admin' THEN '' ELSE society_id::text END, false) AS configured_society
            FROM users WHERE id = ? LIMIT 1`,
           [decoded.id]
         );
@@ -44,11 +47,10 @@ const auth = (req, res, next) => {
         if (!isSuperAdmin && (user.society_id == null || Number(decoded.societyId) !== Number(user.society_id))) {
           return res.status(401).json({ message: 'Token tenant is no longer valid' });
         }
-        if (!isSuperAdmin) {
-          await setRequestSocietyId(user.society_id);
-        } else {
-          await runWithRequestDatabaseContext({ bypass: true }, req, res, () => {});
-        }
+        adoptConfiguredRequestContext({
+          societyId: isSuperAdmin ? null : user.society_id,
+          bypass: isSuperAdmin
+        });
         req.user = {
           ...decoded,
           id: user.id,

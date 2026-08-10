@@ -196,6 +196,15 @@ const setRequestSocietyId = async (societyId) => {
   await configureContext(context.client, context);
 };
 
+// Used when the authentication query itself applied the secure database role
+// and tenant GUCs in the same round trip as the server-owned user lookup.
+const adoptConfiguredRequestContext = ({ societyId = null, bypass = false } = {}) => {
+  const context = requestDatabaseStorage.getStore();
+  if (!context?.client) throw new Error('No request database context is active');
+  context.societyId = societyId == null ? null : Number(societyId);
+  context.bypass = bypass === true;
+};
+
 const promisePool = {
   async query(sql, values = []) {
     return runQuery(contextExecutor(), sql, values);
@@ -326,5 +335,6 @@ module.exports = {
   initDatabase,
   runWithRequestDatabaseContext,
   setRequestSocietyId,
+  adoptConfiguredRequestContext,
   requestDatabaseStorage
 };
