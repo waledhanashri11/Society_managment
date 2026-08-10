@@ -31,7 +31,7 @@ const formatMonthDisplay = (month, year) => {
 const fullDate = (value) => value ? new Date(value).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 const today = () => new Date().toISOString().slice(0, 10);
 
-const SUPPORT_PARTIAL_PAYMENTS = true;
+const SUPPORT_PARTIAL_PAYMENTS = false;
 
 const formatStatusLabel = (st, t) => {
   if (!st) return '';
@@ -195,12 +195,10 @@ function ResidentMaintenance() {
   const load = useCallback(async () => {
     const results = await Promise.allSettled([
       maintenanceAPI.getUserMaintenance(),
-      settingsAPI.getPayment(),
-      settingsAPI.get()
+      settingsAPI.getPayment()
     ]);
     if (results[0].status === 'fulfilled') setBills(unwrap(results[0].value));
     if (results[1].status === 'fulfilled') setPaymentSettings(results[1].value.data || {});
-    if (results[2].status === 'fulfilled') setSocietySettings(unwrap(results[2].value));
     setLoading(false);
   }, []);
 

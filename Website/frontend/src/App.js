@@ -14,6 +14,7 @@ const Register = lazy(() => import('./pages/Register'));
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
 const ResetPassword = lazy(() => import('./pages/ResetPassword'));
 const PublicNOCCertificate = lazy(() => import('./pages/PublicNOCCertificate'));
+const SuperAdmin = lazy(() => import('./superadmin/SuperAdmin'));
 
 const AdminLayout = lazy(() => import('./admin/AdminLayout'));
 const AdminDashboard = lazy(() => import('./admin/AdminDashboard'));
@@ -55,7 +56,7 @@ const PrivateRoute = ({ children, role }) => {
     const isAllowedAdmin = role === 'admin' && (user.role === 'admin' || user.role === 'super_admin');
     const isAllowedResident = role === 'resident' && user.role === 'resident';
     if (!isAllowedAdmin && !isAllowedResident && user.role !== role) {
-      return <Navigate to={(user.role === 'admin' || user.role === 'super_admin') ? '/admin/dashboard' : '/resident/dashboard'} replace />;
+      return <Navigate to={user.role === 'super_admin' ? '/super-admin' : user.role === 'admin' ? '/admin/dashboard' : '/resident/dashboard'} replace />;
     }
   }
 
@@ -77,6 +78,7 @@ function App() {
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/share/noc/:token" element={<PublicNOCCertificate />} />
+          <Route path="/super-admin" element={<PrivateRoute role="super_admin"><SuperAdmin /></PrivateRoute>} />
 
           <Route
             path="/admin"

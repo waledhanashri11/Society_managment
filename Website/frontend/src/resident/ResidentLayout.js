@@ -32,6 +32,7 @@ const ResidentLayout = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const user = getUser();
+  const societyName = user?.society?.name || t('common.societyManagement');
   const profilePhotoKey = getProfilePhotoKey(user);
   const [open, setOpen] = useState(false);
   const [activeMenu, setActiveMenu] = useState('');
@@ -119,7 +120,7 @@ const ResidentLayout = () => {
       <aside className={`portal-sidebar ${open ? 'is-open' : ''}`}>
         <div className="portal-brand">
           <span className="portal-brand-mark">{Building2 ? <Building2 size={21} /> : null}</span>
-          <span><strong>{t('common.appName')}</strong><small>{t('common.residentPortal')}</small></span>
+          <span><strong>{t('common.appName')}</strong><small>{societyName}</small></span>
           <button className="portal-mobile-close" onClick={() => setOpen(false)}>{X ? <X size={19} /> : null}</button>
         </div>
         <div className="portal-nav-label">{t('nav.mySociety')}</div>
@@ -139,7 +140,7 @@ const ResidentLayout = () => {
       <div className="portal-main">
         <header className="portal-topbar">
           <button className="portal-menu-button" onClick={() => setOpen(true)}>{Menu ? <Menu size={21} /> : null}</button>
-          <div className="portal-breadcrumb"><span>{t('common.residentPortal')}</span><small>{t('common.welcomeHome')}</small></div>
+          <div className="portal-breadcrumb"><span>{societyName}</span><small>{t('common.residentPortal')}</small></div>
           <div className="portal-top-actions">
             <div className="portal-action-menu" onClick={(event) => event.stopPropagation()}>
               <button

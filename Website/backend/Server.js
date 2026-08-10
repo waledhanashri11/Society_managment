@@ -48,7 +48,9 @@ app.use((req, res, next) => {
   res.end = function timedEnd(...args) {
     const elapsedMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
     if (!res.headersSent) res.setHeader('Server-Timing', `app;dur=${elapsedMs.toFixed(1)}`);
-    if (elapsedMs >= Number(process.env.SLOW_REQUEST_MS || 750)) {
+    if (res.statusCode >= 400) {
+      console.error(`[API_ERROR_${res.statusCode}] ${req.method} ${req.originalUrl} ${elapsedMs.toFixed(1)}ms`);
+    } else if (elapsedMs >= Number(process.env.SLOW_REQUEST_MS || 750)) {
       const safePath = req.path
         .split('/')
         .slice(0, 5)

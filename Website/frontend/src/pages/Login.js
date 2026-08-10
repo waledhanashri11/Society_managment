@@ -36,7 +36,9 @@ const Login = () => {
       setToken(response.data.token);
       setUser(response.data.user);
       
-      if (response.data.user.role === 'admin' || response.data.user.role === 'super_admin') {
+      if (response.data.user.role === 'super_admin') {
+        navigate('/super-admin');
+      } else if (response.data.user.role === 'admin') {
         navigate('/admin/dashboard');
       } else {
         navigate('/resident/dashboard');

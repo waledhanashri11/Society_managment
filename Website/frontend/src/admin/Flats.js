@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Building2, CheckCircle2, Edit3, IndianRupee, Plus, Trash2, XCircle, RefreshCw, History, Calendar } from 'lucide-react';
+import { Building2, CheckCircle2, Edit3, IndianRupee, Plus, XCircle, RefreshCw, History, Calendar } from 'lucide-react';
 import { flatAPI, userAPI, residentsAPI, flatTypeAPI } from '../services/api';
 import { CardSkeleton } from '../components/Skeletons';
 import { useTranslation } from 'react-i18next';
@@ -426,7 +426,7 @@ const Flats = () => {
                         <div className="portal-row-actions">
                           <button onClick={() => handleEdit(flat)}><Edit3 size={14} /> {t('common.edit')}</button>
                           <button className="info" style={{ color: '#2563eb' }} onClick={() => handleTransferClick(flat)}><RefreshCw size={14} /> {t('flats.transfer')}</button>
-                          <button className="danger" onClick={() => handleDelete(flat.id)}><Trash2 size={14} /> {t('common.delete')}</button>
+                          <button className="danger" onClick={() => handleDelete(flat.id)}>{t('common.delete')}</button>
                         </div>
                       </td>
                     </tr>
@@ -471,7 +471,7 @@ const Flats = () => {
                     <td>
                       <div className="portal-row-actions">
                         <button onClick={() => handleFlatTypeEdit(ft)}><Edit3 size={14} /> {t('common.edit')}</button>
-                        <button className="danger" onClick={() => handleFlatTypeDelete(ft.id)}><Trash2 size={14} /> {t('common.delete')}</button>
+                        <button className="danger" onClick={() => handleFlatTypeDelete(ft.id)}>{t('common.delete')}</button>
                       </div>
                     </td>
                   </tr>

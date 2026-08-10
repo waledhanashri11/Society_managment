@@ -64,6 +64,7 @@ function ResidentNOCRequests() {
   const [uploadModal, setUploadModal] = useState(null);
   const [uploadDocs, setUploadDocs] = useState([]);
   const [uploadRemarks, setUploadRemarks] = useState('');
+  const [downloadingId, setDownloadingId] = useState(null);
 
   const [form, setForm] = useState({
     noc_type: 'Property Sale',
@@ -189,6 +190,7 @@ function ResidentNOCRequests() {
       return notify('Certificate is available only after approval');
     }
 
+    setDownloadingId(request.id);
     try {
       const response = await nocAPI.getPdf(request.id);
       let htmlText = '';
@@ -196,6 +198,9 @@ function ResidentNOCRequests() {
         htmlText = await response.data.text();
       } else {
         htmlText = String(response.data);
+      }
+      if (!htmlText.includes(request.request_number)) {
+        throw new Error('The certificate returned by the server does not match the selected NOC request.');
       }
 
       // Hide print button in downloaded PDF content
@@ -218,23 +223,33 @@ function ResidentNOCRequests() {
       doc.close();
 
       // Short delay to allow browser to parse CSS and render layout
-      await new Promise((r) => setTimeout(r, 400));
+      await new Promise((r) => setTimeout(r, 120));
 
       const html2pdf = (await import('html2pdf.js')).default;
       const opt = {
         margin: [8, 8, 8, 8],
         filename: `NOC_Certificate_${request.request_number || 'Official'}.pdf`,
         image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true, logging: false, windowWidth: 850 },
+        html2canvas: { scale: 1.25, useCORS: true, logging: false, windowWidth: 850 },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
       };
 
-      await html2pdf().set(opt).from(doc.body).save();
+      const pdfBlob = await html2pdf().set(opt).from(doc.body).outputPdf('blob');
+      const downloadUrl = URL.createObjectURL(pdfBlob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = opt.filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(downloadUrl);
       document.body.removeChild(iframe);
       notify('NOC Certificate PDF downloaded successfully');
     } catch (err) {
       console.error('NOC PDF generation error:', err);
       notify(err.response?.data?.message || 'Could not generate PDF certificate');
+    } finally {
+      setDownloadingId(null);
     }
   };
 
@@ -379,9 +394,9 @@ function ResidentNOCRequests() {
                               <button 
                                 type="button" 
                                 style={{ background: '#2563eb', color: '#ffffff', border: 'none', padding: '5px 10px', fontSize: '11px', fontWeight: '700', borderRadius: '6px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }} 
-                                onClick={() => downloadPdf(item)}
+                                onClick={() => downloadPdf(item)} disabled={downloadingId === item.id}
                               >
-                                <Download size={13} /> Download Certificate
+                                <Download size={13} /> {downloadingId === item.id ? 'Preparing…' : 'Download Certificate'}
                               </button>
                             )}
                           </div>
@@ -491,9 +506,9 @@ function ResidentNOCRequests() {
                   <button 
                     type="button" 
                     style={{ background: '#2563eb', color: '#ffffff', border: 'none', padding: '8px 14px', fontSize: '12px', fontWeight: '700', borderRadius: '8px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }} 
-                    onClick={() => downloadPdf(selected)}
+                    onClick={() => downloadPdf(selected)} disabled={downloadingId === selected.id}
                   >
-                    <Download size={14} /> Download Certificate
+                    <Download size={14} /> {downloadingId === selected.id ? 'Preparing…' : 'Download Certificate'}
                   </button>
                 )}
               </div>

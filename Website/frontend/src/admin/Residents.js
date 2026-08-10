@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, Edit3, Plus, ShieldCheck, Trash2, Users, XCircle } from 'lucide-react';
+import { CheckCircle2, Edit3, Plus, ShieldCheck, Users, XCircle } from 'lucide-react';
 import { userAPI, flatAPI } from '../services/api';
 import { CardSkeleton, TableSkeleton } from '../components/Skeletons';
 import { useTranslation } from 'react-i18next';
@@ -142,7 +142,7 @@ const Residents = () => {
                       {resident.status !== 'approved' && <button onClick={() => handleStatus(resident, 'approved')}><ShieldCheck size={14} /> {t('common.approve', 'Approve')}</button>}
                       {resident.status !== 'rejected' && <button onClick={() => handleStatus(resident, 'rejected')}><XCircle size={14} /> {t('common.reject', 'Reject')}</button>}
                       <button onClick={() => handleEdit(resident)}><Edit3 size={14} /> {t('common.edit')}</button>
-                      <button className="danger" onClick={() => handleDelete(resident.id)}><Trash2 size={14} /> {t('common.delete')}</button>
+                      <button className="danger" onClick={() => handleDelete(resident.id)}>{t('common.delete')}</button>
                     </div>
                   </td>
                 </tr>

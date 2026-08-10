@@ -304,6 +304,8 @@ export const rulesAPI = {
   create: (data) => mutate(api.post('/rules', data), '/rules'),
   update: (id, data) => mutate(api.put(`/rules/${id}`, data), '/rules'),
   delete: (id) => mutate(api.delete(`/rules/${id}`), '/rules'),
+  publish: (id) => mutate(api.put(`/rules/${id}/publish`), '/rules'),
+  unpublish: (id) => mutate(api.put(`/rules/${id}/unpublish`), '/rules'),
   reorder: (ids) => mutate(api.put('/rules/reorder', { ids }), '/rules'),
   accept: () => mutate(api.post('/rules/accept'), ['/rules', '/resident']),
   getAcceptanceReport: (params = {}, config = {}) => cachedGet('/rules/acceptance-report', { ...config, params })
@@ -330,7 +332,10 @@ export const nocAPI = {
   complete: (id, data = {}) => mutate(api.put(`/noc/${id}/complete`, data), ['/noc', '/notifications']),
   getTypes: (config = {}) => cachedGet('/noc/types', config),
   createType: (data) => mutate(api.post('/noc/types', data), '/noc/types'),
-  getPdf: (id) => api.get(`/noc/${id}/pdf`, { responseType: 'blob' }),
+  getPdf: (id) => api.get(`/noc/${id}/pdf?download=${Date.now()}`, {
+    responseType: 'blob',
+    headers: { 'Cache-Control': 'no-cache' }
+  }),
   generateShareLink: (id) => api.post(`/noc/${id}/share`),
   getPublicCertificate: (token) => api.get(`/noc/public/${token}`),
 };
@@ -360,6 +365,17 @@ export const monthlyReportAPI = {
   approvePayment: (id) => api.put(`/reports/maintenance/payments/${id}/approve`),
   rejectPayment: (id, data) => api.put(`/reports/maintenance/payments/${id}/reject`, data),
   getPaymentReceipt: (id) => api.get(`/reports/maintenance/receipts/${id}`),
+};
+
+export const superAdminAPI = {
+  getDashboard: () => api.get('/super-admin/dashboard'),
+  getSocieties: () => api.get('/super-admin/societies'),
+  getSociety: (id) => api.get(`/super-admin/societies/${id}`),
+  createSociety: (data) => api.post('/super-admin/societies', data),
+  updateSociety: (id, data) => api.put(`/super-admin/societies/${id}`, data),
+  setSocietyStatus: (id, status) => api.patch(`/super-admin/societies/${id}/status`, { status }),
+  deleteSociety: (id) => api.delete(`/super-admin/societies/${id}`),
+  updateAdministrator: (id, data) => api.put(`/super-admin/societies/${id}/admin`, data),
 };
 
 export { api };

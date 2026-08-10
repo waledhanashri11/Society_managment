@@ -98,20 +98,21 @@ const register = async (req, res) => {
     );
     if (!societies.length) return res.status(404).json({ message: 'Society code is invalid or inactive' });
     const society = societies[0];
+    // Email is a platform-wide unique identifier. Check it while the public
+    // registration context still has bypass access; otherwise a user from a
+    // different tenant is hidden by RLS and the later INSERT becomes a vague
+    // database error instead of an actionable response.
+    const [existingUsers] = await promisePool.query(
+      'SELECT id FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1',
+      [email]
+    );
+    if (existingUsers.length > 0) {
+      return res.status(400).json({ message: 'An account with this email already exists. Please sign in instead.' });
+    }
     await setRequestSocietyId(society.id);
     connection = await promisePool.getConnection();
 
     await connection.beginTransaction();
-
-    const [existingUsers] = await connection.query(
-      'SELECT id FROM users WHERE email = ?',
-      [email]
-    );
-
-    if (existingUsers.length > 0) {
-      await connection.rollback();
-      return res.status(400).json({ message: 'User already exists' });
-    }
 
     if (userRole === 'resident' && assignedFlatId) {
       const [flats] = await connection.query(

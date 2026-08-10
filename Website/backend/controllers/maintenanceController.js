@@ -287,8 +287,8 @@ const ensureMaintenanceRuntimeSchema = async () => {
     )
   `);
   await promisePool.query(`
-    INSERT INTO payment_maintenance (payment_id, maintenance_id)
-    SELECT p.id, p.bill_id
+    INSERT INTO payment_maintenance (society_id, payment_id, maintenance_id)
+    SELECT COALESCE(p.society_id, 1), p.id, p.bill_id
     FROM payments p
     WHERE p.bill_id IS NOT NULL
     ON CONFLICT (payment_id, maintenance_id) DO NOTHING
@@ -1626,10 +1626,10 @@ const payMaintenanceBill = async (req, res) => {
 
     // Record a payment in payments table
     await promisePool.query(
-      `INSERT INTO payments (bill_id, payment_method, transaction_id, amount, payment_status, paid_at)
-       VALUES (?, ?, ?, ?, ?, ?)
+      `INSERT INTO payments (society_id, bill_id, payment_method, transaction_id, amount, payment_status, paid_at)
+       VALUES (COALESCE((SELECT society_id FROM maintenance WHERE id = ?), 1), ?, ?, ?, ?, ?, ?)
        ON CONFLICT (bill_id, transaction_id) DO UPDATE SET amount = EXCLUDED.amount, payment_status = EXCLUDED.payment_status`,
-      [id, 'Manual', `ADMIN-${Date.now()}`, newPaidAmount, status === 'Paid' ? 'Paid' : 'Pending', paymentDate]
+      [id, id, 'Manual', `ADMIN-${Date.now()}`, newPaidAmount, status === 'Paid' ? 'Paid' : 'Pending', paymentDate]
     );
 
     return sendResponse(res, 200, 'Bill marked as paid successfully');
@@ -1908,8 +1908,8 @@ const createPayment = async (req, res) => {
     const paidAt = paymentDate || new Date();
     const paymentsHasResidentId = await hasTableColumn('payments', 'resident_id');
     const paymentsHasPaymentProof = await hasTableColumn('payments', 'payment_proof');
-    const insertColumns = ['bill_id', 'payment_method', 'transaction_id', 'amount', 'payment_status', 'paid_at', 'screenshot_url'];
-    const insertValues = [primaryBillId, paymentMethod, utr, paidAmount, 'Pending Verification', paidAt, screenshotPath];
+    const insertColumns = ['society_id', 'bill_id', 'payment_method', 'transaction_id', 'amount', 'payment_status', 'paid_at', 'screenshot_url'];
+    const insertValues = [req.user.societyId || bill.society_id || 1, primaryBillId, paymentMethod, utr, paidAmount, 'Pending Verification', paidAt, screenshotPath];
     if (paymentsHasResidentId) {
       insertColumns.push('resident_id');
       insertValues.push(req.user.id);
@@ -1932,8 +1932,8 @@ const createPayment = async (req, res) => {
 
     for (const maintenanceId of selectedBillIds) {
       await connection.query(
-        'INSERT INTO payment_maintenance (payment_id, maintenance_id) VALUES (?, ?) ON CONFLICT (payment_id, maintenance_id) DO NOTHING',
-        [paymentId, maintenanceId]
+        'INSERT INTO payment_maintenance (society_id, payment_id, maintenance_id) VALUES (?, ?, ?) ON CONFLICT (payment_id, maintenance_id) DO NOTHING',
+        [req.user.societyId || bill.society_id || 1, paymentId, maintenanceId]
       );
     }
     await connection.query(
@@ -1944,11 +1944,11 @@ const createPayment = async (req, res) => {
 
     try {
       await promisePool.query(
-        `INSERT INTO notifications (resident_id, title, message, type, is_read)
-         SELECT id, 'Maintenance payment received', ?, 'maintenance', false
+        `INSERT INTO notifications (society_id, resident_id, title, message, type, is_read)
+         SELECT COALESCE(society_id, ?), id, 'Maintenance payment received', ?, 'maintenance', false
          FROM users
          WHERE role = 'admin' AND status = 'approved'`,
-        [`Verify payment of ${paidAmount.toLocaleString('en-IN')} for UTR: ${utr}`]
+        [req.user.societyId || bill.society_id || 1, `Verify payment of ${paidAmount.toLocaleString('en-IN')} for UTR: ${utr}`]
       );
     } catch (notifError) {
       console.error('Failed to create admin notification for payment:', notifError);

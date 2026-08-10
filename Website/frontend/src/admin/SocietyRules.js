@@ -98,6 +98,22 @@ function SocietyRules() {
     load();
   };
 
+  const togglePublish = async (rule) => {
+    try {
+      const isPublished = String(rule.status || 'draft').toLowerCase() === 'published';
+      if (isPublished) {
+        await rulesAPI.unpublish(rule.id);
+        notify('Rule moved to draft');
+      } else {
+        await rulesAPI.publish(rule.id);
+        notify('Rule published to residents');
+      }
+      await load();
+    } catch (error) {
+      notify(error.response?.data?.message || 'Could not update publish status');
+    }
+  };
+
   const exportPdf = async () => {
     const element = document.createElement('section');
     element.style.cssText = 'width:760px;padding:28px;font-family:Arial,sans-serif;color:#122033;background:#fff;';
@@ -164,6 +180,7 @@ function SocietyRules() {
                 <button onClick={() => moveRule(rule, 1)}>↓</button>
                 <button onClick={() => quickUpdate(rule, { isPinned: !rule.isPinned })}>{rule.isPinned ? t('societyRules.unpin') : t('societyRules.pin')}</button>
                 <button onClick={() => quickUpdate(rule, { isActive: !rule.isActive })}>{rule.isActive ? t('societyRules.disable') : t('societyRules.enable')}</button>
+                <button className={String(rule.status || 'draft').toLowerCase() === 'published' ? 'portal-light-btn' : 'portal-primary-btn'} onClick={() => togglePublish(rule)}>{String(rule.status || 'draft').toLowerCase() === 'published' ? 'Unpublish' : 'Publish'}</button>
                 <button onClick={() => editRule(rule)}><Edit3 size={13} /> {t('societyRules.edit')}</button>
                 <button className="danger" onClick={() => removeRule(rule)}><Trash2 size={13} /> {t('societyRules.delete')}</button>
               </div>

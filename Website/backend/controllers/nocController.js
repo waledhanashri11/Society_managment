@@ -638,6 +638,7 @@ const getPdf = async (req, res) => {
 
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Content-Disposition', `inline; filename="${request.request_number}.html"`);
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
     return res.send(html);
   } catch (error) {
     console.error('Get NOC PDF error:', error);

@@ -14,7 +14,7 @@ const Register = () => {
     email: '',
     phone: '',
     password: '',
-    role: 'resident'
+    societyCode: ''
   });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -39,7 +39,7 @@ const Register = () => {
       const response = await authAPI.register(formData);
       if (!response.data.token || response.data.user?.status === 'pending') {
         setSuccess(response.data.message || 'Registration submitted. Please wait for admin approval.');
-        setFormData({ name: '', email: '', phone: '', password: '', role: 'resident' });
+        setFormData({ name: '', email: '', phone: '', password: '', societyCode: '' });
         return;
       }
 
@@ -48,7 +48,9 @@ const Register = () => {
       setUser(response.data.user);
       setSuccess('Registration successful. Opening your dashboard...');
       
-      if (response.data.user.role === 'admin' || response.data.user.role === 'super_admin') {
+      if (response.data.user.role === 'super_admin') {
+        navigate('/super-admin');
+      } else if (response.data.user.role === 'admin') {
         navigate('/admin/dashboard');
       } else {
         navigate('/resident/dashboard');
@@ -138,16 +140,19 @@ const Register = () => {
           </div>
 
           <div className="mb-3">
-            <label className="form-label">{t('auth.role', 'Role')}</label>
-            <select
+            <label className="form-label">Society code</label>
+            <input
+              type="text"
               className="form-control"
-              name="role"
-              value={formData.role}
+              name="societyCode"
+              value={formData.societyCode}
               onChange={handleChange}
-            >
-              <option value="resident">{t('auth.resident', 'Resident')}</option>
-              <option value="admin">{t('auth.admin', 'Admin')}</option>
-            </select>
+              placeholder="Society code"
+              autoCapitalize="characters"
+              maxLength="24"
+              required
+            />
+            <div className="form-text">Ask your society administrator for the code. Your registration is sent only to that society.</div>
           </div>
 
           <button

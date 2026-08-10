@@ -43,6 +43,7 @@ const AdminLayout = () => {
       return {};
     }
   });
+  const societyName = settings.societyName || user?.society?.name || t('common.societyManagement');
 
   useEffect(() => {
     const refreshSettings = (event) => {
@@ -142,7 +143,7 @@ const AdminLayout = () => {
       <aside className={`portal-sidebar ${open ? 'is-open' : ''}`}>
         <div className="portal-brand">
           <span className="portal-brand-mark">{Building2 ? <Building2 size={21} /> : null}</span>
-          <span><strong>{t('common.appName')}</strong><small>{settings.societyName || t('common.managementSystem')}</small></span>
+          <span><strong>{t('common.appName')}</strong><small>{societyName}</small></span>
           <button className="portal-mobile-close" onClick={() => setOpen(false)}>{X ? <X size={19} /> : null}</button>
         </div>
         <div className="portal-nav-label">{t('nav.workspace')}</div>
@@ -163,7 +164,7 @@ const AdminLayout = () => {
         <header className="portal-topbar">
           <button className="portal-menu-button" onClick={() => setOpen(true)}>{Menu ? <Menu size={21} /> : null}</button>
           <div className="portal-breadcrumb">
-            <span>{settings.societyName || t('common.societyManagement')}</span><small>{t('common.adminWorkspace')}</small>
+            <span>{societyName}</span><small>{t('common.adminWorkspace')}</small>
           </div>
           <div className="portal-top-actions">
             <div className="portal-action-menu" onClick={(event) => event.stopPropagation()}>

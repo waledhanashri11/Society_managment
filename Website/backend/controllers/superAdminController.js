@@ -21,6 +21,19 @@ const validateSociety = (society) => {
   return null;
 };
 
+const seedFlatTypesFromTemplate = async (connection, societyId) => {
+  // Mahalaxmi (the migrated original tenant) is the platform template. Copy
+  // its active/inactive property profiles into every newly-created tenant.
+  await connection.query(
+    `INSERT INTO flat_types (society_id, name, default_maintenance_amount, description, status)
+     SELECT ?, name, default_maintenance_amount, description, status
+     FROM flat_types
+     WHERE society_id = 1
+     ON CONFLICT DO NOTHING`,
+    [societyId]
+  );
+};
+
 const dashboard = async (_req, res) => {
   try {
     const [rows] = await promisePool.query(
@@ -104,6 +117,7 @@ const createSociety = async (req, res) => {
       [society.name, society.code, society.logoUrl, society.address, society.city, society.state, society.pincode, society.registrationNumber, society.contactPhone, society.contactEmail]
     );
     const societyId = created.insertId;
+    await seedFlatTypesFromTemplate(connection, societyId);
     const passwordHash = await bcrypt.hash(adminPassword, 12);
     await connection.query(
       `INSERT INTO users (name, email, phone, password, role, status, society_id)
@@ -152,6 +166,29 @@ const setSocietyStatus = async (req, res) => {
   }
 };
 
+const deleteSociety = async (req, res) => {
+  const societyId = Number(req.params.id);
+  if (!Number.isInteger(societyId) || societyId <= 0) return res.status(400).json({ message: 'A valid society id is required' });
+  const connection = await promisePool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [societies] = await connection.query('SELECT id FROM societies WHERE id = ? FOR UPDATE', [societyId]);
+    if (!societies.length) { await connection.rollback(); return res.status(404).json({ message: 'Society not found' }); }
+    const [usage] = await connection.query(`SELECT COUNT(*) FILTER (WHERE role = 'resident')::int AS resident_count, (SELECT COUNT(*)::int FROM flats WHERE society_id = ?) AS flat_count FROM users WHERE society_id = ?`, [societyId, societyId]);
+    if (Number(usage[0].resident_count) > 0 || Number(usage[0].flat_count) > 0) { await connection.rollback(); return res.status(409).json({ message: 'A society with residents or flats cannot be deleted. Deactivate it instead.' }); }
+    await connection.query('DELETE FROM password_reset_tokens WHERE society_id = ?', [societyId]);
+    await connection.query('DELETE FROM users WHERE society_id = ?', [societyId]);
+    await connection.query('DELETE FROM societies WHERE id = ?', [societyId]);
+    await connection.commit();
+    res.json({ message: 'Society deleted successfully' });
+  } catch (error) {
+    await connection.rollback();
+    console.error('Delete society error:', error);
+    if (error.code === '23503') return res.status(409).json({ message: 'This society has linked records and cannot be deleted. Deactivate it instead.' });
+    res.status(500).json({ message: 'Unable to delete society' });
+  } finally { connection.release(); }
+};
+
 const manageAdmin = async (req, res) => {
   const name = String(req.body.name || '').trim();
   const email = String(req.body.email || '').trim().toLowerCase();
@@ -178,4 +215,4 @@ const manageAdmin = async (req, res) => {
   }
 };
 
-module.exports = { dashboard, listSocieties, getSociety, createSociety, updateSociety, setSocietyStatus, manageAdmin };
+module.exports = { dashboard, listSocieties, getSociety, createSociety, updateSociety, setSocietyStatus, deleteSociety, manageAdmin };

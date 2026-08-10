@@ -1,10 +1,37 @@
 const { promisePool } = require('../config/database');
 
+const DEFAULT_FLAT_TYPES = [
+  ['1RK', 1200, 'Single Room Kitchen apartment unit'],
+  ['1BHK', 1800, 'Standard 1 Bedroom Hall Kitchen apartment unit'],
+  ['2BHK', 2500, 'Standard 2 Bedroom Hall Kitchen apartment unit'],
+  ['3BHK', 3500, 'Premium 3 Bedroom Hall Kitchen apartment unit'],
+  ['4BHK', 4800, 'Luxury 4 Bedroom Hall Kitchen apartment unit'],
+  ['Shop', 2000, 'Commercial retail shop space'],
+  ['Office', 3000, 'Commercial office or workstation space'],
+  ['Villa', 6000, 'Independent house or villa block unit'],
+  ['Penthouse', 7500, 'Top-tier luxury penthouse unit with terrace']
+];
+
+const seedDefaultFlatTypes = async () => {
+  const placeholders = DEFAULT_FLAT_TYPES.map(() => '(?, ?, ?, ?)').join(', ');
+  const values = DEFAULT_FLAT_TYPES.flatMap(([name, amount, description]) => [name, amount, description, 'Active']);
+  await promisePool.query(
+    `INSERT INTO flat_types (name, default_maintenance_amount, description, status)
+     VALUES ${placeholders}
+     ON CONFLICT DO NOTHING`,
+    values
+  );
+};
+
 const getAllFlatTypes = async (req, res) => {
   try {
-    const [flatTypes] = await promisePool.query(
+    let [flatTypes] = await promisePool.query(
       'SELECT * FROM flat_types ORDER BY name ASC'
     );
+    if (flatTypes.length === 0) {
+      await seedDefaultFlatTypes();
+      [flatTypes] = await promisePool.query('SELECT * FROM flat_types ORDER BY name ASC');
+    }
     res.json(flatTypes);
   } catch (error) {
     console.error('Get flat types error:', error);

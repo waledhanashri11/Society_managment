@@ -1,0 +1,14 @@
+.super-admin-row-actions { display: flex; gap: 8px; }
+
+.super-admin-delete {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 8px;
+  padding: 9px 12px;
+  color: #b42318;
+  background: #fff0f0;
+  font-weight: 700;
+  cursor: pointer;
+}

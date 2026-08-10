@@ -10,6 +10,7 @@ router.post('/societies', controller.createSociety);
 router.get('/societies/:id', controller.getSociety);
 router.put('/societies/:id', controller.updateSociety);
 router.patch('/societies/:id/status', controller.setSocietyStatus);
+router.delete('/societies/:id', controller.deleteSociety);
 router.put('/societies/:id/admin', controller.manageAdmin);
 
 module.exports = router;
