@@ -17,6 +17,8 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import com.example.application.data.remote.dto.CreateSocietyRequest
 import com.example.application.data.remote.dto.ManagedSocietyDto
 import com.example.application.data.remote.dto.SocietyAdminInput
@@ -32,11 +34,17 @@ fun SuperAdminDashboardScreen(
     sessionViewModel: SessionViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    LaunchedEffect(Unit) { viewModel.load() }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { viewModel.load() }
     Scaffold(topBar = {
-        PlatformTopBar("SocietyHub", "Super Admin Portal", onLogout = { sessionViewModel.logout(onLogoutComplete) })
+        PlatformTopBar(
+            "SocietyHub",
+            "Super Admin Portal",
+            refreshing = state.loading || state.refreshing,
+            onRefresh = viewModel::load,
+            onLogout = { sessionViewModel.logout(onLogoutComplete) }
+        )
     }) { padding ->
-        ContentState(state.loading, state.error, { viewModel.load() }, Modifier.padding(padding)) {
+        ContentState(state.loading, state.error, { viewModel.load() }, Modifier.padding(padding), "Loading platform data…") {
             LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 item {
                     Text("Platform Overview", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
@@ -202,8 +210,32 @@ private fun String.blankToNull() = takeIf { it.isNotBlank() }
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable private fun SimpleTopBar(title: String, onBack: () -> Unit) = TopAppBar(title = { Text(title, fontWeight = FontWeight.Bold) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, "Back") } })
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable private fun PlatformTopBar(title: String, subtitle: String, onLogout: () -> Unit) = TopAppBar(title = { Column { Text(title, fontWeight = FontWeight.Bold); Text(subtitle, style = MaterialTheme.typography.labelMedium) } }, actions = { IconButton(onClick = onLogout) { Icon(Icons.Filled.Logout, "Logout") } })
+@Composable private fun PlatformTopBar(title: String, subtitle: String, refreshing: Boolean, onRefresh: () -> Unit, onLogout: () -> Unit) = TopAppBar(
+    title = { Column { Text(title, fontWeight = FontWeight.Bold); Text(subtitle, style = MaterialTheme.typography.labelMedium) } },
+    actions = {
+        IconButton(onClick = onRefresh, enabled = !refreshing) {
+            if (refreshing) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+            else Icon(Icons.Filled.Refresh, "Refresh")
+        }
+        IconButton(onClick = onLogout) { Icon(Icons.Filled.Logout, "Logout") }
+    }
+)
 
-@Composable private fun ContentState(loading: Boolean, error: String?, retry: () -> Unit, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
-    Box(modifier.fillMaxSize()) { when { loading -> CircularProgressIndicator(Modifier.align(Alignment.Center)); error != null -> Column(Modifier.align(Alignment.Center).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) { Text(error); Button(onClick = retry) { Text("Retry") } }; else -> content() } }
+@Composable private fun ContentState(loading: Boolean, error: String?, retry: () -> Unit, modifier: Modifier = Modifier, loadingMessage: String = "Loading…", content: @Composable () -> Unit) {
+    Box(modifier.fillMaxSize()) {
+        when {
+            loading -> Column(Modifier.align(Alignment.Center).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                CircularProgressIndicator()
+                Text(loadingMessage, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("The free server may take up to a minute to wake up.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            error != null -> Column(Modifier.align(Alignment.Center).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Icon(Icons.Filled.CloudOff, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(42.dp))
+                Text("Unable to refresh", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(error, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Button(onClick = retry) { Icon(Icons.Filled.Refresh, null); Spacer(Modifier.width(8.dp)); Text("Retry") }
+            }
+            else -> content()
+        }
+    }
 }
