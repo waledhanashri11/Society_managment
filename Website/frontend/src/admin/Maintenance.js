@@ -63,7 +63,11 @@ const isPendingPaymentStatus = (status) => ['PENDING', 'PENDING_REVIEW', 'PENDIN
 const isApprovedPaymentStatus = (status) => ['APPROVED', 'PAID', 'VERIFIED'].includes(normalizedStatus(status));
 const isRejectedPaymentStatus = (status) => ['REJECTED', 'DECLINED'].includes(normalizedStatus(status));
 const cycleNumber = (year, month) => Number(year) * 12 + Number(month);
-const backendOrigin = (process.env.REACT_APP_API_URL || 'http://localhost:5000/api').replace(/\/api\/?$/, '').replace(/\/$/, '');
+const isLocalHost = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname);
+const defaultApiBaseUrl = isLocalHost
+  ? 'http://localhost:5000/api'
+  : 'https://society-managment-5bh7.onrender.com/api';
+const backendOrigin = (process.env.REACT_APP_API_URL || defaultApiBaseUrl).replace(/\/api\/?$/, '').replace(/\/$/, '');
 const fileUrl = (value, cacheKey = '') => {
   if (!value) return '';
   const cleanValue = String(value).trim().replace(/\\/g, '/');
