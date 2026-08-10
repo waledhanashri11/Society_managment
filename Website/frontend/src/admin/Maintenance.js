@@ -67,7 +67,11 @@ const isLocalHost = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].
 const defaultApiBaseUrl = isLocalHost
   ? 'http://localhost:5000/api'
   : 'https://society-managment-5bh7.onrender.com/api';
-const backendOrigin = (process.env.REACT_APP_API_URL || defaultApiBaseUrl).replace(/\/api\/?$/, '').replace(/\/$/, '');
+const configuredApiBaseUrl = (process.env.REACT_APP_API_URL || '').trim();
+const safeApiBaseUrl = !isLocalHost && /localhost|127\.0\.0\.1/i.test(configuredApiBaseUrl)
+  ? defaultApiBaseUrl
+  : configuredApiBaseUrl || defaultApiBaseUrl;
+const backendOrigin = safeApiBaseUrl.replace(/\/api\/?$/, '').replace(/\/+$/, '');
 const fileUrl = (value, cacheKey = '') => {
   if (!value) return '';
   const cleanValue = String(value).trim().replace(/\\/g, '/');
