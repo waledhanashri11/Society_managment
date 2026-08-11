@@ -175,13 +175,13 @@ class SocietyRulesRepository @Inject constructor(
     }
 
     fun userMessageFor(error: AppError): String = when (error) {
-        AppError.NoInternet -> "No internet connection."
+        AppError.NoInternet -> "Unable to connect. Check your internet connection and try again."
         AppError.Timeout -> "The request timed out."
-        AppError.Unauthorized -> "Session expired. Please login again."
-        is AppError.Forbidden -> error.message ?: "You do not have permission."
+        AppError.Unauthorized -> "Your session has expired. Please sign in again."
+        is AppError.Forbidden -> error.message ?: "You don't have permission to perform this action."
         is AppError.Validation -> error.message
-        is AppError.Server -> error.message ?: "Server error."
-        is AppError.Unknown -> error.message ?: "Something went wrong."
+        is AppError.Server -> error.message ?: "Something went wrong while processing your request. Please try again."
+        is AppError.Unknown -> error.message ?: "Requested service is currently unavailable."
     }
 
     private fun parseErrorMessage(errorBody: String?): String? {

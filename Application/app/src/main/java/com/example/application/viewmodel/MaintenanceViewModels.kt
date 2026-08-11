@@ -320,7 +320,7 @@ class ResidentMaintenanceViewModel @Inject constructor(
     fun submitPayment(
         billId: String,
         method: String,
-        transactionId: String,
+        transactionId: String?,
         amount: String,
         screenshotUrl: String?,
         paymentDate: String?,

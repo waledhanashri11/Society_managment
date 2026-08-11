@@ -105,7 +105,7 @@ fun ResidentPaymentScreen(
     val paymentSettings = data?.paymentSettings
 
     var amount by remember { mutableStateOf("0") }
-    var transactionId by remember { mutableStateOf("") }
+
     var note by remember { mutableStateOf("") }
     var validationError by remember { mutableStateOf<String?>(null) }
     var proofUri by remember { mutableStateOf<Uri?>(null) }
@@ -118,7 +118,7 @@ fun ResidentPaymentScreen(
     LaunchedEffect(state.message) {
         if (!state.message.isNullOrBlank()) {
             submissionAccepted = true
-            Toast.makeText(context, "Your payment has been submitted and sent to the admin for approval. It will be marked as paid after verification.", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, "Payment submitted successfully. Waiting for admin verification.", Toast.LENGTH_LONG).show()
             viewModel.consumeMessage()
         }
     }
@@ -208,7 +208,6 @@ fun ResidentPaymentScreen(
                 item {
                     UploadPaymentCard(
                         proofUri = proofUri,
-                        transactionId = transactionId,
                         amount = amount,
                         note = note,
                         validationError = validationError ?: state.error,
@@ -220,10 +219,9 @@ fun ResidentPaymentScreen(
                                 cameraLauncher.launch(uri)
                             }
                         },
-                        onTransactionChange = { transactionId = it },
                         onNoteChange = { note = it },
                         onSubmit = {
-                            validationError = validatePaymentProof(context, bill, bill.expectedPayableAmount(), amount, transactionId, proofUri)
+                            validationError = validatePaymentProof(context, bill, bill.expectedPayableAmount(), amount, proofUri)
                             if (validationError == null) {
                                 val screenshotData = proofUri?.let { uri -> uriToBase64DataUrl(context, uri) }
                                 if (screenshotData == null) {
@@ -232,7 +230,7 @@ fun ResidentPaymentScreen(
                                     viewModel.submitPayment(
                                         billId = bill.id.orEmpty(),
                                         method = "UPI",
-                                        transactionId = transactionId.trim(),
+                                        transactionId = null,
                                         amount = amount.trim(),
                                         screenshotUrl = screenshotData,
                                         paymentDate = null,
@@ -244,6 +242,7 @@ fun ResidentPaymentScreen(
                     )
                 }
             }
+
             item {
                 Button(
                     onClick = onViewPaymentHistory,
@@ -438,14 +437,12 @@ private fun UpiPaymentCard(paymentSettings: PaymentSettingsDto?, onDownload: () 
 @Composable
 private fun UploadPaymentCard(
     proofUri: Uri?,
-    transactionId: String,
     amount: String,
     note: String,
     validationError: String?,
     isSubmitting: Boolean,
     onUploadClick: () -> Unit,
     onCameraClick: () -> Unit,
-    onTransactionChange: (String) -> Unit,
     onNoteChange: (String) -> Unit,
     onSubmit: () -> Unit
 ) {
@@ -475,9 +472,9 @@ private fun UploadPaymentCard(
             TextButton(onClick = onCameraClick, modifier = Modifier.fillMaxWidth()) {
                 Text("Take picture with camera")
             }
-            OutlinedTextField(value = transactionId, onValueChange = onTransactionChange, modifier = Modifier.fillMaxWidth(), label = { Text("UPI transaction ID / UTR number") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text))
+
             OutlinedTextField(value = amount, onValueChange = {}, modifier = Modifier.fillMaxWidth(), label = { Text("Amount") }, enabled = false, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
-            OutlinedTextField(value = note, onValueChange = onNoteChange, modifier = Modifier.fillMaxWidth(), label = { Text("Remarks optional") })
+            OutlinedTextField(value = note, onValueChange = onNoteChange, modifier = Modifier.fillMaxWidth(), label = { Text("Remarks (Optional)") })
             validationError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), color = Color(0xFFEAF8EF)) {
                 Row(modifier = Modifier.padding(14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -496,15 +493,14 @@ private fun UploadPaymentCard(
 
 
 
-private fun validatePaymentProof(context: Context, bill: MaintenanceBillDto, expectedAmount: BigDecimal, amount: String, txn: String, proofUri: Uri?): String? {
+private fun validatePaymentProof(context: Context, bill: MaintenanceBillDto, expectedAmount: BigDecimal, amount: String, proofUri: Uri?): String? {
     val paid = amount.toMoneyDecimal()
     if (bill.id.isNullOrBlank()) return "Bill ID is missing. Please refresh and try again."
     if (paid <= BigDecimal.ZERO) return "Amount paid must be greater than zero."
     if (paid.setScale(2, RoundingMode.HALF_UP) != expectedAmount.setScale(2, RoundingMode.HALF_UP)) return "Amount paid must match total payable amount."
-    if (txn.isBlank()) return "Transaction ID / UTR number is required."
     if (proofUri == null) return "Payment screenshot is required."
-    val mime = context.contentResolver.getType(proofUri).orEmpty()
-    if (!mime.startsWith("image/")) return "Please upload a valid image screenshot."
+    val mime = context.contentResolver.getType(proofUri) ?: "image/jpeg"
+    if (!mime.startsWith("image/", ignoreCase = true) && !mime.equals("application/octet-stream", ignoreCase = true)) return "Please upload a valid image screenshot."
     val size = context.contentResolver.openAssetFileDescriptor(proofUri, "r")?.use { it.length } ?: -1L
     if (size > 5L * 1024L * 1024L) return "Screenshot must be smaller than 5 MB."
     return null

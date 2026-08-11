@@ -151,7 +151,7 @@ data class MaintenanceUpdateRequest(
 
 data class MarkPaidRequest(
     val paymentMethod: String = "Manual",
-    val transactionId: String,
+    val transactionId: String? = null,
     val remarks: String,
     val paidAmount: String
 )
@@ -164,7 +164,7 @@ data class ManualPayRequest(
 data class SubmitPaymentRequest(
     val billId: String,
     val paymentMethod: String,
-    val transactionId: String,
+    val transactionId: String? = null,
     val amount: String,
     val screenshotUrl: String?,
     @SerializedName("screenshot") val screenshot: String? = screenshotUrl,

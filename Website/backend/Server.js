@@ -86,6 +86,8 @@ const eventRoutes = require('./routes/events');
 const superAdminRoutes = require('./routes/superAdmin');
 const adminRoutes = require('./routes/admin');
 const nocController = require('./controllers/nocController');
+const rulesController = require('./controllers/rulesController');
+const ruleController = require('./controllers/ruleController');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
@@ -127,6 +129,10 @@ const PORT = process.env.PORT || 5000;
 const startServer = async () => {
   try {
     await initDatabase();
+    // Schema changes must run before request middleware switches database
+    // access to the restricted tenant role.
+    await rulesController.initializeRulesSchema();
+    await ruleController.initializeRuleSchema();
   } catch (error) {
     console.error('Database initialization failed; server will not accept requests:', error.message);
     throw error;

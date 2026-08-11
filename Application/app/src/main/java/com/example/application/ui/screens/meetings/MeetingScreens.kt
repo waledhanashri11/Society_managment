@@ -128,19 +128,23 @@ fun AdminMeetingsScreen(onBack: () -> Unit, viewModel: MeetingsViewModel = hiltV
         editor = false
     }
     selected?.let { meeting ->
-        if (!editor && !attendance && !report && !poll && state.selected != null) MeetingDetailsDialog(
-            detail = state.selected!!,
-            admin = true,
-            submitting = state.submitting,
-            onDismiss = { selected = null },
-            onAttend = {},
-            onVote = { },
-            onCreatePoll = { poll = true },
-            onSaveAction = { id, request -> if (id == null) viewModel.createAction(request) else viewModel.updateAction(id, request) },
-            onDeleteAction = viewModel::deleteAction,
-            onUpdateActionStatus = viewModel::updateActionStatus,
-            onOpenComments = { meeting.id?.let { viewModel.loadComments(it); comments = true } }
-        )
+        if (!editor && !attendance && !report && !poll && state.selected != null) {
+            state.selected?.let { detail ->
+                MeetingDetailsDialog(
+                    detail = detail,
+                    admin = true,
+                    submitting = state.submitting,
+                    onDismiss = { selected = null },
+                    onAttend = {},
+                    onVote = { },
+                    onCreatePoll = { poll = true },
+                    onSaveAction = { id, request -> if (id == null) viewModel.createAction(request) else viewModel.updateAction(id, request) },
+                    onDeleteAction = viewModel::deleteAction,
+                    onUpdateActionStatus = viewModel::updateActionStatus,
+                    onOpenComments = { meeting.id?.let { viewModel.loadComments(it); comments = true } }
+                )
+            }
+        }
         if (attendance) AttendanceDialog(state.attendance, state.submitting, { attendance = false }, onMarkAllPresent = { viewModel.markAllPresent(meeting.id ?: "") }) { viewModel.saveAttendance(meeting.id ?: "", it) }
         if (report) ReportDialog(state.selected?.report, state.submitting, { report = false }) { summary, discussion, decisions, remarks -> viewModel.saveReport(meeting.id ?: "", summary, discussion, decisions, remarks); report = false }
         if (poll) PollDialog(state.selected?.vote, state.submitting, { poll = false }) { question -> viewModel.createVote(meeting.id ?: "", question); poll = false }
@@ -172,15 +176,15 @@ fun ResidentMeetingsScreen(onBack: () -> Unit, viewModel: MeetingsViewModel = hi
         admin = false,
         submitting = state.submitting,
         onDismiss = { selectedId = null },
-        onAttend = { viewModel.markSelfPresent(selectedId!!) },
-        onVote = { choice -> viewModel.castVote(selectedId!!, choice) },
+        onAttend = { selectedId?.let { viewModel.markSelfPresent(it) } },
+        onVote = { choice -> selectedId?.let { viewModel.castVote(it, choice) } },
         onCreatePoll = {},
         onSaveAction = { _, _ -> },
         onDeleteAction = {},
         onUpdateActionStatus = viewModel::updateActionStatus,
         onOpenComments = { selectedId?.let { viewModel.loadComments(it); comments = true } }
     )
-    if (selectedId != null && comments) MeetingCommentsDialog(state.comments, state.submitting, { comments = false }) { text -> viewModel.addComment(selectedId!!, text); viewModel.loadComments(selectedId!!) }
+    if (selectedId != null && comments) MeetingCommentsDialog(state.comments, state.submitting, { comments = false }) { text -> selectedId?.let { viewModel.addComment(it, text); viewModel.loadComments(it) } }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

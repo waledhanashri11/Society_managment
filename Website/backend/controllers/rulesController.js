@@ -42,85 +42,131 @@ const defaultRules = [
   ['Damage Recovery', 'Residents are responsible for the repair cost of any damage caused to society property.', 'Penalties', false]
 ];
 
-const seedDefaultRulesIfEmpty = async () => {
-  const connection = await promisePool.getConnection();
-  try {
-    await connection.beginTransaction();
+let schemaReady = false;
 
-    const [countRows] = await connection.query('SELECT COUNT(*) AS count FROM society_rules');
-    if (Number(countRows[0]?.count || 0) > 0) {
-      await connection.rollback();
-      return;
-    }
+/**
+ * Seeds default rules for a society if none exist.
+ * This must only be called during server startup with a bypass connection,
+ * or it will fail under the restricted tenant role.
+ */
+const seedDefaultRulesIfEmpty = async (connection, societyId) => {
+  const [countRows] = await connection.query(
+    'SELECT COUNT(*) AS count FROM society_rules WHERE society_id = $1',
+    [societyId]
+  );
+  if (Number(countRows[0]?.count || 0) > 0) {
+    return;
+  }
 
-    for (let index = 0; index < defaultRules.length; index += 1) {
-      const [title, description, category, isPinned] = defaultRules[index];
-      await connection.query(
-        `INSERT INTO society_rules (title, description, category, display_order, is_pinned, is_active)
-         VALUES (?, ?, ?, ?, ?, TRUE)`,
-        [title, description, category, index + 1, isPinned]
-      );
-    }
-
-    await connection.commit();
-  } catch (error) {
-    await connection.rollback();
-    throw error;
-  } finally {
-    connection.release();
+  for (let index = 0; index < defaultRules.length; index += 1) {
+    const [title, description, category, isPinned] = defaultRules[index];
+    await connection.query(
+      `INSERT INTO society_rules (title, description, category, display_order, is_pinned, is_active, status, priority, society_id)
+       VALUES ($1, $2, $3, $4, $5, TRUE, 'published', 'normal', $6)`,
+      [title, description, category, index + 1, isPinned, societyId]
+    );
   }
 };
 
+/**
+ * Called once during server startup (with a privileged bypass connection).
+ * All DDL is handled by migrations — this only seeds initial data.
+ */
 const ensureRulesSchema = async () => {
-  // Schema changes are applied by database migrations at startup. Request
-  // connections intentionally use the restricted tenant role, which may only
-  // read/write its own records and must never attempt DDL.
+  if (schemaReady) return;
+
+  // Ensure a rules_version setting exists for each society
   await promisePool.query(`
-    INSERT INTO app_settings (society_id, setting_key, setting_value)
-    VALUES (COALESCE(NULLIF(current_setting('app.current_society_id', true), '')::bigint, 1), 'rules_version', '1')
+    INSERT INTO app_settings (setting_key, setting_value, society_id)
+    SELECT 'rules_version', '1', id FROM societies
     ON CONFLICT (society_id, setting_key) DO NOTHING
   `);
-  await seedDefaultRulesIfEmpty();
+
+  // Seed default rules for each society that has none
+  const [societies] = await promisePool.query('SELECT id FROM societies WHERE status = $1', ['active']);
+  for (const society of societies) {
+    const connection = await promisePool.getConnection();
+    try {
+      await connection.beginTransaction();
+      await seedDefaultRulesIfEmpty(connection, society.id);
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      console.error(`Failed to seed rules for society ${society.id}:`, error.message);
+    } finally {
+      connection.release();
+    }
+  }
+
+  schemaReady = true;
 };
 
 const normalizeRule = (rule) => ({
   ...rule,
+  priority: rule.priority || 'normal',
+  status: rule.status || 'published',
   displayOrder: Number(rule.display_order || 0),
   isPinned: Boolean(rule.is_pinned),
-  isActive: Boolean(rule.is_active),
+  isActive: Boolean(rule.is_active !== false),
   createdAt: rule.created_at,
   updatedAt: rule.updated_at,
   updatedBy: rule.updated_by,
   updatedByName: rule.updated_by_name
 });
 
-const getRulesVersion = async () => {
-  await ensureRulesSchema();
-  const [rows] = await promisePool.query('SELECT setting_value FROM app_settings WHERE setting_key = ? ORDER BY id DESC LIMIT 1', ['rules_version']);
+const getRulesVersion = async (societyId) => {
+  if (societyId) {
+    // Ensure a per-society row exists
+    await promisePool.query(
+      `INSERT INTO app_settings (setting_key, setting_value, society_id)
+       VALUES ('rules_version', '1', $1)
+       ON CONFLICT (society_id, setting_key) DO NOTHING`,
+      [societyId]
+    );
+    const [rows] = await promisePool.query(
+      'SELECT setting_value FROM app_settings WHERE setting_key = $1 AND society_id = $2',
+      ['rules_version', societyId]
+    );
+    return Number(rows[0]?.setting_value || 1);
+  }
+  const [rows] = await promisePool.query(
+    'SELECT setting_value FROM app_settings WHERE setting_key = $1 ORDER BY id DESC LIMIT 1',
+    ['rules_version']
+  );
   return Number(rows[0]?.setting_value || 1);
 };
 
-const bumpRulesVersion = async (connection, userId) => {
-  const currentVersion = await getRulesVersion();
+const bumpRulesVersion = async (connection, userId, societyId) => {
+  const currentVersion = await getRulesVersion(societyId);
   const nextVersion = currentVersion + 1;
-  await connection.query(
-    `INSERT INTO app_settings (society_id, setting_key, setting_value, updated_by)
-     VALUES (COALESCE(NULLIF(current_setting('app.current_society_id', true), '')::bigint, 1), 'rules_version', ?, ?)
-     ON CONFLICT (society_id, setting_key)
-     DO UPDATE SET setting_value = EXCLUDED.setting_value, updated_by = EXCLUDED.updated_by, updated_at = NOW()`,
-    [String(nextVersion), userId]
-  );
+  if (societyId) {
+    await connection.query(
+      `INSERT INTO app_settings (setting_key, setting_value, society_id, updated_by)
+       VALUES ('rules_version', $1, $2, $3)
+       ON CONFLICT (society_id, setting_key)
+       DO UPDATE SET setting_value = EXCLUDED.setting_value, updated_by = EXCLUDED.updated_by, updated_at = NOW()`,
+      [String(nextVersion), societyId, userId]
+    );
+  } else {
+    await connection.query(
+      `INSERT INTO app_settings (setting_key, setting_value, updated_by)
+       VALUES ('rules_version', $1, $2)
+       ON CONFLICT (setting_key)
+       DO UPDATE SET setting_value = EXCLUDED.setting_value, updated_by = EXCLUDED.updated_by, updated_at = NOW()`,
+      [String(nextVersion), userId]
+    );
+  }
   return nextVersion;
 };
 
 const getRulesMeta = async (req, res) => {
   try {
-    await ensureRulesSchema();
-    const version = await getRulesVersion();
+    const societyId = req.user?.society_id || null;
+    const version = await getRulesVersion(societyId);
     const [latest] = await promisePool.query('SELECT MAX(updated_at) AS last_updated FROM society_rules');
     const [userRows] = req.user?.id
       ? await promisePool.query(
-        'SELECT rules_accepted, rules_accepted_at, accepted_rules_version FROM users WHERE id = ?',
+        'SELECT rules_accepted, rules_accepted_at, accepted_rules_version FROM users WHERE id = $1',
         [req.user.id]
       )
       : [[]];
@@ -138,33 +184,45 @@ const getRulesMeta = async (req, res) => {
     });
   } catch (error) {
     console.error('Get rules meta error:', error);
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: 'Server error', detail: error.message });
   }
 };
 
 const getRules = async (req, res) => {
   try {
-    await ensureRulesSchema();
+    const societyId = req.user?.society_id || null;
     const search = String(req.query.search || '').trim().toLowerCase();
-    const includeInactive = req.user.role === 'admin' || req.user.role === 'super_admin';
+    const status = String(req.query.status || '').trim().toLowerCase();
+    const includeInactive = req.user?.role === 'admin' || req.user?.role === 'super_admin';
+    const whereConditions = [];
+    const params = [];
+
+    if (!includeInactive) {
+      whereConditions.push(`(r.is_active = TRUE AND (r.status IS NULL OR r.status = 'published'))`);
+    } else if (status && ['draft', 'published', 'archived'].includes(status)) {
+      params.push(status);
+      whereConditions.push(`r.status = $${params.length}`);
+    }
+
+    const whereSql = whereConditions.length ? `WHERE ${whereConditions.join(' AND ')}` : '';
     const [rows] = await promisePool.query(
       `SELECT r.*, u.name AS updated_by_name
        FROM society_rules r
        LEFT JOIN users u ON u.id = r.updated_by
-       WHERE (? = TRUE OR r.is_active = TRUE)
+       ${whereSql}
        ORDER BY r.is_pinned DESC, r.display_order ASC, r.id ASC`,
-      [includeInactive]
+      params
     );
     const rules = rows.map(normalizeRule).filter((rule) => {
       if (!search) return true;
       return `${rule.title} ${rule.description} ${rule.category}`.toLowerCase().includes(search);
     });
-    const version = await getRulesVersion();
+    const version = await getRulesVersion(societyId);
     const [latest] = await promisePool.query('SELECT MAX(updated_at) AS last_updated FROM society_rules');
     res.json({ rules, version, lastUpdated: latest[0]?.last_updated || null, categories });
   } catch (error) {
     console.error('Get rules error:', error);
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: 'Server error', detail: error.message });
   }
 };
 
@@ -177,31 +235,35 @@ const validateRule = ({ title, description, category }) => {
 const createRule = async (req, res) => {
   const connection = await promisePool.getConnection();
   try {
-    await ensureRulesSchema();
     const error = validateRule(req.body);
     if (error) return res.status(400).json({ message: error });
-    const [orderRows] = await connection.query('SELECT COALESCE(MAX(display_order), 0) + 1 AS next_order FROM society_rules');
+    const societyId = req.user?.society_id || null;
+    const [orderRows] = await connection.query(
+      'SELECT COALESCE(MAX(display_order), 0) + 1 AS next_order FROM society_rules',
+      []
+    );
     await connection.beginTransaction();
     const [result] = await connection.query(
-      `INSERT INTO society_rules (society_id, title, description, category, display_order, is_pinned, is_active, updated_by)
-       VALUES (COALESCE(NULLIF(current_setting('app.current_society_id', true), '')::bigint, 1), ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO society_rules (title, description, category, display_order, is_pinned, is_active, status, priority, updated_by, society_id)
+       VALUES ($1, $2, $3, $4, $5, $6, 'published', 'normal', $7, $8)`,
       [
         req.body.title.trim(),
         req.body.description.trim(),
-        req.body.category || 'General',
+        req.body.category || 'General Rules',
         Number(req.body.displayOrder || orderRows[0]?.next_order || 1),
         Boolean(req.body.isPinned),
         req.body.isActive !== false,
-        req.user.id
+        req.user.id,
+        societyId
       ]
     );
-    const version = await bumpRulesVersion(connection, req.user.id);
+    const version = await bumpRulesVersion(connection, req.user.id, societyId);
     await connection.commit();
     res.status(201).json({ id: result.insertId, version, message: 'Rule added successfully' });
   } catch (error) {
     await connection.rollback();
     console.error('Create rule error:', error);
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: 'Server error', detail: error.message });
   } finally {
     connection.release();
   }
@@ -210,18 +272,18 @@ const createRule = async (req, res) => {
 const updateRule = async (req, res) => {
   const connection = await promisePool.getConnection();
   try {
-    await ensureRulesSchema();
     const error = validateRule(req.body);
     if (error) return res.status(400).json({ message: error });
+    const societyId = req.user?.society_id || null;
     await connection.beginTransaction();
     const [updated] = await connection.query(
       `UPDATE society_rules
-       SET title = ?, description = ?, category = ?, is_pinned = ?, is_active = ?, updated_by = ?, updated_at = NOW()
-       WHERE id = ?`,
+       SET title = $1, description = $2, category = $3, is_pinned = $4, is_active = $5, updated_by = $6, updated_at = NOW()
+       WHERE id = $7`,
       [
         req.body.title.trim(),
         req.body.description.trim(),
-        req.body.category || 'General',
+        req.body.category || 'General Rules',
         Boolean(req.body.isPinned),
         req.body.isActive !== false,
         req.user.id,
@@ -232,13 +294,13 @@ const updateRule = async (req, res) => {
       await connection.rollback();
       return res.status(404).json({ message: 'Rule not found' });
     }
-    const version = await bumpRulesVersion(connection, req.user.id);
+    const version = await bumpRulesVersion(connection, req.user.id, societyId);
     await connection.commit();
     res.json({ version, message: 'Rule updated successfully' });
   } catch (error) {
     await connection.rollback();
     console.error('Update rule error:', error);
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: 'Server error', detail: error.message });
   } finally {
     connection.release();
   }
@@ -247,20 +309,23 @@ const updateRule = async (req, res) => {
 const deleteRule = async (req, res) => {
   const connection = await promisePool.getConnection();
   try {
-    await ensureRulesSchema();
+    const societyId = req.user?.society_id || null;
     await connection.beginTransaction();
-    const [deleted] = await connection.query('DELETE FROM society_rules WHERE id = ?', [req.params.id]);
+    const [deleted] = await connection.query(
+      'DELETE FROM society_rules WHERE id = $1',
+      [req.params.id]
+    );
     if (!deleted.affectedRows) {
       await connection.rollback();
       return res.status(404).json({ message: 'Rule not found' });
     }
-    const version = await bumpRulesVersion(connection, req.user.id);
+    const version = await bumpRulesVersion(connection, req.user.id, societyId);
     await connection.commit();
     res.json({ version, message: 'Rule deleted successfully' });
   } catch (error) {
     await connection.rollback();
     console.error('Delete rule error:', error);
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: 'Server error', detail: error.message });
   } finally {
     connection.release();
   }
@@ -269,20 +334,23 @@ const deleteRule = async (req, res) => {
 const reorderRules = async (req, res) => {
   const connection = await promisePool.getConnection();
   try {
-    await ensureRulesSchema();
     const ids = Array.isArray(req.body.ids) ? req.body.ids.map(Number).filter(Boolean) : [];
     if (!ids.length) return res.status(400).json({ message: 'Rule order is required' });
+    const societyId = req.user?.society_id || null;
     await connection.beginTransaction();
     for (let index = 0; index < ids.length; index += 1) {
-      await connection.query('UPDATE society_rules SET display_order = ?, updated_by = ?, updated_at = NOW() WHERE id = ?', [index + 1, req.user.id, ids[index]]);
+      await connection.query(
+        'UPDATE society_rules SET display_order = $1, updated_by = $2, updated_at = NOW() WHERE id = $3',
+        [index + 1, req.user.id, ids[index]]
+      );
     }
-    const version = await bumpRulesVersion(connection, req.user.id);
+    const version = await bumpRulesVersion(connection, req.user.id, societyId);
     await connection.commit();
     res.json({ version, message: 'Rules reordered successfully' });
   } catch (error) {
     await connection.rollback();
     console.error('Reorder rules error:', error);
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: 'Server error', detail: error.message });
   } finally {
     connection.release();
   }
@@ -290,26 +358,26 @@ const reorderRules = async (req, res) => {
 
 const acceptRules = async (req, res) => {
   try {
-    await ensureRulesSchema();
     if (req.user.role !== 'resident') return res.status(403).json({ message: 'Only residents can accept society rules' });
-    const version = await getRulesVersion();
+    const societyId = req.user?.society_id || null;
+    const version = await getRulesVersion(societyId);
     await promisePool.query(
       `UPDATE users
-       SET rules_accepted = TRUE, rules_accepted_at = NOW(), accepted_rules_version = ?
-       WHERE id = ?`,
+       SET rules_accepted = TRUE, rules_accepted_at = NOW(), accepted_rules_version = $1
+       WHERE id = $2`,
       [version, req.user.id]
     );
     res.json({ version, rulesAccepted: true, rulesAcceptedAt: new Date().toISOString(), message: 'Rules accepted successfully' });
   } catch (error) {
     console.error('Accept rules error:', error);
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: 'Server error', detail: error.message });
   }
 };
 
 const getAcceptanceReport = async (req, res) => {
   try {
-    await ensureRulesSchema();
-    const version = await getRulesVersion();
+    const societyId = req.user?.society_id || null;
+    const version = await getRulesVersion(societyId);
     const [rows] = await promisePool.query(
       `SELECT u.id, u.name AS resident_name, u.rules_accepted, u.rules_accepted_at, u.accepted_rules_version,
               f.flat_no, f.wing
@@ -318,14 +386,14 @@ const getAcceptanceReport = async (req, res) => {
        WHERE u.role = 'resident' AND COALESCE(u.status, 'approved') = 'approved'
        ORDER BY u.name ASC`
     );
-    const status = req.query.status || 'all';
+    const statusFilter = req.query.status || 'all';
     const search = String(req.query.search || '').toLowerCase();
     const flat = String(req.query.flat || '').toLowerCase();
     const wing = String(req.query.wing || '').toLowerCase();
     const report = rows.filter((row) => {
       const acceptedCurrent = Boolean(row.rules_accepted) && Number(row.accepted_rules_version || 0) >= version;
-      if (status === 'accepted' && !acceptedCurrent) return false;
-      if (status === 'not_accepted' && acceptedCurrent) return false;
+      if (statusFilter === 'accepted' && !acceptedCurrent) return false;
+      if (statusFilter === 'not_accepted' && acceptedCurrent) return false;
       if (search && !`${row.resident_name || ''}`.toLowerCase().includes(search)) return false;
       if (flat && !`${row.flat_no || ''}`.toLowerCase().includes(flat)) return false;
       if (wing && !`${row.wing || ''}`.toLowerCase().includes(wing)) return false;
@@ -342,11 +410,12 @@ const getAcceptanceReport = async (req, res) => {
     res.json({ version, report });
   } catch (error) {
     console.error('Rules acceptance report error:', error);
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: 'Server error', detail: error.message });
   }
 };
 
 module.exports = {
+  initializeRulesSchema: ensureRulesSchema,
   getRules,
   getRulesMeta,
   createRule,
