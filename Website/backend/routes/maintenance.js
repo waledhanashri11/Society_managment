@@ -51,6 +51,14 @@ const {
   generateBillingCycle
 } = require('../controllers/maintenanceController');
 const moduleController = require('../controllers/maintenanceModuleController');
+const excelController = require('../controllers/excelTransactionController');
+
+router.get('/transactions/export', auth, adminAuth, excelController.exportTransactions);
+router.get('/transactions/template', auth, adminAuth, excelController.template);
+router.post('/transactions/import/preview', auth, adminAuth, excelController.uploadWorkbook, excelController.previewImport);
+router.post('/transactions/import/confirm', auth, adminAuth, excelController.confirmImport);
+router.get('/transactions/imports', auth, adminAuth, excelController.history);
+router.get('/transactions/imports/:batchId/errors', auth, adminAuth, excelController.errorReport);
 
 router.get('/reports/financial', auth, getFinancialAccountingReport);
 router.get('/reports/bank-ledger', auth, getBankLedgerReport);

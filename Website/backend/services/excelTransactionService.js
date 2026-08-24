@@ -1,0 +1,179 @@
+const crypto = require('crypto');
+const ExcelJS = require('exceljs');
+
+const HEADERS = [
+  'Transaction ID', 'Society Code', 'Member ID', 'Member Name', 'Wing', 'Flat Number',
+  'Bill ID', 'Bill Number', 'Transaction Date', 'Transaction Type', 'Payment Mode',
+  'Amount', 'UTR/Cheque Number', 'Payment Status', 'Remarks', 'Import Action',
+  'Validation Result', 'Validation Message'
+];
+
+const ALLOWED_MODES = new Set(['Cash', 'UPI', 'Bank Transfer', 'Cheque']);
+const ALLOWED_STATUSES = new Set(['Pending', 'Approved', 'Rejected']);
+const ALLOWED_ACTIONS = new Set(['CREATE', 'UPDATE']);
+
+const normalizeHeader = (value) => String(value || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+const text = (value) => {
+  if (value == null) return '';
+  if (typeof value === 'object' && Array.isArray(value.richText)) return value.richText.map((part) => part.text).join('').trim();
+  if (typeof value === 'object' && value.text) return String(value.text).trim();
+  return String(value).trim();
+};
+const excelDate = (value) => {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
+  const raw = text(value);
+  if (!raw) return '';
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? raw : parsed.toISOString().slice(0, 10);
+};
+const hash = (value) => crypto.createHash('sha256').update(value).digest('hex');
+
+const parseWorkbook = async (buffer) => {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer);
+  const sheet = workbook.getWorksheet('Transactions') || workbook.worksheets[0];
+  if (!sheet) throw new Error('Workbook must contain a Transactions sheet');
+  const headerMap = new Map();
+  sheet.getRow(1).eachCell((cell, column) => headerMap.set(normalizeHeader(cell.value), column));
+  for (const required of ['Member ID', 'Bill ID', 'Transaction Date', 'Payment Mode', 'Amount', 'Payment Status', 'Import Action']) {
+    if (!headerMap.has(normalizeHeader(required))) throw new Error(`Missing required column: ${required}`);
+  }
+  const get = (row, name) => row.getCell(headerMap.get(normalizeHeader(name)) || 0).value;
+  const rows = [];
+  sheet.eachRow((row, rowNumber) => {
+    if (rowNumber === 1) return;
+    const hasData = row.values.slice(1).some((value) => text(value) !== '');
+    if (!hasData) return;
+    rows.push({
+      rowNumber,
+      transactionId: text(get(row, 'Transaction ID')),
+      societyCode: text(get(row, 'Society Code')),
+      memberId: text(get(row, 'Member ID')),
+      memberName: text(get(row, 'Member Name')),
+      wing: text(get(row, 'Wing')),
+      flatNumber: text(get(row, 'Flat Number')),
+      billId: text(get(row, 'Bill ID')),
+      billNumber: text(get(row, 'Bill Number')),
+      transactionDate: excelDate(get(row, 'Transaction Date')),
+      transactionType: text(get(row, 'Transaction Type')) || 'Maintenance',
+      paymentMode: text(get(row, 'Payment Mode')),
+      amount: text(get(row, 'Amount')).replace(/[,₹]/g, ''),
+      referenceNumber: text(get(row, 'UTR/Cheque Number')),
+      paymentStatus: text(get(row, 'Payment Status')),
+      remarks: text(get(row, 'Remarks')),
+      importAction: (text(get(row, 'Import Action')) || 'CREATE').toUpperCase()
+    });
+  });
+  return rows;
+};
+
+const configureWorkbook = (workbook, societyName) => {
+  workbook.creator = 'SocietyHub';
+  workbook.company = societyName || 'SocietyHub';
+  workbook.created = new Date();
+};
+
+const styleTable = (sheet) => {
+  sheet.views = [{ state: 'frozen', ySplit: 1 }];
+  sheet.autoFilter = { from: 'A1', to: `R${Math.max(sheet.rowCount, 1)}` };
+  sheet.getRow(1).height = 30;
+  sheet.getRow(1).eachCell((cell) => {
+    cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1D4ED8' } };
+    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+  });
+  const widths = [16, 15, 12, 24, 10, 14, 12, 16, 16, 18, 18, 14, 22, 18, 30, 14, 18, 36];
+  widths.forEach((width, index) => { sheet.getColumn(index + 1).width = width; });
+  sheet.getColumn(9).numFmt = 'yyyy-mm-dd';
+  sheet.getColumn(12).numFmt = '₹#,##0.00';
+};
+
+const addValidations = (sheet, lastRow = 5000) => {
+  for (let row = 2; row <= lastRow; row += 1) {
+    sheet.getCell(`J${row}`).dataValidation = { type: 'list', allowBlank: false, formulae: ['"Maintenance"'] };
+    sheet.getCell(`K${row}`).dataValidation = { type: 'list', allowBlank: false, formulae: ['"Cash,UPI,Bank Transfer,Cheque"'] };
+    sheet.getCell(`N${row}`).dataValidation = { type: 'list', allowBlank: false, formulae: ['"Pending,Approved,Rejected"'] };
+    sheet.getCell(`P${row}`).dataValidation = { type: 'list', allowBlank: false, formulae: ['"CREATE,UPDATE"'] };
+  }
+};
+
+const createWorkbook = async ({ society, transactions = [], members = [], template = false }) => {
+  const workbook = new ExcelJS.Workbook();
+  configureWorkbook(workbook, society?.name);
+  const sheet = workbook.addWorksheet('Transactions');
+  sheet.addRow(HEADERS);
+  transactions.forEach((item) => sheet.addRow([
+    item.transaction_id, society?.code, item.member_id, item.member_name, item.wing,
+    item.flat_number, item.bill_id, item.bill_number, item.transaction_date, 'Maintenance',
+    item.payment_mode, Number(item.amount), item.reference_number, item.payment_status,
+    item.remarks, item.import_action || 'UPDATE', '', ''
+  ]));
+  styleTable(sheet);
+  addValidations(sheet, template ? 1000 : Math.max(sheet.rowCount + 100, 500));
+
+  const memberSheet = workbook.addWorksheet('Members');
+  memberSheet.addRow(['Member ID', 'Member Name', 'Wing', 'Flat Number', 'Status']);
+  members.forEach((member) => memberSheet.addRow([member.id, member.name, member.wing, member.flat_number, member.status]));
+  memberSheet.views = [{ state: 'frozen', ySplit: 1 }];
+  memberSheet.columns = [{ width: 12 }, { width: 28 }, { width: 12 }, { width: 16 }, { width: 16 }];
+  memberSheet.getRow(1).font = { bold: true };
+  memberSheet.protect('', { selectLockedCells: true, selectUnlockedCells: true });
+
+  const summary = workbook.addWorksheet('Summary');
+  summary.addRows([
+    ['Transaction Summary', 'Value'],
+    ['Total transactions', { formula: "COUNTA('Transactions'!A2:A1048576)" }],
+    ['Total amount', { formula: "SUM('Transactions'!L2:L1048576)" }],
+    ['Approved amount', { formula: "SUMIF('Transactions'!N:N,\"Approved\",'Transactions'!L:L)" }],
+    ['Pending amount', { formula: "SUMIF('Transactions'!N:N,\"Pending\",'Transactions'!L:L)" }],
+    ['Rejected amount', { formula: "SUMIF('Transactions'!N:N,\"Rejected\",'Transactions'!L:L)" }],
+    ['Cash', { formula: "SUMIF('Transactions'!K:K,\"Cash\",'Transactions'!L:L)" }],
+    ['UPI', { formula: "SUMIF('Transactions'!K:K,\"UPI\",'Transactions'!L:L)" }],
+    ['Bank Transfer', { formula: "SUMIF('Transactions'!K:K,\"Bank Transfer\",'Transactions'!L:L)" }],
+    ['Cheque', { formula: "SUMIF('Transactions'!K:K,\"Cheque\",'Transactions'!L:L)" }]
+  ]);
+  summary.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+  summary.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1D4ED8' } };
+  summary.getColumn(1).width = 28; summary.getColumn(2).width = 20; summary.getColumn(2).numFmt = '₹#,##0.00';
+
+  const instructions = workbook.addWorksheet('Instructions');
+  instructions.addRows([
+    ['SocietyHub Excel Transaction Import'],
+    ['1. Do not change sheet names or column headers.'],
+    ['2. Use Member ID and Bill ID from the Members sheet and your maintenance records.'],
+    ['3. Transaction Date must use YYYY-MM-DD.'],
+    ['4. CREATE adds a payment. UPDATE may only modify a non-approved payment.'],
+    ['5. Approved transactions are immutable; use the application adjustment workflow instead.'],
+    ['6. Upload the workbook, review every validation result, then confirm the batch.'],
+    ['7. Invalid rows are never imported. Duplicate uploads are not imported twice.']
+  ]);
+  instructions.getColumn(1).width = 110;
+  instructions.getRow(1).font = { bold: true, size: 16 };
+  return workbook.xlsx.writeBuffer();
+};
+
+const createErrorWorkbook = async (rows) => {
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet('Transactions');
+  sheet.addRow(HEADERS);
+  rows.forEach((row) => sheet.addRow([
+    row.transaction_id, '', row.member_id, row.member_name, row.wing, row.flat_number,
+    row.bill_id, row.bill_number || '', row.transaction_date, row.transaction_type,
+    row.payment_mode, row.amount == null ? '' : Number(row.amount), row.reference_number,
+    row.payment_status, row.remarks, row.import_action, row.validation_result, row.validation_message
+  ]));
+  styleTable(sheet);
+  addValidations(sheet, Math.max(rows.length + 20, 100));
+  return workbook.xlsx.writeBuffer();
+};
+
+const canonicalRow = (societyId, row) => JSON.stringify([
+  societyId, row.transactionId || '', row.memberId, row.billId, row.transactionDate,
+  row.transactionType, row.paymentMode, Number(row.amount).toFixed(2), row.referenceNumber,
+  row.paymentStatus, row.remarks, row.importAction
+]);
+
+module.exports = {
+  HEADERS, ALLOWED_MODES, ALLOWED_STATUSES, ALLOWED_ACTIONS,
+  parseWorkbook, createWorkbook, createErrorWorkbook, canonicalRow, hash
+};
