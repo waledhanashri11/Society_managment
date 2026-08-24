@@ -17,6 +17,7 @@
     "test:dashboard-performance": "node tests/dashboardPerformance.test.js",
     "test:excel-transactions": "node tests/excelTransactionService.test.js",
     "test:excel-transactions-api": "node tests/excelTransactionEndpoint.test.js"
+    ,"test:day-wise-statement": "node tests/dayWiseStatementEndpoint.test.js"
   },
   "keywords": [],
   "author": "",
@@ -31,6 +32,7 @@
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.2.0",
     "nodemailer": "^6.10.1",
+    "pdfkit": "^0.17.2",
     "pg": "^8.16.3"
   },
   "devDependencies": {

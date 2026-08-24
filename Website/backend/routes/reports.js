@@ -2,6 +2,7 @@ const router = require('express').Router();
 const { auth, adminAuth } = require('../middleware/auth');
 const c = require('../controllers/reportsController');
 const monthlyCtrl = require('../controllers/monthlyMaintenanceReportController');
+const dayWise = require('../controllers/dayWiseStatementController');
 
 // Existing reports routes
 router.get('/admin/annual', auth, c.adminAnnual);
@@ -9,6 +10,9 @@ router.get('/admin/monthly', auth, c.adminMonthly);
 router.post('/admin/opening-balance', auth, c.setupOpening);
 router.get('/resident/transparency', auth, c.residentTransparency);
 router.get('/resident/payment-status', auth, c.residentPayments);
+router.get('/admin/day-wise-statement', auth, adminAuth, dayWise.view);
+router.get('/admin/day-wise-statement/excel', auth, adminAuth, dayWise.excel);
+router.get('/admin/day-wise-statement/pdf', auth, adminAuth, dayWise.pdf);
 
 // Complete Monthly Maintenance Report Module APIs
 router.get('/maintenance/monthly-report', auth, monthlyCtrl.getMonthlyReport);
