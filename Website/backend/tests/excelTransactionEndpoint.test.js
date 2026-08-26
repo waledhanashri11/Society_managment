@@ -38,9 +38,12 @@ const request = async (baseUrl, token, path, options = {}) => fetch(`${baseUrl}$
       process.env.JWT_SECRET,
       { expiresIn: '5m' }
     );
-    server = app.listen(0);
-    await new Promise((resolve) => server.once('listening', resolve));
-    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    const externalBaseUrl = process.env.EXCEL_TEST_BASE_URL?.replace(/\/$/, '');
+    if (!externalBaseUrl) {
+      server = app.listen(0);
+      await new Promise((resolve) => server.once('listening', resolve));
+    }
+    const baseUrl = externalBaseUrl || `http://127.0.0.1:${server.address().port}`;
 
     const template = await request(baseUrl, token, '/api/maintenance/transactions/template');
     assert.strictEqual(template.status, 200);
@@ -75,6 +78,20 @@ const request = async (baseUrl, token, path, options = {}) => fetch(`${baseUrl}$
     const confirmBody = await confirm.json();
     assert.strictEqual(confirm.status, 200, JSON.stringify(confirmBody));
     assert.strictEqual(confirmBody.data.imported, 1);
+
+    const importedPayment = await pool.query(
+      `SELECT society_id, bill_id, resident_id, payment_method, amount::numeric AS amount,
+              transaction_id, payment_status, paid_at::date::text AS paid_at
+       FROM payments WHERE transaction_id = $1 LIMIT 1`,
+      [reference]
+    );
+    assert.strictEqual(importedPayment.rowCount, 1, 'Confirmed import must persist one payment');
+    assert.strictEqual(Number(importedPayment.rows[0].society_id), Number(row.society_id));
+    assert.strictEqual(Number(importedPayment.rows[0].bill_id), Number(row.bill_id));
+    assert.strictEqual(Number(importedPayment.rows[0].resident_id), Number(row.resident_id));
+    assert.strictEqual(importedPayment.rows[0].payment_method, 'UPI');
+    assert.strictEqual(Number(importedPayment.rows[0].amount), 1);
+    assert.strictEqual(importedPayment.rows[0].payment_status, 'Pending');
 
     const duplicateConfirm = await request(baseUrl, token, '/api/maintenance/transactions/import/confirm', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ batchId })
