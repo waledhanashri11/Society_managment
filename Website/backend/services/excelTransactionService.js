@@ -12,6 +12,32 @@ const ALLOWED_MODES = new Set(['Cash', 'UPI', 'Bank Transfer', 'Cheque']);
 const ALLOWED_STATUSES = new Set(['Pending', 'Approved', 'Rejected']);
 const ALLOWED_ACTIONS = new Set(['CREATE', 'UPDATE']);
 
+const isoDate = (value) => {
+  const normalized = String(value || '').trim();
+  if (!normalized) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return null;
+  const parsed = new Date(`${normalized}T00:00:00.000Z`);
+  return Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== normalized ? null : normalized;
+};
+
+// Keep this validation independent of Express so both the API and tests use the
+// same contract. Empty filters intentionally mean "export all transactions".
+const normalizeExportFilters = (query = {}) => {
+  const textValue = (name) => String(query[name] || '').trim();
+  const from = textValue('from');
+  const to = textValue('to');
+  const member = textValue('member');
+  const status = textValue('status');
+  const paymentMode = textValue('paymentMode');
+  if (from && !isoDate(from)) throw new Error('From date must use YYYY-MM-DD.');
+  if (to && !isoDate(to)) throw new Error('To date must use YYYY-MM-DD.');
+  if (from && to && from > to) throw new Error('From date cannot be after To date.');
+  if (member && (!/^\d+$/.test(member) || Number(member) <= 0)) throw new Error('Member must be a positive number.');
+  if (status && !ALLOWED_STATUSES.has(status)) throw new Error('Payment status must be Pending, Approved, or Rejected.');
+  if (paymentMode && !ALLOWED_MODES.has(paymentMode)) throw new Error('Payment mode must be Cash, UPI, Bank Transfer, or Cheque.');
+  return { from, to, member, wing: textValue('wing'), flat: textValue('flat'), status, paymentMode };
+};
+
 const normalizeHeader = (value) => String(value || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
 const text = (value) => {
   if (value == null) return '';
@@ -175,5 +201,6 @@ const canonicalRow = (societyId, row) => JSON.stringify([
 
 module.exports = {
   HEADERS, ALLOWED_MODES, ALLOWED_STATUSES, ALLOWED_ACTIONS,
-  parseWorkbook, createWorkbook, createErrorWorkbook, canonicalRow, hash
+  parseWorkbook, createWorkbook, createErrorWorkbook, canonicalRow, hash,
+  normalizeExportFilters
 };

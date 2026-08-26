@@ -1,7 +1,7 @@
 const assert = require('assert');
 const ExcelJS = require('exceljs');
 const {
-  HEADERS, parseWorkbook, createWorkbook, createErrorWorkbook, canonicalRow, hash
+  HEADERS, parseWorkbook, createWorkbook, createErrorWorkbook, canonicalRow, hash, normalizeExportFilters
 } = require('../services/excelTransactionService');
 
 (async () => {
@@ -25,6 +25,14 @@ const {
   assert.strictEqual(rows[0].transactionDate, '2026-08-24');
   assert.strictEqual(rows[0].amount, '1250');
   assert.strictEqual(rows[0].importAction, 'CREATE');
+
+  assert.deepStrictEqual(normalizeExportFilters({}), {
+    from: '', to: '', member: '', wing: '', flat: '', status: '', paymentMode: ''
+  });
+  assert.strictEqual(normalizeExportFilters({ from: '2026-08-01', to: '2026-08-31', member: '10' }).member, '10');
+  assert.throws(() => normalizeExportFilters({ from: '2026-02-30' }), /From date must use YYYY-MM-DD/);
+  assert.throws(() => normalizeExportFilters({ from: '2026-08-31', to: '2026-08-01' }), /From date cannot be after/);
+  assert.throws(() => normalizeExportFilters({ status: 'Paid' }), /Payment status/);
 
   const fingerprint = hash(canonicalRow(1, { ...rows[0], amount: 1250 }));
   assert.match(fingerprint, /^[a-f0-9]{64}$/);

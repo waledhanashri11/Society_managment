@@ -2,7 +2,7 @@ const multer = require('multer');
 const { promisePool } = require('../config/database');
 const {
   ALLOWED_MODES, ALLOWED_STATUSES, ALLOWED_ACTIONS, parseWorkbook, createWorkbook,
-  createErrorWorkbook, canonicalRow, hash
+  createErrorWorkbook, canonicalRow, hash, normalizeExportFilters
 } = require('../services/excelTransactionService');
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
@@ -38,14 +38,15 @@ const societyContext = async (societyId) => {
   return rows[0];
 };
 
-const listMembers = async () => {
+const listMembers = async (societyId) => {
   const [rows] = await promisePool.query(
     `SELECT DISTINCT ON (u.id) u.id, u.name, u.status,
             COALESCE(f.wing, f.wing_block, '') AS wing, f.flat_no AS flat_number
      FROM users u
      LEFT JOIN flats f ON f.current_resident_id = u.id OR f.id = u.flat_id
-     WHERE u.role = 'resident'
-     ORDER BY u.id, f.id DESC`
+     WHERE u.role = 'resident' AND u.society_id = ?
+     ORDER BY u.id, f.id DESC`,
+    [societyId]
   );
   return rows;
 };
@@ -53,7 +54,7 @@ const listMembers = async () => {
 const template = async (req, res) => {
   try {
     const society = await societyContext(req.user.societyId);
-    const members = await listMembers();
+    const members = await listMembers(req.user.societyId);
     const buffer = await createWorkbook({ society, members, template: true });
     return sendWorkbook(res, buffer, `SocietyHub_Transaction_Template_${society.code}.xlsx`);
   } catch (error) {
@@ -65,17 +66,18 @@ const template = async (req, res) => {
 const exportTransactions = async (req, res) => {
   try {
     const society = await societyContext(req.user.societyId);
-    const conditions = [];
-    const values = [];
+    const filters = normalizeExportFilters(req.query);
+    const conditions = ['p.society_id = ?'];
+    const values = [req.user.societyId];
     const add = (sql, value) => { if (value != null && String(value).trim()) { conditions.push(sql); values.push(String(value).trim()); } };
-    add('p.paid_at::date >= ?::date', req.query.from);
-    add('p.paid_at::date <= ?::date', req.query.to);
-    add('p.resident_id = ?::int', req.query.member);
-    add("LOWER(COALESCE(f.wing, f.wing_block, '')) = LOWER(?)", req.query.wing);
-    add('LOWER(f.flat_no) = LOWER(?)', req.query.flat);
-    add('LOWER(p.payment_status) = LOWER(?)', req.query.status);
-    add('LOWER(p.payment_method) = LOWER(?)', req.query.paymentMode);
-    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    add('COALESCE(p.paid_at, p.created_at)::date >= ?::date', filters.from);
+    add('COALESCE(p.paid_at, p.created_at)::date <= ?::date', filters.to);
+    add('p.resident_id = ?::int', filters.member);
+    add("LOWER(COALESCE(f.wing, f.wing_block, '')) = LOWER(?)", filters.wing);
+    add('LOWER(f.flat_no) = LOWER(?)', filters.flat);
+    add('LOWER(p.payment_status) = LOWER(?)', filters.status);
+    add('LOWER(p.payment_method) = LOWER(?)', filters.paymentMode);
+    const where = `WHERE ${conditions.join(' AND ')}`;
     const [transactions] = await promisePool.query(
       `SELECT p.id AS transaction_id, p.resident_id AS member_id, u.name AS member_name,
               COALESCE(f.wing, f.wing_block, '') AS wing, f.flat_no AS flat_number,
@@ -91,17 +93,23 @@ const exportTransactions = async (req, res) => {
        ORDER BY COALESCE(p.paid_at, p.created_at) DESC, p.id DESC`,
       values
     );
-    const members = await listMembers();
+    const members = await listMembers(req.user.societyId);
     const buffer = await createWorkbook({ society, transactions, members });
     return sendWorkbook(res, buffer, `SocietyHub_Transactions_${new Date().toISOString().slice(0, 10)}.xlsx`);
   } catch (error) {
     console.error('Excel export error:', error);
-    const status = /date\/time field value|invalid input syntax/i.test(error.message) ? 400 : 500;
-    return res.status(status).json({ success: false, message: status === 400 ? 'Invalid export filter' : 'Unable to export transactions' });
+    const isValidationError = /must use YYYY-MM-DD|cannot be after|must be a positive number|Payment (status|mode) must be/i.test(error.message || '');
+    const status = isValidationError ? 400 : 500;
+    return res.status(status).json({ success: false, message: status === 400 ? error.message : 'Unable to export transactions' });
   }
 };
 
-const validIsoDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`));
+const validIsoDate = (value) => {
+  const normalized = String(value || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return false;
+  const parsed = new Date(`${normalized}T00:00:00.000Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === normalized;
+};
 const positiveInteger = (value) => /^\d+$/.test(String(value)) && Number(value) > 0;
 const paymentAccount = (mode) => mode === 'Cash' ? 'CASH' : 'BANK';
 
@@ -188,8 +196,8 @@ const previewImport = async (req, res) => {
     const society = await societyContext(req.user.societyId);
     const fileFingerprint = hash(req.file.buffer);
     const [existing] = await promisePool.query(
-      'SELECT id, status FROM excel_transaction_import_batches WHERE file_fingerprint = ? LIMIT 1',
-      [fileFingerprint]
+      'SELECT id, status FROM excel_transaction_import_batches WHERE file_fingerprint = ? AND society_id = ? LIMIT 1',
+      [fileFingerprint, req.user.societyId]
     );
     if (existing[0]) {
       if (existing[0].status === 'COMPLETED') return res.status(409).json({ success: false, message: 'This workbook has already been imported' });
@@ -283,7 +291,10 @@ const confirmImport = async (req, res) => {
   const connection = await promisePool.getConnection();
   try {
     await connection.beginTransaction();
-    const [batches] = await connection.query('SELECT * FROM excel_transaction_import_batches WHERE id = ? FOR UPDATE', [Number(batchId)]);
+    const [batches] = await connection.query(
+      'SELECT * FROM excel_transaction_import_batches WHERE id = ? AND society_id = ? FOR UPDATE',
+      [Number(batchId), req.user.societyId]
+    );
     const batch = batches[0];
     if (!batch) { await connection.rollback(); return res.status(404).json({ success: false, message: 'Import batch not found' }); }
     if (batch.status === 'COMPLETED') { await connection.rollback(); return res.status(409).json({ success: false, message: 'This batch has already been imported' }); }
@@ -344,12 +355,13 @@ const confirmImport = async (req, res) => {
   } finally { connection.release(); }
 };
 
-const history = async (_req, res) => {
+const history = async (req, res) => {
   try {
     const [rows] = await promisePool.query(
       `SELECT id::text AS id, file_name AS "fileName", status, created_at AS "createdAt",
               total_rows AS "totalRows", imported_rows AS imported, failed_rows AS failed
-       FROM excel_transaction_import_batches ORDER BY created_at DESC LIMIT 100`
+       FROM excel_transaction_import_batches WHERE society_id = ? ORDER BY created_at DESC LIMIT 100`,
+      [req.user.societyId]
     );
     return res.json({ success: true, data: rows });
   } catch (error) {
@@ -361,11 +373,14 @@ const history = async (_req, res) => {
 const errorReport = async (req, res) => {
   try {
     if (!positiveInteger(req.params.batchId)) return res.status(400).json({ success: false, message: 'Invalid batch ID' });
-    const [batch] = await promisePool.query('SELECT id FROM excel_transaction_import_batches WHERE id = ? LIMIT 1', [Number(req.params.batchId)]);
+    const [batch] = await promisePool.query(
+      'SELECT id FROM excel_transaction_import_batches WHERE id = ? AND society_id = ? LIMIT 1',
+      [Number(req.params.batchId), req.user.societyId]
+    );
     if (!batch[0]) return res.status(404).json({ success: false, message: 'Import batch not found' });
     const [rows] = await promisePool.query(
-      "SELECT * FROM excel_transaction_import_rows WHERE batch_id = ? AND validation_result <> 'VALID' ORDER BY row_number",
-      [Number(req.params.batchId)]
+      "SELECT * FROM excel_transaction_import_rows WHERE batch_id = ? AND society_id = ? AND validation_result <> 'VALID' ORDER BY row_number",
+      [Number(req.params.batchId), req.user.societyId]
     );
     const buffer = await createErrorWorkbook(rows);
     return sendWorkbook(res, buffer, `SocietyHub_Transaction_Import_Errors_${req.params.batchId}.xlsx`);
