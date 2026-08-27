@@ -3,11 +3,13 @@ const { auth, adminAuth } = require('../middleware/auth');
 const c = require('../controllers/reportsController');
 const monthlyCtrl = require('../controllers/monthlyMaintenanceReportController');
 const dayWise = require('../controllers/dayWiseStatementController');
+const overall = require('../controllers/overallReportController');
 
 // Existing reports routes
 router.get('/admin/annual', auth, c.adminAnnual);
 router.get('/admin/monthly', auth, c.adminMonthly);
 router.post('/admin/opening-balance', auth, c.setupOpening);
+router.get('/overall', auth, adminAuth, overall.getOverallReport);
 router.get('/resident/transparency', auth, c.residentTransparency);
 router.get('/resident/payment-status', auth, c.residentPayments);
 router.get('/admin/day-wise-statement', auth, adminAuth, dayWise.view);
