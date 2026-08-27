@@ -79,7 +79,7 @@ async function loadReport(societyId, f) {
   if (f.search) { expenseWhere.push('(LOWER(COALESCE(e.category,\'\')) LIKE ? OR LOWER(COALESCE(e.description,\'\')) LIKE ? OR LOWER(COALESCE(e.vendor,\'\')) LIKE ? OR LOWER(COALESCE(e.expense_number,\'\')) LIKE ?)'); const q=`%${f.search.toLowerCase()}%`; expenseValues.push(q,q,q,q); }
 
   const [payments] = await promisePool.query(`SELECT p.id,COALESCE(p.paid_at::date,p.created_at::date) transaction_date,p.transaction_id,p.payment_method,p.amount,p.payment_status status,p.remarks,
-      u.name resident_name,fl.flat_no,fl.wing,m.id bill_id,m.month,m.year,m.title,m.description,m.total_amount bill_amount,COALESCE(m.penalty_amount,m.penalty,0) penalty_amount,COALESCE(m.write_off_amount,0) write_off_amount,m.remaining_amount
+      u.name resident_name,fl.flat_no,fl.wing,m.id bill_id,m.month,m.year,m.title,m.total_amount bill_amount,COALESCE(m.penalty_amount,m.penalty,0) penalty_amount,COALESCE(m.write_off_amount,0) write_off_amount,m.remaining_amount
     FROM payments p JOIN maintenance m ON m.id=p.bill_id AND m.society_id=p.society_id
     LEFT JOIN users u ON u.id=COALESCE(p.resident_id,m.resident_id) AND u.society_id=p.society_id
     LEFT JOIN flats fl ON fl.id=m.flat_id AND fl.society_id=p.society_id
@@ -95,7 +95,7 @@ async function loadReport(societyId, f) {
   const includeIncome = !f.transactionType || ['all','income','maintenance','penalty','manual payment','online payment','other'].includes(f.transactionType);
   const includeExpense = !f.transactionType || ['all','expense'].includes(f.transactionType);
   const tx = [];
-  if (includeIncome) approved.forEach(p => tx.push({ id:`PAY-${p.id}`,date:iso(p.transaction_date),transactionId:p.transaction_id || `PAY-${p.id}`,type:'Maintenance Payment',category:'Maintenance',residentOrParty:p.resident_name,flat:[p.wing,p.flat_no].filter(Boolean).join('-'),description:p.description || p.title || `${p.month}/${p.year} Maintenance`,paymentMode:p.payment_method,credit:number(p.amount),debit:0,status:p.status,referenceType:'payment',referenceId:String(p.id) }));
+  if (includeIncome) approved.forEach(p => tx.push({ id:`PAY-${p.id}`,date:iso(p.transaction_date),transactionId:p.transaction_id || `PAY-${p.id}`,type:'Maintenance Payment',category:'Maintenance',residentOrParty:p.resident_name,flat:[p.wing,p.flat_no].filter(Boolean).join('-'),description:p.title || `${p.month}/${p.year} Maintenance`,paymentMode:p.payment_method,credit:number(p.amount),debit:0,status:p.status,referenceType:'payment',referenceId:String(p.id) }));
   if (includeExpense) expenses.filter(e => !f.status || String(e.status).toLowerCase() === f.status.toLowerCase()).forEach(e => tx.push({ id:`EXP-${e.id}`,date:iso(e.transaction_date),transactionId:e.expense_number || `EXP-${e.id}`,type:'Expense',category:e.category,residentOrParty:e.vendor,flat:null,description:e.description || e.category,paymentMode:e.payment_method,credit:0,debit:number(e.amount),status:e.status,referenceType:'expense',referenceId:String(e.id) }));
   tx.sort((a,b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
   let running = 0; tx.forEach(row => { running += row.credit - row.debit; row.balance = running; });
