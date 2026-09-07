@@ -5,6 +5,44 @@ const { OAuth2Client } = require('google-auth-library');
 const { promisePool, setRequestSocietyId } = require('../config/database');
 const googleClient = new OAuth2Client();
 
+const verifyGoogleIdentity = async (idToken) => {
+  const normalizedToken = typeof idToken === 'string' ? idToken.trim() : '';
+  if (!normalizedToken) return { error: { status: 400, message: 'Google ID token is required' } };
+  if (!process.env.GOOGLE_CLIENT_ID) {
+    console.error('Google login is unavailable: GOOGLE_CLIENT_ID is not configured.');
+    return { error: { status: 503, message: 'Google login is temporarily unavailable.' } };
+  }
+
+  try {
+    const ticket = await googleClient.verifyIdToken({
+      idToken: normalizedToken,
+      audience: process.env.GOOGLE_CLIENT_ID
+    });
+    const payload = ticket.getPayload();
+    if (!payload?.email_verified) {
+      return { error: { status: 403, message: 'Your Google email is not verified.' } };
+    }
+    const email = String(payload.email || '').trim().toLowerCase();
+    if (!email) {
+      return { error: { status: 401, message: 'Google authentication failed. Please try again.' } };
+    }
+    return {
+      identity: {
+        email,
+        name: String(payload.name || email.split('@')[0]).trim().slice(0, 255),
+        picture: typeof payload.picture === 'string' ? payload.picture : null
+      }
+    };
+  } catch (_) {
+    return { error: { status: 401, message: 'Google authentication failed. Please try again.' } };
+  }
+};
+
+const normalizeIndianMobile = (value) => {
+  const digits = String(value || '').replace(/\D/g, '');
+  return digits.length === 12 && digits.startsWith('91') ? digits.slice(2) : digits;
+};
+
 const hashResetToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
 const parseFlatId = (flatId) => {
   if (flatId === undefined || flatId === null || flatId === '') return null;
@@ -268,23 +306,9 @@ const login = async (req, res) => {
 
 const googleLogin = async (req, res) => {
   try {
-    const idToken = typeof req.body?.idToken === 'string' ? req.body.idToken.trim() : '';
-    if (!idToken) return res.status(400).json({ message: 'Google ID token is required' });
-    if (!process.env.GOOGLE_CLIENT_ID) {
-      console.error('Google login is unavailable: GOOGLE_CLIENT_ID is not configured.');
-      return res.status(503).json({ message: 'Google login is temporarily unavailable.' });
-    }
-
-    let payload;
-    try {
-      const ticket = await googleClient.verifyIdToken({ idToken, audience: process.env.GOOGLE_CLIENT_ID });
-      payload = ticket.getPayload();
-    } catch (_) {
-      return res.status(401).json({ message: 'Google authentication failed. Please try again.' });
-    }
-    if (!payload?.email_verified) return res.status(403).json({ message: 'Your Google email is not verified.' });
-    const email = String(payload.email || '').trim().toLowerCase();
-    if (!email) return res.status(401).json({ message: 'Google authentication failed. Please try again.' });
+    const verification = await verifyGoogleIdentity(req.body?.idToken);
+    if (verification.error) return res.status(verification.error.status).json({ message: verification.error.message });
+    const { email, name, picture } = verification.identity;
 
     const [users] = await promisePool.query(
       `SELECT u.*, s.name AS society_name, s.code AS society_code, s.logo_url AS society_logo_url,
@@ -294,9 +318,18 @@ const googleLogin = async (req, res) => {
        WHERE LOWER(TRIM(u.email)) = ? LIMIT 1`,
       [email]
     );
-    if (!users.length) return res.status(403).json({ message: 'No resident account is registered with this Google email. Please contact the society admin.' });
+    if (!users.length) {
+      return res.status(409).json({
+        code: 'GOOGLE_REGISTRATION_REQUIRED',
+        registrationRequired: true,
+        message: 'Complete your resident registration to continue.',
+        googleProfile: { email, name, picture }
+      });
+    }
     const user = users[0];
     if (user.role !== 'resident') return res.status(403).json({ message: 'Google login is available only for residents. Please use email and password.' });
+    if (user.status === 'pending') return res.status(403).json({ message: 'Your registration is pending admin approval.' });
+    if (user.status === 'rejected') return res.status(403).json({ message: 'Your registration was rejected. Please contact the society admin.' });
     if (user.status !== 'approved' || user.society_status !== 'active') return res.status(403).json({ message: 'Your account is inactive. Please contact the society admin.' });
 
     const societyId = Number(user.society_id);
@@ -318,6 +351,131 @@ const googleLogin = async (req, res) => {
   } catch (error) {
     console.error('Google login failed:', error?.code || error?.name || 'unexpected error');
     return res.status(500).json({ message: 'Google login is temporarily unavailable.' });
+  }
+};
+
+const googleRegister = async (req, res) => {
+  let connection;
+  try {
+    const verification = await verifyGoogleIdentity(req.body?.idToken);
+    if (verification.error) return res.status(verification.error.status).json({ message: verification.error.message });
+    const { email, name } = verification.identity;
+    const societyCode = String(req.body?.societyCode || req.body?.society_code || '').trim().toUpperCase();
+    const assignedFlatId = parseFlatId(req.body?.flatId ?? req.body?.flat_id);
+    const phone = normalizeIndianMobile(req.body?.phone);
+    const ownershipType = String(req.body?.ownershipType || req.body?.ownership_type || '').trim();
+
+    if (!societyCode) return res.status(400).json({ message: 'Society code is required' });
+    if (!assignedFlatId) return res.status(400).json({ message: 'Please select your flat' });
+    if (!/^[6-9]\d{9}$/.test(phone)) return res.status(400).json({ message: 'Enter a valid 10-digit Indian mobile number' });
+    if (!['Owner', 'Tenant'].includes(ownershipType)) {
+      return res.status(400).json({ message: 'Ownership type must be Owner or Tenant' });
+    }
+
+    const [societies] = await promisePool.query(
+      `SELECT id, name, code, logo_url FROM societies
+       WHERE UPPER(code) = ? AND status = 'active' LIMIT 1`,
+      [societyCode]
+    );
+    if (!societies.length) return res.status(404).json({ message: 'Society code is invalid or inactive' });
+    const society = societies[0];
+
+    connection = await promisePool.getConnection();
+    await connection.beginTransaction();
+    await connection.query(
+      'SELECT pg_advisory_xact_lock(hashtext(?)), pg_advisory_xact_lock(hashtext(?))',
+      [`google-email:${email}`, `google-phone:${phone}`]
+    );
+    const [existingUsers] = await connection.query(
+      `SELECT id, status FROM users
+       WHERE LOWER(TRIM(email)) = ?
+          OR REGEXP_REPLACE(COALESCE(phone, ''), '[^0-9]', '', 'g') IN (?, ?)
+       LIMIT 1`,
+      [email, phone, `91${phone}`]
+    );
+    if (existingUsers.length) {
+      await connection.rollback();
+      const existing = existingUsers[0];
+      const message = existing.status === 'pending'
+        ? 'Your registration is already pending admin approval.'
+        : 'An account with this email or mobile number already exists. Please sign in or contact the society admin.';
+      return res.status(409).json({ message });
+    }
+
+    await setRequestSocietyId(society.id);
+
+    const [flats] = await connection.query(
+      `SELECT id, current_resident_id, status FROM flats
+       WHERE id = ? AND society_id = ? FOR UPDATE`,
+      [assignedFlatId, society.id]
+    );
+    if (!flats.length) {
+      await connection.rollback();
+      return res.status(404).json({ message: 'Selected flat was not found in this society' });
+    }
+    if (flats[0].current_resident_id || flats[0].status !== 'Available') {
+      await connection.rollback();
+      return res.status(409).json({ message: 'Selected flat is already assigned to another resident' });
+    }
+    const [assignedUsers] = await connection.query(
+      `SELECT id FROM users WHERE flat_id = ? AND society_id = ? AND role = 'resident' LIMIT 1`,
+      [assignedFlatId, society.id]
+    );
+    if (assignedUsers.length) {
+      await connection.rollback();
+      return res.status(409).json({ message: 'Selected flat is already assigned to another resident' });
+    }
+
+    const generatedPassword = crypto.randomBytes(32).toString('hex');
+    const hashedPassword = await bcrypt.hash(generatedPassword, 12);
+    const [result] = await connection.query(
+      `INSERT INTO users
+       (name, email, password, phone, role, status, flat_id, ownership_type, occupancy_status, society_id)
+       VALUES (?, ?, ?, ?, 'resident', 'pending', ?, ?, 'Active', ?)`,
+      [name, email, hashedPassword, phone, assignedFlatId, ownershipType, society.id]
+    );
+    await connection.query(
+      `UPDATE flats SET current_resident_id = ?, status = 'Occupied'
+       WHERE id = ? AND society_id = ?`,
+      [result.insertId, assignedFlatId, society.id]
+    );
+    await connection.commit();
+
+    try {
+      await promisePool.query(
+        `INSERT INTO notifications (resident_id, title, message, type, is_read, society_id)
+         SELECT id, 'New resident registration', ?, 'resident_registration', false, ?
+         FROM users
+         WHERE role = 'admin' AND status = 'approved' AND society_id = ?`,
+        [`${name} submitted a Google registration for admin approval.`, society.id, society.id]
+      );
+    } catch (notificationError) {
+      console.error('Failed to notify admins about Google registration:', notificationError?.code || notificationError?.name || 'unexpected error');
+    }
+
+    return res.status(201).json({
+      token: null,
+      message: 'Google registration submitted. Please wait for admin approval.',
+      user: {
+        id: result.insertId,
+        name,
+        email,
+        phone,
+        role: 'resident',
+        status: 'pending',
+        flat_id: assignedFlatId,
+        society_id: Number(society.id),
+        ownership_type: ownershipType,
+        society
+      },
+      society
+    });
+  } catch (error) {
+    if (connection) await connection.rollback();
+    console.error('Google registration failed:', error?.code || error?.name || 'unexpected error');
+    return res.status(500).json({ message: 'Google registration could not be completed. Please try again.' });
+  } finally {
+    if (connection) connection.release();
   }
 };
 
@@ -461,4 +619,4 @@ const resetPassword = async (req, res) => {
   }
 };
 
-module.exports = { register, login, googleLogin, changePassword, forgotPassword, resetPassword };
+module.exports = { register, login, googleLogin, googleRegister, changePassword, forgotPassword, resetPassword };

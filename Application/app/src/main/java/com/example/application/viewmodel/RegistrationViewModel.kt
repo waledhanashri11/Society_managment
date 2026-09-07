@@ -21,7 +21,14 @@ class RegistrationViewModel @Inject constructor(
     private val authRepository: AuthRepository,
     private val residentRepository: ResidentRepository
 ) : ViewModel() {
-    private val _uiState = MutableStateFlow(RegistrationUiState())
+    private val googleProfile = authRepository.getPendingGoogleProfile()
+    private val _uiState = MutableStateFlow(
+        RegistrationUiState(
+            name = googleProfile?.name.orEmpty(),
+            email = googleProfile?.email.orEmpty(),
+            isGoogleRegistration = googleProfile != null
+        )
+    )
     val uiState: StateFlow<RegistrationUiState> = _uiState.asStateFlow()
 
     fun loadAvailableFlats() {
@@ -62,6 +69,7 @@ class RegistrationViewModel @Inject constructor(
         )
     }
     fun updateFlatId(value: String) = _uiState.update { it.copy(flatId = value, flatError = null, errorMessage = null) }
+    fun updateOwnershipType(value: String) = _uiState.update { it.copy(ownershipType = value, ownershipTypeError = null, errorMessage = null) }
 
     fun submit() {
         val state = _uiState.value
@@ -78,22 +86,30 @@ class RegistrationViewModel @Inject constructor(
             !Patterns.EMAIL_ADDRESS.matcher(email).matches() -> "Enter a valid email address."
             else -> null
         }
-        val phoneError = if (phone.isNotBlank() && !Regex("^[0-9+\\-\\s()]{7,20}$").matches(phone)) {
-            "Enter a valid phone number."
-        } else null
+        val normalizedGooglePhone = normalizeIndianMobile(phone)
+        val phoneError = when {
+            state.isGoogleRegistration && !Regex("^[6-9][0-9]{9}$").matches(normalizedGooglePhone) -> "Enter a valid 10-digit Indian mobile number."
+            phone.isNotBlank() && !Regex("^[0-9+\\-\\s()]{7,20}$").matches(phone) -> "Enter a valid phone number."
+            else -> null
+        }
         val passwordError = when {
+            state.isGoogleRegistration -> null
             state.password.isEmpty() -> "Password is required."
             state.password.length < 6 -> "Password must be at least 6 characters."
             else -> null
         }
         val confirmError = when {
+            state.isGoogleRegistration -> null
             state.confirmPassword.isEmpty() -> "Confirm password is required."
             state.password != state.confirmPassword -> "Password and confirm password do not match."
             else -> null
         }
-        val flatError = null
+        val flatError = if (state.isGoogleRegistration && state.flatId.isBlank()) "Please select your flat." else null
+        val ownershipTypeError = if (state.isGoogleRegistration && state.ownershipType !in listOf("Owner", "Tenant")) {
+            "Select Owner or Tenant."
+        } else null
 
-        if (listOf(societyCodeError, nameError, emailError, phoneError, passwordError, confirmError, flatError).any { it != null }) {
+        if (listOf(societyCodeError, nameError, emailError, phoneError, passwordError, confirmError, flatError, ownershipTypeError).any { it != null }) {
             _uiState.update {
                 it.copy(
                     name = name,
@@ -106,7 +122,8 @@ class RegistrationViewModel @Inject constructor(
                     phoneError = phoneError,
                     passwordError = passwordError,
                     confirmPasswordError = confirmError,
-                    flatError = flatError
+                    flatError = flatError,
+                    ownershipTypeError = ownershipTypeError
                 )
             }
             return
@@ -114,17 +131,28 @@ class RegistrationViewModel @Inject constructor(
 
         viewModelScope.launch {
             _uiState.update { it.copy(isSubmitting = true, errorMessage = null) }
-            val request = RegisterRequest(
-                name = name,
-                email = email,
-                phone = phone.ifBlank { null },
-                password = state.password,
-                role = "resident",
-                societyCode = societyCode,
-                flatId = state.flatId.takeIf { it.isNotBlank() }
-            )
+            val result = if (state.isGoogleRegistration) {
+                authRepository.googleRegister(
+                    societyCode = societyCode,
+                    flatId = state.flatId,
+                    phone = normalizedGooglePhone,
+                    ownershipType = state.ownershipType
+                )
+            } else {
+                authRepository.register(
+                    RegisterRequest(
+                        name = name,
+                        email = email,
+                        phone = phone.ifBlank { null },
+                        password = state.password,
+                        role = "resident",
+                        societyCode = societyCode,
+                        flatId = state.flatId.takeIf { it.isNotBlank() }
+                    )
+                )
+            }
 
-            when (val result = authRepository.register(request)) {
+            when (result) {
                 is NetworkResult.Success -> {
                     _uiState.update {
                         it.copy(
@@ -143,6 +171,11 @@ class RegistrationViewModel @Inject constructor(
             }
         }
     }
+
+    private fun normalizeIndianMobile(value: String): String {
+        val digits = value.filter(Char::isDigit)
+        return if (digits.length == 12 && digits.startsWith("91")) digits.drop(2) else digits
+    }
 }
 
 data class RegistrationUiState(
@@ -153,6 +186,8 @@ data class RegistrationUiState(
     val password: String = "",
     val confirmPassword: String = "",
     val flatId: String = "",
+    val ownershipType: String = "",
+    val isGoogleRegistration: Boolean = false,
     val availableFlats: List<FlatDto> = emptyList(),
     val flatsLoading: Boolean = false,
     val isSubmitting: Boolean = false,
@@ -163,6 +198,7 @@ data class RegistrationUiState(
     val passwordError: String? = null,
     val confirmPasswordError: String? = null,
     val flatError: String? = null,
+    val ownershipTypeError: String? = null,
     val errorMessage: String? = null,
     val successMessage: String? = null
 )

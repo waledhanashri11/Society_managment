@@ -147,6 +147,7 @@ fun SocietyNavGraph(
                     navigateToDashboard(session)
                 },
                 onRegisterClick = { navController.navigate(AppRoute.Register.route) },
+                onGoogleRegistrationRequired = { navController.navigate(AppRoute.Register.route) },
                 onForgotPasswordClick = { navController.navigate(AppRoute.ForgotPassword.route) },
                 onLegalClick = { section -> navController.navigate(AppRoute.LegalInformation.createRoute(section)) }
             )

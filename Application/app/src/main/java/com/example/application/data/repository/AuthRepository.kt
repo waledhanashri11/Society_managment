@@ -8,6 +8,9 @@ import com.example.application.data.remote.dto.ForgotPasswordRequest
 import com.example.application.data.remote.dto.ChangePasswordRequest
 import com.example.application.data.remote.dto.LoginRequest
 import com.example.application.data.remote.dto.GoogleLoginRequest
+import com.example.application.data.remote.dto.GoogleLoginResponse
+import com.example.application.data.remote.dto.GoogleProfileDto
+import com.example.application.data.remote.dto.GoogleRegistrationRequest
 import com.example.application.data.remote.dto.LoginResponse
 import com.example.application.auth.GoogleAuthManager
 import com.example.application.data.remote.dto.MessageResponse
@@ -46,12 +49,53 @@ class AuthRepository @Inject constructor(
     private val residentRepository: ResidentRepository,
     private val googleAuthManager: GoogleAuthManager
 ) {
+    private var pendingGoogleRegistration: GoogleRegistrationDraft? = null
+
     suspend fun login(email: String, password: String): NetworkResult<UserSession> {
         return authenticate { authApiService.login(LoginRequest(email = email, password = password)) }
     }
 
-    suspend fun googleLogin(idToken: String): NetworkResult<UserSession> {
-        return authenticate { authApiService.googleLogin(GoogleLoginRequest(idToken)) }
+    suspend fun googleLogin(idToken: String): NetworkResult<GoogleLoginOutcome> {
+        return try {
+            val response = authApiService.googleLogin(GoogleLoginRequest(idToken))
+            if (response.isSuccessful) {
+                val body = response.body()
+                val token = body?.token
+                val user = body?.user
+                if (token.isNullOrBlank() || user == null) {
+                    NetworkResult.Error(AppError.Unknown("Unable to read the server response."))
+                } else {
+                    when (val sessionResult = saveAuthenticatedSession(token, user, body.society)) {
+                        is NetworkResult.Success -> {
+                            pendingGoogleRegistration = null
+                            NetworkResult.Success(GoogleLoginOutcome.Authenticated(sessionResult.data))
+                        }
+                        is NetworkResult.Error -> sessionResult
+                        NetworkResult.Loading -> NetworkResult.Loading
+                    }
+                }
+            } else {
+                val rawError = response.errorBody()?.string()
+                val googleError = runCatching { gson.fromJson(rawError, GoogleLoginResponse::class.java) }.getOrNull()
+                if (response.code() == 409 && googleError?.registrationRequired == true && googleError.googleProfile != null) {
+                    val draft = GoogleRegistrationDraft(idToken = idToken, profile = googleError.googleProfile)
+                    pendingGoogleRegistration = draft
+                    NetworkResult.Success(GoogleLoginOutcome.RegistrationRequired(draft.profile))
+                } else {
+                    NetworkResult.Error(mapHttpError(response.code(), googleError?.message ?: parseErrorMessage(rawError)))
+                }
+            }
+        } catch (error: UnknownHostException) {
+            NetworkResult.Error(AppError.NoInternet)
+        } catch (error: SocketTimeoutException) {
+            NetworkResult.Error(AppError.Timeout)
+        } catch (error: ConnectException) {
+            NetworkResult.Error(AppError.Server("Unable to reach the server. It may be starting up — please try again in a moment."))
+        } catch (error: IOException) {
+            NetworkResult.Error(AppError.Server("A network error occurred. Please try again."))
+        } catch (error: Exception) {
+            NetworkResult.Error(AppError.Unknown("Google sign-in could not be completed. Please try again."))
+        }
     }
 
     private suspend fun authenticate(call: suspend () -> retrofit2.Response<LoginResponse>): NetworkResult<UserSession> {
@@ -67,26 +111,8 @@ class AuthRepository @Inject constructor(
                     return NetworkResult.Error(AppError.Unknown("Unable to read the server response."))
                 }
 
-                val session = user.toSession(token, body.society)
-                val normalizedRole = session.role.lowercase()
-
-                if (normalizedRole !in SUPPORTED_ROLES) {
-                    sessionPreferences.clearSession()
-                    return NetworkResult.Error(
-                        AppError.Forbidden("This account does not have access to the mobile application.")
-                    )
-                }
-
-                if (normalizedRole != ROLE_SUPER_ADMIN && (session.societyId.isNullOrBlank() || session.societyName.isNullOrBlank())) {
-                    sessionPreferences.clearSession()
-                    return NetworkResult.Error(
-                        AppError.Unknown("Your society details are missing. Please contact support.")
-                    )
-                }
-
-                clearTenantCaches()
-                sessionPreferences.saveSession(session)
-                NetworkResult.Success(session)
+                pendingGoogleRegistration = null
+                saveAuthenticatedSession(token, user, body.society)
             } else {
                 NetworkResult.Error(mapHttpError(response.code(), parseErrorMessage(response.errorBody()?.string())))
             }
@@ -111,6 +137,35 @@ class AuthRepository @Inject constructor(
         return safeApiCall {
             authApiService.register(request)
         }
+    }
+
+    fun getPendingGoogleProfile(): GoogleProfileDto? = pendingGoogleRegistration?.profile
+
+    fun clearPendingGoogleRegistration() {
+        pendingGoogleRegistration = null
+    }
+
+    suspend fun googleRegister(
+        societyCode: String,
+        flatId: String,
+        phone: String,
+        ownershipType: String
+    ): NetworkResult<RegisterResponse> {
+        val draft = pendingGoogleRegistration
+            ?: return NetworkResult.Error(AppError.Validation("Please start again with Continue with Google."))
+        val result = safeApiCall {
+            authApiService.googleRegister(
+                GoogleRegistrationRequest(
+                    idToken = draft.idToken,
+                    societyCode = societyCode,
+                    flatId = flatId,
+                    phone = phone,
+                    ownershipType = ownershipType
+                )
+            )
+        }
+        if (result is NetworkResult.Success) pendingGoogleRegistration = null
+        return result
     }
 
     suspend fun forgotPassword(email: String): NetworkResult<MessageResponse> {
@@ -160,6 +215,7 @@ class AuthRepository @Inject constructor(
     }
 
     suspend fun logout() {
+        pendingGoogleRegistration = null
         clearTenantCaches()
         sessionPreferences.clearSession()
         googleAuthManager.clearSession()
@@ -193,6 +249,28 @@ class AuthRepository @Inject constructor(
             societyCode = authenticatedSociety?.code,
             societyLogoUrl = authenticatedSociety?.logoUrl
         )
+    }
+
+    private suspend fun saveAuthenticatedSession(
+        token: String,
+        user: UserDto,
+        responseSociety: SocietyDto?
+    ): NetworkResult<UserSession> {
+        val session = user.toSession(token, responseSociety)
+        val normalizedRole = session.role.lowercase()
+
+        if (normalizedRole !in SUPPORTED_ROLES) {
+            sessionPreferences.clearSession()
+            return NetworkResult.Error(AppError.Forbidden("This account does not have access to the mobile application."))
+        }
+        if (normalizedRole != ROLE_SUPER_ADMIN && (session.societyId.isNullOrBlank() || session.societyName.isNullOrBlank())) {
+            sessionPreferences.clearSession()
+            return NetworkResult.Error(AppError.Unknown("Your society details are missing. Please contact support."))
+        }
+
+        clearTenantCaches()
+        sessionPreferences.saveSession(session)
+        return NetworkResult.Success(session)
     }
 
     private suspend fun <T> safeApiCall(
@@ -257,7 +335,8 @@ class AuthRepository @Inject constructor(
             403 -> AppError.Forbidden(
                 safeMessage ?: "Your account cannot access the application. Please contact the administrator."
             )
-            404 -> AppError.Unknown("Login service was not found.")
+            404 -> AppError.Validation(safeMessage ?: "The requested information was not found.")
+            409 -> AppError.Validation(safeMessage ?: "An account with these details already exists.")
             408 -> AppError.Timeout
             429 -> AppError.Server("Too many login attempts. Please try again later.")
             500 -> AppError.Server("Server error. Please try again later.")
@@ -279,4 +358,14 @@ class AuthRepository @Inject constructor(
         const val ROLE_SUPER_ADMIN = "super_admin"
         val SUPPORTED_ROLES = setOf(ROLE_SUPER_ADMIN, ROLE_ADMIN, ROLE_RESIDENT)
     }
+}
+
+data class GoogleRegistrationDraft(
+    val idToken: String,
+    val profile: GoogleProfileDto
+)
+
+sealed interface GoogleLoginOutcome {
+    data class Authenticated(val session: UserSession) : GoogleLoginOutcome
+    data class RegistrationRequired(val profile: GoogleProfileDto) : GoogleLoginOutcome
 }

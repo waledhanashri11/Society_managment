@@ -19,6 +19,30 @@ data class RegisterRequest(
 
 data class GoogleLoginRequest(val idToken: String)
 
+data class GoogleProfileDto(
+    val email: String,
+    val name: String,
+    val picture: String? = null
+)
+
+data class GoogleLoginResponse(
+    val token: String?,
+    val message: String?,
+    val user: UserDto?,
+    val society: SocietyDto?,
+    val code: String? = null,
+    val registrationRequired: Boolean? = null,
+    val googleProfile: GoogleProfileDto? = null
+)
+
+data class GoogleRegistrationRequest(
+    val idToken: String,
+    @SerializedName("society_code") val societyCode: String,
+    @SerializedName("flat_id") val flatId: String,
+    val phone: String,
+    @SerializedName("ownership_type") val ownershipType: String
+)
+
 data class SocietyDto(
     val id: String?,
     val name: String?,

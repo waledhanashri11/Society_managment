@@ -12,7 +12,8 @@ class AuthHeaderInterceptor @Inject constructor(
     override fun intercept(chain: Interceptor.Chain): Response {
         val originalRequest = chain.request()
         val isLoginRequest = originalRequest.url.encodedPath.endsWith("/api/auth/login") ||
-            originalRequest.url.encodedPath.endsWith("/api/auth/google")
+            originalRequest.url.encodedPath.endsWith("/api/auth/google") ||
+            originalRequest.url.encodedPath.endsWith("/api/auth/google/register")
 
         val builder = originalRequest.newBuilder()
 

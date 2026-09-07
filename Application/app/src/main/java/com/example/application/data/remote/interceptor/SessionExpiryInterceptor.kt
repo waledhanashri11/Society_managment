@@ -12,7 +12,8 @@ class SessionExpiryInterceptor @Inject constructor(
     override fun intercept(chain: Interceptor.Chain): Response {
         val response = chain.proceed(chain.request())
         val isLoginRequest = chain.request().url.encodedPath.endsWith("/api/auth/login") ||
-            chain.request().url.encodedPath.endsWith("/api/auth/google")
+            chain.request().url.encodedPath.endsWith("/api/auth/google") ||
+            chain.request().url.encodedPath.endsWith("/api/auth/google/register")
 
         if (response.code == 401 && !isLoginRequest) {
             runBlocking {

@@ -18,6 +18,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -55,13 +56,18 @@ fun RegisterScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
-    AuthScaffold(title = "Create Resident Account") {
+    AuthScaffold(title = if (state.isGoogleRegistration) "Complete Google Registration" else "Create Resident Account") {
         state.errorMessage?.let { ErrorMessageCard(it); Spacer(Modifier.height(12.dp)) }
         state.successMessage?.let {
             SuccessCard(it)
             Spacer(Modifier.height(12.dp))
             Button(onClick = onBackToLogin, modifier = Modifier.fillMaxWidth()) { Text("Back to Login") }
             return@AuthScaffold
+        }
+
+        if (state.isGoogleRegistration) {
+            SuccessCard("Google verified your identity. Add your society and flat details. Your account will remain private until the Society Admin approves it.")
+            Spacer(Modifier.height(12.dp))
         }
 
         OutlinedTextField(
@@ -80,16 +86,34 @@ fun RegisterScreen(
         ) { Text("Verify Society & Load Flats") }
         Spacer(Modifier.height(10.dp))
 
-        OutlinedTextField(value = state.name, onValueChange = viewModel::updateName, label = { Text("Full Name") }, isError = state.nameError != null, supportingText = state.nameError?.let { { Text(it) } }, modifier = Modifier.fillMaxWidth(), enabled = !state.isSubmitting)
+        OutlinedTextField(value = state.name, onValueChange = viewModel::updateName, label = { Text("Full Name") }, isError = state.nameError != null, supportingText = state.nameError?.let { { Text(it) } }, modifier = Modifier.fillMaxWidth(), enabled = !state.isSubmitting, readOnly = state.isGoogleRegistration)
         Spacer(Modifier.height(10.dp))
-        OutlinedTextField(value = state.email, onValueChange = viewModel::updateEmail, label = { Text("Email") }, isError = state.emailError != null, supportingText = state.emailError?.let { { Text(it) } }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email), enabled = !state.isSubmitting)
+        OutlinedTextField(value = state.email, onValueChange = viewModel::updateEmail, label = { Text(if (state.isGoogleRegistration) "Google Email" else "Email") }, isError = state.emailError != null, supportingText = state.emailError?.let { { Text(it) } }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email), enabled = !state.isSubmitting, readOnly = state.isGoogleRegistration)
         Spacer(Modifier.height(10.dp))
-        OutlinedTextField(value = state.phone, onValueChange = viewModel::updatePhone, label = { Text("Phone (optional)") }, isError = state.phoneError != null, supportingText = state.phoneError?.let { { Text(it) } }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone), enabled = !state.isSubmitting)
+        OutlinedTextField(value = state.phone, onValueChange = viewModel::updatePhone, label = { Text(if (state.isGoogleRegistration) "Indian Mobile Number" else "Phone (optional)") }, isError = state.phoneError != null, supportingText = state.phoneError?.let { { Text(it) } }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone), enabled = !state.isSubmitting)
+        if (!state.isGoogleRegistration) {
+            Spacer(Modifier.height(10.dp))
+            PasswordField(value = state.password, onValueChange = viewModel::updatePassword, label = "Password", error = state.passwordError, enabled = !state.isSubmitting)
+            Spacer(Modifier.height(10.dp))
+            PasswordField(value = state.confirmPassword, onValueChange = viewModel::updateConfirmPassword, label = "Confirm Password", error = state.confirmPasswordError, enabled = !state.isSubmitting)
+        }
         Spacer(Modifier.height(10.dp))
-        PasswordField(value = state.password, onValueChange = viewModel::updatePassword, label = "Password", error = state.passwordError, enabled = !state.isSubmitting)
-        Spacer(Modifier.height(10.dp))
-        PasswordField(value = state.confirmPassword, onValueChange = viewModel::updateConfirmPassword, label = "Confirm Password", error = state.confirmPasswordError, enabled = !state.isSubmitting)
-        Spacer(Modifier.height(10.dp))
+
+        if (state.isGoogleRegistration) {
+            Text("Ownership Type", style = MaterialTheme.typography.labelLarge)
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                listOf("Owner", "Tenant").forEach { type ->
+                    FilterChip(
+                        selected = state.ownershipType == type,
+                        onClick = { viewModel.updateOwnershipType(type) },
+                        label = { Text(type) },
+                        enabled = !state.isSubmitting
+                    )
+                }
+            }
+            state.ownershipTypeError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            Spacer(Modifier.height(10.dp))
+        }
 
         var expanded by remember { mutableStateOf(false) }
         val selectedFlat = state.availableFlats.firstOrNull { it.id == state.flatId }
@@ -104,7 +128,7 @@ fun RegisterScreen(
             enabled = !state.isSubmitting && !state.flatsLoading
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            TextButton(onClick = { expanded = true }, enabled = !state.isSubmitting && state.availableFlats.isNotEmpty()) { Text("Select Flat (optional)") }
+            TextButton(onClick = { expanded = true }, enabled = !state.isSubmitting && state.availableFlats.isNotEmpty()) { Text(if (state.isGoogleRegistration) "Select Flat" else "Select Flat (optional)") }
             TextButton(onClick = viewModel::loadAvailableFlats, enabled = !state.isSubmitting) { Text("Refresh Flats") }
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
@@ -118,7 +142,7 @@ fun RegisterScreen(
                 )
             }
         }
-        if (!state.flatsLoading && state.availableFlats.isEmpty()) {
+        if (!state.flatsLoading && state.availableFlats.isEmpty() && !state.isGoogleRegistration) {
             Text(
                 "No flats are available right now. You can register and ask the admin to assign a flat later.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -131,7 +155,7 @@ fun RegisterScreen(
             enabled = !state.isSubmitting && !state.flatsLoading,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text(if (state.isSubmitting) "Submitting..." else "Register")
+            Text(if (state.isSubmitting) "Submitting..." else if (state.isGoogleRegistration) "Submit for Admin Approval" else "Register")
         }
         TextButton(onClick = onBackToLogin, modifier = Modifier.fillMaxWidth()) { Text("Already have an account? Login") }
         TextButton(onClick = onForgotPasswordClick, modifier = Modifier.fillMaxWidth()) { Text("Forgot Password?") }

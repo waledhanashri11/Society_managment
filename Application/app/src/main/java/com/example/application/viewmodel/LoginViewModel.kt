@@ -9,6 +9,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.application.data.local.datastore.UserSession
 import com.example.application.data.repository.AuthRepository
+import com.example.application.data.repository.GoogleLoginOutcome
 import com.example.application.util.AppError
 import com.example.application.util.NetworkResult
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -98,7 +99,14 @@ class LoginViewModel @Inject constructor(
             try {
                 val idToken = googleAuthManager.getIdToken(context)
                 when (val result = authRepository.googleLogin(idToken)) {
-                    is NetworkResult.Success -> _uiState.update { it.copy(isGoogleLoading=false, loggedInSession=result.data) }
+                    is NetworkResult.Success -> when (val outcome = result.data) {
+                        is GoogleLoginOutcome.Authenticated -> _uiState.update {
+                            it.copy(isGoogleLoading = false, loggedInSession = outcome.session)
+                        }
+                        is GoogleLoginOutcome.RegistrationRequired -> _uiState.update {
+                            it.copy(isGoogleLoading = false, googleRegistrationRequired = true)
+                        }
+                    }
                     is NetworkResult.Error -> _uiState.update { it.copy(isGoogleLoading=false, errorMessage=result.error.toUserMessage()) }
                     NetworkResult.Loading -> Unit
                 }
@@ -116,6 +124,14 @@ class LoginViewModel @Inject constructor(
 
     fun consumeLoginSuccess() {
         _uiState.update { it.copy(loggedInSession = null) }
+    }
+
+    fun consumeGoogleRegistrationRequest() {
+        _uiState.update { it.copy(googleRegistrationRequired = false) }
+    }
+
+    fun prepareManualRegistration() {
+        authRepository.clearPendingGoogleRegistration()
     }
 
     fun clearError() {
@@ -146,6 +162,7 @@ data class LoginUiState(
     val isLoading: Boolean = false,
     val isGoogleLoading: Boolean = false,
     val errorMessage: String? = null,
+    val googleRegistrationRequired: Boolean = false,
     val loggedInSession: UserSession? = null
 )
 

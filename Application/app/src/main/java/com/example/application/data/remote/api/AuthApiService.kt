@@ -3,6 +3,8 @@ package com.example.application.data.remote.api
 import com.example.application.data.remote.dto.LoginRequest
 import com.example.application.data.remote.dto.LoginResponse
 import com.example.application.data.remote.dto.GoogleLoginRequest
+import com.example.application.data.remote.dto.GoogleLoginResponse
+import com.example.application.data.remote.dto.GoogleRegistrationRequest
 import com.example.application.data.remote.dto.MessageResponse
 import com.example.application.data.remote.dto.ForgotPasswordRequest
 import com.example.application.data.remote.dto.RegisterRequest
@@ -19,7 +21,10 @@ interface AuthApiService {
     suspend fun login(@Body request: LoginRequest): Response<LoginResponse>
 
     @POST("api/auth/google")
-    suspend fun googleLogin(@Body request: GoogleLoginRequest): Response<LoginResponse>
+    suspend fun googleLogin(@Body request: GoogleLoginRequest): Response<GoogleLoginResponse>
+
+    @POST("api/auth/google/register")
+    suspend fun googleRegister(@Body request: GoogleRegistrationRequest): Response<RegisterResponse>
 
     @POST("api/auth/register")
     suspend fun register(@Body request: RegisterRequest): Response<RegisterResponse>

@@ -75,6 +75,7 @@ import androidx.compose.foundation.layout.imePadding
 fun LoginScreen(
     onLoginSuccess: (UserSession) -> Unit,
     onRegisterClick: () -> Unit,
+    onGoogleRegistrationRequired: () -> Unit,
     onForgotPasswordClick: () -> Unit,
     onLegalClick: (String) -> Unit,
     viewModel: LoginViewModel = hiltViewModel()
@@ -92,6 +93,13 @@ fun LoginScreen(
         uiState.loggedInSession?.let { session ->
             onLoginSuccess(session)
             viewModel.consumeLoginSuccess()
+        }
+    }
+
+    LaunchedEffect(uiState.googleRegistrationRequired) {
+        if (uiState.googleRegistrationRequired) {
+            onGoogleRegistrationRequired()
+            viewModel.consumeGoogleRegistrationRequest()
         }
     }
 
@@ -276,7 +284,10 @@ fun LoginScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(stringResource(R.string.new_resident))
-                    TextButton(onClick = onRegisterClick, enabled = !authBusy) {
+                    TextButton(onClick = {
+                        viewModel.prepareManualRegistration()
+                        onRegisterClick()
+                    }, enabled = !authBusy) {
                         Text(stringResource(R.string.register))
                     }
                 }
