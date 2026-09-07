@@ -23,8 +23,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -47,10 +45,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -76,10 +71,6 @@ import com.example.application.viewmodel.FlatsViewModel
 import com.example.application.viewmodel.ResidentDetailsViewModel
 import com.example.application.viewmodel.ResidentFormViewModel
 import com.example.application.viewmodel.ResidentsViewModel
-import com.example.application.viewmodel.ResidentImportViewModel
-import com.example.application.viewmodel.ResidentImportEvent
-import com.example.application.util.ResidentImportFileManager
-import com.example.application.util.ExcelFileManager
 import com.example.application.viewmodel.StaffDetailsViewModel
 import com.example.application.viewmodel.StaffFormViewModel
 import com.example.application.viewmodel.StaffViewModel
@@ -91,27 +82,9 @@ fun ResidentsListScreen(
     onAdd: () -> Unit,
     onOpen: (String) -> Unit,
     onEdit: (String) -> Unit,
-    viewModel: ResidentsViewModel = hiltViewModel(),
-    importViewModel: ResidentImportViewModel = hiltViewModel()
+    viewModel: ResidentsViewModel = hiltViewModel()
 ) {
-    val context = LocalContext.current
     val state by viewModel.state.collectAsStateWithLifecycle()
-    val importState by importViewModel.state.collectAsStateWithLifecycle()
-    val importEvent by importViewModel.event.collectAsStateWithLifecycle()
-    var showImport by remember { mutableStateOf(false) }
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) ResidentImportFileManager.inspect(context, uri)
-            .onSuccess { importViewModel.select(it); showImport = true }
-            .onFailure { android.widget.Toast.makeText(context, it.message, android.widget.Toast.LENGTH_LONG).show() }
-    }
-    LaunchedEffect(importEvent) {
-        val event = importEvent as? ResidentImportEvent.Download ?: return@LaunchedEffect
-        runCatching { ExcelFileManager.save(context, event.body, event.name) }
-            .onSuccess { android.widget.Toast.makeText(context, "Saved ${it.name}", android.widget.Toast.LENGTH_LONG).show() }
-            .onFailure { android.widget.Toast.makeText(context, it.message ?: "Download failed", android.widget.Toast.LENGTH_LONG).show() }
-        importViewModel.clearEvent()
-    }
-    LaunchedEffect(importState.result) { if (importState.result != null) viewModel.load(refresh = true) }
     val filtered by remember(state.items, state.query, state.filter) {
         derivedStateOf {
             state.items
@@ -137,8 +110,6 @@ fun ResidentsListScreen(
         onBack = onBack,
         onAdd = onAdd,
         addLabel = "Add Resident",
-        onImport = { picker.launch(arrayOf(ResidentImportFileManager.XLSX, ResidentImportFileManager.XLS, ResidentImportFileManager.CSV, "text/comma-separated-values")) },
-        onTemplate = importViewModel::template,
         isRefreshing = state.isRefreshing,
         onRefresh = { viewModel.load(refresh = true) },
         query = state.query,
@@ -192,20 +163,6 @@ fun ResidentsListScreen(
         )
     }
 
-    if (showImport) ResidentImportDialog(
-        state = importState,
-        onDismiss = { if (!importState.busy) showImport = false },
-        onPreview = { importState.selected?.let { importViewModel.preview(ResidentImportFileManager.multipart(context, it)) } },
-        onErrors = importViewModel::errors,
-        onConfirm = { importViewModel.showConfirm(true) }
-    )
-    if (importState.confirm) AlertDialog(
-        onDismissRequest = { importViewModel.showConfirm(false) },
-        title = { Text("Import valid residents?") },
-        text = { Text("${importState.preview?.validRows ?: 0} valid resident(s) will be created. Existing records will not be overwritten.") },
-        confirmButton = { Button(onClick = importViewModel::confirm) { Text("Confirm import") } },
-        dismissButton = { TextButton(onClick = { importViewModel.showConfirm(false) }) { Text("Cancel") } }
-    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -554,8 +511,6 @@ private fun ManagementListScaffold(
     onRetry: () -> Unit,
     empty: Boolean,
     addLabel: String = "Add",
-    onImport: (() -> Unit)? = null,
-    onTemplate: (() -> Unit)? = null,
     content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit
 ) {
     Scaffold(
@@ -576,12 +531,6 @@ private fun ManagementListScaffold(
             LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 item {
                     Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (onImport != null || onTemplate != null) {
-                        Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            onImport?.let { OutlinedButton(onClick = it, modifier = Modifier.weight(1f)) { Text("Import Excel") } }
-                            onTemplate?.let { OutlinedButton(onClick = it, modifier = Modifier.weight(1f)) { Text("Download Template") } }
-                        }
-                    }
                     OutlinedTextField(
                         value = query,
                         onValueChange = onQuery,
@@ -603,55 +552,6 @@ private fun ManagementListScaffold(
             }
         }
     }
-}
-
-@Composable
-private fun ResidentImportDialog(
-    state: com.example.application.viewmodel.ResidentImportState,
-    onDismiss: () -> Unit,
-    onPreview: () -> Unit,
-    onErrors: () -> Unit,
-    onConfirm: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Import Residents") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(state.selected?.name ?: "No file selected", fontWeight = FontWeight.SemiBold)
-                state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                if (state.busy) CircularProgressIndicator()
-                state.preview?.let { preview ->
-                    Text("Total ${preview.totalRows}   Valid ${preview.validRows}   Invalid ${preview.invalidRows}   Duplicates ${preview.duplicateRows}", fontWeight = FontWeight.Bold)
-                    LazyColumn(Modifier.height(240.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        items(preview.rows, key = { it.rowNumber }) { row ->
-                            Card(colors = CardDefaults.cardColors(containerColor = if (row.validationResult == "VALID") Color(0xFFE8F5E9) else Color(0xFFFFEBEE))) {
-                                Column(Modifier.padding(8.dp)) {
-                                    Text("Row ${row.rowNumber}: ${row.residentName.orEmpty()} • ${row.flatNumber.orEmpty()}", fontWeight = FontWeight.SemiBold)
-                                    Text(row.validationResult.orEmpty(), style = MaterialTheme.typography.labelSmall)
-                                    row.validationMessage?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-                                }
-                            }
-                        }
-                    }
-                }
-                state.result?.let { Text("Successfully imported ${it.successfullyImported}   Skipped ${it.skipped}   Failed ${it.failed}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) }
-            }
-        },
-        confirmButton = {
-            when {
-                state.result != null -> Button(onClick = onDismiss) { Text("Done") }
-                state.preview != null -> Button(onClick = onConfirm, enabled = !state.busy && state.preview.validRows > 0) { Text("Import valid rows") }
-                else -> Button(onClick = onPreview, enabled = !state.busy && state.selected != null) { Text("Preview") }
-            }
-        },
-        dismissButton = {
-            Row {
-                if ((state.preview?.invalidRows ?: 0) + (state.preview?.duplicateRows ?: 0) > 0) TextButton(onClick = onErrors, enabled = !state.busy) { Text("Error report") }
-                TextButton(onClick = onDismiss, enabled = !state.busy) { Text("Close") }
-            }
-        }
-    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

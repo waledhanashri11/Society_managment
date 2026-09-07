@@ -10,9 +10,10 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: MAX_FILE_BYTES, files: 1, fields: 0 },
   fileFilter: (_req, file, callback) => {
-    const validExtension = /\.xlsx$/i.test(file.originalname || '');
+    const validExtension = /\.(xlsx|xls|csv)$/i.test(file.originalname || '');
     const validMime = [
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-excel', 'text/csv', 'application/csv',
       'application/octet-stream'
     ].includes(file.mimetype);
     callback(validExtension && validMime ? null : new Error('Only .xlsx workbooks are supported'), validExtension && validMime);
@@ -195,7 +196,6 @@ const validateRow = async (row, society, seenReferences) => {
 const previewImport = async (req, res) => {
   try {
     if (!req.file?.buffer) return res.status(400).json({ success: false, message: 'Excel workbook is required' });
-    if (req.file.buffer[0] !== 0x50 || req.file.buffer[1] !== 0x4B) return res.status(400).json({ success: false, message: 'The uploaded file is not a valid .xlsx workbook' });
     const society = await societyContext(req.user.societyId);
     const fileFingerprint = hash(req.file.buffer);
     const [existing] = await promisePool.query(
@@ -208,7 +208,7 @@ const previewImport = async (req, res) => {
         ? 'This workbook has already been imported'
         : 'This workbook has already been validated. Use its existing preview or upload a changed workbook.'
     });
-    const parsedRows = await parseWorkbook(req.file.buffer);
+    const parsedRows = await parseWorkbook(req.file.buffer, req.file.originalname);
     if (!parsedRows.length) return res.status(400).json({ success: false, message: 'The Transactions sheet does not contain any data rows' });
     if (parsedRows.length > 5000) return res.status(400).json({ success: false, message: 'A workbook may contain at most 5,000 transaction rows' });
     const seenReferences = new Set();

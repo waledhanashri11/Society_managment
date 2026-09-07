@@ -147,7 +147,7 @@ fun ExcelTransactionsScreen(
 
             item {
                 SectionCard(stringResource(R.string.excel_import)) {
-                    OutlinedButton(onClick = { picker.launch(arrayOf(ExcelFileManager.XLSX_MIME, ExcelFileManager.XLS_MIME)) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(onClick = { picker.launch(arrayOf(ExcelFileManager.XLSX_MIME, ExcelFileManager.XLS_MIME, ExcelFileManager.CSV_MIME, "application/csv")) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Default.FileOpen, null); Text(stringResource(R.string.excel_select_file), modifier = Modifier.padding(start = 8.dp))
                     }
                     state.selectedFile?.let { selected ->

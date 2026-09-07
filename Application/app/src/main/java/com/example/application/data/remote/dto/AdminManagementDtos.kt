@@ -46,6 +46,20 @@ data class ResidentImportResultDto(
     val failed: Int = 0
 )
 
+data class ResidentImportBatchDto(
+    val id: String = "",
+    val fileName: String? = null,
+    val uploadedBy: String? = null,
+    val createdAt: String? = null,
+    val totalRows: Int = 0,
+    val imported: Int = 0,
+    val skipped: Int = 0,
+    val failed: Int = 0,
+    val invalidRows: Int = 0,
+    val duplicateRows: Int = 0,
+    val status: String? = null
+)
+
 data class FlatSaveRequest(
     @SerializedName("flat_no") val flatNo: String,
     val wing: String?,

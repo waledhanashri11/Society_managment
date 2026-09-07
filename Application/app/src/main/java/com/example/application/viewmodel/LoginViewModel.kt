@@ -1,6 +1,10 @@
 package com.example.application.viewmodel
 
 import android.util.Patterns
+import android.content.Context
+import androidx.credentials.exceptions.GetCredentialCancellationException
+import androidx.credentials.exceptions.NoCredentialException
+import com.example.application.auth.GoogleAuthManager
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.application.data.local.datastore.UserSession
@@ -17,7 +21,8 @@ import kotlinx.coroutines.launch
 
 @HiltViewModel
 class LoginViewModel @Inject constructor(
-    private val authRepository: AuthRepository
+    private val authRepository: AuthRepository,
+    private val googleAuthManager: GoogleAuthManager
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(LoginUiState())
     val uiState: StateFlow<LoginUiState> = _uiState.asStateFlow()
@@ -36,7 +41,7 @@ class LoginViewModel @Inject constructor(
 
     fun login() {
         val current = _uiState.value
-        if (current.isLoading) return
+        if (current.isLoading || current.isGoogleLoading) return
 
         val normalizedEmail = current.email.trim()
         val emailError = validateIdentifier(normalizedEmail)
@@ -85,6 +90,30 @@ class LoginViewModel @Inject constructor(
         }
     }
 
+    fun googleLogin(context: Context) {
+        val current = _uiState.value
+        if (current.isLoading || current.isGoogleLoading) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isGoogleLoading = true, errorMessage = null) }
+            try {
+                val idToken = googleAuthManager.getIdToken(context)
+                when (val result = authRepository.googleLogin(idToken)) {
+                    is NetworkResult.Success -> _uiState.update { it.copy(isGoogleLoading=false, loggedInSession=result.data) }
+                    is NetworkResult.Error -> _uiState.update { it.copy(isGoogleLoading=false, errorMessage=result.error.toUserMessage()) }
+                    NetworkResult.Loading -> Unit
+                }
+            } catch (_: GetCredentialCancellationException) {
+                _uiState.update { it.copy(isGoogleLoading=false, errorMessage="Google sign-in was cancelled.") }
+            } catch (_: NoCredentialException) {
+                _uiState.update { it.copy(isGoogleLoading=false, errorMessage="No Google account is available. Add an account or check Google Play services.") }
+            } catch (error: Exception) {
+                val safeMessage = error.message?.takeIf { it.startsWith("Google login is not configured") }
+                    ?: "Google sign-in could not be completed. Please try again."
+                _uiState.update { it.copy(isGoogleLoading=false, errorMessage=safeMessage) }
+            }
+        }
+    }
+
     fun consumeLoginSuccess() {
         _uiState.update { it.copy(loggedInSession = null) }
     }
@@ -115,6 +144,7 @@ data class LoginUiState(
     val emailError: String? = null,
     val passwordError: String? = null,
     val isLoading: Boolean = false,
+    val isGoogleLoading: Boolean = false,
     val errorMessage: String? = null,
     val loggedInSession: UserSession? = null
 )

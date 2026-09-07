@@ -20,6 +20,7 @@ import okio.BufferedSink
 object ExcelFileManager {
     const val XLSX_MIME = ExcelWorkbookPolicy.XLSX_MIME
     const val XLS_MIME = ExcelWorkbookPolicy.XLS_MIME
+    const val CSV_MIME = ExcelWorkbookPolicy.CSV_MIME
 
     data class SelectedFile(val uri: Uri, val name: String, val size: Long, val mimeType: String)
     data class SavedFile(val uri: Uri, val name: String)

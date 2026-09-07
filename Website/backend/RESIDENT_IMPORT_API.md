@@ -42,6 +42,18 @@ Valid staged rows are inserted in one PostgreSQL transaction. Existing or concur
 
 Returns an `.xlsx` file containing invalid and duplicate rows with their row-wise error messages.
 
+## History
+
+`GET /api/residents/imports`
+
+Returns the latest 100 tenant-scoped resident import batches, including file name, uploader, upload time, total, imported, skipped, failed, invalid and duplicate counts, and status. Error reports remain available through the batch-specific endpoint above.
+
+## Android Data Import module
+
+The Admin Dashboard now opens a dedicated `Data Import` screen. Resident imports run directly in this screen. Maintenance transaction actions open the existing transaction import screen, which owns its template, preview, confirmation, error report, and history flow. The normal Residents and Maintenance pages do not show Excel import buttons.
+
+Maintenance uploads accept `.xlsx`, `.xls`, and `.csv`. For `.xls` and `.csv`, the first worksheet/data table is treated as `Transactions`; all required transaction headers remain identical to the Excel template.
+
 ## Testing
 
 1. Run `npm install` in `Website/backend`.

@@ -26,6 +26,7 @@ import com.example.application.data.remote.dto.ApiResponse
 import com.example.application.data.remote.dto.ResidentImportPreviewDto
 import com.example.application.data.remote.dto.ResidentImportConfirmRequest
 import com.example.application.data.remote.dto.ResidentImportResultDto
+import com.example.application.data.remote.dto.ResidentImportBatchDto
 
 interface AdminManagementApiService {
     @Streaming
@@ -42,6 +43,9 @@ interface AdminManagementApiService {
     @Streaming
     @GET("api/residents/import/{batchId}/errors")
     suspend fun downloadResidentImportErrors(@Path("batchId") batchId: String): Response<ResponseBody>
+
+    @GET("api/residents/imports")
+    suspend fun getResidentImportHistory(): Response<ApiResponse<List<ResidentImportBatchDto>>>
 
     @GET("api/users")
     suspend fun getUsers(): Response<List<UserSummaryDto>>

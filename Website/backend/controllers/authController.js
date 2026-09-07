@@ -1,7 +1,9 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const { OAuth2Client } = require('google-auth-library');
 const { promisePool, setRequestSocietyId } = require('../config/database');
+const googleClient = new OAuth2Client();
 
 const hashResetToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
 const parseFlatId = (flatId) => {
@@ -264,6 +266,61 @@ const login = async (req, res) => {
   }
 };
 
+const googleLogin = async (req, res) => {
+  try {
+    const idToken = typeof req.body?.idToken === 'string' ? req.body.idToken.trim() : '';
+    if (!idToken) return res.status(400).json({ message: 'Google ID token is required' });
+    if (!process.env.GOOGLE_CLIENT_ID) {
+      console.error('Google login is unavailable: GOOGLE_CLIENT_ID is not configured.');
+      return res.status(503).json({ message: 'Google login is temporarily unavailable.' });
+    }
+
+    let payload;
+    try {
+      const ticket = await googleClient.verifyIdToken({ idToken, audience: process.env.GOOGLE_CLIENT_ID });
+      payload = ticket.getPayload();
+    } catch (_) {
+      return res.status(401).json({ message: 'Google authentication failed. Please try again.' });
+    }
+    if (!payload?.email_verified) return res.status(403).json({ message: 'Your Google email is not verified.' });
+    const email = String(payload.email || '').trim().toLowerCase();
+    if (!email) return res.status(401).json({ message: 'Google authentication failed. Please try again.' });
+
+    const [users] = await promisePool.query(
+      `SELECT u.*, s.name AS society_name, s.code AS society_code, s.logo_url AS society_logo_url,
+              s.address AS society_address, s.registration_number AS society_registration_number,
+              s.status AS society_status
+       FROM users u LEFT JOIN societies s ON s.id = u.society_id
+       WHERE LOWER(TRIM(u.email)) = ? LIMIT 1`,
+      [email]
+    );
+    if (!users.length) return res.status(403).json({ message: 'No resident account is registered with this Google email. Please contact the society admin.' });
+    const user = users[0];
+    if (user.role !== 'resident') return res.status(403).json({ message: 'Google login is available only for residents. Please use email and password.' });
+    if (user.status !== 'approved' || user.society_status !== 'active') return res.status(403).json({ message: 'Your account is inactive. Please contact the society admin.' });
+
+    const societyId = Number(user.society_id);
+    const society = {
+      id: societyId, name: user.society_name, code: user.society_code,
+      logo_url: user.society_logo_url, address: user.society_address,
+      registration_number: user.society_registration_number
+    };
+    const token = jwt.sign(
+      { id: user.id, email: user.email, role: user.role, societyId },
+      process.env.JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+    return res.json({
+      success: true, message: 'Google login successful', token,
+      user: { id:user.id, name:user.name, email:user.email, phone:user.phone || null, role:user.role, status:user.status, flat_id:user.flat_id || null, society_id:societyId, society },
+      society
+    });
+  } catch (error) {
+    console.error('Google login failed:', error?.code || error?.name || 'unexpected error');
+    return res.status(500).json({ message: 'Google login is temporarily unavailable.' });
+  }
+};
+
 const changePassword = async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
@@ -404,4 +461,4 @@ const resetPassword = async (req, res) => {
   }
 };
 
-module.exports = { register, login, changePassword, forgotPassword, resetPassword };
+module.exports = { register, login, googleLogin, changePassword, forgotPassword, resetPassword };

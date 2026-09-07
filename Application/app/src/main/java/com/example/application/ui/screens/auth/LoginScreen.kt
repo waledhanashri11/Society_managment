@@ -33,6 +33,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
@@ -51,6 +53,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -82,6 +85,8 @@ fun LoginScreen(
     val scrollState = rememberScrollState()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val authBusy = uiState.isLoading || uiState.isGoogleLoading
 
     LaunchedEffect(uiState.loggedInSession) {
         uiState.loggedInSession?.let { session ->
@@ -181,7 +186,7 @@ fun LoginScreen(
                     label = { Text(stringResource(R.string.email_or_mobile)) },
                     isError = uiState.emailError != null,
                     supportingText = uiState.emailError?.let { { Text(it) } },
-                    enabled = !uiState.isLoading,
+                    enabled = !authBusy,
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
                     leadingIcon = {
@@ -198,7 +203,7 @@ fun LoginScreen(
                     label = { Text(stringResource(R.string.password)) },
                     isError = uiState.passwordError != null,
                     supportingText = uiState.passwordError?.let { { Text(it) } },
-                    enabled = !uiState.isLoading,
+                    enabled = !authBusy,
                     singleLine = true,
                     visualTransformation = if (passwordVisible) {
                         VisualTransformation.None
@@ -224,7 +229,7 @@ fun LoginScreen(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End
                 ) {
-                    TextButton(onClick = onForgotPasswordClick, enabled = !uiState.isLoading) {
+                    TextButton(onClick = onForgotPasswordClick, enabled = !authBusy) {
                         Text(stringResource(R.string.forgot_password))
                     }
                 }
@@ -234,7 +239,7 @@ fun LoginScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(52.dp),
-                    enabled = !uiState.isLoading,
+                    enabled = !authBusy,
                     colors = ButtonDefaults.buttonColors(containerColor = primary)
                 ) {
                     Icon(Icons.Filled.Login, contentDescription = stringResource(R.string.cd_login), modifier = Modifier.size(20.dp))
@@ -244,12 +249,34 @@ fun LoginScreen(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    HorizontalDivider(Modifier.weight(1f))
+                    Text("OR", modifier = Modifier.padding(horizontal = 12.dp), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelMedium)
+                    HorizontalDivider(Modifier.weight(1f))
+                }
+                Spacer(modifier = Modifier.height(14.dp))
+                OutlinedButton(
+                    onClick = { viewModel.googleLogin(context) },
+                    enabled = !authBusy,
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    if (uiState.isGoogleLoading) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    else androidx.compose.foundation.Image(
+                        painter = androidx.compose.ui.res.painterResource(R.drawable.ic_google_g),
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(Modifier.size(10.dp))
+                    Text(if (uiState.isGoogleLoading) "Signing in..." else "Continue with Google", fontWeight = FontWeight.SemiBold)
+                }
+
                 Row(
                     modifier = Modifier.padding(top = 18.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(stringResource(R.string.new_resident))
-                    TextButton(onClick = onRegisterClick, enabled = !uiState.isLoading) {
+                    TextButton(onClick = onRegisterClick, enabled = !authBusy) {
                         Text(stringResource(R.string.register))
                     }
                 }

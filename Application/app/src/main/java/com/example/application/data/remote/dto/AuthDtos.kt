@@ -17,6 +17,8 @@ data class RegisterRequest(
     @SerializedName("flat_id") val flatId: String? = null
 )
 
+data class GoogleLoginRequest(val idToken: String)
+
 data class SocietyDto(
     val id: String?,
     val name: String?,

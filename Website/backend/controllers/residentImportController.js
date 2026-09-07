@@ -105,4 +105,24 @@ const confirm = async (req, res) => {
 
 const errors = async (req, res) => { try { const [rows] = await promisePool.query("SELECT * FROM resident_import_rows WHERE batch_id=? AND society_id=? AND validation_result<>'VALID' ORDER BY row_number", [req.params.batchId,req.user.societyId]); if (!rows.length) return res.status(404).json({success:false,message:'No invalid rows found'}); sendXlsx(res,await createResidentErrorReport(rows),`Resident_Import_Errors_${req.params.batchId}.xlsx`); } catch (error) { console.error('Resident error report error:',error); res.status(500).json({success:false,message:'Unable to create error report'}); } };
 
-module.exports = { uploadFile, template, preview, confirm, errors };
+const history = async (req, res) => {
+  try {
+    const [rows] = await promisePool.query(
+      `SELECT b.id, b.file_name AS "fileName", COALESCE(u.name, 'Admin') AS "uploadedBy",
+              b.created_at AS "createdAt", b.total_rows AS "totalRows",
+              b.imported_rows AS imported, b.skipped_rows AS skipped,
+              b.failed_rows AS failed, b.invalid_rows AS "invalidRows",
+              b.duplicate_rows AS "duplicateRows", b.status
+       FROM resident_import_batches b
+       LEFT JOIN users u ON u.id = b.created_by AND u.society_id = b.society_id
+       WHERE b.society_id = ? ORDER BY b.created_at DESC LIMIT 100`,
+      [req.user.societyId]
+    );
+    return res.json({ success: true, data: rows });
+  } catch (error) {
+    console.error('Resident import history error:', error);
+    return res.status(500).json({ success: false, message: 'Unable to load resident import history' });
+  }
+};
+
+module.exports = { uploadFile, template, preview, confirm, errors, history };

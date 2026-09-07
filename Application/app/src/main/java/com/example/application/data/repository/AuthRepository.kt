@@ -7,6 +7,9 @@ import com.example.application.data.remote.dto.ErrorResponse
 import com.example.application.data.remote.dto.ForgotPasswordRequest
 import com.example.application.data.remote.dto.ChangePasswordRequest
 import com.example.application.data.remote.dto.LoginRequest
+import com.example.application.data.remote.dto.GoogleLoginRequest
+import com.example.application.data.remote.dto.LoginResponse
+import com.example.application.auth.GoogleAuthManager
 import com.example.application.data.remote.dto.MessageResponse
 import com.example.application.data.remote.dto.RegisterRequest
 import com.example.application.data.remote.dto.RegisterResponse
@@ -40,11 +43,20 @@ class AuthRepository @Inject constructor(
     private val reportRepository: ReportRepository,
     private val nocRepository: NocRepository,
     private val societyRulesRepository: SocietyRulesRepository,
-    private val residentRepository: ResidentRepository
+    private val residentRepository: ResidentRepository,
+    private val googleAuthManager: GoogleAuthManager
 ) {
     suspend fun login(email: String, password: String): NetworkResult<UserSession> {
+        return authenticate { authApiService.login(LoginRequest(email = email, password = password)) }
+    }
+
+    suspend fun googleLogin(idToken: String): NetworkResult<UserSession> {
+        return authenticate { authApiService.googleLogin(GoogleLoginRequest(idToken)) }
+    }
+
+    private suspend fun authenticate(call: suspend () -> retrofit2.Response<LoginResponse>): NetworkResult<UserSession> {
         return try {
-            val response = authApiService.login(LoginRequest(email = email, password = password))
+            val response = call()
 
             if (response.isSuccessful) {
                 val body = response.body()
@@ -150,6 +162,7 @@ class AuthRepository @Inject constructor(
     suspend fun logout() {
         clearTenantCaches()
         sessionPreferences.clearSession()
+        googleAuthManager.clearSession()
     }
 
     private fun clearTenantCaches() {

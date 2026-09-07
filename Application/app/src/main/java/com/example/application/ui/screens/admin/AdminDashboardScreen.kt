@@ -43,6 +43,7 @@ import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material.icons.filled.WarningAmber
+import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DrawerValue
@@ -546,6 +547,7 @@ private fun AdminDrawer(adminName: String, onAction: (String) -> Unit) {
             AdminAction("Write-offs", "Write-off History", Icons.Filled.ReceiptLong, Color(0xFFD14343)),
             AdminAction("Flat Transfers", "Flat Transfers", Icons.Filled.Apartment, Color(0xFF20B86B)),
             AdminAction("NOC", "NOC Requests", Icons.Filled.Description, Color(0xFF16B6A4)),
+            AdminAction("Data Import", "Data Import", Icons.Filled.UploadFile, Color(0xFF2563EB)),
             AdminAction("Logout", "Logout", Icons.Filled.Logout, Color(0xFFE53935))
         ).forEach { action ->
             NavigationDrawerItem(label = { Text(localizedLabel(action.label)) }, selected = false, icon = { Icon(action.icon, contentDescription = localizedLabel(action.label), tint = action.tint) }, onClick = { onAction(action.routeName) }, modifier = Modifier.padding(horizontal = 12.dp))
@@ -567,6 +569,7 @@ private fun adminQuickActions(): List<AdminAction> = listOf(
     AdminAction("Write-offs", "Write-off History", Icons.Filled.ReceiptLong, Color(0xFFD14343)),
     AdminAction("Flat Transfers", "Flat Transfers", Icons.Filled.Apartment, Color(0xFF20B86B)),
     AdminAction("NOC", "NOC Requests", Icons.Filled.Description, Color(0xFF16B6A4)),
+    AdminAction("Data Import", "Data Import", Icons.Filled.UploadFile, Color(0xFF2563EB)),
     AdminAction("Staff", "Staff", Icons.Filled.Security, SocietyBlue40)
 )
 

@@ -9,8 +9,12 @@ class ExcelWorkbookPolicyTest {
         assertNull(ExcelWorkbookPolicy.validate("transactions.xlsx", ExcelWorkbookPolicy.XLSX_MIME, 1024))
     }
 
+    @Test fun acceptsCsvWorkbook() {
+        assertNull(ExcelWorkbookPolicy.validate("transactions.csv", ExcelWorkbookPolicy.CSV_MIME, 1024))
+    }
+
     @Test fun rejectsWrongExtension() {
-        assertEquals("Select an Excel .xlsx file.", ExcelWorkbookPolicy.validate("transactions.csv", "text/csv", 1024))
+        assertEquals("Select an .xlsx, .xls, or .csv file.", ExcelWorkbookPolicy.validate("transactions.pdf", "application/pdf", 1024))
     }
 
     @Test fun rejectsEmptyWorkbook() {

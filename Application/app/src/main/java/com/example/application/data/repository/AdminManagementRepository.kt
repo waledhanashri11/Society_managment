@@ -28,6 +28,7 @@ import com.example.application.data.remote.dto.ApiResponse
 import com.example.application.data.remote.dto.ResidentImportPreviewDto
 import com.example.application.data.remote.dto.ResidentImportConfirmRequest
 import com.example.application.data.remote.dto.ResidentImportResultDto
+import com.example.application.data.remote.dto.ResidentImportBatchDto
 
 @Singleton
 class AdminManagementRepository @Inject constructor(
@@ -73,6 +74,9 @@ class AdminManagementRepository @Inject constructor(
 
     suspend fun downloadResidentImportErrors(batchId: String): NetworkResult<ResponseBody> =
         safeApiCall { api.downloadResidentImportErrors(batchId) }
+
+    suspend fun residentImportHistory(): NetworkResult<List<ResidentImportBatchDto>> =
+        unwrapApi(safeApiCall { api.getResidentImportHistory() })
 
     suspend fun saveResident(id: String?, request: UserSaveRequest): NetworkResult<String> {
         val result = if (id == null) {

@@ -20,6 +20,7 @@ import androidx.compose.animation.slideOutHorizontally
 import com.example.application.data.local.datastore.UserSession
 import com.example.application.data.repository.AuthRepository
 import com.example.application.ui.screens.admin.AdminDashboardScreen
+import com.example.application.ui.screens.admin.DataImportScreen
 import com.example.application.ui.screens.advanced.AdminAdvancedFeaturesScreen
 import com.example.application.ui.screens.advanced.ResidentAdvancedFeaturesScreen
 import com.example.application.ui.screens.admin.FlatDetailsScreen
@@ -50,6 +51,7 @@ import com.example.application.ui.screens.events.ResidentEventsScreen
 import com.example.application.ui.screens.maintenance.AdminMaintenanceScreen
 import com.example.application.ui.screens.maintenance.AdminPaymentVerificationScreen
 import com.example.application.ui.screens.maintenance.ResidentMaintenanceScreen
+import com.example.application.ui.screens.maintenance.ExcelTransactionsScreen
 import com.example.application.ui.screens.noc.AdminNocScreen
 import com.example.application.ui.screens.noc.PublicNocCertificateScreen
 import com.example.application.ui.screens.noc.ResidentNocScreen
@@ -210,7 +212,7 @@ fun SocietyNavGraph(
                         "NOC Requests" -> navController.navigate(AppRoute.AdminNoc.route)
                         "Notifications" -> navController.navigate(AppRoute.Notifications.route)
                         "Events" -> navController.navigate(AppRoute.AdminEvents.route)
-                        "Excel Transactions", "Excel Import", "Import Excel" -> navController.navigate(AppRoute.AdminExcelTransactions.route)
+                        "Data Import", "Excel Transactions", "Excel Import", "Import Excel" -> navController.navigate(AppRoute.AdminDataImport.route)
                         "Visitors", "Advanced Tools", "More" -> navController.navigate(AppRoute.AdminAdvanced.route)
                         else -> navController.navigate(AppRoute.ComingSoon.createRoute(title))
                     }
@@ -271,6 +273,15 @@ fun SocietyNavGraph(
         }
         composable(AppRoute.AdminOverallReport.route) {
             OverallReportScreen(onBack = { navController.popBackStack() })
+        }
+        composable(AppRoute.AdminDataImport.route) {
+            DataImportScreen(
+                onBack = { navController.popBackStack() },
+                onMaintenanceTransactions = { navController.navigate(AppRoute.AdminExcelTransactions.route) }
+            )
+        }
+        composable(AppRoute.AdminExcelTransactions.route) {
+            ExcelTransactionsScreen(onBack = { navController.popBackStack() })
         }
 
         composable(AppRoute.AdminSettings.route) {

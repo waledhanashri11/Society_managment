@@ -45,6 +45,7 @@ sealed class AppRoute(val route: String) {
     }
     data object AdminMaintenance : AppRoute("admin_maintenance")
     data object AdminExcelTransactions : AppRoute("admin_excel_transactions")
+    data object AdminDataImport : AppRoute("admin_data_import")
     data object AdminPayments : AppRoute("admin_payment_verification")
     data object AdminReports : AppRoute("admin_reports")
     data object AdminOverallReport : AppRoute("admin_overall_report")

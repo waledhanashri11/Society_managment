@@ -6,6 +6,10 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+val googleWebClientId = providers.gradleProperty("GOOGLE_WEB_CLIENT_ID")
+    .orElse(providers.environmentVariable("GOOGLE_WEB_CLIENT_ID"))
+    .getOrElse("")
+
 kotlin {
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
@@ -27,6 +31,7 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "1.0.0"
+        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"${googleWebClientId.replace("\"", "\\\"")}\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -90,6 +95,9 @@ dependencies {
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
+    implementation(libs.androidx.credentials)
+    implementation(libs.androidx.credentials.play.services.auth)
+    implementation(libs.googleid)
     implementation(libs.gson)
     implementation(libs.hilt.android)
     implementation(libs.kotlinx.coroutines.android)

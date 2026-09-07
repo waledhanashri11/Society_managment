@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const ExcelJS = require('exceljs');
+const XLSX = require('@keep-lts/xlsx');
 
 const HEADERS = [
   'Transaction ID', 'Society Code', 'Member ID', 'Member Name', 'Wing', 'Flat Number',
@@ -55,7 +56,26 @@ const excelDate = (value) => {
 };
 const hash = (value) => crypto.createHash('sha256').update(value).digest('hex');
 
-const parseWorkbook = async (buffer) => {
+const parseWorkbook = async (buffer, fileName = 'upload.xlsx') => {
+  if (!/\.xlsx$/i.test(fileName)) {
+    const book = XLSX.read(buffer, { type: 'buffer', cellDates: true });
+    const sheet = book.Sheets.Transactions || book.Sheets[book.SheetNames[0]];
+    if (!sheet) throw new Error('Workbook must contain transaction rows');
+    const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: true });
+    const headers = (matrix[0] || []).map(normalizeHeader);
+    const required = ['Member ID', 'Bill ID', 'Transaction Date', 'Payment Mode', 'Amount', 'Payment Status', 'Import Action'];
+    for (const name of required) if (!headers.includes(normalizeHeader(name))) throw new Error(`Missing required column: ${name}`);
+    const get = (row, name) => row[headers.indexOf(normalizeHeader(name))];
+    return matrix.slice(1).map((row, index) => ({ row, index })).filter(({row}) => row.some((v) => text(v) !== '')).map(({row,index}) => ({
+      rowNumber:index+2, transactionId:text(get(row,'Transaction ID')), societyCode:text(get(row,'Society Code')),
+      memberId:text(get(row,'Member ID')), memberName:text(get(row,'Member Name')), wing:text(get(row,'Wing')),
+      flatNumber:text(get(row,'Flat Number')), billId:text(get(row,'Bill ID')), billNumber:text(get(row,'Bill Number')),
+      transactionDate:excelDate(get(row,'Transaction Date')), transactionType:text(get(row,'Transaction Type'))||'Maintenance',
+      paymentMode:text(get(row,'Payment Mode')), amount:text(get(row,'Amount')).replace(/[,₹]/g,''),
+      referenceNumber:text(get(row,'UTR/Cheque Number')), paymentStatus:text(get(row,'Payment Status')),
+      remarks:text(get(row,'Remarks')), importAction:(text(get(row,'Import Action'))||'CREATE').toUpperCase()
+    }));
+  }
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(buffer);
   const sheet = workbook.getWorksheet('Transactions');
