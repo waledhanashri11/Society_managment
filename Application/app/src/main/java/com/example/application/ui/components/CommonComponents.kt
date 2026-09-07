@@ -60,7 +60,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import com.example.application.ui.components.LocalizedText as Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -579,7 +579,7 @@ fun RetryState(message: String, onRetry: () -> Unit, modifier: Modifier = Modifi
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        SkeletonList(count = 3)
+        ErrorMessageCard(message = message)
         OutlinedButton(
             onClick = onRetry,
             shape = RoundedCornerShape(12.dp)

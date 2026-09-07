@@ -3,4 +3,10 @@
     <cache-path
         name="shared_cache"
         path="." />
+    <cache-path
+        name="shared_noc"
+        path="shared_noc/" />
+    <external-files-path
+        name="downloaded_reports"
+        path="Download/" />
 </paths>

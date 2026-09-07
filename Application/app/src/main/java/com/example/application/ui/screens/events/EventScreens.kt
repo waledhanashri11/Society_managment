@@ -45,7 +45,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
+import com.example.application.ui.components.LocalizedText as Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -140,8 +140,10 @@ fun AdminEventsScreen(onBack: () -> Unit, viewModel: EventsViewModel = hiltViewM
             editor = null
         }
     }
-    if (details && state.selected != null) {
-        EventDetailsDialog(state.selected!!, admin = true, onDismiss = { details = false; viewModel.clearSelected() })
+    if (details) {
+        state.selected?.let { selected ->
+            EventDetailsDialog(selected, admin = true, onDismiss = { details = false; viewModel.clearSelected() })
+        }
     }
     confirmDelete?.let { event ->
         AlertDialog(
@@ -197,8 +199,10 @@ fun ResidentEventsScreen(onBack: () -> Unit, viewModel: EventsViewModel = hiltVi
         }
     }
 
-    if (details && state.selected != null) {
-        EventDetailsDialog(state.selected!!, admin = false, onDismiss = { details = false; viewModel.clearSelected() })
+    if (details) {
+        state.selected?.let { selected ->
+            EventDetailsDialog(selected, admin = false, onDismiss = { details = false; viewModel.clearSelected() })
+        }
     }
 }
 

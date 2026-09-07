@@ -6,12 +6,14 @@ import okhttp3.Response
 
 class AcceptHeaderInterceptor @Inject constructor() : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
-        val request = chain.request()
-            .newBuilder()
-            .header("Accept", "application/json")
-            .header("Content-Type", "application/json")
-            .build()
+        val originalRequest = chain.request()
+        val builder = originalRequest.newBuilder()
 
-        return chain.proceed(request)
+        builder.header("Accept", "application/json")
+        if (originalRequest.header("Content-Type") == null && originalRequest.body != null) {
+            builder.header("Content-Type", "application/json")
+        }
+
+        return chain.proceed(builder.build())
     }
 }

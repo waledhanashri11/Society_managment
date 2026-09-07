@@ -38,8 +38,12 @@ const withComplaintImageUrls = (req, complaint) => {
 };
 
 const getTableColumns = async (tableName) => {
-  const [columns] = await promisePool.query(`SHOW COLUMNS FROM ${tableName}`);
-  return new Set(columns.map((column) => column.Field || column.field || column.column_name));
+  // PostgreSQL-compatible introspection (SHOW COLUMNS is MySQL-only)
+  const [columns] = await promisePool.query(
+    `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = $1`,
+    [tableName]
+  );
+  return new Set(columns.map((column) => column.column_name));
 };
 
 const saveComplaintImages = (images = [], societyId) => {

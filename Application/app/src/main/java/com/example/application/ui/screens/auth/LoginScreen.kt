@@ -163,12 +163,12 @@ fun LoginScreen(
                 )
                 Spacer(modifier = Modifier.height(22.dp))
                 Text(
-                    text = "Welcome Back",
+                    text = stringResource(R.string.welcome_back),
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "Sign in to access your society account",
+                    text = stringResource(R.string.login_welcome),
                     modifier = Modifier.padding(top = 6.dp, bottom = 20.dp),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -178,14 +178,14 @@ fun LoginScreen(
                     value = uiState.email,
                     onValueChange = viewModel::onEmailChanged,
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Email / Mobile Number") },
+                    label = { Text(stringResource(R.string.email_or_mobile)) },
                     isError = uiState.emailError != null,
                     supportingText = uiState.emailError?.let { { Text(it) } },
                     enabled = !uiState.isLoading,
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
                     leadingIcon = {
-                        Icon(Icons.Filled.Email, contentDescription = "Email or mobile number")
+                        Icon(Icons.Filled.Email, contentDescription = stringResource(R.string.cd_email_or_mobile))
                     }
                 )
 
@@ -237,17 +237,12 @@ fun LoginScreen(
                     enabled = !uiState.isLoading,
                     colors = ButtonDefaults.buttonColors(containerColor = primary)
                 ) {
-                    Icon(Icons.Filled.Login, contentDescription = "Login", modifier = Modifier.size(20.dp))
+                    Icon(Icons.Filled.Login, contentDescription = stringResource(R.string.cd_login), modifier = Modifier.size(20.dp))
                     Spacer(Modifier.size(8.dp))
-                    Text(if (uiState.isLoading) stringResource(R.string.logging_in) else "Sign In", fontWeight = FontWeight.Bold)
+                    Text(if (uiState.isLoading) stringResource(R.string.logging_in) else stringResource(R.string.login), fontWeight = FontWeight.Bold)
                 }
 
-                Text(
-                    text = "Your society and portal are selected securely after sign in.",
-                    modifier = Modifier.padding(top = 14.dp),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Spacer(modifier = Modifier.height(14.dp))
 
                 Row(
                     modifier = Modifier.padding(top = 18.dp),

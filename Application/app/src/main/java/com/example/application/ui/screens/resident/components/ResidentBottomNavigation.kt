@@ -35,6 +35,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+import androidx.compose.ui.res.stringResource
+import com.example.application.R
+
 @Composable
 fun ResidentBottomNavigation(
     selectedRoute: String = "Home",
@@ -58,7 +61,7 @@ fun ResidentBottomNavigation(
         ) {
             // 1. Home
             BottomNavItem(
-                label = "Home",
+                label = stringResource(R.string.home),
                 icon = Icons.Filled.Home,
                 isSelected = selectedRoute == "Home",
                 onClick = { onSelectRoute("Home") }
@@ -66,7 +69,7 @@ fun ResidentBottomNavigation(
 
             // 2. Maintenance
             BottomNavItem(
-                label = "Maintenance",
+                label = stringResource(R.string.maintenance),
                 icon = Icons.Filled.AccountBalanceWallet,
                 isSelected = selectedRoute == "Maintenance",
                 onClick = { onSelectRoute("Maintenance") }
@@ -89,7 +92,7 @@ fun ResidentBottomNavigation(
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             imageVector = Icons.Filled.CurrencyRupee,
-                            contentDescription = "Pay",
+                            contentDescription = stringResource(R.string.pay_now),
                             tint = Color.White,
                             modifier = Modifier.size(24.dp)
                         )
@@ -99,7 +102,7 @@ fun ResidentBottomNavigation(
 
             // 4. Notices
             BottomNavItem(
-                label = "Notices",
+                label = stringResource(R.string.notices),
                 icon = Icons.Filled.Campaign,
                 isSelected = selectedRoute == "Notices",
                 onClick = { onSelectRoute("Notices") }
@@ -107,7 +110,7 @@ fun ResidentBottomNavigation(
 
             // 5. More
             BottomNavItem(
-                label = "More",
+                label = stringResource(R.string.more),
                 icon = Icons.Filled.GridView,
                 isSelected = selectedRoute == "More",
                 onClick = { onSelectRoute("More") }

@@ -448,16 +448,21 @@ data class MaintenancePaymentVerificationDto(
 
 data class CreateManualBillRequestDto(
     val title: String,
-    val category: String,
+    val category: String = "Maintenance",
     val customCategory: String? = null,
     val amount: Double,
+    val optionalCharges: Double = 0.0,
     val dueDate: String? = null,
     val description: String? = null,
     val notes: String? = null,
+    val reason: String? = null,
     val residentId: Long,
     val flatId: Long? = null,
     val month: Int? = null,
-    val year: Int? = null
+    val year: Int? = null,
+    val penaltyType: String? = null,
+    val penaltyValue: Double? = null,
+    val penaltyGraceDays: Int? = null
 )
 
 // --- Billing Cycle DTOs ---

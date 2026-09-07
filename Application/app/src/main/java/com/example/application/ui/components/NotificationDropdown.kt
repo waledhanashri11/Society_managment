@@ -32,6 +32,9 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.application.viewmodel.NotificationsViewModel
 
+import androidx.compose.ui.res.stringResource
+import com.example.application.R
+
 @Composable
 fun NotificationDropdown(
     tint: Color,
@@ -48,36 +51,36 @@ fun NotificationDropdown(
             viewModel.load(true)
         }) {
             BadgedBox(badge = { if (unread > 0) Badge { Text(unread.coerceAtMost(99).toString()) } }) {
-                Icon(Icons.Filled.Notifications, contentDescription = "Notifications", tint = tint)
+                Icon(Icons.Filled.Notifications, contentDescription = stringResource(R.string.notifications), tint = tint)
             }
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }, modifier = Modifier.width(330.dp)) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    Text("Notifications", style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.notifications), style = MaterialTheme.typography.titleMedium)
                     if (state.data?.notifications.orEmpty().isNotEmpty()) {
-                        TextButton(onClick = { viewModel.deleteAll() }) { Text("Clear all", color = MaterialTheme.colorScheme.error) }
+                        TextButton(onClick = { viewModel.deleteAll() }) { Text(stringResource(R.string.clear_all), color = MaterialTheme.colorScheme.error) }
                     }
                 }
                 val rows = state.data?.notifications.orEmpty().take(5)
-                if (rows.isEmpty()) Text("No notifications yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (rows.isEmpty()) Text(stringResource(R.string.no_notifications_yet), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 rows.forEach { notification ->
                     Card(Modifier.fillMaxWidth()) {
                         Row(Modifier.padding(10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = androidx.compose.ui.Alignment.Top) {
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                                Text(notification.title ?: "Notification", style = MaterialTheme.typography.labelLarge)
+                                Text(notification.title ?: stringResource(R.string.notifications), style = MaterialTheme.typography.labelLarge)
                                 Text(notification.message ?: "-", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 notification.createdAt?.let { Text(it.take(16), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary) }
                             }
                             notification.id?.let { notifId ->
                                 IconButton(onClick = { viewModel.deleteNotification(notifId) }, modifier = Modifier.size(24.dp)) {
-                                    Icon(androidx.compose.material.icons.Icons.Filled.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), modifier = Modifier.size(16.dp))
+                                    Icon(androidx.compose.material.icons.Icons.Filled.Delete, contentDescription = stringResource(R.string.delete), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), modifier = Modifier.size(16.dp))
                                 }
                             }
                         }
                     }
                 }
-                TextButton(onClick = { expanded = false; onViewAll() }, modifier = Modifier.fillMaxWidth()) { Text("View all notifications") }
+                TextButton(onClick = { expanded = false; onViewAll() }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.view_all)) }
             }
         }
     }

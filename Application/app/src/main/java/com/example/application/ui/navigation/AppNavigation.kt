@@ -54,6 +54,7 @@ import com.example.application.ui.screens.noc.AdminNocScreen
 import com.example.application.ui.screens.noc.PublicNocCertificateScreen
 import com.example.application.ui.screens.noc.ResidentNocScreen
 import com.example.application.ui.screens.reports.AdminReportsScreen
+import com.example.application.ui.screens.reports.OverallReportScreen
 import com.example.application.ui.screens.reports.ResidentReportsScreen
 import com.example.application.ui.screens.resident.ResidentDashboardScreen
 import com.example.application.ui.screens.resident.ResidentMembersScreen
@@ -67,9 +68,12 @@ import com.example.application.ui.screens.meetings.AdminMeetingsScreen
 import com.example.application.ui.screens.meetings.ResidentMeetingsScreen
 import com.example.application.ui.screens.splash.SplashScreen
 import com.example.application.ui.screens.superadmin.SuperAdminDashboardScreen
+import com.example.application.ui.screens.superadmin.SuperAdminProfileScreen
 import com.example.application.ui.screens.superadmin.SocietyListScreen
 import com.example.application.ui.screens.superadmin.CreateSocietyScreen
 import com.example.application.ui.screens.superadmin.SocietyDetailsScreen
+import com.example.application.ui.screens.superadmin.EditSocietyScreen
+import com.example.application.ui.screens.admin.AdminProfileScreen
 import com.example.application.viewmodel.SplashViewModel
 import com.example.application.viewmodel.StartupState
 
@@ -206,6 +210,7 @@ fun SocietyNavGraph(
                         "NOC Requests" -> navController.navigate(AppRoute.AdminNoc.route)
                         "Notifications" -> navController.navigate(AppRoute.Notifications.route)
                         "Events" -> navController.navigate(AppRoute.AdminEvents.route)
+                        "Excel Transactions", "Excel Import", "Import Excel" -> navController.navigate(AppRoute.AdminExcelTransactions.route)
                         "Visitors", "Advanced Tools", "More" -> navController.navigate(AppRoute.AdminAdvanced.route)
                         else -> navController.navigate(AppRoute.ComingSoon.createRoute(title))
                     }
@@ -217,6 +222,14 @@ fun SocietyNavGraph(
             SuperAdminDashboardScreen(
                 onSocieties = { navController.navigate(AppRoute.SuperAdminSocieties.route) },
                 onSociety = { navController.navigate(AppRoute.SocietyDetails.createRoute(it)) },
+                onProfile = { navController.navigate(AppRoute.SuperAdminProfile.route) },
+                onLogoutComplete = ::navigateToLogin
+            )
+        }
+        composable(AppRoute.SuperAdminProfile.route) {
+            SuperAdminProfileScreen(
+                onBack = { navController.popBackStack() },
+                onChangePassword = { navController.navigate(AppRoute.ChangePassword.route) },
                 onLogoutComplete = ::navigateToLogin
             )
         }
@@ -235,12 +248,29 @@ fun SocietyNavGraph(
         composable(AppRoute.SocietyDetails.route) { entry ->
             SocietyDetailsScreen(
                 societyId = entry.arguments?.getString("id").orEmpty(),
+                onBack = { navController.popBackStack() },
+                onEdit = { id -> navController.navigate(AppRoute.EditSociety.createRoute(id)) }
+            )
+        }
+        composable(AppRoute.EditSociety.route) { entry ->
+            EditSocietyScreen(
+                societyId = entry.arguments?.getString("id").orEmpty(),
                 onBack = { navController.popBackStack() }
             )
         }
+        composable(AppRoute.AdminProfile.route) {
+            AdminProfileScreen(onBack = { navController.popBackStack() })
+        }
 
         composable(AppRoute.AdminReports.route) {
-            AdminReportsScreen(onBack = { navController.popBackStack() })
+            AdminReportsScreen(
+                onBack = { navController.popBackStack() },
+                onOverallReport = { navController.navigate(AppRoute.AdminOverallReport.route) },
+                onExcelTransactions = { navController.navigate(AppRoute.AdminExcelTransactions.route) }
+            )
+        }
+        composable(AppRoute.AdminOverallReport.route) {
+            OverallReportScreen(onBack = { navController.popBackStack() })
         }
 
         composable(AppRoute.AdminSettings.route) {
@@ -277,7 +307,8 @@ fun SocietyNavGraph(
         composable(AppRoute.AdminMaintenance.route) {
             AdminMaintenanceScreen(
                 onBack = { navController.popBackStack() },
-                onPaymentVerification = { navController.navigate(AppRoute.AdminPayments.route) }
+                onPaymentVerification = { navController.navigate(AppRoute.AdminPayments.route) },
+                onExcelTransactions = { navController.navigate(AppRoute.AdminExcelTransactions.route) }
             )
         }
 

@@ -38,3 +38,22 @@ data class CreateSocietyRequest(
 )
 data class CreateSocietyResponse(val id: String, val message: String?)
 data class SocietyStatusRequest(val status: String)
+
+data class UpdateSocietyRequest(
+    val name: String,
+    val code: String,
+    val address: String?,
+    val city: String?,
+    val state: String?,
+    val pincode: String?,
+    val registrationNumber: String?,
+    val contactPhone: String?,
+    val contactEmail: String?
+)
+
+data class UpdateAdminRequest(
+    val name: String,
+    val email: String,
+    val phone: String?,
+    val password: String?
+)

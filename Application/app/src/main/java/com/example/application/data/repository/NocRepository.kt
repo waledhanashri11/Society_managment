@@ -1,5 +1,12 @@
 package com.example.application.data.repository
 
+import android.content.ContentValues
+import android.content.Context
+import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
+import java.io.File
 import com.example.application.data.remote.api.NocApiService
 import com.example.application.data.remote.dto.ApiResponse
 import com.example.application.data.remote.dto.CreateNocRequest
@@ -18,10 +25,6 @@ import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import javax.inject.Inject
 import javax.inject.Singleton
-import android.content.ContentValues
-import android.content.Context
-import android.os.Environment
-import android.provider.MediaStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import retrofit2.Response
 
@@ -151,30 +154,41 @@ class NocRepository @Inject constructor(
     suspend fun downloadCertificate(id: String, requestNumber: String?): NetworkResult<String> {
         return try {
             val response = api.downloadCertificate(id)
-            if (!response.isSuccessful || response.body() == null) {
-                NetworkResult.Error(mapHttpError(response.code(), parseErrorMessage(response.errorBody()?.string())))
-            } else {
-                val name = "${requestNumber?.takeIf { it.isNotBlank() } ?: "NOC-$id"}.pdf"
-                val values = ContentValues().apply {
-                    put(MediaStore.Downloads.DISPLAY_NAME, name)
-                    put(MediaStore.Downloads.MIME_TYPE, "application/pdf")
-                    put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
-                    put(MediaStore.Downloads.IS_PENDING, 1)
-                }
-                val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-                    ?: return NetworkResult.Error(AppError.Unknown("Unable to create the download file."))
-                try {
-                    context.contentResolver.openOutputStream(uri)?.use { output -> response.body()!!.byteStream().use { it.copyTo(output) } }
-                        ?: error("Unable to open the download file.")
-                    context.contentResolver.update(uri, ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) }, null, null)
-                    NetworkResult.Success(uri.toString())
-                } catch (error: Exception) {
-                    context.contentResolver.delete(uri, null, null)
-                    throw error
-                }
+            if (!response.isSuccessful) {
+                return NetworkResult.Error(mapHttpError(response.code(), parseErrorMessage(response.errorBody()?.string())))
             }
-        } catch (_: IOException) {
+            val body = response.body() ?: return NetworkResult.Error(AppError.Unknown("The certificate file is empty."))
+            val bytes = body.bytes()
+            if (bytes.size < 5 || !bytes.copyOfRange(0, 5).contentEquals("%PDF-".toByteArray())) {
+                return NetworkResult.Error(AppError.Unknown("The server did not return a valid PDF certificate."))
+            }
+            val safeNumber = (requestNumber ?: "NOC_Certificate").replace(Regex("[^A-Za-z0-9_-]"), "_")
+            val fileName = "$safeNumber.pdf"
+            val uri: Uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val values = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                    put(MediaStore.MediaColumns.MIME_TYPE, "application/pdf")
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Society Management")
+                }
+                context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                    ?: return NetworkResult.Error(AppError.Unknown("Unable to create the PDF in Downloads."))
+            } else {
+                val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Society Management").apply { mkdirs() }
+                val file = File(dir, fileName)
+                file.outputStream().use { it.write(bytes) }
+                Uri.fromFile(file)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                context.contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
+                    ?: return NetworkResult.Error(AppError.Unknown("Unable to save the PDF in Downloads."))
+            }
+            NetworkResult.Success(uri.toString())
+        } catch (_: UnknownHostException) {
             NetworkResult.Error(AppError.NoInternet)
+        } catch (_: SocketTimeoutException) {
+            NetworkResult.Error(AppError.Timeout)
+        } catch (_: IOException) {
+            NetworkResult.Error(AppError.Unknown("Unable to save the NOC certificate."))
         } catch (_: Exception) {
             NetworkResult.Error(AppError.Unknown("Unable to download the NOC certificate."))
         }

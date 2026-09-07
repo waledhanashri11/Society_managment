@@ -13,6 +13,8 @@ class SuperAdminRepository @Inject constructor(private val api: SuperAdminApiSer
     suspend fun society(id: String) = api.society(id).bodyOrThrow()
     suspend fun create(request: CreateSocietyRequest) = api.createSociety(request).bodyOrThrow()
     suspend fun setStatus(id: String, status: String) = api.setStatus(id, SocietyStatusRequest(status)).bodyOrThrow()
+    suspend fun updateSociety(id: String, request: UpdateSocietyRequest) = api.updateSociety(id, request).bodyOrThrow()
+    suspend fun updateAdmin(id: String, request: UpdateAdminRequest) = api.updateAdmin(id, request).bodyOrThrow()
 
     private fun <T> Response<T>.bodyOrThrow(): T {
         if (isSuccessful) return body() ?: error("The server returned an empty response")

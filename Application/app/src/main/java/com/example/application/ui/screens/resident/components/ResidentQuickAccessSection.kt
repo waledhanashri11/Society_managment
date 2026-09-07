@@ -56,6 +56,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+import androidx.compose.ui.res.stringResource
+import com.example.application.R
+
 private data class QuickAccessModule(
     val title: String,
     val icon: ImageVector,
@@ -70,29 +73,25 @@ fun ResidentQuickAccessSection(
 ) {
     var showMoreBottomSheet by remember { mutableStateOf(false) }
 
-    val mainItems = remember {
-        listOf(
-            QuickAccessModule("Maintenance", Icons.Filled.AccountBalanceWallet, Color(0xFF2563EB), "Maintenance"),
-            QuickAccessModule("Payments", Icons.Filled.CurrencyRupee, Color(0xFF16A34A), "Payment History"),
-            QuickAccessModule("Reports", Icons.Filled.Description, Color(0xFF9333EA), "Reports"),
-            QuickAccessModule("Notices", Icons.Filled.Campaign, Color(0xFF0D9488), "Notices"),
-            QuickAccessModule("More", Icons.Filled.GridView, Color(0xFF64748B), "MORE_SHEET")
-        )
-    }
+    val mainItems = listOf(
+        QuickAccessModule(stringResource(R.string.maintenance), Icons.Filled.AccountBalanceWallet, Color(0xFF2563EB), "Maintenance"),
+        QuickAccessModule(stringResource(R.string.payments), Icons.Filled.CurrencyRupee, Color(0xFF16A34A), "Payment History"),
+        QuickAccessModule(stringResource(R.string.reports), Icons.Filled.Description, Color(0xFF9333EA), "Reports"),
+        QuickAccessModule(stringResource(R.string.notices), Icons.Filled.Campaign, Color(0xFF0D9488), "Notices"),
+        QuickAccessModule(stringResource(R.string.more), Icons.Filled.GridView, Color(0xFF64748B), "MORE_SHEET")
+    )
 
-    val moreModules = remember {
-        listOf(
-            QuickAccessModule("Complaints", Icons.Filled.ReportProblem, Color(0xFFEA580C), "My Complaints"),
-            QuickAccessModule("Meetings", Icons.Filled.Event, Color(0xFF2563EB), "Meeting Management"),
-            QuickAccessModule("Society Rules", Icons.Filled.TaskAlt, Color(0xFF16A34A), "Society Rules"),
-            QuickAccessModule("NOC Requests", Icons.Filled.SensorDoor, Color(0xFFDB2777), "NOC Requests"),
-            QuickAccessModule("Members", Icons.Filled.Groups, Color(0xFF4F46E5), "Members"),
-            QuickAccessModule("Notifications", Icons.Filled.Notifications, Color(0xFFD97706), "Notifications"),
-            QuickAccessModule("Events", Icons.Filled.Event, Color(0xFF0284C7), "Events"),
-            QuickAccessModule("Payment History", Icons.Filled.History, Color(0xFF059669), "Payment History"),
-            QuickAccessModule("Profile", Icons.Filled.Person, Color(0xFF475569), "PROFILE")
-        )
-    }
+    val moreModules = listOf(
+        QuickAccessModule(stringResource(R.string.complaints), Icons.Filled.ReportProblem, Color(0xFFEA580C), "My Complaints"),
+        QuickAccessModule(stringResource(R.string.meetings), Icons.Filled.Event, Color(0xFF2563EB), "Meeting Management"),
+        QuickAccessModule(stringResource(R.string.rules_resident_title), Icons.Filled.TaskAlt, Color(0xFF16A34A), "Society Rules"),
+        QuickAccessModule(stringResource(R.string.noc_requests), Icons.Filled.SensorDoor, Color(0xFFDB2777), "NOC Requests"),
+        QuickAccessModule(stringResource(R.string.members), Icons.Filled.Groups, Color(0xFF4F46E5), "Members"),
+        QuickAccessModule(stringResource(R.string.notifications), Icons.Filled.Notifications, Color(0xFFD97706), "Notifications"),
+        QuickAccessModule(stringResource(R.string.events_title), Icons.Filled.Event, Color(0xFF0284C7), "Events"),
+        QuickAccessModule(stringResource(R.string.payment_history), Icons.Filled.History, Color(0xFF059669), "Payment History"),
+        QuickAccessModule(stringResource(R.string.profile), Icons.Filled.Person, Color(0xFF475569), "PROFILE")
+    )
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -105,7 +104,7 @@ fun ResidentQuickAccessSection(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "Quick Access",
+                text = stringResource(R.string.quick_access),
                 style = MaterialTheme.typography.titleMedium.copy(fontSize = 16.sp),
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
@@ -120,14 +119,14 @@ fun ResidentQuickAccessSection(
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Text(
-                    text = "Edit",
+                    text = stringResource(R.string.edit),
                     style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.sp),
                     color = Color(0xFF2563EB),
                     fontWeight = FontWeight.Bold
                 )
                 Icon(
                     imageVector = Icons.Filled.Edit,
-                    contentDescription = "Edit",
+                    contentDescription = stringResource(R.string.edit),
                     tint = Color(0xFF2563EB),
                     modifier = Modifier.size(12.dp)
                 )
@@ -177,7 +176,7 @@ fun ResidentQuickAccessSection(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "All Resident Services",
+                        text = stringResource(R.string.quick_access),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold
                     )

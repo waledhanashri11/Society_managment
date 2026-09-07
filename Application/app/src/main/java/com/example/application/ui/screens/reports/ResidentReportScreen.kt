@@ -1,5 +1,6 @@
 package com.example.application.ui.screens.reports
 
+import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -24,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.RestartAlt
@@ -34,6 +36,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
@@ -47,7 +50,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
-import androidx.compose.material3.Text
+import com.example.application.ui.components.LocalizedText as Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -74,6 +77,7 @@ import com.example.application.ui.components.DashboardSkeleton
 import com.example.application.ui.components.ErrorMessageCard
 import com.example.application.ui.components.StatusBadge
 import com.example.application.util.DashboardFormatters
+import com.example.application.util.ReportExportManager
 import com.example.application.viewmodel.ResidentReportsViewModel
 
 private val MONTH_NAMES = listOf(
@@ -99,6 +103,8 @@ fun ResidentReportsScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val fyList = listOf("2026-2027", "2025-2026", "2024-2025")
     var activeTab by remember { mutableStateOf("summary") }
+    var exportMenuOpen by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -113,6 +119,50 @@ fun ResidentReportsScreen(
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, contentDescription = "Back") } },
                 actions = {
                     IconButton(onClick = { viewModel.load(refresh = true) }) { Icon(Icons.Filled.Refresh, contentDescription = "Refresh") }
+                    Box {
+                        IconButton(enabled = state.data != null, onClick = { exportMenuOpen = true }) {
+                            Icon(Icons.Filled.MoreVert, contentDescription = "Export reports")
+                        }
+                        DropdownMenu(expanded = exportMenuOpen, onDismissRequest = { exportMenuOpen = false }) {
+                            ReportExportManager.Format.entries.forEach { format ->
+                                DropdownMenuItem(
+                                    text = { Text(if (format == ReportExportManager.Format.PDF) "Download complete PDF" else "Download complete CSV") },
+                                    onClick = {
+                                        exportMenuOpen = false
+                                        state.data?.let { report ->
+                                            runCatching {
+                                                ReportExportManager.download(
+                                                    context,
+                                                    "Resident Financial and Maintenance Report",
+                                                    "FY ${state.filter.financialYear} • Filters: ${state.filter.cacheKey()}",
+                                                    report,
+                                                    format
+                                                )
+                                            }.onSuccess { Toast.makeText(context, "Saved ${it.fileName} to Downloads/SocietyHub", Toast.LENGTH_LONG).show() }
+                                                .onFailure { Toast.makeText(context, "Export failed: ${it.message}", Toast.LENGTH_LONG).show() }
+                                        }
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(if (format == ReportExportManager.Format.PDF) "Share complete PDF" else "Share complete CSV") },
+                                    onClick = {
+                                        exportMenuOpen = false
+                                        state.data?.let { report ->
+                                            runCatching {
+                                                ReportExportManager.share(
+                                                    context,
+                                                    "Resident Financial and Maintenance Report",
+                                                    "FY ${state.filter.financialYear} • Filters: ${state.filter.cacheKey()}",
+                                                    report,
+                                                    format
+                                                )
+                                            }.onFailure { Toast.makeText(context, "Unable to share: ${it.message}", Toast.LENGTH_LONG).show() }
+                                        }
+                                    }
+                                )
+                            }
+                        }
+                    }
                 }
             )
         }

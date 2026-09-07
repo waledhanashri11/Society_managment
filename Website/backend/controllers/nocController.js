@@ -10,8 +10,6 @@ const sendResponse = (res, statusCode, message, data = null) => {
 };
 
 const ensureNocRuntimeSchema = async () => {
-  // Migrations 030 and 030_noc_cancel_status own the lifecycle constraint.
-  // Tenant-scoped requests must never attempt schema DDL at runtime.
   return undefined;
 };
 
@@ -124,9 +122,11 @@ const getRequestRow = async (id) => {
   return rows[0] || null;
 };
 
+const isAdmin = (req) => req.user?.role === 'admin' || req.user?.role === 'super_admin';
+
 const canAccessRequest = (req, request) => {
   if (!request) return false;
-  return req.user.role === 'admin' || Number(request.resident_id) === Number(req.user.id);
+  return isAdmin(req) || Number(request.resident_id) === Number(req.user.id);
 };
 
 const hasMaintenanceDues = async (residentId) => {
@@ -146,6 +146,21 @@ const normalizeDocuments = (documents) => {
   if (Array.isArray(documents)) return JSON.stringify(documents);
   if (typeof documents === 'string') return documents;
   return JSON.stringify([documents]);
+};
+
+const parseDocuments = (documents) => {
+  if (!documents) return [];
+  if (Array.isArray(documents)) return documents;
+  if (typeof documents === 'string') {
+    try {
+      const parsed = JSON.parse(documents);
+      if (Array.isArray(parsed)) return parsed;
+      return [parsed];
+    } catch (_) {
+      return [documents];
+    }
+  }
+  return [];
 };
 
 // POST /api/noc/request
@@ -215,7 +230,7 @@ const getRequests = async (req, res) => {
     const values = [];
     const where = [];
 
-    if (req.user.role !== 'admin') {
+    if (!isAdmin(req)) {
       where.push('nr.resident_id = ?');
       values.push(req.user.id);
     }
@@ -252,7 +267,12 @@ const getRequests = async (req, res) => {
       values
     );
 
-    return res.json(rows);
+    const formatted = rows.map((r) => ({
+      ...r,
+      documents: parseDocuments(r.documents)
+    }));
+
+    return res.json(formatted);
   } catch (error) {
     console.error('Get NOC requests error:', error);
     return sendResponse(res, 500, 'Server error');
@@ -276,7 +296,11 @@ const getRequestById = async (req, res) => {
       [req.params.id]
     );
 
-    return res.json({ ...request, history });
+    return res.json({
+      ...request,
+      documents: parseDocuments(request.documents),
+      history
+    });
   } catch (error) {
     console.error('Get NOC request error:', error);
     return sendResponse(res, 500, 'Server error');
@@ -288,19 +312,19 @@ const getSummary = async (req, res) => {
   try {
     const values = [];
     const where = [];
-    if (req.user.role !== 'admin') {
+    if (!isAdmin(req)) {
       where.push('resident_id = ?');
       values.push(req.user.id);
     }
     const [rows] = await promisePool.query(
       `SELECT
-         COUNT(*) AS total,
-         SUM(CASE WHEN status IN ('Submitted', 'Pending') THEN 1 ELSE 0 END) AS pending,
-         SUM(CASE WHEN status = 'Under Review' THEN 1 ELSE 0 END) AS under_review,
-         SUM(CASE WHEN status = 'Additional Information Required' THEN 1 ELSE 0 END) AS additional_info_required,
-         SUM(CASE WHEN status = 'Approved' THEN 1 ELSE 0 END) AS approved,
-         SUM(CASE WHEN status = 'Rejected' THEN 1 ELSE 0 END) AS rejected,
-         SUM(CASE WHEN status = 'Completed' THEN 1 ELSE 0 END) AS completed
+         COUNT(*)::int AS total,
+         COALESCE(SUM(CASE WHEN status IN ('Submitted', 'Pending') THEN 1 ELSE 0 END), 0)::int AS pending,
+         COALESCE(SUM(CASE WHEN status = 'Under Review' THEN 1 ELSE 0 END), 0)::int AS under_review,
+         COALESCE(SUM(CASE WHEN status = 'Additional Information Required' THEN 1 ELSE 0 END), 0)::int AS additional_info_required,
+         COALESCE(SUM(CASE WHEN status = 'Approved' THEN 1 ELSE 0 END), 0)::int AS approved,
+         COALESCE(SUM(CASE WHEN status = 'Rejected' THEN 1 ELSE 0 END), 0)::int AS rejected,
+         COALESCE(SUM(CASE WHEN status = 'Completed' THEN 1 ELSE 0 END), 0)::int AS completed
        FROM noc_requests
        ${where.length ? `WHERE ${where.join(' AND ')}` : ''}`,
       values
@@ -440,7 +464,6 @@ const rejectRequest = async (req, res) => {
   }
 };
 
-
 // PUT /api/noc/:id/complete
 const completeRequest = async (req, res) => {
   try {
@@ -463,7 +486,7 @@ const cancelRequest = async (req, res) => {
   try {
     const request = await getRequestRow(req.params.id);
     if (!request) return sendResponse(res, 404, 'NOC request not found');
-    if (req.user.role !== 'admin' && String(request.resident_id) !== String(req.user.id)) {
+    if (!isAdmin(req) && String(request.resident_id) !== String(req.user.id)) {
       return sendResponse(res, 403, 'Access denied');
     }
     if (!['Pending', 'Under Review', 'Submitted'].includes(request.status)) {
@@ -643,25 +666,25 @@ const getReportsData = async (req, res) => {
   try {
     const [statusCounts] = await promisePool.query(`
       SELECT
-        COUNT(*) AS total,
-        SUM(CASE WHEN status IN ('Submitted', 'Pending') THEN 1 ELSE 0 END) AS pending,
-        SUM(CASE WHEN status = 'Under Review' THEN 1 ELSE 0 END) AS under_review,
-        SUM(CASE WHEN status = 'Approved' THEN 1 ELSE 0 END) AS approved,
-        SUM(CASE WHEN status = 'Rejected' THEN 1 ELSE 0 END) AS rejected,
-        SUM(CASE WHEN status = 'Completed' THEN 1 ELSE 0 END) AS completed,
-        SUM(CASE WHEN expiry_date IS NOT NULL AND expiry_date < CURRENT_DATE THEN 1 ELSE 0 END) AS expired
+        COUNT(*)::int AS total,
+        COALESCE(SUM(CASE WHEN status IN ('Submitted', 'Pending') THEN 1 ELSE 0 END), 0)::int AS pending,
+        COALESCE(SUM(CASE WHEN status = 'Under Review' THEN 1 ELSE 0 END), 0)::int AS under_review,
+        COALESCE(SUM(CASE WHEN status = 'Approved' THEN 1 ELSE 0 END), 0)::int AS approved,
+        COALESCE(SUM(CASE WHEN status = 'Rejected' THEN 1 ELSE 0 END), 0)::int AS rejected,
+        COALESCE(SUM(CASE WHEN status = 'Completed' THEN 1 ELSE 0 END), 0)::int AS completed,
+        COALESCE(SUM(CASE WHEN expiry_date IS NOT NULL AND expiry_date < CURRENT_DATE THEN 1 ELSE 0 END), 0)::int AS expired
       FROM noc_requests
     `);
 
     const [typeCounts] = await promisePool.query(`
-      SELECT noc_type, COUNT(*) AS count
+      SELECT noc_type, COUNT(*)::int AS count
       FROM noc_requests
       GROUP BY noc_type
       ORDER BY count DESC
     `);
 
     const [monthCounts] = await promisePool.query(`
-      SELECT TO_CHAR(requested_at, 'Mon YYYY') AS month, COUNT(*) AS count
+      SELECT TO_CHAR(requested_at, 'Mon YYYY') AS month, COUNT(*)::int AS count
       FROM noc_requests
       GROUP BY TO_CHAR(requested_at, 'Mon YYYY'), DATE_TRUNC('month', requested_at)
       ORDER BY DATE_TRUNC('month', requested_at) DESC

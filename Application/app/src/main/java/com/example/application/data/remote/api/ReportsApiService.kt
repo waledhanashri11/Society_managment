@@ -22,6 +22,15 @@ import retrofit2.http.Path
 import retrofit2.http.Query
 
 interface ReportsApiService {
+    @GET("api/reports/overall")
+    suspend fun getOverallReport(
+        @Query("financialYear") financialYear:String,@Query("month") month:Int?=null,
+        @Query("fromDate") fromDate:String?=null,@Query("toDate") toDate:String?=null,
+        @Query("transactionType") transactionType:String?=null,@Query("paymentMode") paymentMode:String?=null,
+        @Query("residentId") residentId:String?=null,@Query("flat") flat:String?=null,
+        @Query("status") status:String?=null,@Query("search") search:String?=null,
+        @Query("page") page:Int=1,@Query("limit") limit:Int=30
+    ): Response<com.example.application.data.remote.dto.OverallReportDto>
     @GET("api/reports/maintenance/monthly-report")
     suspend fun getMonthlyMaintenanceReport(
         @Query("month") month: String? = null, @Query("year") year: String? = null,

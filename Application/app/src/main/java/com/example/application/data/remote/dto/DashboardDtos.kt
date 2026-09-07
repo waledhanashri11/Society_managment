@@ -25,6 +25,8 @@ data class UserSummaryDto(
 
 data class MaintenanceBillDto(
     val id: String? = null,
+    @SerializedName(value = "resident_id", alternate = ["user_id", "residentId"]) val residentId: String? = null,
+    @SerializedName(value = "flat_id", alternate = ["flatId"]) val flatId: String? = null,
     val title: String? = null,
     val month: String? = null,
     val year: String? = null,

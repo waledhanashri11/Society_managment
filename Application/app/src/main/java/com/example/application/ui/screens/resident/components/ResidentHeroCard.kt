@@ -38,6 +38,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.application.R
 
+import androidx.compose.ui.res.stringResource
+
 @Composable
 fun ResidentHeroCard(
     amountText: String,
@@ -87,7 +89,7 @@ fun ResidentHeroCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Total Amount Due",
+                        text = stringResource(R.string.total_due),
                         style = MaterialTheme.typography.bodyLarge,
                         color = Color.White.copy(alpha = 0.9f),
                         fontWeight = FontWeight.Medium
@@ -99,7 +101,7 @@ fun ResidentHeroCard(
                     ) {
                         Icon(
                             imageVector = Icons.Filled.MoreHoriz,
-                            contentDescription = "Options",
+                            contentDescription = stringResource(R.string.more),
                             tint = Color.White
                         )
                     }
@@ -118,7 +120,7 @@ fun ResidentHeroCard(
 
                 // Due Date
                 Text(
-                    text = if (dueDateText.startsWith("Due Date:")) dueDateText else "Due Date: $dueDateText",
+                    text = if (dueDateText.startsWith(stringResource(R.string.due_date, "").take(8))) dueDateText else stringResource(R.string.due_date, dueDateText),
                     style = MaterialTheme.typography.bodyMedium,
                     color = Color.White.copy(alpha = 0.85f)
                 )
@@ -146,7 +148,7 @@ fun ResidentHeroCard(
                         )
 
                         Text(
-                            text = "Pay Now",
+                            text = stringResource(R.string.pay_now),
                             style = MaterialTheme.typography.labelLarge,
                             color = Color(0xFF1E3A8A),
                             fontWeight = FontWeight.Bold

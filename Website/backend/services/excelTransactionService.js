@@ -9,7 +9,8 @@ const HEADERS = [
 ];
 
 const ALLOWED_MODES = new Set(['Cash', 'UPI', 'Bank Transfer', 'Cheque']);
-const ALLOWED_STATUSES = new Set(['Pending', 'Approved', 'Rejected']);
+// Paid is a valid persisted status and must round-trip through export/import.
+const ALLOWED_STATUSES = new Set(['Pending', 'Approved', 'Paid', 'Rejected']);
 const ALLOWED_ACTIONS = new Set(['CREATE', 'UPDATE']);
 
 const isoDate = (value) => {
@@ -33,7 +34,7 @@ const normalizeExportFilters = (query = {}) => {
   if (to && !isoDate(to)) throw new Error('To date must use YYYY-MM-DD.');
   if (from && to && from > to) throw new Error('From date cannot be after To date.');
   if (member && (!/^\d+$/.test(member) || Number(member) <= 0)) throw new Error('Member must be a positive number.');
-  if (status && !ALLOWED_STATUSES.has(status)) throw new Error('Payment status must be Pending, Approved, or Rejected.');
+  if (status && !ALLOWED_STATUSES.has(status)) throw new Error('Payment status must be Pending, Approved, Paid, or Rejected.');
   if (paymentMode && !ALLOWED_MODES.has(paymentMode)) throw new Error('Payment mode must be Cash, UPI, Bank Transfer, or Cheque.');
   return { from, to, member, wing: textValue('wing'), flat: textValue('flat'), status, paymentMode };
 };
@@ -48,16 +49,16 @@ const text = (value) => {
 const excelDate = (value) => {
   if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
   const raw = text(value);
-  if (!raw) return '';
-  const parsed = new Date(raw);
-  return Number.isNaN(parsed.getTime()) ? raw : parsed.toISOString().slice(0, 10);
+  // Text dates are deliberately not coerced: validation must reject ambiguous
+  // values such as 01/02/26 instead of silently changing their meaning.
+  return raw;
 };
 const hash = (value) => crypto.createHash('sha256').update(value).digest('hex');
 
 const parseWorkbook = async (buffer) => {
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(buffer);
-  const sheet = workbook.getWorksheet('Transactions') || workbook.worksheets[0];
+  const sheet = workbook.getWorksheet('Transactions');
   if (!sheet) throw new Error('Workbook must contain a Transactions sheet');
   const headerMap = new Map();
   sheet.getRow(1).eachCell((cell, column) => headerMap.set(normalizeHeader(cell.value), column));
@@ -118,7 +119,7 @@ const addValidations = (sheet, lastRow = 5000) => {
   for (let row = 2; row <= lastRow; row += 1) {
     sheet.getCell(`J${row}`).dataValidation = { type: 'list', allowBlank: false, formulae: ['"Maintenance"'] };
     sheet.getCell(`K${row}`).dataValidation = { type: 'list', allowBlank: false, formulae: ['"Cash,UPI,Bank Transfer,Cheque"'] };
-    sheet.getCell(`N${row}`).dataValidation = { type: 'list', allowBlank: false, formulae: ['"Pending,Approved,Rejected"'] };
+    sheet.getCell(`N${row}`).dataValidation = { type: 'list', allowBlank: false, formulae: ['"Pending,Approved,Paid,Rejected"'] };
     sheet.getCell(`P${row}`).dataValidation = { type: 'list', allowBlank: false, formulae: ['"CREATE,UPDATE"'] };
   }
 };

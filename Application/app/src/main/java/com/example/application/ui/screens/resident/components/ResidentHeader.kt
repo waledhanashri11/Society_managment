@@ -42,7 +42,7 @@ fun ResidentHeader(
         else -> stringResource(R.string.greeting_good_evening)
     }
     
-    val displayName = residentName?.takeIf { it.isNotBlank() } ?: "Resident"
+    val displayName = residentName?.takeIf { it.isNotBlank() } ?: stringResource(R.string.resident)
     val initialChar = displayName.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "R"
 
     Row(
@@ -73,19 +73,19 @@ fun ResidentHeader(
             }
             Text(
                 text = displayName,
-                style = MaterialTheme.typography.headlineMedium.copy(
-                    fontSize = 22.sp,
-                    lineHeight = 28.sp
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontSize = 17.sp,
+                    lineHeight = 22.sp
                 ),
                 color = MaterialTheme.colorScheme.onSurface,
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             SocietyIdentityHeader(
                 societyName = societyName?.takeIf { it.isNotBlank() } ?: stringResource(R.string.welcome_to_society),
                 societyLogoUrl = societyLogoUrl,
-                portalLabel = "Resident Portal",
+                portalLabel = stringResource(R.string.resident),
                 modifier = Modifier.padding(top = 8.dp)
             )
         }

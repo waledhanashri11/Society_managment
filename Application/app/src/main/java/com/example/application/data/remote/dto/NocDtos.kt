@@ -9,7 +9,7 @@ data class NocRequestDto(
     @SerializedName(value = "noc_type", alternate = ["nocType"]) val nocType: String?,
     val purpose: String?,
     @SerializedName("remarks") val description: String?,
-    @SerializedName(value = "documents", alternate = ["document_url", "documentUrl"]) val documents: List<String>?,
+    @SerializedName(value = "documents", alternate = ["document_url", "documentUrl"]) val documents: Any?,
     val status: String?,
     @SerializedName(value = "admin_remarks", alternate = ["admin_comments", "adminComments"]) val adminComments: String?,
     @SerializedName(value = "request_number", alternate = ["noc_number", "nocNumber"]) val nocNumber: String?,
@@ -19,7 +19,12 @@ data class NocRequestDto(
     @SerializedName(value = "flat_no", alternate = ["flatNo"]) val flatNo: String?,
     val wing: String?
 ) {
-    val documentUrl: String? get() = documents?.firstOrNull()
+    val documentList: List<String> get() = when (documents) {
+        is List<*> -> documents.mapNotNull { it?.toString() }
+        is String -> listOf(documents)
+        else -> emptyList()
+    }
+    val documentUrl: String? get() = documentList.firstOrNull()
 }
 
 data class CreateNocRequest(

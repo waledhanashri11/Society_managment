@@ -60,6 +60,11 @@ class SessionPreferences @Inject constructor(
         saveString(Keys.USER_STATUS, status)
     }
 
+    suspend fun saveSocietyName(name: String) {
+        saveString(Keys.SOCIETY_NAME, name)
+        cachedSession = cachedSession?.copy(societyName = name)
+    }
+
     suspend fun saveSession(session: UserSession) {
         cachedSession = session
         context.sessionDataStore.edit { preferences ->

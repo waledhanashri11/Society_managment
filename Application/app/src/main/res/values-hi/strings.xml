@@ -1,11 +1,377 @@
 <resources>
-    <string name="app_name">SocietyHub</string>
-    <string name="back">पीछे</string>
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- APP BASICS & BRANDING                                      -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <string name="app_name">SocietyFlow</string>
+    <string name="app_subtitle">स्मार्ट सोसाइटी। सरल जीवन।</string>
+    <string name="app_tagline">स्मार्ट सोसाइटी। सरल जीवन।</string>
+    <string name="welcome_to_society">आपकी सोसाइटी में आपका स्वागत है</string>
+    <string name="society_management">SocietyHub</string>
+    <string name="society_management_system">SocietyHub</string>
+    <string name="system">स्मार्ट सोसाइटी। सरल जीवन।</string>
+    <string name="admin">एडमिन</string>
+    <string name="resident">निवासी</string>
+    <string name="super_admin">मुख्य एडमिन</string>
+    <string name="admin_portal">एडमिन पोर्टल</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- LANGUAGE                                                    -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <string name="language">भाषा</string>
+    <string name="language_select">भाषा चुनें</string>
+    <string name="language_english">English</string>
+    <string name="language_hindi">हिंदी</string>
+    <string name="language_marathi">मराठी</string>
+    <string name="language_hint">ऐप की भाषा चुनें। चयन के बाद ऐप रिफ्रेश होगा।</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- NAVIGATION & MENU                                          -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <string name="dashboard">डैशबोर्ड</string>
+    <string name="home">होम</string>
+    <string name="overview">अवलोकन</string>
+    <string name="view_all">सभी देखें</string>
+    <string name="quick_access">त्वरित पहुंच</string>
+    <string name="quick_actions">त्वरित कार्रवाई</string>
+    <string name="residents">निवासी</string>
+    <string name="flats">फ्लैट्स</string>
+    <string name="maintenance">मेंटेनेंस</string>
+    <string name="payments">भुगतान</string>
+    <string name="payment_history">भुगतान इतिहास</string>
+    <string name="payment_verification">भुगतान सत्यापन</string>
+    <string name="payment_reviews">भुगतान समीक्षा</string>
+    <string name="dues_payments">बकाया व भुगतान</string>
+    <string name="complaints">शिकायतें</string>
+    <string name="my_complaints">मेरी शिकायतें</string>
+    <string name="notices">सूचनाएं</string>
+    <string name="society_notices">सोसाइटी सूचनाएं</string>
+    <string name="reports">रिपोर्ट्स</string>
+    <string name="noc">NOC (अनापत्ति)</string>
+    <string name="noc_requests">NOC आवेदन</string>
+    <string name="members">सदस्य</string>
+    <string name="society_members">सोसाइटी सदस्य</string>
+    <string name="meetings">बैठकें</string>
+    <string name="meeting_management">बैठक प्रबंधन</string>
+    <string name="staff">कर्मचारी</string>
+    <string name="settings">सेटिंग्स</string>
+    <string name="more">अधिक</string>
+    <string name="notifications">सूचनाएं</string>
+    <string name="logout">लॉगआउट</string>
+    <string name="profile">प्रोफाइल</string>
+    <string name="open_menu">मेनू खोलें</string>
+    <string name="open_admin_menu">एडमिन मेनू खोलें</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- COMMON ACTIONS                                              -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <string name="back">वापस</string>
     <string name="close">बंद करें</string>
-    <string name="save">सेव करें</string>
-    <string name="saving">सेव हो रहा है...</string>
-    <string name="rules_admin_title">सोसायटी नियम</string>
-    <string name="rules_resident_title">सोसायटी नियम</string>
+    <string name="save">सहेजें</string>
+    <string name="saving">सहेजा जा रहा है…</string>
+    <string name="add">जोड़ें</string>
+    <string name="edit">संपादित करें</string>
+    <string name="delete">हटाएं</string>
+    <string name="cancel">रद्द करें</string>
+    <string name="confirm">पुष्टि करें</string>
+    <string name="retry">पुनः प्रयास करें</string>
+    <string name="loading">लोड हो रहा है…</string>
+    <string name="search">खोजें</string>
+    <string name="view">देखें</string>
+    <string name="view_details">विवरण देखें</string>
+    <string name="approve">स्वीकृत करें</string>
+    <string name="reject">अस्वीकार करें</string>
+    <string name="submit">सबमिट करें</string>
+    <string name="update">अपडेट करें</string>
+    <string name="create">बनाएं</string>
+    <string name="continue_text">आगे बढ़ें</string>
+    <string name="next">अगला</string>
+    <string name="previous">पिछला</string>
+    <string name="done">हो गया</string>
+    <string name="ok">ठीक है</string>
+    <string name="yes">हाँ</string>
+    <string name="no">नहीं</string>
+    <string name="send">भेजें</string>
+    <string name="refresh">रिफ्रेश करें</string>
+    <string name="download">डाउनलोड करें</string>
+    <string name="upload">अपलोड करें</string>
+    <string name="export">निर्यात करें (Export)</string>
+    <string name="filter">फ़िल्टर</string>
+    <string name="clear_filter">फ़िल्टर हटाएं</string>
+    <string name="reset">रीसेट करें</string>
+    <string name="select">चुनें</string>
+    <string name="copy">कॉपी करें</string>
+    <string name="share">शेयर करें</string>
+    <string name="print">प्रिंट करें</string>
+    <string name="tap_to_refresh">रिफ्रेश करने के लिए टैप करें</string>
+    <string name="tap_to_refresh_dashboard">डैशबोर्ड रिफ्रेश करने के लिए टैप करें</string>
+    <string name="clear_all">सभी हटाएं</string>
+    <string name="no_notifications_yet">अभी कोई सूचना नहीं है।</string>
+    <string name="apply">लागू करें</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- AUTH                                                        -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <string name="email">ईमेल</string>
+    <string name="password">पासवर्ड</string>
+    <string name="confirm_password">पासवर्ड की पुष्टि करें</string>
+    <string name="full_name">पूरा नाम</string>
+    <string name="phone">फ़ोन नंबर</string>
+    <string name="login">लॉगिन</string>
+    <string name="admin_login">एडमिन लॉगिन</string>
+    <string name="resident_login">निवासी लॉगिन</string>
+    <string name="login_role">लॉगिन भूमिका</string>
+    <string name="login_welcome">पुनः स्वागत है! जारी रखने के लिए लॉगिन करें</string>
+    <string name="logging_in">लॉगिन हो रहा है…</string>
+    <string name="hide_password">पासवर्ड छिपाएं</string>
+    <string name="show_password">पासवर्ड दिखाएं</string>
+    <string name="register">पंजीकरण करें</string>
+    <string name="forgot_password">पासवर्ड भूल गए?</string>
+    <string name="new_resident">नए निवासी?</string>
+    <string name="back_to_login">लॉगिन पर वापस जाएं</string>
+    <string name="change_password">पासवर्ड बदलें</string>
+    <string name="back_to_dashboard">डैशबोर्ड पर वापस जाएं</string>
+    <string name="welcome_back">पुनः स्वागत है</string>
+    <string name="email_or_mobile">ईमेल / मोबाइल नंबर</string>
+    <string name="create_resident_account">निवासी खाता बनाएं</string>
+    <string name="society_code">सोसाइटी कोड</string>
+    <string name="phone_optional">फ़ोन (वैकल्पिक)</string>
+    <string name="reset_password">पासवर्ड रीसेट करें</string>
+    <string name="current_password">वर्तमान पासवर्ड</string>
+    <string name="new_password">नया पासवर्ड</string>
+    <string name="registering">पंजीकरण हो रहा है…</string>
+    <string name="already_have_account">क्या पहले से खाता है?</string>
+    <string name="send_reset_link">रीसेट लिंक भेजें</string>
+    <string name="sending">भेजा जा रहा है…</string>
+    <string name="new_password_label">नया पासवर्ड</string>
+    <string name="confirm_new_password">नए पासवर्ड की पुष्टि करें</string>
+    <string name="resetting">रीसेट हो रहा है…</string>
+    <string name="changing_password">बदला जा रहा है…</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- RESIDENT WORKSPACE                                          -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <string name="resident_workspace">निवासी कार्यक्षेत्र</string>
+    <string name="flat_label">फ्लैट: %1$s</string>
+    <string name="total_due">कुल बकाया</string>
+    <string name="due_date">अंतिम तिथि: %1$s</string>
+    <string name="pay_now">अभी भुगतान करें</string>
+    <string name="current_bills">वर्तमान बिल</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- PAYMENT MODULE                                              -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <string name="upload_screenshot">स्क्रीनशॉट अपलोड करें</string>
+    <string name="transaction_id">लेनदेन आईडी (Transaction ID)</string>
+    <string name="payment_date">भुगतान तिथि</string>
+    <string name="submit_for_verification">सत्यापन के लिए भेजें</string>
+    <string name="download_receipt">रसीद डाउनलोड करें</string>
+    <string name="receipt">रसीद</string>
+    <string name="approve_payment">भुगतान स्वीकृत करें</string>
+    <string name="reject_payment">भुगतान अस्वीकार करें</string>
+    <string name="reject_selected_payments">चयनित भुगतान अस्वीकार करें</string>
+    <string name="payment_screenshot">भुगतान स्क्रीनशॉट</string>
+    <string name="payment_screenshot_cd">भुगतान स्क्रीनशॉट</string>
+    <string name="clear_selection">चयन हटाएं</string>
+    <string name="select_all_pending">सभी लंबित चुनें</string>
+    <string name="approve_count">स्वीकृत करें (%1$d)</string>
+    <string name="reject_all">सभी अस्वीकार करें</string>
+    <string name="search_payment_verifications">निवासी, फ्लैट, शीर्षक या UTR खोजें</string>
+    <string name="no_payment_verifications">सत्यापन के लिए कोई भुगतान लंबित नहीं है।</string>
+    <string name="payment_proofs_will_appear">निवासियों द्वारा जमा किए गए भुगतान स्क्रीनशॉट यहां दिखाई देंगे।</string>
+    <string name="approve_payment_confirm">क्या आप वाकई %2$s के ₹%1$s का भुगतान स्वीकृत करना चाहते हैं?</string>
+    <string name="reject_payment_reason_required">कृपया अस्वीकार करने का कारण दर्ज करें। निवासी को संशोधित प्रमाण जमा करने के लिए सूचित किया जाएगा।</string>
+    <string name="reason_for_rejection">अस्वीकार करने का कारण</string>
+    <string name="clarification_message_required">कृपया एक स्पष्ट संदेश दर्ज करें कि क्या सुधारने की आवश्यकता है।</string>
+    <string name="message_for_resident">निवासी के लिए संदेश</string>
+    <string name="send_request">अनुरोध भेजें</string>
+    <string name="request_clarification">स्पष्टीकरण मांगें</string>
+    <string name="no_image_available">कोई छवि उपलब्ध नहीं है</string>
+    <string name="bulk_reject_reason">सभी चयनित भुगतानों के लिए अस्वीकृति का कारण दर्ज करें।</string>
+    <string name="bill_month_title">बिल माह/शीर्षक</string>
+    <string name="bill_id">बिल आईडी</string>
+    <string name="submitted_amount">जमा की गई राशि</string>
+    <string name="expected_amount">अपेक्षित राशि</string>
+    <string name="ref_utr">संदर्भ/UTR</string>
+    <string name="submission_date">सबमिशन तिथि</string>
+    <string name="pay_maintenance">मेंटेनेंस का भुगतान करें</string>
+    <string name="pay_using_upi">UPI द्वारा भुगतान करें</string>
+    <string name="upload_payment_screenshot">भुगतान स्क्रीनशॉट अपलोड करें</string>
+    <string name="amount">राशि</string>
+    <string name="payment_submitted">भुगतान जमा किया गया</string>
+    <string name="copy_upi_id">UPI ID कॉपी करें</string>
+    <string name="society_payment_qr">सोसाइटी भुगतान QR कोड</string>
+    <string name="continue_to_payment">भुगतान के लिए आगे बढ़ें</string>
+    <string name="raise_maintenance_dispute">मेंटेनेंस शिकायत दर्ज करें</string>
+    <string name="selected_payment_screenshot">चयनित भुगतान स्क्रीनशॉट</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- MAINTENANCE MODULE                                          -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <string name="write_off">राइट-ऑफ (माफ करें)</string>
+    <string name="penalty">पेनाल्टी (Penalty)</string>
+    <string name="generate_bill">बिल बनाएं</string>
+    <string name="generate_bills">बिल जनरेट करें</string>
+    <string name="maintenance_management">मेंटेनेंस प्रबंधन</string>
+    <string name="maintenance_overview">मेंटेनेंस अवलोकन</string>
+    <string name="search_bills">बिल खोजें</string>
+    <string name="due_date_label">अंतिम तिथि</string>
+    <string name="grace_days">छूट के दिन</string>
+    <string name="resident_label">निवासी</string>
+    <string name="month_1_12">माह (१–१२)</string>
+    <string name="year">वर्ष</string>
+    <string name="due_date_format">अंतिम तिथि (YYYY-MM-DD)</string>
+    <string name="maintenance_base_amount">मूल मेंटेनेंस राशि (₹)</string>
+    <string name="reason_for_override">बदलाव का कारण (वैकल्पिक)</string>
+    <string name="overdue">समय सीमा समाप्त (Overdue)</string>
+    <string name="menu">मेनू</string>
+    <string name="filter_label">फ़िल्टर</string>
+    <string name="search_label">खोजें</string>
+    <string name="clear">हटाएं</string>
+    <string name="more_actions">अधिक कार्रवाई</string>
+    <string name="thumbnail">थंबनेल</string>
+    <string name="subject">विषय</string>
+    <string name="description">विवरण</string>
+    <string name="yyyy_mm_dd">YYYY-MM-DD</string>
+    <string name="search_resident_flat">निवासी, फ्लैट, शीर्षक या UTR खोजें</string>
+    <string name="rejection_reason">अस्वीकृति का कारण</string>
+    <string name="payment_proof_saved">भुगतान प्रमाण Downloads में सहेजा गया</string>
+    <string name="unable_download_proof">भुगतान प्रमाण डाउनलोड करने में असमर्थ</string>
+    <string name="write_off_completed">राइट-ऑफ सफलतापूर्वक पूरा हुआ</string>
+    <string name="payment_proof_submitted">भुगतान प्रमाण एडमिन सत्यापन के लिए जमा किया गया।</string>
+    <string name="qr_downloaded">QR कोड सफलतापूर्वक डाउनलोड हुआ।</string>
+    <string name="qr_download_failed">QR डाउनलोड विफल। कृपया पुनः प्रयास करें।</string>
+    <string name="receipt_pdf_saved">रसीद PDF Downloads में सहेजी गई।</string>
+    <string name="unable_share_csv">अभी CSV शेयर नहीं किया जा सकता।</string>
+    <string name="receipt_downloaded">रसीद डाउनलोड हो गई</string>
+    <string name="write_off_receipt_downloaded">आधिकारिक राइट-ऑफ रसीद डाउनलोड हो गई</string>
+    <string name="release_vacant">मुक्त करें / खाली</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- STATUS VALUES                                               -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <string name="status_paid">भुगतान किया</string>
+    <string name="status_unpaid">अदत्त</string>
+    <string name="status_pending">लंबित</string>
+    <string name="status_approved">स्वीकृत</string>
+    <string name="status_rejected">अस्वीकृत</string>
+    <string name="status_verification_pending">सत्यापन लंबित</string>
+    <string name="status_clarification_required">स्पष्टीकरण आवश्यक</string>
+    <string name="status_overdue">समय सीमा समाप्त</string>
+    <string name="status_partially_paid">आंशिक भुगतान</string>
+    <string name="status_written_off">माफ किया गया (Written Off)</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- VALIDATION                                                  -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <string name="invalid_email">अमान्य ईमेल</string>
+    <string name="password_required">पासवर्ड आवश्यक है</string>
+    <string name="no_internet">कोई इंटरनेट कनेक्शन नहीं है</string>
+    <string name="unable_to_load_payments">भुगतान लोड करने में असमर्थ</string>
+    <string name="payment_submission_failed">भुगतान सबमिशन विफल</string>
+    <string name="please_try_again">कृपया पुनः प्रयास करें</string>
+    <string name="session_expired">सत्र समाप्त हो गया है</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- PLURALS                                                     -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <plurals name="pending_bills">
+        <item quantity="one">%d लंबित बिल</item>
+        <item quantity="other">%d लंबित बिल</item>
+    </plurals>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- MEETINGS MODULE                                             -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <string name="meeting_meetings">बैठकें</string>
+    <string name="meeting_create">बैठक आयोजित करें</string>
+    <string name="meeting_details">बैठक का विवरण</string>
+    <string name="meeting_no_meetings">कोई बैठक उपलब्ध नहीं है</string>
+    <string name="meeting_duplicate">प्रतिलिपि बनाएं</string>
+    <string name="meeting_attendance">उपस्थिति</string>
+    <string name="meeting_minutes">बैठक की कार्यवाही (Minutes)</string>
+    <string name="meeting_poll">मतदान</string>
+    <string name="meeting_fines">जुर्माना</string>
+    <string name="meeting_search_placeholder">शीर्षक, स्थान या प्रकार खोजें</string>
+    <string name="meeting_analytics">बैठक विश्लेषण</string>
+    <string name="meeting_title">शीर्षक</string>
+    <string name="meeting_description">विवरण</string>
+    <string name="meeting_venue">स्थान</string>
+    <string name="meeting_date">तिथि</string>
+    <string name="meeting_time">समय</string>
+    <string name="meeting_type">प्रकार</string>
+    <string name="meeting_agenda">कार्यसूची (Agenda)</string>
+    <string name="meeting_scheduled">निर्धारित</string>
+    <string name="meeting_completed">पूर्ण</string>
+    <string name="meeting_cancelled">रद्द</string>
+    <string name="meeting_action_items">कार्य बिंदु</string>
+    <string name="meeting_add_action">कार्य बिंदु जोड़ें</string>
+    <string name="meeting_view_minutes">कार्यवाही देखें</string>
+    <string name="meeting_download_pdf">PDF डाउनलोड करें</string>
+    <string name="meeting_share_pdf">PDF शेयर करें</string>
+    <string name="meeting_print_minutes">कार्यवाही प्रिंट करें</string>
+    <string name="meeting_notify_residents">निवासियों को सूचित करें</string>
+    <string name="meeting_compulsory">अनिवार्य</string>
+    <string name="unable_read_document">चयनित दस्तावेज़ पढ़ने में असमर्थ</string>
+    <string name="no_pdf_viewer">कोई PDF दर्शक नहीं मिला।</string>
+    <string name="minutes_pdf_saved">कार्यवाही PDF सहेजी गई।</string>
+    <string name="open_pdf_print">प्रिंट करने के लिए PDF दर्शक प्रिंट विकल्प खोलें।</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- COMPLAINTS MODULE                                           -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <string name="complaints_title">शिकायतें</string>
+    <string name="complaint_create">नई शिकायत दर्ज करें</string>
+    <string name="complaint_my_complaints">मेरी शिकायतें</string>
+    <string name="complaint_all_complaints">सभी शिकायतें</string>
+    <string name="raise_complaint">शिकायत दर्ज करें</string>
+    <string name="track_complaints">अपनी सोसाइटी अनुरोधों को ट्रैक करें</string>
+    <string name="in_progress_label">प्रगति पर</string>
+    <string name="open_label">खुली (Open)</string>
+    <string name="resolved_label">हल हो गई</string>
+    <string name="confirm_resolved">हल होने की पुष्टि करें</string>
+    <string name="reopen_label">पुनः खोलें</string>
+    <string name="attachments_count">संलग्नक (%1$d)</string>
+    <string name="admin_reply_title">एडमिन उत्तर • %1$s %2$s</string>
+    <string name="complaint_summary">शिकायत ट्रैकर</string>
+    <string name="comment">टिप्पणी</string>
+    <string name="selected_complaint_picture">चयनित शिकायत चित्र</string>
+    <string name="full_complaint_attachment">पूर्ण शिकायत संलग्नक</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- NOTICES MODULE                                              -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <string name="notices_title">सूचनाएं और घोषणाएं</string>
+    <string name="notice_create">सूचना प्रकाशित करें</string>
+    <string name="notice_no_notices">अभी तक कोई सूचना पोस्ट नहीं की गई है</string>
+    <string name="latest_notices">नवीनतम सोसाइटी सूचनाएं</string>
+    <string name="title_label">शीर्षक</string>
+    <string name="description_label">विवरण</string>
+    <string name="search_notices">सूचनाएं खोजें</string>
+    <string name="add_notice">सूचना जोड़ें</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- NOC MODULE                                                  -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <string name="noc_certificate">NOC प्रमाण पत्र</string>
+    <string name="shared_noc_certificate">शेयर किया गया NOC प्रमाण पत्र</string>
+    <string name="request_noc">NOC के लिए आवेदन करें</string>
+    <string name="apply_for_noc">NOC आवेदन भरें</string>
+    <string name="noc_approvals">NOC स्वीकृतियां</string>
+    <string name="select_noc_type">NOC प्रकार चुनें</string>
+    <string name="purpose_required">उद्देश्य *</string>
+    <string name="additional_details">अतिरिक्त विवरण / टिप्पणी (वैकल्पिक)</string>
+    <string name="remarks">टिप्पणी</string>
+    <string name="admin_comments">एडमिन टिप्पणी</string>
+    <string name="download_pdf">PDF डाउनलोड करें</string>
+    <string name="share_token_link">टोकन या /share/noc लिंक शेयर करें</string>
+    <string name="could_not_create_pdf">NOC PDF नहीं बनाया जा सका।</string>
+    <string name="could_not_share_pdf">NOC PDF शेयर नहीं किया जा सका।</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- RULES MODULE                                                -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <string name="rules_admin_title">सोसाइटी नियम</string>
+    <string name="rules_resident_title">सोसाइटी नियम</string>
     <string name="rules_create">नियम बनाएं</string>
     <string name="rules_edit">संपादित करें</string>
     <string name="rules_rule">नियम</string>
@@ -18,244 +384,381 @@
     <string name="rules_archive">आर्काइव करें</string>
     <string name="rules_publish_now">अभी प्रकाशित करें</string>
     <string name="rules_report">स्वीकृति रिपोर्ट</string>
-    <string name="rules_remind">रिमाइंड करें</string>
-    <string name="rules_send_reminders">रिमाइंडर भेजें</string>
+    <string name="rules_remind">याद दिलाएं</string>
+    <string name="rules_send_reminders">स्मरण पत्र भेजें</string>
     <string name="rules_empty_title">कोई नियम नहीं</string>
-    <string name="rules_empty_admin">निवासियों के लिए सोसायटी नियम बनाएं और प्रकाशित करें।</string>
-    <string name="rules_empty_resident">प्रकाशित सोसायटी नियम यहां दिखाई देंगे।</string>
+    <string name="rules_empty_admin">निवासियों के लिए सोसाइटी नियम बनाएं और प्रकाशित करें।</string>
+    <string name="rules_empty_resident">अभी तक कोई सोसाइटी नियम प्रकाशित नहीं किया गया है।</string>
     <string name="rules_published">प्रकाशित</string>
     <string name="rules_acknowledged">स्वीकृत</string>
     <string name="rules_ack_status">स्वीकृति स्थिति</string>
-    <string name="rules_acknowledged_done">स्वीकृत</string>
+    <string name="rules_acknowledged_done">स्वीकार किया गया</string>
     <string name="rules_pending">लंबित</string>
-    <string name="rules_ack_date">स्वीकृति तारीख</string>
+    <string name="rules_ack_date">स्वीकृति की तिथि</string>
     <string name="rules_status">स्थिति</string>
     <string name="rules_read_status">पढ़ने की स्थिति</string>
-    <string name="rules_read">पढ़ा गया</string>
-    <string name="rules_unread">नहीं पढ़ा</string>
-    <string name="rules_ack_button">मैंने यह नियम पढ़ और समझ लिया है</string>
+    <string name="rules_read">पढ़ा हुआ</string>
+    <string name="rules_unread">अनपढ़ा</string>
+    <string name="rules_ack_button">मैंने यह नियम पढ़ लिया है और समझ लिया है</string>
     <string name="rules_total">कुल</string>
     <string name="rules_done">पूर्ण</string>
+    <string name="society_rules_screen_title">सोसाइटी के नियम और विनियम</string>
+    <string name="rule_acknowledge">मैं स्वीकार करता हूँ</string>
+    <string name="rule_acknowledged">स्वीकार किया गया</string>
+    <string name="no_rules_to_export">निर्यात के लिए कोई नियम नहीं हैं</string>
+    <string name="unable_export_rules_pdf">नियमों की PDF निर्यात करने में असमर्थ</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- EVENTS MODULE                                               -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
     <string name="events_title">कार्यक्रम</string>
     <string name="events_create">कार्यक्रम बनाएं</string>
     <string name="events_edit">कार्यक्रम संपादित करें</string>
     <string name="events_empty">कोई कार्यक्रम नहीं</string>
-    <string name="events_search">शीर्षक, स्थान या आयोजक खोजें</string>
+    <string name="events_search">शीर्षक, स्थान, आयोजक खोजें</string>
     <string name="events_publish">प्रकाशित करें</string>
     <string name="events_cancel">रद्द करें</string>
     <string name="events_delete">कार्यक्रम हटाएं?</string>
-    <string name="events_image">कार्यक्रम की छवि चुनें</string>
-    <string name="language">भाषा</string>
-    <string name="language_select">भाषा चुनें</string>
-    <string name="language_english">English</string>
-    <string name="language_hindi">हिंदी</string>
-    <string name="language_marathi">मराठी</string>
-    <string name="language_hint">ऐप की भाषा चुनें। चयन के बाद ऐप रीफ्रेश होगा।</string>
-    <string name="society_management">सोसायटी प्रबंधन</string>
-    <string name="society_management_system">सोसायटी प्रबंधन सिस्टम</string>
-    <string name="system">सिस्टम</string>
-    <string name="admin">एडमिन</string>
-    <string name="resident">निवासी</string>
-    <string name="super_admin">सुपर एडमिन</string>
-    <string name="open_menu">मेनू खोलें</string>
-    <string name="open_admin_menu">एडमिन मेनू खोलें</string>
-    <string name="notifications">सूचनाएं</string>
-    <string name="logout">लॉग आउट</string>
-    <string name="profile">प्रोफाइल</string>
-    <string name="dashboard">डैशबोर्ड</string>
-    <string name="home">होम</string>
-    <string name="overview">सारांश</string>
-    <string name="view_all">सभी देखें</string>
-    <string name="quick_access">त्वरित पहुंच</string>
-    <string name="quick_actions">त्वरित कार्य</string>
-    <string name="residents">निवासी</string>
-    <string name="flats">फ्लैट</string>
-    <string name="maintenance">रखरखाव</string>
-    <string name="payments">भुगतान</string>
-    <string name="payment_history">भुगतान इतिहास</string>
-    <string name="payment_verification">भुगतान सत्यापन</string>
-    <string name="payment_reviews">भुगतान समीक्षा</string>
-    <string name="dues_payments">बकाया और भुगतान</string>
-    <string name="complaints">शिकायतें</string>
-    <string name="my_complaints">मेरी शिकायतें</string>
-    <string name="notices">सूचनाएं</string>
-    <string name="society_notices">सोसायटी सूचनाएं</string>
-    <string name="reports">रिपोर्ट</string>
-    <string name="noc">एनओसी</string>
-    <string name="noc_requests">एनओसी अनुरोध</string>
-    <string name="members">सदस्य</string>
-    <string name="society_members">सोसायटी सदस्य</string>
-    <string name="meetings">बैठकें</string>
-    <string name="meeting_management">बैठक प्रबंधन</string>
-    <string name="staff">स्टाफ</string>
-    <string name="settings">सेटिंग्स</string>
-    <string name="more">अधिक</string>
-    <string name="search">खोजें</string>
-    <string name="add">जोड़ें</string>
-    <string name="edit">संपादित करें</string>
-    <string name="delete">हटाएं</string>
-    <string name="cancel">रद्द करें</string>
-    <string name="confirm">पुष्टि करें</string>
-    <string name="retry">फिर कोशिश करें</string>
-    <string name="loading">लोड हो रहा है...</string>
-    <string name="email">ईमेल</string>
-    <string name="password">पासवर्ड</string>
-    <string name="confirm_password">पासवर्ड की पुष्टि करें</string>
-    <string name="full_name">पूरा नाम</string>
-    <string name="phone">फोन</string>
-    <string name="login">लॉगिन</string>
-    <string name="admin_login">एडमिन लॉगिन</string>
-    <string name="resident_login">निवासी लॉगिन</string>
-    <string name="login_role">लॉगिन भूमिका</string>
-    <string name="login_welcome">वापसी पर स्वागत है! जारी रखने के लिए लॉगिन करें</string>
-    <string name="logging_in">लॉगिन हो रहा है...</string>
-    <string name="hide_password">पासवर्ड छिपाएं</string>
-    <string name="show_password">पासवर्ड दिखाएं</string>
-    <string name="register">रजिस्टर</string>
-    <string name="forgot_password">पासवर्ड भूल गए?</string>
-    <string name="new_resident">नए निवासी?</string>
-    <string name="back_to_login">लॉगिन पर वापस जाएं</string>
-    <string name="change_password">पासवर्ड बदलें</string>
-    <string name="back_to_dashboard">डैशबोर्ड पर वापस जाएं</string>
-    <string name="welcome_back">फिर से स्वागत है</string>
-    <string name="resident_workspace">निवासी कार्यक्षेत्र</string>
-    <string name="flat_label">फ्लैट: %1$s</string>
-    <string name="total_due">कुल बकाया</string>
-    <string name="due_date">देय तिथि: %1$s</string>
-    <string name="pay_now">अभी भुगतान करें</string>
-    <string name="view">देखें</string>
-    <string name="current_bills">वर्तमान बिल</string>
-    <string name="upload_screenshot">स्क्रीनशॉट अपलोड करें</string>
-    <string name="transaction_id">लेन-देन आईडी</string>
-    <string name="payment_date">भुगतान तिथि</string>
-    <string name="submit_for_verification">सत्यापन के लिए जमा करें</string>
-    <string name="download_receipt">रसीद डाउनलोड करें</string>
-    <string name="receipt">रसीद</string>
-    <string name="approve">स्वीकृत करें</string>
-    <string name="reject">अस्वीकृत करें</string>
-    <string name="request_clarification">स्पष्टीकरण मांगें</string>
-    <string name="approve_payment">भुगतान स्वीकृत करें</string>
-    <string name="reject_payment">भुगतान अस्वीकृत करें</string>
-    <string name="reject_selected_payments">चयनित भुगतान अस्वीकृत करें</string>
-    <string name="payment_screenshot">भुगतान स्क्रीनशॉट</string>
-    <string name="payment_screenshot_cd">भुगतान स्क्रीनशॉट</string>
-    <string name="clear_selection">चयन हटाएं</string>
-    <string name="select_all_pending">सभी लंबित चुनें</string>
-    <string name="approve_count">स्वीकृत करें (%1$d)</string>
-    <string name="reject_all">सभी अस्वीकृत करें</string>
-    <string name="search_payment_verifications">निवासी, फ्लैट, शीर्षक या UTR खोजें</string>
-    <string name="no_payment_verifications">सत्यापन के लिए कोई भुगतान जमा नहीं है।</string>
-    <string name="payment_proofs_will_appear">निवासियों के जमा किए गए भुगतान स्क्रीनशॉट यहां दिखेंगे।</string>
-    <string name="approve_payment_confirm">क्या आप %2$s का ₹%1$s भुगतान स्वीकृत करना चाहते हैं?</string>
-    <string name="reject_payment_reason_required">कृपया अस्वीकृति का कारण लिखें। निवासी को सही प्रमाण जमा करने की सूचना मिलेगी।</string>
-    <string name="reason_for_rejection">अस्वीकृति का कारण</string>
-    <string name="clarification_message_required">कृपया स्पष्ट संदेश लिखें कि क्या सुधारना है।</string>
-    <string name="message_for_resident">निवासी के लिए संदेश</string>
-    <string name="send_request">अनुरोध भेजें</string>
-    <string name="no_image_available">छवि उपलब्ध नहीं है</string>
-    <string name="bulk_reject_reason">सभी चयनित भुगतानों के लिए अस्वीकृति कारण दर्ज करें।</string>
-    <string name="bill_month_title">बिल महीना/शीर्षक</string>
-    <string name="bill_id">बिल आईडी</string>
-    <string name="submitted_amount">जमा राशि</string>
-    <string name="expected_amount">अपेक्षित राशि</string>
-    <string name="ref_utr">रेफ/UTR</string>
-    <string name="submission_date">जमा तिथि</string>
-    <string name="view_details">विवरण देखें</string>
-    <string name="write_off">राइट ऑफ</string>
-    <string name="penalty">जुर्माना</string>
-    <string name="generate_bill">बिल बनाएं</string>
-    <string name="status_paid">भुगतान हो गया</string>
-    <string name="status_unpaid">अवैतनिक</string>
-    <string name="status_pending">लंबित</string>
-    <string name="status_approved">स्वीकृत</string>
-    <string name="status_rejected">अस्वीकृत</string>
-    <string name="status_verification_pending">सत्यापन लंबित</string>
-    <string name="status_clarification_required">स्पष्टीकरण आवश्यक</string>
-    <string name="status_overdue">देय तिथि पार</string>
-    <string name="status_partially_paid">आंशिक भुगतान</string>
-    <string name="status_written_off">राइट ऑफ</string>
-    <string name="no_internet">इंटरनेट कनेक्शन नहीं है</string>
-    <string name="unable_to_load_payments">भुगतान लोड नहीं हो सके</string>
-    <string name="invalid_email">अमान्य ईमेल</string>
-    <string name="password_required">पासवर्ड आवश्यक है</string>
-    <string name="payment_submission_failed">भुगतान जमा नहीं हो सका</string>
-    <string name="please_try_again">कृपया फिर कोशिश करें</string>
-    <string name="session_expired">सत्र समाप्त हो गया</string>
-    <plurals name="pending_bills">
-        <item quantity="one">%d लंबित बिल</item>
-        <item quantity="other">%d लंबित बिल</item>
-    </plurals>
-    <string name="meeting_action_items">कार्य आइटम</string>
-    <string name="meeting_add_action">कार्य आइटम जोड़ें</string>
-    <string name="meeting_view_minutes">मिनट्स देखें</string>
-    <string name="meeting_download_pdf">PDF डाउनलोड करें</string>
-    <string name="meeting_share_pdf">PDF साझा करें</string>
-    <string name="meeting_print_minutes">मिनट्स प्रिंट करें</string>
+    <string name="events_image">कार्यक्रम छवि चुनें</string>
+    <string name="event_image_cd">कार्यक्रम छवि</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- REPORTS MODULE                                              -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
     <string name="report_summary">सारांश</string>
     <string name="report_monthly">मासिक रिपोर्ट</string>
-    <string name="report_bank_ledger">बैंक लेजर</string>
-    <string name="report_cash_ledger">नकद लेजर</string>
-    <string name="report_flat_collection">फ्लैट संग्रह</string>
-    <string name="report_write_offs">राइट-ऑफ</string>
+    <string name="report_bank_ledger">बैंक खाता बही (Ledger)</string>
+    <string name="report_cash_ledger">नकद खाता बही (Ledger)</string>
+    <string name="report_flat_collection">फ्लैट वसूली</string>
+    <string name="report_write_offs">राइट-ऑफ (छूट)</string>
     <string name="report_opening_balance">प्रारंभिक शेष</string>
     <string name="report_edit_opening_balance">प्रारंभिक शेष संपादित करें</string>
     <string name="report_financial_year">वित्तीय वर्ष</string>
-    <string name="report_payment_modes">भुगतान के तरीके</string>
-    <string name="report_collection_history">12-महीने का संग्रह इतिहास</string>
-    <string name="report_resident_ledger">निवासी लेजर</string>
-    <string name="report_monthly_records">मासिक रखरखाव रिकॉर्ड</string>
+    <string name="report_payment_modes">भुगतान के माध्यम</string>
+    <string name="report_collection_history">१२ महीने का वसूली इतिहास</string>
+    <string name="report_resident_ledger">निवासी खाता बही</string>
+    <string name="report_monthly_records">मासिक मेंटेनन्स रिकॉर्ड्स</string>
     <string name="report_export_monthly">मासिक रिपोर्ट CSV निर्यात करें</string>
-    <string name="splash_checking_session">आपका सत्र जांचा जा रहा है...</string>
-    <string name="meeting_meetings">बैठकें</string>
-    <string name="meeting_create">बैठक बनाएं</string>
-    <string name="meeting_details">बैठक का विवरण</string>
-    <string name="meeting_no_meetings">कोई बैठकें नहीं</string>
-    <string name="meeting_duplicate">डुप्लिकेट</string>
-    <string name="meeting_attendance">उपस्थिति</string>
-    <string name="meeting_minutes">मिनट्स</string>
-    <string name="meeting_poll">पोल</string>
-    <string name="meeting_fines">जुर्माने</string>
-    <string name="meeting_search_placeholder">शीर्षक, स्थान या प्रकार खोजें</string>
-    <string name="meeting_analytics">बैठक एनालिटिक्स</string>
-    <string name="meeting_title">शीर्षक</string>
-    <string name="meeting_description">विवरण</string>
-    <string name="meeting_venue">स्थान</string>
-    <string name="meeting_date">तारीख</string>
-    <string name="meeting_time">समय</string>
-    <string name="meeting_type">प्रकार</string>
-    <string name="meeting_agenda">एजेंडा</string>
-    <string name="meeting_scheduled">निर्धारित</string>
-    <string name="meeting_completed">पूर्ण</string>
-    <string name="meeting_cancelled">रद्द</string>
-    <string name="complaints_title">शिकायतें</string>
-    <string name="complaint_create">नई शिकायत दर्ज करें</string>
-    <string name="complaint_my_complaints">मेरी शिकायतें</string>
-    <string name="complaint_all_complaints">सभी शिकायतें</string>
-    <string name="notices_title">सूचनाएं एवं घोषणाएं</string>
-    <string name="notice_create">सूचना प्रकाशित करें</string>
-    <string name="notice_no_notices">कोई सूचना पोस्ट नहीं की गई है</string>
-    <string name="society_rules_screen_title">सोसायटी नियम एवं शर्तें</string>
-    <string name="rule_acknowledge">मैं स्वीकार करता हूँ</string>
-    <string name="rule_acknowledged">स्वीकृत</string>
-    <string name="greeting_good_morning">शुभ प्रभात</string>
+    <string name="bank_opening_balance">बैंक प्रारंभिक शेष (₹)</string>
+    <string name="cash_opening_balance">नकद प्रारंभिक शेष (₹)</string>
+    <string name="year_label">वर्ष</string>
+    <string name="month_label">माह</string>
+    <string name="bank_account_ledger">बैंक खाता लेनदेन बही</string>
+    <string name="cash_account_ledger">नकद खाता लेनदेन बही</string>
+    <string name="verified_bank_ledger">सत्यापित बैंक खाता लेनदेन बही</string>
+    <string name="total_opening_balance">कुल प्रारंभिक शेष</string>
+    <string name="total_income">कुल आय</string>
+    <string name="total_expenses">कुल खर्च</string>
+    <string name="total_closing_balance">कुल अंतिम शेष</string>
+    <string name="net_surplus_deficit">शुद्ध अधिशेष / घाटा (Surplus/Deficit)</string>
+    <string name="search_reports">निवासी, फ्लैट, श्रेणी, विक्रेता, स्थिति के अनुसार खोजें…</string>
+    <string name="search_reports_cd">रिपोर्ट्स खोजें</string>
+    <string name="reset_label">रीसेट करें</string>
+    <string name="search_flat_wing">फ्लैट, विंग, निवासी का नाम खोजें…</string>
+    <string name="search_txn_desc">लेनदेन विवरण / प्रकार / राशि खोजें</string>
+    <string name="total_amount_received">कुल प्राप्त राशि</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- DASHBOARD                                                   -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <string name="greeting_good_morning">सुप्रभात</string>
     <string name="greeting_good_afternoon">शुभ दोपहर</string>
     <string name="greeting_good_evening">शुभ संध्या</string>
-    <string name="upcoming_due">आगामी रखरखाव बकाया</string>
-    <string name="no_pending_bills">अभी कोई लंबित रखरखाव बिल नहीं है।</string>
-    <string name="complaint_summary">शिकायत गतिविधि ट्रैकर</string>
-    <string name="latest_notices">नवीनतम सोसायटी सूचनाएं</string>
+    <string name="upcoming_due">आगामी मेंटेनन्स देय तिथि</string>
+    <string name="no_pending_bills">वर्तमान में कोई लंबित मेंटेनन्स बिल नहीं है।</string>
+    <string name="no_recent_activity">हाल की कोई गतिविधि उपलब्ध नहीं है।</string>
+    <string name="payment_verifications">भुगतान सत्यापन</string>
+    <string name="pending_complaints">लंबित शिकायतें</string>
+    <string name="overdue_dues">बकाया देय राशि</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- PROFILE                                                     -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
     <string name="my_profile">मेरी प्रोफाइल</string>
     <string name="resident_account_details">निवासी खाता विवरण</string>
-    <string name="update_phone_number">फोन नंबर अपडेट करें</string>
+    <string name="update_phone_number">फ़ोन नंबर अपडेट करें</string>
     <string name="change_profile_photo">प्रोफाइल फोटो बदलें</string>
     <string name="remove_profile_photo">प्रोफाइल फोटो हटाएं</string>
-    <string name="in_progress_label">प्रगति में</string>
-    <string name="open_label">खुली</string>
-    <string name="resolved_label">हल की गई</string>
-    <string name="confirm_resolved">समाधान की पुष्टि करें</string>
-    <string name="reopen_label">पुनः खोलें</string>
-    <string name="raise_complaint">शिकायत दर्ज करें</string>
-    <string name="track_complaints">अपने सोसायटी अनुरोधों को ट्रैक करें</string>
-    <string name="attachments_count">संलग्नक (%1$d)</string>
-    <string name="admin_reply_title">एडमिन उत्तर • %1$s %2$s</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- SPLASH                                                      -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <string name="splash_checking_session">आपका सत्र जांचा जा रहा है…</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- ADMIN MANAGEMENT                                            -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <string name="edit_assign_flat">फ्लैट संपादित / आवंटित करें</string>
+    <string name="edit_assign_resident">निवासी संपादित / आवंटित करें</string>
+    <string name="delete_resident_title">निवासी को हटाएं?</string>
+    <string name="temporary_password">अस्थायी पासवर्ड</string>
+    <string name="search_flat_types">फ्लैट के प्रकार खोजें</string>
+    <string name="flat_label_format">फ्लैट %1$s</string>
+    <string name="payment_qr_preview">भुगतान QR पूर्वावलोकन</string>
+    <string name="auto_reminders">स्वचालित रिमाइंडर</string>
+    <string name="payment_alerts">भुगतान अलर्ट</string>
+    <string name="complaint_alerts">शिकायत अलर्ट</string>
+    <string name="visitor_alerts">आगंतुक अलर्ट</string>
+    <string name="category_amount_format">%1$s · ₹%2$s</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- NOTIFICATION SCREEN                                         -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <string name="notifications_title">सूचनाएं</string>
+    <string name="delete_all_notifications">सभी सूचनाएं हटाएं</string>
+    <string name="delete_notification">सूचना हटाएं</string>
+    <string name="total_count">कुल: %1$d</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- POLL / VOTING                                               -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <string name="poll_options">मतदान विकल्प</string>
+    <string name="anonymous">गुमनाम</string>
+    <string name="allow_vote_change">वोट बदलने की अनुमति दें</string>
+    <string name="show_results_before_end">समाप्त होने से पहले परिणाम दिखाएं</string>
+    <string name="mandatory">अनिवार्य</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- PAYMENT RESIDENT                                            -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <string name="no_upi_configured">एडमिन द्वारा कोई UPI ID कॉन्फ़िगर नहीं की गई है।</string>
+    <string name="no_qr_configured">एडमिन द्वारा कोई QR कोड कॉन्फ़िगर नहीं किया गया है।</string>
+    <string name="unable_open_qr">QR छवि खोलने में असमर्थ।</string>
+    <string name="payment_submitted_verification">भुगतान सफलतापूर्वक सबमिट हुआ। एडमिन सत्यापन की प्रतीक्षा में।</string>
+    <string name="no_payment_records">कोई भुगतान रिकॉर्ड नहीं है</string>
+    <string name="receipt_saved">रसीद Downloads में सहेजी गई।</string>
+    <string name="unable_save_receipt">रसीद सहेजने में असमर्थ।</string>
+    <string name="unable_share_receipt">रसीद शेयर करने में असमर्थ।</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- ADVANCED / QR                                               -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <string name="qr_image_selected">QR छवि चुनी गई</string>
+    <string name="unable_read_qr">QR छवि पढ़ने में असमर्थ</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- CONFIRMATION DIALOGS                                        -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <string name="confirm_logout_title">लॉगआउट करें?</string>
+    <string name="confirm_logout_message">क्या आप वाकई SocietyHub से लॉगआउट करना चाहते हैं?</string>
+    <string name="confirm_delete_title">हटाएं?</string>
+    <string name="confirm_delete_message">इस कार्रवाई को पूर्ववत नहीं किया जा सकता।</string>
+    <string name="confirm_approve_payment_title">भुगतान स्वीकृत करें?</string>
+    <string name="confirm_approve_payment_message">क्या आप वाकई यह भुगतान स्वीकृत करना चाहते हैं? निवासी की भुगतान स्थिति अपडेट हो जाएगी।</string>
+    <string name="confirm_reject_payment_title">भुगतान अस्वीकार करें?</string>
+    <string name="confirm_reject_payment_message">क्या आप वाकई इस जमा किए गए भुगतान को अस्वीकार करना चाहते हैं?</string>
+    <string name="confirm_write_off_title">राइट-ऑफ लागू करें?</string>
+    <string name="confirm_write_off_message">इससे निवासी की बकाया राशि कम हो जाएगी। यह कार्रवाई आसानी से पूर्ववत नहीं की जा सकती।</string>
+    <string name="confirm_generate_bills_title">बिलिंग चक्र शुरू करें?</string>
+    <string name="confirm_generate_bills_message">सभी पात्र निवासियों के लिए मेंटेनन्स बिल जनरेट किए जाएंगे।</string>
+    <string name="confirm_cancel_bill_title">बिल रद्द करें?</string>
+    <string name="confirm_cancel_bill_message">क्या आप वाकई यह मेंटेनन्स बिल रद्द करना चाहते हैं?</string>
+    <string name="confirm_mark_paid_title">भुगतान किया हुआ चिह्नित करें?</string>
+    <string name="confirm_mark_paid_message">क्या इस बिल को निवासी द्वारा मैन्युअल रूप से भुगतान किया गया चिह्नित करें?</string>
+    <string name="confirm_delete_notice_title">सूचना हटाएं?</string>
+    <string name="confirm_delete_notice_message">क्या आप वाकई यह सूचना हटाना चाहते हैं? इस कार्रवाई को पूर्ववत नहीं किया जा सकता।</string>
+    <string name="confirm_delete_meeting_title">बैठक हटाएं?</string>
+    <string name="confirm_delete_meeting_message">क्या आप वाकई यह बैठक हटाना चाहते हैं? इस कार्रवाई को पूर्ववत नहीं किया जा सकता।</string>
+    <string name="confirm_delete_complaint_title">शिकायत हटाएं?</string>
+    <string name="confirm_delete_complaint_message">क्या आप वाकई यह शिकायत हटाना चाहते हैं? इस कार्रवाई को पूर्ववत नहीं किया जा सकता।</string>
+    <string name="confirm_reject_noc_title">NOC आवेदन अस्वीकार करें?</string>
+    <string name="confirm_reject_noc_message">क्या आप वाकई यह NOC आवेदन अस्वीकार करना चाहते हैं?</string>
+    <string name="confirm_delete_rule_title">नियम हटाएं?</string>
+    <string name="confirm_delete_rule_message">यह सोसाइटी नियम स्थायी रूप से हटा दिया जाएगा।</string>
+    <string name="confirm_delete_expense_title">खर्च हटाएं?</string>
+    <string name="confirm_delete_expense_message">क्या आप वाकई यह खर्च रिकॉर्ड हटाना चाहते हैं?</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- SUCCESS MESSAGES                                            -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <string name="success_bills_generated">मेंटेनन्स बिल सफलतापूर्वक जनरेट हो गए।</string>
+    <string name="success_payment_submitted">भुगतान सत्यापन के लिए सबमिट किया गया।</string>
+    <string name="success_payment_approved">भुगतान सफलतापूर्वक स्वीकृत हुआ।</string>
+    <string name="success_payment_rejected">भुगतान सफलतापूर्वक अस्वीकृत हुआ।</string>
+    <string name="success_complaint_submitted">शिकायत सफलतापूर्वक दर्ज हो गई।</string>
+    <string name="success_notice_published">सूचना सफलतापूर्वक प्रकाशित हो गई।</string>
+    <string name="success_notice_deleted">सूचना सफलतापूर्वक हटा दी गई।</string>
+    <string name="success_meeting_created">बैठक सफलतापूर्वक बन गई।</string>
+    <string name="success_meeting_updated">बैठक सफलतापूर्वक अपडेट हो गई।</string>
+    <string name="success_meeting_deleted">बैठक सफलतापूर्वक हटा दी गई।</string>
+    <string name="success_noc_submitted">NOC आवेदन समीक्षा के लिए जमा किया गया।</string>
+    <string name="success_rule_saved">सोसाइटी नियम सफलतापूर्वक सहेजा गया।</string>
+    <string name="success_rule_deleted">नियम सफलतापूर्वक हटा दिया गया।</string>
+    <string name="success_profile_updated">प्रोफाइल सफलतापूर्वक अपडेट हो गई।</string>
+    <string name="success_settings_updated">सेटिंग्स सफलतापूर्वक अपडेट हो गईं।</string>
+    <string name="success_write_off_applied">राइट-ऑफ सफलतापूर्वक लागू हुआ।</string>
+    <string name="success_expense_added">खर्च सफलतापूर्वक जोड़ा गया।</string>
+    <string name="success_expense_deleted">खर्च सफलतापूर्वक हटा दिया गया।</string>
+    <string name="success_resident_added">निवासी सफलतापूर्वक जोड़ा गया।</string>
+    <string name="success_bill_cancelled">बिल सफलतापूर्वक रद्द हो गया।</string>
+    <string name="success_bill_deleted">बिल सफलतापूर्वक हटा दिया गया।</string>
+    <string name="success_marked_paid">बिल भुगतान किया हुआ चिह्नित हुआ।</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- ERROR / NETWORK MESSAGES                                    -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <string name="error_network">नेटवर्क त्रुटि हुई। कृपया पुनः प्रयास करें।</string>
+    <string name="error_login_failed">लॉगिन विफल। कृपया पुनः प्रयास करें।</string>
+    <string name="error_server">सर्वर त्रुटि। कृपया बाद में पुनः प्रयास करें।</string>
+    <string name="error_request_failed">अनुरोध विफल। कृपया पुनः प्रयास करें।</string>
+    <string name="error_something_wrong">कुछ गलत हो गया। कृपया पुनः प्रयास करें।</string>
+    <string name="saved_successfully">सफलतापूर्वक सहेजा गया</string>
+    <string name="resident_created">निवासी सफलतापूर्वक बनाया गया</string>
+    <string name="resident_deleted">निवासी सफलतापूर्वक हटाया गया</string>
+    <string name="flat_created">फ्लैट सफलतापूर्वक बनाया गया</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- EMPTY STATES                                                -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <string name="no_records_found">कोई रिकॉर्ड नहीं मिला</string>
+    <string name="no_residents_found">कोई निवासी नहीं मिला</string>
+    <string name="no_payments_found">कोई भुगतान नहीं मिला</string>
+    <string name="no_complaints_found">कोई शिकायत नहीं मिली</string>
+    <string name="no_notices_available">कोई सूचना उपलब्ध नहीं है</string>
+    <string name="no_bills_available">कोई बिल उपलब्ध नहीं है</string>
+    <string name="no_reports_available">कोई रिपोर्ट उपलब्ध नहीं है</string>
+    <string name="no_notifications_available">कोई सूचना उपलब्ध नहीं है</string>
+    <string name="no_matching_records">कोई मेल खाता रिकॉर्ड नहीं मिला</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- ACCESSIBILITY (contentDescription)                          -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <string name="cd_back">वापस</string>
+    <string name="cd_refresh">रिफ्रेश करें</string>
+    <string name="cd_menu">मेनू</string>
+    <string name="cd_search">खोजें</string>
+    <string name="cd_filter">फ़िल्टर</string>
+    <string name="cd_notifications">सूचनाएं</string>
+    <string name="cd_edit">संपादित करें</string>
+    <string name="cd_delete">हटाएं</string>
+    <string name="cd_login">लॉगिन</string>
+    <string name="cd_approve">स्वीकृत करें</string>
+    <string name="cd_reject">अस्वीकार करें</string>
+    <string name="cd_generate_bills">बिल जनरेट करें</string>
+    <string name="cd_view_details">विवरण देखें</string>
+    <string name="cd_more_actions">अधिक कार्रवाई</string>
+    <string name="cd_clear">हटाएं</string>
+    <string name="cd_reset">रीसेट करें</string>
+    <string name="cd_thumbnail">थंबनेल</string>
+    <string name="cd_payment_screenshot">भुगतान स्क्रीनशॉट</string>
+    <string name="cd_selected_screenshot">चयनित भुगतान स्क्रीनशॉट</string>
+    <string name="cd_society_logo">%1$s लोगो</string>
+    <string name="cd_email_or_mobile">ईमेल या मोबाइल नंबर</string>
+    <string name="cd_full_attachment">पूर्ण शिकायत संलग्नक</string>
+    <string name="cd_complaint_picture">चयनित शिकायत चित्र</string>
+    <string name="cd_event_image">कार्यक्रम छवि</string>
+    <string name="cd_payment_qr">भुगतान QR पूर्वावलोकन</string>
+    <string name="cd_society_qr">सोसाइटी भुगतान QR कोड</string>
+    <string name="cd_copy_upi">UPI ID कॉपी करें</string>
+    <string name="cd_add_notice">सूचना जोड़ें</string>
+    <string name="cd_delete_all_notifications">सभी सूचनाएं हटाएं</string>
+    <string name="cd_delete_notification">सूचना हटाएं</string>
+
+    <string name="loc_create_manual_bill">मैनुअल बिल बनाएँ</string>
+    <string name="loc_specific_resident">विशिष्ट निवासी</string>
+    <string name="loc_optional_charges">वैकल्पिक शुल्क / तत्काल जुर्माना</string>
+    <string name="loc_reason_required">कारण (अनिवार्य)</string>
+    <string name="loc_notes_breakdown">टिप्पणियाँ / शुल्क विवरण</string>
+    <string name="loc_penalty_settings">जुर्माना सेटिंग्स</string>
+    <string name="loc_duplicate_bill">चयनित माह और वर्ष के लिए इस निवासी का बिल पहले से मौजूद है।</string>
+    <string name="loc_generate_bills_hint">सभी फ्लैटों के बिल बनाने के लिए ऊपर \u201cबिल बनाएँ\u201d दबाएँ।</string>
+    <string name="loc_no_bills_generated">अभी कोई बिल नहीं बनाया गया</string>
+    <string name="loc_maintenance_unavailable">रखरखाव उपलब्ध नहीं है</string>
+    <string name="loc_payment_verification_unavailable">भुगतान सत्यापन उपलब्ध नहीं है</string>
+    <string name="loc_pending_verifications">लंबित भुगतान सत्यापन</string>
+    <string name="loc_no_pending_payments">कोई लंबित भुगतान जमा नहीं है।</string>
+    <string name="loc_apply_penalty">जुर्माना लागू करें</string>
+    <string name="loc_apply_waiver">छूट लागू करें</string>
+    <string name="loc_send_reminder">रिमाइंडर भेजें</string>
+    <string name="loc_raise_dispute">विवाद दर्ज करें</string>
+    <string name="loc_submit_dispute">विवाद जमा करें</string>
+    <string name="loc_download_qr">QR कोड डाउनलोड करें</string>
+    <string name="loc_open_upi">UPI ऐप खोलें</string>
+    <string name="loc_copy_upi">UPI कॉपी करें</string>
+    <string name="loc_i_have_paid">मैंने भुगतान कर दिया है</string>
+    <string name="loc_financial_reports">वित्तीय और रखरखाव रिपोर्ट</string>
+    <string name="loc_financial_summary">वित्तीय लेखा सारांश</string>
+    <string name="loc_monthly_maintenance_report">मासिक रखरखाव रिपोर्ट</string>
+    <string name="loc_expense_report">व्यय रिपोर्ट</string>
+    <string name="loc_bank_account_ledger">बैंक खाता बही</string>
+    <string name="loc_cash_account_ledger">नकद खाता बही</string>
+    <string name="loc_flat_collection_report">फ्लैट संग्रह रिपोर्ट</string>
+    <string name="loc_writeoff_history">राइट-ऑफ इतिहास</string>
+    <string name="loc_no_report_entries">कोई रिपोर्ट प्रविष्टि नहीं मिली</string>
+    <string name="loc_resident_financial_reports">सोसाइटी वित्तीय और रखरखाव रिपोर्ट</string>
+    <string name="loc_personal_statement">मेरा व्यक्तिगत खाता विवरण</string>
+    <string name="loc_report_filters">रिपोर्ट बहु-फ़िल्टर</string>
+    <string name="loc_reset_filters">फ़िल्टर रीसेट करें</string>
+    <string name="loc_meeting_minutes">बैठक कार्यवृत्त</string>
+    <string name="loc_minutes_of_meeting">बैठक का कार्यवृत्त</string>
+    <string name="loc_meeting_poll">बैठक मतदान</string>
+    <string name="loc_meeting_fines">बैठक जुर्माने</string>
+    <string name="loc_mark_attendance">उपस्थिति दर्ज करें</string>
+    <string name="loc_mark_all_present">सभी को उपस्थित करें</string>
+    <string name="loc_comments_qa">टिप्पणियाँ / प्रश्नोत्तर</string>
+    <string name="loc_attach_files">फ़ाइलें संलग्न करें</string>
+    <string name="loc_save_minutes">कार्यवृत्त सहेजें</string>
+    <string name="loc_delete_meeting">बैठक हटाएँ</string>
+    <string name="loc_keep_meeting">बैठक रखें</string>
+    <string name="loc_no_fines">इस बैठक के लिए कोई जुर्माना नहीं मिला।</string>
+    <string name="loc_cancel_request">अनुरोध रद्द करें</string>
+    <string name="loc_upload_requested_info">मांगी गई जानकारी अपलोड करें</string>
+    <string name="loc_view_noc_certificate">NOC प्रमाणपत्र देखें</string>
+    <string name="loc_share_link">लिंक साझा करें</string>
+    <string name="loc_no_noc_requests">अभी कोई NOC अनुरोध नहीं है</string>
+    <string name="loc_admin_note">प्रशासक टिप्पणी</string>
+    <string name="loc_authorized_signatory">अधिकृत हस्ताक्षरकर्ता</string>
+    <string name="loc_event_details">विवरण</string>
+    <string name="loc_event_organizer">आयोजक</string>
+    <string name="loc_event_audience">दर्शक</string>
+    <string name="loc_no_events_found">कोई कार्यक्रम नहीं मिला</string>
+    <string name="loc_delete_event_message">यह कार्यक्रम स्थायी रूप से हटा दिया जाएगा।</string>
+    <string name="loc_society_details">सोसाइटी विवरण</string>
+    <string name="loc_appearance_alerts">दिखावट और अलर्ट</string>
+    <string name="loc_save_settings">सेटिंग्स सहेजें</string>
+    <string name="loc_transfer_flat">फ्लैट स्थानांतरित करें</string>
+    <string name="loc_transfer_history">स्थानांतरण इतिहास</string>
+    <string name="loc_writeoff_summary">राइट-ऑफ सारांश</string>
+    <string name="loc_platform_overview">प्लेटफ़ॉर्म अवलोकन</string>
+    <string name="loc_manage_societies">सोसाइटियों का प्रबंधन करें और प्लेटफ़ॉर्म वृद्धि देखें।</string>
+    <string name="loc_add_society">सोसाइटी जोड़ें</string>
+    <string name="loc_edit_society">सोसाइटी संपादित करें</string>
+    <string name="loc_society_profile">सोसाइटी प्रोफ़ाइल</string>
+    <string name="loc_society_administrator">सोसाइटी प्रशासक</string>
+    <string name="loc_download_pdf">पूर्ण PDF डाउनलोड करें</string>
+    <string name="loc_download_csv">पूर्ण CSV डाउनलोड करें</string>
+    <string name="loc_share_pdf">पूर्ण PDF साझा करें</string>
+    <string name="loc_share_csv">पूर्ण CSV साझा करें</string>
+    <string name="loc_export_reports">रिपोर्ट निर्यात करें</string>
+    <string name="loc_share_report">रिपोर्ट साझा करें</string>
+    <string name="excel_transactions">एक्सेल लेनदेन</string>
+    <string name="excel_subtitle">सदस्य लेनदेन डाउनलोड, सत्यापित और आयात करें</string>
+    <string name="excel_downloads">वर्कबुक डाउनलोड</string>
+    <string name="excel_download_help">खाली टेम्पलेट डाउनलोड करें या फ़िल्टर के अनुसार सोसायटी लेनदेन निर्यात करें।</string>
+    <string name="excel_template">खाली टेम्पलेट</string>
+    <string name="excel_export">डेटा निर्यात करें</string>
+    <string name="excel_filters">लेनदेन फ़िल्टर</string>
+    <string name="excel_from_date">आरंभ तिथि</string>
+    <string name="excel_to_date">अंतिम तिथि</string>
+    <string name="excel_wing">विंग</string>
+    <string name="excel_flat">फ्लैट नंबर</string>
+    <string name="excel_status">भुगतान स्थिति</string>
+    <string name="excel_clear_filters">फ़िल्टर साफ़ करें</string>
+    <string name="excel_import">वर्कबुक आयात</string>
+    <string name="excel_select_file">एक्सेल फ़ाइल चुनें</string>
+    <string name="excel_remove_file">चुनी फ़ाइल हटाएं</string>
+    <string name="excel_upload_preview">अपलोड और पूर्वावलोकन</string>
+    <string name="excel_validation_summary">सत्यापन सारांश</string>
+    <string name="excel_total">कुल</string>
+    <string name="excel_valid">मान्य</string>
+    <string name="excel_invalid">अमान्य</string>
+    <string name="excel_warnings">चेतावनियां</string>
+    <string name="excel_error_report">त्रुटि रिपोर्ट डाउनलोड करें</string>
+    <string name="excel_confirm_import">आयात की पुष्टि करें</string>
+    <string name="excel_import_completed">आयात पूरा हुआ</string>
+    <string name="excel_confirm_title">लेनदेन आयात की पुष्टि करें?</string>
+    <string name="excel_confirm_message">यह %1$d सत्यापित लेनदेन पंक्तियां आयात करेगा। उसी बैच को दोबारा आयात नहीं किया जा सकता।</string>
+    <string name="excel_confirm">लेनदेन आयात करें</string>
+    <string name="excel_import_history">आयात इतिहास</string>
+    <string name="excel_no_import_history">अभी तक कोई एक्सेल आयात नहीं है।</string>
 </resources>

@@ -89,10 +89,25 @@ const withPaymentScreenshotUrls = (req, payments = []) => {
 const getPaymentScreenshot = async (req, res) => {
   try {
     const { id } = req.params;
-    const [rows] = await promisePool.query('SELECT payment_proof, screenshot_url FROM payments WHERE id = ?', [id]);
+    const [rows] = await promisePool.query(
+      `SELECT p.payment_proof, p.screenshot_url, p.resident_id, m.resident_id AS bill_resident_id
+       FROM payments p
+       LEFT JOIN maintenance m ON m.id = p.bill_id AND m.society_id = p.society_id
+       WHERE p.id = ? AND (? = 'super_admin' OR p.society_id = ?)
+       LIMIT 1`,
+      [id, req.user?.role, req.user?.societyId]
+    );
     if (rows.length === 0) return res.status(404).send('Payment not found');
     
     const payment = rows[0];
+    if (req.user?.role === 'resident') {
+      const residentId = Number(req.user.id);
+      const ownsPayment =
+        Number(payment.resident_id) === residentId ||
+        Number(payment.bill_resident_id) === residentId;
+      if (!ownsPayment) return res.status(404).send('Payment not found');
+    }
+
     const sendDataImage = (value) => {
       if (!value || !String(value).startsWith('data:image/')) return false;
       const match = String(value).match(/^data:(image\/(?:png|jpeg|jpg|webp|gif));base64,(.+)$/);
@@ -1132,7 +1147,10 @@ const createMaintenance = async (req, res) => {
 // POST /api/maintenance/manual
 const createManualBill = async (req, res) => {
   try {
-    const { title, category, customCategory, amount, dueDate, description, notes, residentId, flatId, month, year } = req.body;
+    const {
+      title, category, customCategory, amount, optionalCharges, dueDate, description, notes,
+      reason, residentId, flatId, month, year, penaltyType, penaltyValue, penaltyGraceDays
+    } = req.body;
     const now = new Date();
     const reqMonth = Number(month) || (now.getMonth() + 1);
     const reqYear = Number(year) || now.getFullYear();
@@ -1148,6 +1166,21 @@ const createManualBill = async (req, res) => {
     const baseAmt = Number(amount);
     if (!Number.isFinite(baseAmt) || baseAmt <= 0) {
       return sendResponse(res, 400, 'Bill amount must be a positive number');
+    }
+    const extraAmt = optionalCharges === undefined || optionalCharges === null || optionalCharges === ''
+      ? 0 : Number(optionalCharges);
+    if (!Number.isFinite(extraAmt) || extraAmt < 0) {
+      return sendResponse(res, 400, 'Optional charges cannot be negative');
+    }
+    const parsedPenaltyValue = penaltyValue === undefined || penaltyValue === null || penaltyValue === ''
+      ? null : Number(penaltyValue);
+    const parsedGraceDays = penaltyGraceDays === undefined || penaltyGraceDays === null || penaltyGraceDays === ''
+      ? null : Number(penaltyGraceDays);
+    if (parsedPenaltyValue !== null && (!Number.isFinite(parsedPenaltyValue) || parsedPenaltyValue < 0)) {
+      return sendResponse(res, 400, 'Penalty value cannot be negative');
+    }
+    if (parsedGraceDays !== null && (!Number.isInteger(parsedGraceDays) || parsedGraceDays < 0)) {
+      return sendResponse(res, 400, 'Penalty grace days must be a non-negative whole number');
     }
 
     let targetResidentId = Number(residentId);
@@ -1176,6 +1209,16 @@ const createManualBill = async (req, res) => {
       return sendResponse(res, 400, 'Selected resident has no flat assigned. Please assign a flat to the resident first.');
     }
 
+    const [duplicateRows] = await promisePool.query(
+      `SELECT id FROM maintenance
+       WHERE resident_id = ? AND flat_id = ? AND month = ? AND year = ?
+       LIMIT 1`,
+      [targetResidentId, targetFlatId, reqMonth, reqYear]
+    );
+    if (duplicateRows.length) {
+      return sendResponse(res, 409, 'A maintenance bill already exists for this resident for the selected month and year');
+    }
+
     let billDueDate = dueDate;
     if (!billDueDate || !/^\d{4}-\d{2}-\d{2}$/.test(String(billDueDate))) {
       const formattedMonth = String(reqMonth).padStart(2, '0');
@@ -1188,14 +1231,17 @@ const createManualBill = async (req, res) => {
       categoryVal = String(customCategory).trim();
     }
 
-    const notesVal = (notes || description || '').trim() || null;
+    const reasonVal = String(reason || description || 'Manual bill').trim();
+    const notesVal = String(notes || '').trim() || null;
     const defaultAmt = Number(residentInfo.default_maintenance_amount || 0);
+    const totalAmt = baseAmt + extraAmt;
 
     const [result] = await promisePool.query(
       `INSERT INTO maintenance 
        (resident_id, flat_id, title, category, bill_type, is_manual, month, year, amount, penalty_amount, total_amount, paid_amount, remaining_amount, status, due_date,
-        flat_type_id, default_maintenance_amount, final_maintenance_amount, is_custom_amount, custom_reason, notes, edited_by, edited_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, 'manual', true, ?, ?, ?, 0.00, ?, 0.00, ?, 'Pending', ?, ?, ?, ?, true, ?, ?, ?, NOW(), NOW(), NOW())`,
+        flat_type_id, default_maintenance_amount, final_maintenance_amount, is_custom_amount, custom_reason, notes,
+        penalty_type, penalty_value, penalty_grace_days, edited_by, edited_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 'manual', true, ?, ?, ?, ?, ?, 0.00, ?, 'Pending', ?, ?, ?, ?, true, ?, ?, ?, ?, ?, ?, NOW(), NOW(), NOW())`,
       [
         targetResidentId,
         targetFlatId,
@@ -1204,14 +1250,18 @@ const createManualBill = async (req, res) => {
         reqMonth,
         reqYear,
         baseAmt,
-        baseAmt,
-        baseAmt,
+        extraAmt,
+        totalAmt,
+        totalAmt,
         billDueDate,
         residentInfo.flat_type_id || null,
         defaultAmt,
-        baseAmt,
-        categoryVal,
+        totalAmt,
+        reasonVal,
         notesVal,
+        penaltyType || null,
+        parsedPenaltyValue,
+        parsedGraceDays,
         req.user?.id || null
       ]
     );

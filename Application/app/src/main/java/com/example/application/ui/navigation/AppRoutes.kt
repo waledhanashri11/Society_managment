@@ -13,10 +13,14 @@ sealed class AppRoute(val route: String) {
     }
     data object AdminDashboard : AppRoute("admin_dashboard")
     data object SuperAdminDashboard : AppRoute("super_admin_dashboard")
+    data object SuperAdminProfile : AppRoute("super_admin_profile")
     data object SuperAdminSocieties : AppRoute("super_admin_societies")
     data object CreateSociety : AppRoute("super_admin_societies/create")
     data object SocietyDetails : AppRoute("super_admin_societies/{id}") {
         fun createRoute(id: String) = "super_admin_societies/$id"
+    }
+    data object EditSociety : AppRoute("super_admin_societies/{id}/edit") {
+        fun createRoute(id: String) = "super_admin_societies/$id/edit"
     }
     data object AdminResidents : AppRoute("admin_residents")
     data object ResidentDetails : AppRoute("admin_residents/{id}") {
@@ -40,9 +44,12 @@ sealed class AppRoute(val route: String) {
         fun createRoute(id: String = "new") = "admin_staff/form/$id"
     }
     data object AdminMaintenance : AppRoute("admin_maintenance")
+    data object AdminExcelTransactions : AppRoute("admin_excel_transactions")
     data object AdminPayments : AppRoute("admin_payment_verification")
     data object AdminReports : AppRoute("admin_reports")
+    data object AdminOverallReport : AppRoute("admin_overall_report")
     data object AdminSettings : AppRoute("admin_settings")
+    data object AdminProfile : AppRoute("admin_profile")
     data object AdminWriteOffHistory : AppRoute("admin_write_off_history")
     data object AdminAgmReport : AppRoute("admin_agm_report")
     data object AdminFlatTransfers : AppRoute("admin_flat_transfers")

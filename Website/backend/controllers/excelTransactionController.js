@@ -10,10 +10,10 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: MAX_FILE_BYTES, files: 1, fields: 0 },
   fileFilter: (_req, file, callback) => {
-    const validExtension = /\.xlsx?$/i.test(file.originalname || '');
+    const validExtension = /\.xlsx$/i.test(file.originalname || '');
     const validMime = [
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'application/vnd.ms-excel', 'application/octet-stream'
+      'application/octet-stream'
     ].includes(file.mimetype);
     callback(validExtension && validMime ? null : new Error('Only .xlsx workbooks are supported'), validExtension && validMime);
   }
@@ -139,10 +139,10 @@ const validateRow = async (row, society, seenReferences) => {
               COALESCE(m.remaining_amount, m.total_payable, m.total_amount, m.amount, 0) AS outstanding,
               f.flat_no, COALESCE(f.wing, f.wing_block, '') AS wing
        FROM users u
-       JOIN maintenance m ON m.id = ? AND m.resident_id = u.id
-       JOIN flats f ON f.id = m.flat_id
-       WHERE u.id = ? LIMIT 1`,
-      [Number(row.billId), Number(row.memberId)]
+       JOIN maintenance m ON m.id = ? AND m.resident_id = u.id AND m.society_id = ?
+       JOIN flats f ON f.id = m.flat_id AND f.society_id = ?
+       WHERE u.id = ? AND u.society_id = ? LIMIT 1`,
+      [Number(row.billId), society.id, society.id, Number(row.memberId), society.id]
     );
     record = records[0];
     if (!record) errors.push('Member or bill was not found in this society, or the bill does not belong to the member');
@@ -150,7 +150,7 @@ const validateRow = async (row, society, seenReferences) => {
       if (record.member_status !== 'approved') errors.push('Member account is not approved');
       if (row.flatNumber && row.flatNumber.toLowerCase() !== String(record.flat_no).toLowerCase()) errors.push('Flat Number does not match the bill');
       if (row.wing && row.wing.toLowerCase() !== String(record.wing).toLowerCase()) errors.push('Wing does not match the bill');
-      if (row.paymentStatus === 'Approved' && amount > Number(record.outstanding) + 0.005) errors.push('Approved amount exceeds the bill outstanding amount');
+      if (['Approved', 'Paid'].includes(row.paymentStatus) && amount > Number(record.outstanding) + 0.005) errors.push('Approved/Paid amount exceeds the bill outstanding amount');
       row.memberName = record.member_name;
       row.flatNumber = record.flat_no;
       row.wing = record.wing;
@@ -160,7 +160,10 @@ const validateRow = async (row, society, seenReferences) => {
   if (row.importAction === 'UPDATE') {
     if (!positiveInteger(row.transactionId)) errors.push('Transaction ID is required for UPDATE');
     else {
-      const [payments] = await promisePool.query('SELECT id, bill_id, resident_id, payment_status FROM payments WHERE id = ? LIMIT 1', [Number(row.transactionId)]);
+      const [payments] = await promisePool.query(
+        'SELECT id, bill_id, resident_id, payment_status FROM payments WHERE id = ? AND society_id = ? LIMIT 1',
+        [Number(row.transactionId), society.id]
+      );
       const payment = payments[0];
       if (!payment) errors.push('Transaction to update was not found in this society');
       else if (['approved', 'paid'].includes(String(payment.payment_status).toLowerCase())) errors.push('Approved transactions are immutable; use an adjustment workflow');
@@ -171,8 +174,8 @@ const validateRow = async (row, society, seenReferences) => {
   }
 
   if (row.referenceNumber) {
-    const values = [row.referenceNumber, Number(row.billId)];
-    let sql = 'SELECT id FROM payments WHERE LOWER(transaction_id) = LOWER(?) AND bill_id = ?';
+    const values = [row.referenceNumber, Number(row.billId), society.id];
+    let sql = 'SELECT id FROM payments WHERE LOWER(transaction_id) = LOWER(?) AND bill_id = ? AND society_id = ?';
     if (row.importAction === 'UPDATE' && positiveInteger(row.transactionId)) { sql += ' AND id <> ?'; values.push(Number(row.transactionId)); }
     const [duplicates] = await promisePool.query(`${sql} LIMIT 1`, values);
     if (duplicates[0]) errors.push('UTR/Cheque Number already exists for this bill');
@@ -199,10 +202,12 @@ const previewImport = async (req, res) => {
       'SELECT id, status FROM excel_transaction_import_batches WHERE file_fingerprint = ? AND society_id = ? LIMIT 1',
       [fileFingerprint, req.user.societyId]
     );
-    if (existing[0]) {
-      if (existing[0].status === 'COMPLETED') return res.status(409).json({ success: false, message: 'This workbook has already been imported' });
-      await promisePool.query('DELETE FROM excel_transaction_import_batches WHERE id = ?', [existing[0].id]);
-    }
+    if (existing[0]) return res.status(409).json({
+      success: false,
+      message: existing[0].status === 'COMPLETED'
+        ? 'This workbook has already been imported'
+        : 'This workbook has already been validated. Use its existing preview or upload a changed workbook.'
+    });
     const parsedRows = await parseWorkbook(req.file.buffer);
     if (!parsedRows.length) return res.status(400).json({ success: false, message: 'The Transactions sheet does not contain any data rows' });
     if (parsedRows.length > 5000) return res.status(400).json({ success: false, message: 'A workbook may contain at most 5,000 transaction rows' });
@@ -269,7 +274,7 @@ const previewPayload = (batchId, rows, counts, totalValidAmount) => ({
   }))
 });
 
-const recalculateBill = async (connection, billId) => {
+const recalculateBill = async (connection, societyId, billId) => {
   await connection.query(
     `UPDATE maintenance m SET
        paid_amount = totals.paid,
@@ -279,9 +284,9 @@ const recalculateBill = async (connection, billId) => {
        updated_at = NOW()
      FROM (
        SELECT COALESCE(SUM(amount), 0) AS paid, MAX(COALESCE(paid_at, created_at)) AS latest
-       FROM payments WHERE bill_id = ? AND LOWER(payment_status) IN ('approved', 'paid')
-     ) totals WHERE m.id = ?`,
-    [billId, billId]
+        FROM payments WHERE bill_id = ? AND society_id = ? AND LOWER(payment_status) IN ('approved', 'paid')
+     ) totals WHERE m.id = ? AND m.society_id = ?`,
+    [billId, societyId, billId, societyId]
   );
 };
 
@@ -299,34 +304,34 @@ const confirmImport = async (req, res) => {
     if (!batch) { await connection.rollback(); return res.status(404).json({ success: false, message: 'Import batch not found' }); }
     if (batch.status === 'COMPLETED') { await connection.rollback(); return res.status(409).json({ success: false, message: 'This batch has already been imported' }); }
     if (batch.status !== 'PREVIEWED') { await connection.rollback(); return res.status(409).json({ success: false, message: 'This batch cannot be imported in its current state' }); }
-    await connection.query("UPDATE excel_transaction_import_batches SET status = 'IMPORTING', confirmed_at = NOW(), updated_at = NOW() WHERE id = ?", [Number(batchId)]);
-    const [rows] = await connection.query("SELECT * FROM excel_transaction_import_rows WHERE batch_id = ? AND validation_result = 'VALID' ORDER BY row_number FOR UPDATE", [Number(batchId)]);
+    await connection.query("UPDATE excel_transaction_import_batches SET status = 'IMPORTING', confirmed_at = NOW(), updated_at = NOW() WHERE id = ? AND society_id = ?", [Number(batchId), req.user.societyId]);
+    const [rows] = await connection.query("SELECT * FROM excel_transaction_import_rows WHERE batch_id = ? AND society_id = ? AND validation_result = 'VALID' ORDER BY row_number FOR UPDATE", [Number(batchId), req.user.societyId]);
     let imported = 0;
     for (const row of rows) {
       const [records] = await connection.query(
         `SELECT m.id, m.resident_id, COALESCE(m.remaining_amount, m.total_payable, m.total_amount, m.amount, 0) AS outstanding
-         FROM maintenance m JOIN users u ON u.id = m.resident_id
-         WHERE m.id = ? AND u.id = ? FOR UPDATE`,
-        [row.bill_id, row.member_id]
+         FROM maintenance m JOIN users u ON u.id = m.resident_id AND u.society_id = m.society_id
+         WHERE m.id = ? AND u.id = ? AND m.society_id = ? FOR UPDATE`,
+        [row.bill_id, row.member_id, req.user.societyId]
       );
       const bill = records[0];
       if (!bill) throw new Error(`Row ${row.row_number}: member or bill is no longer available`);
-      if (row.payment_status === 'Approved' && Number(row.amount) > Number(bill.outstanding) + 0.005) throw new Error(`Row ${row.row_number}: approved amount now exceeds the outstanding balance`);
+      if (['Approved', 'Paid'].includes(row.payment_status) && Number(row.amount) > Number(bill.outstanding) + 0.005) throw new Error(`Row ${row.row_number}: approved/paid amount now exceeds the outstanding balance`);
       const reference = row.reference_number || `CASH-XLS-${batchId}-${row.row_number}`;
       let paymentId;
       if (row.import_action === 'UPDATE') {
-        const [payments] = await connection.query('SELECT id, payment_status, bill_id, resident_id FROM payments WHERE id = ? FOR UPDATE', [row.transaction_id]);
+        const [payments] = await connection.query('SELECT id, payment_status, bill_id, resident_id FROM payments WHERE id = ? AND society_id = ? FOR UPDATE', [row.transaction_id, req.user.societyId]);
         const payment = payments[0];
         if (!payment || Number(payment.bill_id) !== Number(row.bill_id) || Number(payment.resident_id) !== Number(row.member_id)) throw new Error(`Row ${row.row_number}: transaction scope changed after preview`);
         if (['approved', 'paid'].includes(String(payment.payment_status).toLowerCase())) throw new Error(`Row ${row.row_number}: approved transactions are immutable`);
         await connection.query(
           `UPDATE payments SET payment_method = ?, transaction_id = ?, amount = ?, payment_status = ?, paid_at = ?::date,
-             remarks = ?, payment_account = ?, updated_at = NOW() WHERE id = ?`,
-          [row.payment_mode, reference, row.amount, row.payment_status, row.transaction_date, row.remarks, paymentAccount(row.payment_mode), row.transaction_id]
+              remarks = ?, payment_account = ?, updated_at = NOW() WHERE id = ? AND society_id = ?`,
+          [row.payment_mode, reference, row.amount, row.payment_status, row.transaction_date, row.remarks, paymentAccount(row.payment_mode), row.transaction_id, req.user.societyId]
         );
         paymentId = row.transaction_id;
       } else {
-        const [duplicate] = await connection.query('SELECT id FROM payments WHERE bill_id = ? AND LOWER(transaction_id) = LOWER(?) LIMIT 1', [row.bill_id, reference]);
+        const [duplicate] = await connection.query('SELECT id FROM payments WHERE bill_id = ? AND LOWER(transaction_id) = LOWER(?) AND society_id = ? LIMIT 1', [row.bill_id, reference, req.user.societyId]);
         if (duplicate[0]) throw new Error(`Row ${row.row_number}: duplicate UTR/Cheque Number`);
         const [insert] = await connection.query(
           `INSERT INTO payments
@@ -337,14 +342,14 @@ const confirmImport = async (req, res) => {
         );
         paymentId = insert.insertId;
       }
-      if (row.payment_status === 'Approved') await recalculateBill(connection, row.bill_id);
-      await connection.query('UPDATE excel_transaction_import_rows SET imported_payment_id = ?, imported_at = NOW() WHERE id = ?', [paymentId, row.id]);
+      if (['Approved', 'Paid'].includes(row.payment_status)) await recalculateBill(connection, req.user.societyId, row.bill_id);
+      await connection.query('UPDATE excel_transaction_import_rows SET imported_payment_id = ?, imported_at = NOW() WHERE id = ? AND society_id = ?', [paymentId, row.id, req.user.societyId]);
       imported += 1;
     }
     const skipped = Number(batch.total_rows) - imported;
     await connection.query(
       `UPDATE excel_transaction_import_batches SET status = 'COMPLETED', imported_rows = ?, skipped_rows = ?, failed_rows = 0,
-         completed_at = NOW(), updated_at = NOW() WHERE id = ?`, [imported, skipped, Number(batchId)]
+         completed_at = NOW(), updated_at = NOW() WHERE id = ? AND society_id = ?`, [imported, skipped, Number(batchId), req.user.societyId]
     );
     await connection.commit();
     return res.json({ success: true, message: 'Excel transactions imported successfully', data: { batchId, imported, skipped, failed: 0, message: 'Excel transactions imported successfully.' } });

@@ -275,6 +275,9 @@ class ReportRepository @Inject constructor(
     suspend fun getAdminMonthly(year: Int, month: Int): NetworkResult<FinancialReportDto> =
         safeDirect { reportsApi.getAdminMonthly(year, month) }
 
+    suspend fun getOverallReport(financialYear:String,month:Int?=null,fromDate:String?=null,toDate:String?=null,transactionType:String?=null,paymentMode:String?=null,residentId:String?=null,flat:String?=null,status:String?=null,search:String?=null,page:Int=1) =
+        safeDirect { reportsApi.getOverallReport(financialYear,month,fromDate,toDate,transactionType,paymentMode,residentId,flat,status,search,page) }
+
     suspend fun saveOpeningBalance(financialYear: String, bank: String, cash: String): NetworkResult<String> {
         return when (val result = safeWrapped { reportsApi.saveOpeningBalance(OpeningBalanceRequest(financialYear, bank, cash)) }) {
             is NetworkResult.Success -> { clear(); NetworkResult.Success("Balances saved and reports recalculated.") }

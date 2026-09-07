@@ -22,13 +22,17 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import com.example.application.data.remote.dto.CreateSocietyRequest
 import com.example.application.data.remote.dto.ManagedSocietyDto
 import com.example.application.data.remote.dto.SocietyAdminInput
+import com.example.application.data.remote.dto.UpdateAdminRequest
+import com.example.application.data.remote.dto.UpdateSocietyRequest
 import com.example.application.viewmodel.SessionViewModel
 import com.example.application.viewmodel.SuperAdminViewModel
+import com.example.application.ui.components.LocalizedText as Text
 
 @Composable
 fun SuperAdminDashboardScreen(
     onSocieties: () -> Unit,
     onSociety: (String) -> Unit,
+    onProfile: () -> Unit,
     onLogoutComplete: () -> Unit,
     viewModel: SuperAdminViewModel = hiltViewModel(),
     sessionViewModel: SessionViewModel = hiltViewModel()
@@ -41,6 +45,7 @@ fun SuperAdminDashboardScreen(
             "Super Admin Portal",
             refreshing = state.loading || state.refreshing,
             onRefresh = viewModel::load,
+            onProfile = onProfile,
             onLogout = { sessionViewModel.logout(onLogoutComplete) }
         )
     }) { padding ->
@@ -118,11 +123,25 @@ private fun SocietyCard(society: ManagedSocietyDto, onClick: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SocietyDetailsScreen(societyId: String, onBack: () -> Unit, viewModel: SuperAdminViewModel = hiltViewModel()) {
+fun SocietyDetailsScreen(
+    societyId: String,
+    onBack: () -> Unit,
+    onEdit: (String) -> Unit,
+    viewModel: SuperAdminViewModel = hiltViewModel()
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     LaunchedEffect(societyId) { viewModel.loadSociety(societyId) }
-    Scaffold(topBar = { SimpleTopBar("Society Details", onBack) }) { padding ->
+    Scaffold(topBar = {
+        TopAppBar(
+            title = { Text("Society Details", fontWeight = FontWeight.Bold) },
+            navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, "Back") } },
+            actions = {
+                IconButton(onClick = { onEdit(societyId) }) { Icon(Icons.Filled.Edit, "Edit Society") }
+            }
+        )
+    }) { padding ->
         ContentState(state.loading, state.error, { viewModel.loadSociety(societyId) }, Modifier.padding(padding)) {
             state.selected?.let { society ->
                 LazyColumn(contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -157,12 +176,22 @@ fun SocietyDetailsScreen(societyId: String, onBack: () -> Unit, viewModel: Super
                         }
                     }
                     item {
-                        Button(
-                            onClick = { viewModel.setStatus(society.id, if (society.status == "active") "inactive" else "active") },
-                            enabled = !state.submitting,
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = if (society.status == "active") ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error) else ButtonDefaults.buttonColors()
-                        ) { Text(if (society.status == "active") "Deactivate Society" else "Activate Society") }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            OutlinedButton(
+                                onClick = { onEdit(societyId) },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Filled.Edit, null)
+                                Spacer(Modifier.width(6.dp))
+                                Text("Edit Society")
+                            }
+                            Button(
+                                onClick = { viewModel.setStatus(society.id, if (society.status == "active") "inactive" else "active") },
+                                enabled = !state.submitting,
+                                modifier = Modifier.weight(1f),
+                                colors = if (society.status == "active") ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error) else ButtonDefaults.buttonColors()
+                            ) { Text(if (society.status == "active") "Deactivate" else "Activate") }
+                        }
                     }
                 }
             }
@@ -200,6 +229,149 @@ fun CreateSocietyScreen(onBack: () -> Unit, onCreated: (String) -> Unit, viewMod
     }
 }
 
+@Composable
+fun EditSocietyScreen(
+    societyId: String,
+    onBack: () -> Unit,
+    viewModel: SuperAdminViewModel = hiltViewModel()
+) {
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    LaunchedEffect(societyId) { viewModel.loadSociety(societyId) }
+
+    val society = state.selected
+
+    var name by remember(society) { mutableStateOf(society?.name.orEmpty()) }
+    var code by remember(society) { mutableStateOf(society?.code.orEmpty()) }
+    var registration by remember(society) { mutableStateOf(society?.registrationNumber.orEmpty()) }
+    var address by remember(society) { mutableStateOf(society?.address.orEmpty()) }
+    var city by remember(society) { mutableStateOf(society?.city.orEmpty()) }
+    var region by remember(society) { mutableStateOf(society?.state.orEmpty()) }
+    var pincode by remember(society) { mutableStateOf(society?.pincode.orEmpty()) }
+    var contactEmail by remember(society) { mutableStateOf(society?.contactEmail.orEmpty()) }
+    var contactPhone by remember(society) { mutableStateOf(society?.contactPhone.orEmpty()) }
+
+    var adminName by remember(society) { mutableStateOf(society?.adminName.orEmpty()) }
+    var adminEmail by remember(society) { mutableStateOf(society?.adminEmail.orEmpty()) }
+    var adminPhone by remember(society) { mutableStateOf(society?.adminPhone.orEmpty()) }
+    var adminPassword by remember { mutableStateOf("") }
+
+    var validation by remember { mutableStateOf<String?>(null) }
+
+    Scaffold(topBar = { SimpleTopBar("Edit Society", onBack) }) { padding ->
+        ContentState(state.loading, state.error, { viewModel.loadSociety(societyId) }, Modifier.padding(padding)) {
+            LazyColumn(contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                item { Text("Society Details", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) }
+                item { Field(name, { name = it }, "Society Name") }
+                item { Field(code, { code = it.uppercase() }, "Society Code") }
+                item { Field(registration, { registration = it }, "Registration Number") }
+                item { Field(address, { address = it }, "Address") }
+                item { Field(city, { city = it }, "City") }
+                item { Field(region, { region = it }, "State") }
+                item { Field(pincode, { pincode = it }, "Pincode") }
+                item { Field(contactEmail, { contactEmail = it }, "Contact Email") }
+                item { Field(contactPhone, { contactPhone = it }, "Contact Phone") }
+                item {
+                    Button(
+                        onClick = {
+                            validation = when {
+                                name.isBlank() || code.length < 2 -> "Society name and code are required."
+                                contactEmail.isNotBlank() && !contactEmail.contains("@") -> "Enter a valid contact email."
+                                else -> null
+                            }
+                            if (validation == null) {
+                                viewModel.updateSociety(
+                                    societyId,
+                                    UpdateSocietyRequest(name, code, address.blankToNull(), city.blankToNull(), region.blankToNull(), pincode.blankToNull(), registration.blankToNull(), contactPhone.blankToNull(), contactEmail.blankToNull()),
+                                    onDone = onBack
+                                )
+                            }
+                        },
+                        enabled = !state.submitting,
+                        modifier = Modifier.fillMaxWidth().height(48.dp)
+                    ) { Text(if (state.submitting) "Saving…" else "Update Society Details") }
+                }
+
+                item { Spacer(Modifier.height(8.dp)); Divider(); Spacer(Modifier.height(4.dp)); Text("Administrator Settings", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) }
+                item { Field(adminName, { adminName = it }, "Admin Name") }
+                item { Field(adminEmail, { adminEmail = it }, "Admin Email") }
+                item { Field(adminPhone, { adminPhone = it }, "Admin Phone") }
+                item { Field(adminPassword, { adminPassword = it }, "New Admin Password (Optional)", password = true) }
+                item {
+                    Button(
+                        onClick = {
+                            validation = when {
+                                adminName.isBlank() || !adminEmail.contains("@") -> "Valid administrator name and email are required."
+                                adminPassword.isNotBlank() && adminPassword.length < 10 -> "Password must contain at least 10 characters."
+                                else -> null
+                            }
+                            if (validation == null) {
+                                viewModel.updateAdmin(
+                                    societyId,
+                                    UpdateAdminRequest(adminName, adminEmail, adminPhone.blankToNull(), adminPassword.blankToNull()),
+                                    onDone = onBack
+                                )
+                            }
+                        },
+                        enabled = !state.submitting,
+                        modifier = Modifier.fillMaxWidth().height(48.dp)
+                    ) { Text(if (state.submitting) "Saving…" else "Update Administrator") }
+                }
+
+                item { (validation ?: state.error)?.let { Text(it, color = MaterialTheme.colorScheme.error) } }
+            }
+        }
+    }
+}
+
+@Composable
+fun SuperAdminProfileScreen(
+    onBack: () -> Unit,
+    onChangePassword: () -> Unit,
+    onLogoutComplete: () -> Unit,
+    sessionViewModel: SessionViewModel = hiltViewModel()
+) {
+    val session by sessionViewModel.session.collectAsStateWithLifecycle()
+    Scaffold(topBar = { SimpleTopBar("Super Admin Profile", onBack) }) { padding ->
+        LazyColumn(Modifier.padding(padding).fillMaxSize(), contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            item {
+                Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp)) {
+                    Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                            Icon(Icons.Filled.AccountCircle, null, modifier = Modifier.size(60.dp), tint = MaterialTheme.colorScheme.primary)
+                            Column {
+                                Text(session?.name ?: "Super Administrator", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                                Text(session?.role?.uppercase() ?: "SUPER_ADMIN", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                        Divider()
+                        Detail("Email", session?.email)
+                        Detail("Phone", session?.phone ?: "N/A")
+                        Detail("Status", session?.status?.uppercase() ?: "ACTIVE")
+                    }
+                }
+            }
+            item {
+                OutlinedButton(onClick = onChangePassword, modifier = Modifier.fillMaxWidth().height(48.dp)) {
+                    Icon(Icons.Filled.Lock, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Change Password")
+                }
+            }
+            item {
+                Button(
+                    onClick = { sessionViewModel.logout(onLogoutComplete) },
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Icon(Icons.Filled.Logout, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Logout")
+                }
+            }
+        }
+    }
+}
+
 private fun String.blankToNull() = takeIf { it.isNotBlank() }
 
 @Composable private fun Field(value: String, onValue: (String) -> Unit, label: String, password: Boolean = false) = OutlinedTextField(value, onValue, Modifier.fillMaxWidth(), label = { Text(label) }, singleLine = true, visualTransformation = if (password) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None)
@@ -210,13 +382,14 @@ private fun String.blankToNull() = takeIf { it.isNotBlank() }
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable private fun SimpleTopBar(title: String, onBack: () -> Unit) = TopAppBar(title = { Text(title, fontWeight = FontWeight.Bold) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, "Back") } })
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable private fun PlatformTopBar(title: String, subtitle: String, refreshing: Boolean, onRefresh: () -> Unit, onLogout: () -> Unit) = TopAppBar(
+@Composable private fun PlatformTopBar(title: String, subtitle: String, refreshing: Boolean, onRefresh: () -> Unit, onProfile: () -> Unit, onLogout: () -> Unit) = TopAppBar(
     title = { Column { Text(title, fontWeight = FontWeight.Bold); Text(subtitle, style = MaterialTheme.typography.labelMedium) } },
     actions = {
         IconButton(onClick = onRefresh, enabled = !refreshing) {
             if (refreshing) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
             else Icon(Icons.Filled.Refresh, "Refresh")
         }
+        IconButton(onClick = onProfile) { Icon(Icons.Filled.Person, "Profile") }
         IconButton(onClick = onLogout) { Icon(Icons.Filled.Logout, "Logout") }
     }
 )

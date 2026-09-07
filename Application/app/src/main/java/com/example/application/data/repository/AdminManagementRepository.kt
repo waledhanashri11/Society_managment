@@ -22,6 +22,12 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import retrofit2.HttpException
 import retrofit2.Response
+import okhttp3.MultipartBody
+import okhttp3.ResponseBody
+import com.example.application.data.remote.dto.ApiResponse
+import com.example.application.data.remote.dto.ResidentImportPreviewDto
+import com.example.application.data.remote.dto.ResidentImportConfirmRequest
+import com.example.application.data.remote.dto.ResidentImportResultDto
 
 @Singleton
 class AdminManagementRepository @Inject constructor(
@@ -54,6 +60,19 @@ class AdminManagementRepository @Inject constructor(
     }
 
     suspend fun getResident(id: String): NetworkResult<UserSummaryDto> = safeApiCall { api.getUser(id) }
+
+    suspend fun downloadResidentTemplate(): NetworkResult<ResponseBody> = safeApiCall { api.downloadResidentTemplate() }
+
+    suspend fun previewResidentImport(file: MultipartBody.Part): NetworkResult<ResidentImportPreviewDto> =
+        unwrapApi(safeApiCall { api.previewResidentImport(file) })
+
+    suspend fun confirmResidentImport(batchId: String): NetworkResult<ResidentImportResultDto> =
+        unwrapApi(safeApiCall { api.confirmResidentImport(ResidentImportConfirmRequest(batchId)) }).also {
+            if (it is NetworkResult.Success) clearPeopleCache()
+        }
+
+    suspend fun downloadResidentImportErrors(batchId: String): NetworkResult<ResponseBody> =
+        safeApiCall { api.downloadResidentImportErrors(batchId) }
 
     suspend fun saveResident(id: String?, request: UserSaveRequest): NetworkResult<String> {
         val result = if (id == null) {
@@ -208,6 +227,13 @@ class AdminManagementRepository @Inject constructor(
             is NetworkResult.Error -> result
             NetworkResult.Loading -> NetworkResult.Loading
         }
+    }
+
+    private fun <T> unwrapApi(result: NetworkResult<ApiResponse<T>>): NetworkResult<T> = when (result) {
+        is NetworkResult.Success -> result.data.data?.let { NetworkResult.Success(it) }
+            ?: NetworkResult.Error(AppError.Unknown(result.data.message ?: "Unable to read the server response."))
+        is NetworkResult.Error -> result
+        NetworkResult.Loading -> NetworkResult.Loading
     }
 
     private suspend fun <T> safeApiCall(call: suspend () -> Response<T>): NetworkResult<T> {

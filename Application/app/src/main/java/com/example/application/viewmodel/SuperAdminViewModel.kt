@@ -96,6 +96,20 @@ class SuperAdminViewModel @Inject constructor(private val repository: SuperAdmin
             .onFailure { error -> _state.update { it.copy(submitting = false, error = error.message) } }
     }
 
+    fun updateSociety(id: String, request: UpdateSocietyRequest, onDone: () -> Unit) = viewModelScope.launch {
+        _state.update { it.copy(submitting = true, error = null) }
+        runCatching { repository.updateSociety(id, request) }
+            .onSuccess { _state.update { it.copy(submitting = false) }; loadSociety(id); onDone() }
+            .onFailure { error -> _state.update { it.copy(submitting = false, error = error.message) } }
+    }
+
+    fun updateAdmin(id: String, request: UpdateAdminRequest, onDone: () -> Unit) = viewModelScope.launch {
+        _state.update { it.copy(submitting = true, error = null) }
+        runCatching { repository.updateAdmin(id, request) }
+            .onSuccess { _state.update { it.copy(submitting = false) }; loadSociety(id); onDone() }
+            .onFailure { error -> _state.update { it.copy(submitting = false, error = error.message) } }
+    }
+
     companion object {
         private const val LOAD_TIMEOUT_MS = 75_000L
         private const val DASHBOARD_TTL_MS = 30_000L

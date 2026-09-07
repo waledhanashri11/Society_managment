@@ -2,6 +2,12 @@ package com.example.application.ui.screens.noc
 
 import android.net.Uri
 import android.content.Intent
+import android.content.ContentValues
+import android.graphics.pdf.PdfDocument
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
+import java.io.File
 import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts

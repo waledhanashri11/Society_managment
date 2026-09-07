@@ -7,6 +7,8 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.os.Environment
+import java.io.File
 import android.provider.MediaStore
 import android.util.Base64
 import android.widget.Toast
@@ -162,6 +164,7 @@ import androidx.compose.material3.HorizontalDivider
 fun AdminMaintenanceScreen(
     onBack: () -> Unit,
     onPaymentVerification: () -> Unit = {},
+    onExcelTransactions: () -> Unit = {},
     initialTab: String = "Bills",
     viewModel: AdminMaintenanceViewModel = hiltViewModel()
 ) {
@@ -1252,13 +1255,13 @@ private fun androidx.compose.foundation.lazy.LazyListScope.billsTab(
                         Spacer(Modifier.width(6.dp))
                         Text("Generate Bills", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
                     }
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(6.dp))
                     OutlinedButton(
                         onClick = { openDialog(MaintenanceDialog.ManualBill) },
                         shape = RoundedCornerShape(10.dp),
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
                     ) {
-                        Text("Specific Resident", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                        Text("Specific Flat", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
@@ -2165,13 +2168,20 @@ private suspend fun savePaymentProof(context: Context, image: String, paymentId:
             }
         }
         val extension = when (mime.lowercase()) { "image/png" -> "png"; "image/webp" -> "webp"; else -> "jpg" }
-        val values = ContentValues().apply {
-            put(MediaStore.Downloads.DISPLAY_NAME, "payment-proof-${paymentId ?: System.currentTimeMillis()}.$extension")
-            put(MediaStore.Downloads.MIME_TYPE, mime)
-            put(MediaStore.Downloads.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS)
+        val fileName = "payment-proof-${paymentId ?: System.currentTimeMillis()}.$extension"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val values = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                put(MediaStore.Downloads.MIME_TYPE, mime)
+                put(MediaStore.Downloads.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS)
+            }
+            val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: error("Cannot create download")
+            context.contentResolver.openOutputStream(uri)?.use { it.write(bytes) } ?: error("Cannot write download")
+        } else {
+            val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Society Management").apply { mkdirs() }
+            val file = File(dir, fileName)
+            file.outputStream().use { it.write(bytes) }
         }
-        val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: error("Cannot create download")
-        context.contentResolver.openOutputStream(uri)?.use { it.write(bytes) } ?: error("Cannot write download")
     }.isSuccess
 }
 
@@ -3225,7 +3235,7 @@ private fun MaintenanceDialogHost(dialog: MaintenanceDialog?, onDismiss: () -> U
                     val resident = selectedResident ?: return@Button
                     viewModel.createManualBill(
                         title.trim(), month.toInt(), year.toInt(), dueDate, amount,
-                        resident.id, resident.flatId, onSuccess = onDismiss
+                        residentId = resident.id, flatId = resident.flatId, onSuccess = onDismiss
                     )
                 },
                 enabled = !viewState.submitting && selectedResident != null && title.isNotBlank() && validAmount && validMonth && validYear && validDate,
@@ -3928,7 +3938,8 @@ private fun saveQrToGallery(context: Context) {
         }
         val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: error("Unable to create image file")
         resolver.openOutputStream(uri)?.use { output ->
-            context.resources.openRawResource(R.drawable.my_payment_qr).use { input -> input.copyTo(output) }
+            val bitmap = android.graphics.BitmapFactory.decodeResource(context.resources, R.drawable.my_payment_qr) ?: error("Unable to decode QR image")
+            bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, output)
         } ?: error("Unable to write QR image")
         values.clear()
         values.put(MediaStore.Images.Media.IS_PENDING, 0)
@@ -3943,8 +3954,9 @@ private fun saveQrToGallery(context: Context) {
 private fun shareQr(context: Context) {
     runCatching {
         val file = java.io.File(context.cacheDir, "my_payment_qr.png")
-        context.resources.openRawResource(R.drawable.my_payment_qr).use { input ->
-            file.outputStream().use { output -> input.copyTo(output) }
+        val bitmap = android.graphics.BitmapFactory.decodeResource(context.resources, R.drawable.my_payment_qr) ?: error("Unable to decode QR image")
+        file.outputStream().use { output ->
+            bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, output)
         }
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
         val intent = Intent(Intent.ACTION_SEND).apply {
@@ -4632,19 +4644,24 @@ private fun saveAdminBillReceiptPdf(context: Context, bill: MaintenanceBillDto) 
     line("This is a digitally generated receipt and does not require a signature.")
     document.finishPage(page)
     try {
-        val values = ContentValues().apply {
-            put(MediaStore.Downloads.DISPLAY_NAME, fileName)
-            put(MediaStore.Downloads.MIME_TYPE, "application/pdf")
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val values = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                put(MediaStore.Downloads.MIME_TYPE, "application/pdf")
                 put(MediaStore.Downloads.RELATIVE_PATH, "Download")
             }
-        }
-        val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-        if (uri != null) {
-            resolver.openOutputStream(uri)?.use { document.writeTo(it) }
-            Toast.makeText(context, "Receipt downloaded", Toast.LENGTH_SHORT).show()
+            val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+            if (uri != null) {
+                resolver.openOutputStream(uri)?.use { document.writeTo(it) }
+                Toast.makeText(context, "Receipt downloaded", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(context, "Unable to download receipt", Toast.LENGTH_SHORT).show()
+            }
         } else {
-            Toast.makeText(context, "Unable to download receipt", Toast.LENGTH_SHORT).show()
+            val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).apply { mkdirs() }
+            val file = File(dir, fileName)
+            file.outputStream().use { document.writeTo(it) }
+            Toast.makeText(context, "Receipt downloaded", Toast.LENGTH_SHORT).show()
         }
     } catch (_: Exception) {
         Toast.makeText(context, "Unable to download receipt", Toast.LENGTH_SHORT).show()
@@ -4736,13 +4753,20 @@ private fun saveWriteOffReceiptPdf(context: Context, receipt: com.example.applic
     line("Approval date: ${DashboardFormatters.date(receipt.approvalDate)}")
     document.finishPage(page)
     try {
-        val values = ContentValues().apply {
-            put(MediaStore.Downloads.DISPLAY_NAME, "write-off-receipt-${receipt.billId ?: System.currentTimeMillis()}.pdf")
-            put(MediaStore.Downloads.MIME_TYPE, "application/pdf")
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) put(MediaStore.Downloads.RELATIVE_PATH, "Download")
+        val fileName = "write-off-receipt-${receipt.billId ?: System.currentTimeMillis()}.pdf"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val values = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                put(MediaStore.Downloads.MIME_TYPE, "application/pdf")
+                put(MediaStore.Downloads.RELATIVE_PATH, "Download")
+            }
+            val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: error("Unable to create receipt")
+            context.contentResolver.openOutputStream(uri)?.use { document.writeTo(it) } ?: error("Unable to write receipt")
+        } else {
+            val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).apply { mkdirs() }
+            val file = File(dir, fileName)
+            file.outputStream().use { document.writeTo(it) }
         }
-        val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: error("Unable to create receipt")
-        context.contentResolver.openOutputStream(uri)?.use { document.writeTo(it) } ?: error("Unable to write receipt")
         Toast.makeText(context, "Official write-off receipt downloaded", Toast.LENGTH_SHORT).show()
     } catch (_: Exception) {
         Toast.makeText(context, "Unable to download write-off receipt", Toast.LENGTH_SHORT).show()

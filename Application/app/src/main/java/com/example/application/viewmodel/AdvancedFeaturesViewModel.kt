@@ -95,7 +95,7 @@ class AdvancedFeaturesViewModel @Inject constructor(
                 if (response.isSuccessful && response.body() != null) {
                     val directory = context.getExternalFilesDir("receipts") ?: context.filesDir
                     val file = File(directory, "payment-receipt-$paymentId.html")
-                    response.body()!!.byteStream().use { input -> file.outputStream().use { input.copyTo(it) } }
+                    (response.body()?.byteStream() ?: error("Empty response body")).use { input -> file.outputStream().use { input.copyTo(it) } }
                     _state.value = AdvancedUiState(title = "Payment receipt", content = file.absolutePath, success = "Receipt downloaded")
                 } else _state.value = AdvancedUiState(title = "Payment receipt", error = "Unable to download receipt (${response.code()})")
             } catch (error: Exception) {

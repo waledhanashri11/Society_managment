@@ -17,8 +17,32 @@ import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.PUT
 import retrofit2.http.Path
+import retrofit2.http.Multipart
+import retrofit2.http.Part
+import retrofit2.http.Streaming
+import okhttp3.MultipartBody
+import okhttp3.ResponseBody
+import com.example.application.data.remote.dto.ApiResponse
+import com.example.application.data.remote.dto.ResidentImportPreviewDto
+import com.example.application.data.remote.dto.ResidentImportConfirmRequest
+import com.example.application.data.remote.dto.ResidentImportResultDto
 
 interface AdminManagementApiService {
+    @Streaming
+    @GET("api/residents/import/template")
+    suspend fun downloadResidentTemplate(): Response<ResponseBody>
+
+    @Multipart
+    @POST("api/residents/import/preview")
+    suspend fun previewResidentImport(@Part file: MultipartBody.Part): Response<ApiResponse<ResidentImportPreviewDto>>
+
+    @POST("api/residents/import/confirm")
+    suspend fun confirmResidentImport(@Body request: ResidentImportConfirmRequest): Response<ApiResponse<ResidentImportResultDto>>
+
+    @Streaming
+    @GET("api/residents/import/{batchId}/errors")
+    suspend fun downloadResidentImportErrors(@Path("batchId") batchId: String): Response<ResponseBody>
+
     @GET("api/users")
     suspend fun getUsers(): Response<List<UserSummaryDto>>
 

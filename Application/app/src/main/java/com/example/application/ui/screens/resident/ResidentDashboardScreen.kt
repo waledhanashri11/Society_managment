@@ -1,12 +1,10 @@
 package com.example.application.ui.screens.resident
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -14,7 +12,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -37,6 +34,9 @@ import com.example.application.ui.screens.resident.components.ResidentUpcomingMa
 import com.example.application.util.DashboardFormatters
 import com.example.application.viewmodel.ResidentDashboardViewModel
 import com.example.application.viewmodel.SessionViewModel
+
+import androidx.compose.ui.res.stringResource
+import com.example.application.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -89,7 +89,7 @@ fun ResidentDashboardScreen(
                     state.isLoading && data == null -> ResidentDashboardSkeleton()
                     data == null -> Column(modifier = Modifier.padding(20.dp)) {
                         RetryState(
-                            message = state.errorMessage ?: "Dashboard data is currently unavailable.",
+                            message = state.errorMessage ?: stringResource(R.string.error_something_wrong),
                             onRetry = { viewModel.load(refresh = true) }
                         )
                     }
@@ -176,7 +176,7 @@ fun ResidentDashboardScreen(
                         if (state.errorMessage != null && !state.isRefreshing) {
                             item {
                                 RetryState(
-                                    message = state.errorMessage!!,
+                                    message = state.errorMessage ?: stringResource(R.string.error_something_wrong),
                                     onRetry = { viewModel.load(refresh = true) }
                                 )
                             }

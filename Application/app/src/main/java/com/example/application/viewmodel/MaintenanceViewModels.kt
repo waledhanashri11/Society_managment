@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.application.data.remote.dto.CategorySaveRequest
 import com.example.application.data.remote.dto.CreateDisputeRequest
+import com.example.application.data.remote.dto.CreateManualBillRequestDto
 import com.example.application.data.remote.dto.ExpenseCreateRequest
 import com.example.application.data.remote.dto.LateFeeRuleRequest
 import com.example.application.data.remote.dto.MaintenanceCreateRequest
@@ -145,8 +146,41 @@ class AdminMaintenanceViewModel @Inject constructor(
     }
 
 
-    fun createManualBill(title: String, month: Int, year: Int, dueDate: String, amount: String, residentId: String?, flatId: String?, onSuccess: () -> Unit = {}) =
-        action(onSuccess) { repository.createMaintenance(MaintenanceCreateRequest(title, month, year, dueDate, amount, residentId, flatId)) }
+    fun createManualBill(
+        title: String, month: Int, year: Int, dueDate: String, amount: String,
+        optionalCharges: String = "0", reason: String = "", notes: String = "", penaltyType: String? = null,
+        penaltyValue: String? = null, penaltyGraceDays: String? = null, residentId: String? = null, flatId: String? = null,
+        onSuccess: () -> Unit = {}
+    ) {
+        val resident = residentId?.toLongOrNull()
+        val flat = flatId?.toLongOrNull()
+        val baseAmount = amount.toDoubleOrNull()
+        val extras = optionalCharges.ifBlank { "0" }.toDoubleOrNull()
+        val penalty = penaltyValue?.ifBlank { null }?.toDoubleOrNull()
+        val grace = penaltyGraceDays?.ifBlank { null }?.toIntOrNull()
+        when {
+            resident == null || flat == null -> _state.update { it.copy(error = "Select a resident with an assigned flat.") }
+            title.isBlank() -> _state.update { it.copy(error = "Bill title is required.") }
+            month !in 1..12 || year < 2000 -> _state.update { it.copy(error = "Select a valid billing month and year.") }
+            runCatching { LocalDate.parse(dueDate) }.isFailure -> _state.update { it.copy(error = "Due date must use YYYY-MM-DD format.") }
+            baseAmount == null || baseAmount <= 0 -> _state.update { it.copy(error = "Base amount must be greater than zero.") }
+            extras == null || extras < 0 -> _state.update { it.copy(error = "Optional charges cannot be negative.") }
+            reason.isBlank() -> _state.update { it.copy(error = "A reason is required for a manual bill.") }
+            penalty != null && penalty < 0 -> _state.update { it.copy(error = "Penalty value cannot be negative.") }
+            grace != null && grace < 0 -> _state.update { it.copy(error = "Penalty grace days cannot be negative.") }
+            _state.value.data?.bills.orEmpty().any {
+                it.residentId == residentId && it.month?.toIntOrNull() == month && it.year?.toIntOrNull() == year
+            } -> _state.update { it.copy(error = "A bill already exists for this resident for the selected month and year.") }
+            else -> action(onSuccess) {
+                repository.createManualBill(CreateManualBillRequestDto(
+                    title = title.trim(), amount = baseAmount, optionalCharges = extras,
+                    dueDate = dueDate, description = reason.trim(), notes = notes.trim().ifBlank { null },
+                    reason = reason.trim(), residentId = resident, flatId = flat, month = month, year = year,
+                    penaltyType = penaltyType?.ifBlank { null }, penaltyValue = penalty, penaltyGraceDays = grace
+                ))
+            }
+        }
+    }
     fun deleteBill(id: String) = action { repository.deleteMaintenance(id) }
     fun editBill(id: String, amount: String, customReason: String?) =
         action { repository.updateMaintenance(id, MaintenanceUpdateRequest(amount = amount, customReason = customReason?.ifBlank { null })) }

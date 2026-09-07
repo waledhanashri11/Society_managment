@@ -33,6 +33,9 @@ import androidx.compose.ui.unit.sp
 import com.example.application.data.remote.dto.NoticeDto
 import com.example.application.util.DashboardFormatters
 
+import androidx.compose.ui.res.stringResource
+import com.example.application.R
+
 @Composable
 fun ResidentLatestNoticesCard(
     notices: List<NoticeDto>,
@@ -78,7 +81,7 @@ fun ResidentLatestNoticesCard(
                     }
 
                     Text(
-                        text = "Latest Society Notices",
+                        text = stringResource(R.string.latest_notices),
                         style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp),
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
@@ -88,7 +91,7 @@ fun ResidentLatestNoticesCard(
                 }
 
                 Text(
-                    text = "View All >",
+                    text = "${stringResource(R.string.view_all)} >",
                     style = MaterialTheme.typography.labelMedium.copy(fontSize = 13.sp),
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF2563EB),
@@ -98,7 +101,7 @@ fun ResidentLatestNoticesCard(
 
             if (notices.isEmpty()) {
                 Text(
-                    text = "No notices posted yet.",
+                    text = stringResource(R.string.notice_no_notices),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

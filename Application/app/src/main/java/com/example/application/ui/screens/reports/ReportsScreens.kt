@@ -104,6 +104,8 @@ private fun formatMonthName(month: Any?): String {
 @Composable
 fun AdminReportsScreen(
     onBack: () -> Unit,
+    onOverallReport: () -> Unit,
+    onExcelTransactions: () -> Unit,
     viewModel: AdminReportsViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -178,11 +180,12 @@ fun AdminReportsScreen(
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     // Navigation Tabs (Summary, Monthly Report, Expenses, Bank Ledger, Cash Ledger)
                     ScrollableTabRow(
-                        selectedTabIndex = listOf("summary", "monthlyReport", "expenses", "bankLedger", "cashLedger").indexOf(activeTab).coerceAtLeast(0),
+                        selectedTabIndex = listOf("overall", "summary", "monthlyReport", "expenses", "bankLedger", "cashLedger").indexOf(activeTab).coerceAtLeast(1),
                         edgePadding = 16.dp,
                         containerColor = MaterialTheme.colorScheme.surface,
                         contentColor = MaterialTheme.colorScheme.primary
                     ) {
+                        Tab(selected = false, onClick = onOverallReport, text = { Text("Overall Report") })
                         Tab(selected = activeTab == "summary", onClick = { activeTab = "summary" }, text = { Text("Financial Accounting Summary") })
                         Tab(selected = activeTab == "monthlyReport", onClick = { activeTab = "monthlyReport" }, text = { Text("Monthly Maintenance Report") })
                         Tab(selected = activeTab == "expenses", onClick = { activeTab = "expenses" }, text = { Text("Expense Report") })

@@ -62,6 +62,7 @@ import com.example.application.ui.components.KeyValue
 import com.example.application.ui.components.RetryState
 import com.example.application.ui.components.SectionCard
 import com.example.application.ui.components.SkeletonListItem
+import com.example.application.ui.components.LocalizedText as Text
 import com.example.application.viewmodel.MeetingsViewModel
 import java.io.File
 import java.time.LocalDate

@@ -32,6 +32,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+import androidx.compose.ui.res.stringResource
+import com.example.application.R
+
 @Composable
 fun ResidentComplaintTrackerCard(
     openCount: Int,
@@ -79,7 +82,7 @@ fun ResidentComplaintTrackerCard(
                     }
 
                     Text(
-                        text = "Complaint Activity Tracker",
+                        text = stringResource(R.string.complaint_summary),
                         style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp),
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
@@ -89,7 +92,7 @@ fun ResidentComplaintTrackerCard(
                 }
 
                 Text(
-                    text = "Track All >",
+                    text = "${stringResource(R.string.view_all)} >",
                     style = MaterialTheme.typography.labelMedium.copy(fontSize = 13.sp),
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF2563EB),
@@ -105,7 +108,7 @@ fun ResidentComplaintTrackerCard(
                 StatusPillItem(
                     modifier = Modifier.weight(1f),
                     count = openCount,
-                    label = "Open",
+                    label = stringResource(R.string.open_label),
                     icon = Icons.Filled.FolderOpen,
                     accentColor = Color(0xFFEA580C),
                     bgColor = Color(0xFFFFF7ED)
@@ -114,7 +117,7 @@ fun ResidentComplaintTrackerCard(
                 StatusPillItem(
                     modifier = Modifier.weight(1f),
                     count = inProgressCount,
-                    label = "In Progress",
+                    label = stringResource(R.string.in_progress_label),
                     icon = Icons.Filled.PendingActions,
                     accentColor = Color(0xFF2563EB),
                     bgColor = Color(0xFFEFF6FF)
@@ -123,7 +126,7 @@ fun ResidentComplaintTrackerCard(
                 StatusPillItem(
                     modifier = Modifier.weight(1f),
                     count = resolvedCount,
-                    label = "Resolved",
+                    label = stringResource(R.string.resolved_label),
                     icon = Icons.Filled.CheckCircle,
                     accentColor = Color(0xFF16A34A),
                     bgColor = Color(0xFFF0FDF4)

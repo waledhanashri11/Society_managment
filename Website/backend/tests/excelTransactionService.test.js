@@ -26,13 +26,25 @@ const {
   assert.strictEqual(rows[0].amount, '1250');
   assert.strictEqual(rows[0].importAction, 'CREATE');
 
+  transactions.getRow(2).getCell(14).value = 'Paid';
+  transactions.getRow(2).getCell(9).value = '01/02/2026';
+  const strictRows = await parseWorkbook(Buffer.from(await workbook.xlsx.writeBuffer()));
+  assert.strictEqual(strictRows[0].paymentStatus, 'Paid');
+  assert.strictEqual(strictRows[0].transactionDate, '01/02/2026', 'Ambiguous text dates must not be silently coerced');
+
   assert.deepStrictEqual(normalizeExportFilters({}), {
     from: '', to: '', member: '', wing: '', flat: '', status: '', paymentMode: ''
   });
   assert.strictEqual(normalizeExportFilters({ from: '2026-08-01', to: '2026-08-31', member: '10' }).member, '10');
+  assert.strictEqual(normalizeExportFilters({ status: 'Paid' }).status, 'Paid');
   assert.throws(() => normalizeExportFilters({ from: '2026-02-30' }), /From date must use YYYY-MM-DD/);
   assert.throws(() => normalizeExportFilters({ from: '2026-08-31', to: '2026-08-01' }), /From date cannot be after/);
-  assert.throws(() => normalizeExportFilters({ status: 'Paid' }), /Payment status/);
+  assert.throws(() => normalizeExportFilters({ status: 'Unknown' }), /Payment status/);
+
+  const wrongSheet = new ExcelJS.Workbook();
+  wrongSheet.addWorksheet('Sheet1').addRow(HEADERS);
+  const wrongSheetBuffer = Buffer.from(await wrongSheet.xlsx.writeBuffer());
+  await assert.rejects(() => parseWorkbook(wrongSheetBuffer), /Transactions sheet/);
 
   const fingerprint = hash(canonicalRow(1, { ...rows[0], amount: 1250 }));
   assert.match(fingerprint, /^[a-f0-9]{64}$/);

@@ -1,4 +1,4 @@
-﻿package com.example.application.ui.components
+package com.example.application.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -38,6 +38,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
+import androidx.compose.ui.res.stringResource
+import com.example.application.R
+
 /**
  * SocietyHub shared confirmation dialog.
  * Use for all high-impact, irreversible, or financially significant actions.
@@ -51,8 +54,8 @@ fun SocietyHubConfirmDialog(
     message: String,
     icon: ImageVector? = null,
     iconTint: Color? = null,
-    confirmText: String = "Confirm",
-    cancelText: String = "Cancel",
+    confirmText: String = stringResource(R.string.confirm),
+    cancelText: String = stringResource(R.string.cancel),
     isDestructive: Boolean = false,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
@@ -125,12 +128,12 @@ fun SocietyHubLogoutDialog(
     onDismiss: () -> Unit
 ) {
     SocietyHubConfirmDialog(
-        title = "Logout?",
-        message = "Are you sure you want to logout from SocietyHub?",
+        title = stringResource(R.string.confirm_logout_title),
+        message = stringResource(R.string.confirm_logout_message),
         icon = Icons.Filled.Logout,
         isDestructive = false,
-        confirmText = "Logout",
-        cancelText = "Cancel",
+        confirmText = stringResource(R.string.logout),
+        cancelText = stringResource(R.string.cancel),
         onConfirm = onConfirm,
         onDismiss = onDismiss
     )
@@ -142,17 +145,17 @@ fun SocietyHubLogoutDialog(
 @Composable
 fun SocietyHubDeleteDialog(
     itemName: String = "",
-    message: String = "This action cannot be undone.",
+    message: String = stringResource(R.string.confirm_delete_message),
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
     SocietyHubConfirmDialog(
-        title = if (itemName.isNotBlank()) "Delete $itemName?" else "Delete?",
+        title = if (itemName.isNotBlank()) "${stringResource(R.string.delete)} $itemName?" else stringResource(R.string.confirm_delete_title),
         message = message,
         icon = Icons.Filled.Delete,
         isDestructive = true,
-        confirmText = "Delete",
-        cancelText = "Cancel",
+        confirmText = stringResource(R.string.delete),
+        cancelText = stringResource(R.string.cancel),
         onConfirm = onConfirm,
         onDismiss = onDismiss
     )

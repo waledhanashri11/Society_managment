@@ -113,7 +113,8 @@ class AdminParityViewModel @Inject constructor(
         }
         _state.update { it.copy(submitting = true, error = null, message = null) }
         runCatching {
-            val response = advancedApi.editWriteOff(id, mapOf("amount" to parsed!!.toPlainString(), "reason" to reason.trim()))
+            if (parsed == null) return@runCatching
+            val response = advancedApi.editWriteOff(id, mapOf("amount" to parsed.toPlainString(), "reason" to reason.trim()))
             if (!response.isSuccessful) error(response.errorBody()?.string() ?: "Unable to update write-off (${response.code()})")
             _state.update { it.copy(submitting = false, message = "Write-off updated successfully") }
             loadWriteOffs()

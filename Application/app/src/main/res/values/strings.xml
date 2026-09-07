@@ -1,70 +1,32 @@
 <resources>
-    <string name="app_name">SocietyHub</string>
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- APP BASICS & BRANDING                                      -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <string name="app_name">SocietyFlow</string>
     <string name="app_subtitle">Smart Society. Simple Living.</string>
     <string name="app_tagline">Smart Society. Simple Living.</string>
     <string name="welcome_to_society">Welcome to your society</string>
-    <string name="back">Back</string>
-    <string name="close">Close</string>
-    <string name="save">Save</string>
-    <string name="saving">Saving...</string>
-    <string name="rules_admin_title">Society Rules</string>
-    <string name="rules_resident_title">Society Rules</string>
-    <string name="rules_create">Create Rule</string>
-    <string name="rules_edit">Edit</string>
-    <string name="rules_rule">Rule</string>
-    <string name="rules_title">Title</string>
-    <string name="rules_description">Description</string>
-    <string name="rules_category">Category</string>
-    <string name="rules_search">Search rules</string>
-    <string name="rules_publish">Publish</string>
-    <string name="rules_unpublish">Unpublish</string>
-    <string name="rules_archive">Archive</string>
-    <string name="rules_publish_now">Publish now</string>
-    <string name="rules_report">Acknowledgement Report</string>
-    <string name="rules_remind">Remind</string>
-    <string name="rules_send_reminders">Send Reminders</string>
-    <string name="rules_empty_title">No rules</string>
-    <string name="rules_empty_admin">Create and publish society rules for residents.</string>
-    <string name="rules_empty_resident">Published society rules will appear here.</string>
-    <string name="rules_published">Published</string>
-    <string name="rules_acknowledged">Acknowledged</string>
-    <string name="rules_ack_status">Acknowledgement status</string>
-    <string name="rules_acknowledged_done">Acknowledged</string>
-    <string name="rules_pending">Pending</string>
-    <string name="rules_ack_date">Acknowledged on</string>
-    <string name="rules_status">Status</string>
-    <string name="rules_read_status">Read status</string>
-    <string name="rules_read">Read</string>
-    <string name="rules_unread">Unread</string>
-    <string name="rules_ack_button">I have read and understood this rule</string>
-    <string name="rules_total">Total</string>
-    <string name="rules_done">Done</string>
-    <string name="events_title">Events</string>
-    <string name="events_create">Create Event</string>
-    <string name="events_edit">Edit Event</string>
-    <string name="events_empty">No events</string>
-    <string name="events_search">Search title, venue, organizer</string>
-    <string name="events_publish">Publish</string>
-    <string name="events_cancel">Cancel</string>
-    <string name="events_delete">Delete Event?</string>
-    <string name="events_image">Select Event Image</string>
-    <string name="language">Language</string>
-    <string name="language_select">Select language</string>
-    <string name="language_english">English</string>
-    <string name="language_hindi">हिंदी</string>
-    <string name="language_marathi">मराठी</string>
-    <string name="language_hint">Choose app language. The app will refresh after selection.</string>
     <string name="society_management">SocietyHub</string>
     <string name="society_management_system">SocietyHub</string>
     <string name="system">Smart Society. Simple Living.</string>
     <string name="admin">Admin</string>
     <string name="resident">Resident</string>
     <string name="super_admin">Super Admin</string>
-    <string name="open_menu">Open menu</string>
-    <string name="open_admin_menu">Open admin menu</string>
-    <string name="notifications">Notifications</string>
-    <string name="logout">Logout</string>
-    <string name="profile">Profile</string>
+    <string name="admin_portal">Admin Portal</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- LANGUAGE                                                    -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <string name="language">Language</string>
+    <string name="language_select">Select language</string>
+    <string name="language_english">English</string>
+    <string name="language_hindi">हिंदी</string>
+    <string name="language_marathi">मराठी</string>
+    <string name="language_hint">Choose app language. The app will refresh after selection.</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- NAVIGATION & MENU                                          -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
     <string name="dashboard">Dashboard</string>
     <string name="home">Home</string>
     <string name="overview">Overview</string>
@@ -93,14 +55,62 @@
     <string name="staff">Staff</string>
     <string name="settings">Settings</string>
     <string name="more">More</string>
-    <string name="search">Search</string>
+    <string name="notifications">Notifications</string>
+    <string name="logout">Logout</string>
+    <string name="profile">Profile</string>
+    <string name="open_menu">Open menu</string>
+    <string name="open_admin_menu">Open admin menu</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- COMMON ACTIONS                                              -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <string name="back">Back</string>
+    <string name="close">Close</string>
+    <string name="save">Save</string>
+    <string name="saving">Saving…</string>
     <string name="add">Add</string>
     <string name="edit">Edit</string>
     <string name="delete">Delete</string>
     <string name="cancel">Cancel</string>
     <string name="confirm">Confirm</string>
     <string name="retry">Retry</string>
-    <string name="loading">Loading...</string>
+    <string name="loading">Loading…</string>
+    <string name="search">Search</string>
+    <string name="view">View</string>
+    <string name="view_details">View Details</string>
+    <string name="approve">Approve</string>
+    <string name="reject">Reject</string>
+    <string name="submit">Submit</string>
+    <string name="update">Update</string>
+    <string name="create">Create</string>
+    <string name="continue_text">Continue</string>
+    <string name="next">Next</string>
+    <string name="previous">Previous</string>
+    <string name="done">Done</string>
+    <string name="ok">OK</string>
+    <string name="yes">Yes</string>
+    <string name="no">No</string>
+    <string name="send">Send</string>
+    <string name="refresh">Refresh</string>
+    <string name="download">Download</string>
+    <string name="upload">Upload</string>
+    <string name="export">Export</string>
+    <string name="filter">Filter</string>
+    <string name="clear_filter">Clear Filter</string>
+    <string name="reset">Reset</string>
+    <string name="select">Select</string>
+    <string name="copy">Copy</string>
+    <string name="share">Share</string>
+    <string name="print">Print</string>
+    <string name="tap_to_refresh">Tap to refresh</string>
+    <string name="tap_to_refresh_dashboard">Tap to refresh dashboard</string>
+    <string name="clear_all">Clear all</string>
+    <string name="no_notifications_yet">No notifications yet.</string>
+    <string name="apply">Apply</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- AUTH                                                        -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
     <string name="email">Email</string>
     <string name="password">Password</string>
     <string name="confirm_password">Confirm password</string>
@@ -111,7 +121,7 @@
     <string name="resident_login">Resident Login</string>
     <string name="login_role">Login role</string>
     <string name="login_welcome">Welcome back! Please login to continue</string>
-    <string name="logging_in">Logging in...</string>
+    <string name="logging_in">Logging in…</string>
     <string name="hide_password">Hide password</string>
     <string name="show_password">Show password</string>
     <string name="register">Register</string>
@@ -121,22 +131,41 @@
     <string name="change_password">Change Password</string>
     <string name="back_to_dashboard">Back to Dashboard</string>
     <string name="welcome_back">Welcome back</string>
+    <string name="email_or_mobile">Email / Mobile Number</string>
+    <string name="create_resident_account">Create Resident Account</string>
+    <string name="society_code">Society Code</string>
+    <string name="phone_optional">Phone (optional)</string>
+    <string name="reset_password">Reset Password</string>
+    <string name="current_password">Current Password</string>
+    <string name="new_password">New Password</string>
+    <string name="registering">Registering…</string>
+    <string name="already_have_account">Already have an account?</string>
+    <string name="send_reset_link">Send Reset Link</string>
+    <string name="sending">Sending…</string>
+    <string name="new_password_label">New Password</string>
+    <string name="confirm_new_password">Confirm New Password</string>
+    <string name="resetting">Resetting…</string>
+    <string name="changing_password">Changing…</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- RESIDENT WORKSPACE                                          -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
     <string name="resident_workspace">Resident workspace</string>
     <string name="flat_label">Flat: %1$s</string>
     <string name="total_due">Total Due</string>
     <string name="due_date">Due Date: %1$s</string>
     <string name="pay_now">Pay Now</string>
-    <string name="view">View</string>
     <string name="current_bills">Current bills</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- PAYMENT MODULE                                              -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
     <string name="upload_screenshot">Upload Screenshot</string>
     <string name="transaction_id">Transaction ID</string>
     <string name="payment_date">Payment date</string>
     <string name="submit_for_verification">Submit for verification</string>
     <string name="download_receipt">Download receipt</string>
     <string name="receipt">Receipt</string>
-    <string name="approve">Approve</string>
-    <string name="reject">Reject</string>
-    <string name="request_clarification">Request Clarification</string>
     <string name="approve_payment">Approve Payment</string>
     <string name="reject_payment">Reject Payment</string>
     <string name="reject_selected_payments">Reject Selected Payments</string>
@@ -155,6 +184,7 @@
     <string name="clarification_message_required">Please enter a clear message detailing what needs to be corrected.</string>
     <string name="message_for_resident">Message for resident</string>
     <string name="send_request">Send Request</string>
+    <string name="request_clarification">Request Clarification</string>
     <string name="no_image_available">No image available</string>
     <string name="bulk_reject_reason">Enter rejection reason for all selected payments.</string>
     <string name="bill_month_title">Bill Month/Title</string>
@@ -163,10 +193,62 @@
     <string name="expected_amount">Expected Amount</string>
     <string name="ref_utr">Ref/UTR</string>
     <string name="submission_date">Submission Date</string>
-    <string name="view_details">View Details</string>
+    <string name="pay_maintenance">Pay Maintenance</string>
+    <string name="pay_using_upi">Pay Using UPI</string>
+    <string name="upload_payment_screenshot">Upload Payment Screenshot</string>
+    <string name="amount">Amount</string>
+    <string name="payment_submitted">Payment Submitted</string>
+    <string name="copy_upi_id">Copy UPI ID</string>
+    <string name="society_payment_qr">Society payment QR code</string>
+    <string name="continue_to_payment">Continue to Payment</string>
+    <string name="raise_maintenance_dispute">Raise Maintenance Dispute</string>
+    <string name="selected_payment_screenshot">Selected payment screenshot</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- MAINTENANCE MODULE                                          -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
     <string name="write_off">Write off</string>
     <string name="penalty">Penalty</string>
     <string name="generate_bill">Generate bill</string>
+    <string name="generate_bills">Generate Bills</string>
+    <string name="maintenance_management">Maintenance Management</string>
+    <string name="maintenance_overview">Maintenance Overview</string>
+    <string name="search_bills">Search bills</string>
+    <string name="due_date_label">Due date</string>
+    <string name="grace_days">Grace days</string>
+    <string name="resident_label">Resident</string>
+    <string name="month_1_12">Month (1–12)</string>
+    <string name="year">Year</string>
+    <string name="due_date_format">Due date (YYYY-MM-DD)</string>
+    <string name="maintenance_base_amount">Maintenance Base Amount (₹)</string>
+    <string name="reason_for_override">Reason for Override (Optional)</string>
+    <string name="overdue">Overdue</string>
+    <string name="menu">Menu</string>
+    <string name="filter_label">Filter</string>
+    <string name="search_label">Search</string>
+    <string name="clear">Clear</string>
+    <string name="more_actions">More actions</string>
+    <string name="thumbnail">Thumbnail</string>
+    <string name="subject">Subject</string>
+    <string name="description">Description</string>
+    <string name="yyyy_mm_dd">YYYY-MM-DD</string>
+    <string name="search_resident_flat">Search resident, flat, title, or UTR</string>
+    <string name="rejection_reason">Rejection reason</string>
+    <string name="payment_proof_saved">Payment proof saved to Downloads</string>
+    <string name="unable_download_proof">Unable to download payment proof</string>
+    <string name="write_off_completed">Write-off completed successfully</string>
+    <string name="payment_proof_submitted">Payment proof submitted for admin verification.</string>
+    <string name="qr_downloaded">QR code downloaded successfully.</string>
+    <string name="qr_download_failed">QR download failed. Please try again.</string>
+    <string name="receipt_pdf_saved">Receipt PDF saved to Downloads.</string>
+    <string name="unable_share_csv">Unable to share CSV right now.</string>
+    <string name="receipt_downloaded">Receipt downloaded</string>
+    <string name="write_off_receipt_downloaded">Official write-off receipt downloaded</string>
+    <string name="release_vacant">Release / Vacant</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- STATUS VALUES                                               -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
     <string name="status_paid">Paid</string>
     <string name="status_unpaid">Unpaid</string>
     <string name="status_pending">Pending</string>
@@ -177,42 +259,33 @@
     <string name="status_overdue">Overdue</string>
     <string name="status_partially_paid">Partially Paid</string>
     <string name="status_written_off">Written Off</string>
-    <string name="no_internet">No internet connection</string>
-    <string name="unable_to_load_payments">Unable to load payments</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- VALIDATION                                                  -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
     <string name="invalid_email">Invalid email</string>
     <string name="password_required">Password is required</string>
+    <string name="no_internet">No internet connection</string>
+    <string name="unable_to_load_payments">Unable to load payments</string>
     <string name="payment_submission_failed">Payment submission failed</string>
     <string name="please_try_again">Please try again</string>
     <string name="session_expired">Session expired</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- PLURALS                                                     -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
     <plurals name="pending_bills">
         <item quantity="one">%d pending bill</item>
         <item quantity="other">%d pending bills</item>
     </plurals>
-    <string name="meeting_action_items">Action Items</string>
-    <string name="meeting_add_action">Add Action Item</string>
-    <string name="meeting_view_minutes">View Minutes</string>
-    <string name="meeting_download_pdf">Download PDF</string>
-    <string name="meeting_share_pdf">Share PDF</string>
-    <string name="meeting_print_minutes">Print Minutes</string>
-    <string name="report_summary">Summary</string>
-    <string name="report_monthly">Monthly Report</string>
-    <string name="report_bank_ledger">Bank Ledger</string>
-    <string name="report_cash_ledger">Cash Ledger</string>
-    <string name="report_flat_collection">Flat Collection</string>
-    <string name="report_write_offs">Write-offs</string>
-    <string name="report_opening_balance">Opening Balance</string>
-    <string name="report_edit_opening_balance">Edit Opening Balance</string>
-    <string name="report_financial_year">Financial year</string>
-    <string name="report_payment_modes">Payment Modes</string>
-    <string name="report_collection_history">12-Month Collection History</string>
-    <string name="report_resident_ledger">Resident ledger</string>
-    <string name="report_monthly_records">Monthly Maintenance Records</string>
-    <string name="report_export_monthly">Export Monthly Report CSV</string>
-    <string name="splash_checking_session">Checking your session...</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- MEETINGS MODULE                                             -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
     <string name="meeting_meetings">Meetings</string>
     <string name="meeting_create">Create meeting</string>
     <string name="meeting_details">Meeting Details</string>
-    <string name="meeting_no_meetings">No meetings</string>
+    <string name="meeting_no_meetings">No meetings available</string>
     <string name="meeting_duplicate">Duplicate</string>
     <string name="meeting_attendance">Attendance</string>
     <string name="meeting_minutes">Minutes</string>
@@ -230,39 +303,242 @@
     <string name="meeting_scheduled">Scheduled</string>
     <string name="meeting_completed">Completed</string>
     <string name="meeting_cancelled">Cancelled</string>
+    <string name="meeting_action_items">Action Items</string>
+    <string name="meeting_add_action">Add Action Item</string>
+    <string name="meeting_view_minutes">View Minutes</string>
+    <string name="meeting_download_pdf">Download PDF</string>
+    <string name="meeting_share_pdf">Share PDF</string>
+    <string name="meeting_print_minutes">Print Minutes</string>
+    <string name="meeting_notify_residents">Notify residents</string>
+    <string name="meeting_compulsory">Compulsory</string>
+    <string name="unable_read_document">Unable to read selected document</string>
+    <string name="no_pdf_viewer">No PDF viewer found.</string>
+    <string name="minutes_pdf_saved">Minutes PDF saved.</string>
+    <string name="open_pdf_print">Open the PDF viewer print option to print minutes.</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- COMPLAINTS MODULE                                           -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
     <string name="complaints_title">Complaints</string>
     <string name="complaint_create">File New Complaint</string>
     <string name="complaint_my_complaints">My Complaints</string>
     <string name="complaint_all_complaints">All Complaints</string>
-    <string name="notices_title">Notices &amp; Announcements</string>
-    <string name="notice_create">Publish Notice</string>
-    <string name="notice_no_notices">No notices posted yet</string>
-    <string name="society_rules_screen_title">Society Rules &amp; Regulations</string>
-    <string name="rule_acknowledge">I Acknowledge</string>
-    <string name="rule_acknowledged">Acknowledged</string>
-    <string name="greeting_good_morning">Good Morning</string>
-    <string name="greeting_good_afternoon">Good Afternoon</string>
-    <string name="greeting_good_evening">Good Evening</string>
-    <string name="upcoming_due">Upcoming Maintenance Due</string>
-    <string name="no_pending_bills">No pending maintenance bills right now.</string>
-    <string name="complaint_summary">Complaint Activity Tracker</string>
-    <string name="latest_notices">Latest Society Notices</string>
-    <string name="my_profile">My Profile</string>
-    <string name="resident_account_details">Resident Account Details</string>
-    <string name="update_phone_number">Update Phone Number</string>
-    <string name="change_profile_photo">Change Profile Photo</string>
-    <string name="remove_profile_photo">Remove Profile Photo</string>
+    <string name="raise_complaint">Raise Complaint</string>
+    <string name="track_complaints">Track your society requests</string>
     <string name="in_progress_label">In Progress</string>
     <string name="open_label">Open</string>
     <string name="resolved_label">Resolved</string>
     <string name="confirm_resolved">Confirm Resolved</string>
     <string name="reopen_label">Reopen</string>
-    <string name="raise_complaint">Raise Complaint</string>
-    <string name="track_complaints">Track your society requests</string>
     <string name="attachments_count">Attachments (%1$d)</string>
     <string name="admin_reply_title">Admin Reply • %1$s %2$s</string>
+    <string name="complaint_summary">Complaint Activity Tracker</string>
+    <string name="comment">Comment</string>
+    <string name="selected_complaint_picture">Selected complaint picture</string>
+    <string name="full_complaint_attachment">Full Complaint Attachment</string>
 
-    <!-- SocietyHub Confirmation Dialog strings -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- NOTICES MODULE                                              -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <string name="notices_title">Notices &amp; Announcements</string>
+    <string name="notice_create">Publish Notice</string>
+    <string name="notice_no_notices">No notices posted yet</string>
+    <string name="latest_notices">Latest Society Notices</string>
+    <string name="title_label">Title</string>
+    <string name="description_label">Description</string>
+    <string name="search_notices">Search notices</string>
+    <string name="add_notice">Add notice</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- NOC MODULE                                                  -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <string name="noc_certificate">NOC Certificate</string>
+    <string name="shared_noc_certificate">Shared NOC Certificate</string>
+    <string name="request_noc">Request NOC</string>
+    <string name="apply_for_noc">Apply for NOC</string>
+    <string name="noc_approvals">NOC Approvals</string>
+    <string name="select_noc_type">Select NOC type</string>
+    <string name="purpose_required">Purpose *</string>
+    <string name="additional_details">Additional Details / Remarks (Optional)</string>
+    <string name="remarks">Remarks</string>
+    <string name="admin_comments">Admin comments</string>
+    <string name="download_pdf">Download PDF</string>
+    <string name="share_token_link">Share token or /share/noc link</string>
+    <string name="could_not_create_pdf">Could not create the NOC PDF.</string>
+    <string name="could_not_share_pdf">Could not share the NOC PDF.</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- RULES MODULE                                                -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <string name="rules_admin_title">Society Rules</string>
+    <string name="rules_resident_title">Society Rules</string>
+    <string name="rules_create">Create Rule</string>
+    <string name="rules_edit">Edit</string>
+    <string name="rules_rule">Rule</string>
+    <string name="rules_title">Title</string>
+    <string name="rules_description">Description</string>
+    <string name="rules_category">Category</string>
+    <string name="rules_search">Search rules</string>
+    <string name="rules_publish">Publish</string>
+    <string name="rules_unpublish">Unpublish</string>
+    <string name="rules_archive">Archive</string>
+    <string name="rules_publish_now">Publish now</string>
+    <string name="rules_report">Acknowledgement Report</string>
+    <string name="rules_remind">Remind</string>
+    <string name="rules_send_reminders">Send Reminders</string>
+    <string name="rules_empty_title">No rules</string>
+    <string name="rules_empty_admin">Create and publish society rules for residents.</string>
+    <string name="rules_empty_resident">No society rules have been published yet.</string>
+    <string name="rules_published">Published</string>
+    <string name="rules_acknowledged">Acknowledged</string>
+    <string name="rules_ack_status">Acknowledgement status</string>
+    <string name="rules_acknowledged_done">Acknowledged</string>
+    <string name="rules_pending">Pending</string>
+    <string name="rules_ack_date">Acknowledged on</string>
+    <string name="rules_status">Status</string>
+    <string name="rules_read_status">Read status</string>
+    <string name="rules_read">Read</string>
+    <string name="rules_unread">Unread</string>
+    <string name="rules_ack_button">I have read and understood this rule</string>
+    <string name="rules_total">Total</string>
+    <string name="rules_done">Done</string>
+    <string name="society_rules_screen_title">Society Rules &amp; Regulations</string>
+    <string name="rule_acknowledge">I Acknowledge</string>
+    <string name="rule_acknowledged">Acknowledged</string>
+    <string name="no_rules_to_export">No rules to export</string>
+    <string name="unable_export_rules_pdf">Unable to export rules PDF</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- EVENTS MODULE                                               -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <string name="events_title">Events</string>
+    <string name="events_create">Create Event</string>
+    <string name="events_edit">Edit Event</string>
+    <string name="events_empty">No events</string>
+    <string name="events_search">Search title, venue, organizer</string>
+    <string name="events_publish">Publish</string>
+    <string name="events_cancel">Cancel</string>
+    <string name="events_delete">Delete Event?</string>
+    <string name="events_image">Select Event Image</string>
+    <string name="event_image_cd">Event image</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- REPORTS MODULE                                              -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <string name="report_summary">Summary</string>
+    <string name="report_monthly">Monthly Report</string>
+    <string name="report_bank_ledger">Bank Ledger</string>
+    <string name="report_cash_ledger">Cash Ledger</string>
+    <string name="report_flat_collection">Flat Collection</string>
+    <string name="report_write_offs">Write-offs</string>
+    <string name="report_opening_balance">Opening Balance</string>
+    <string name="report_edit_opening_balance">Edit Opening Balance</string>
+    <string name="report_financial_year">Financial year</string>
+    <string name="report_payment_modes">Payment Modes</string>
+    <string name="report_collection_history">12-Month Collection History</string>
+    <string name="report_resident_ledger">Resident ledger</string>
+    <string name="report_monthly_records">Monthly Maintenance Records</string>
+    <string name="report_export_monthly">Export Monthly Report CSV</string>
+    <string name="bank_opening_balance">Bank Opening Balance (₹)</string>
+    <string name="cash_opening_balance">Cash Opening Balance (₹)</string>
+    <string name="year_label">Year</string>
+    <string name="month_label">Month</string>
+    <string name="bank_account_ledger">Bank Account Transaction Ledger</string>
+    <string name="cash_account_ledger">Cash Account Transaction Ledger</string>
+    <string name="verified_bank_ledger">Verified Bank Account Transactions Ledger</string>
+    <string name="total_opening_balance">Total Opening Balance</string>
+    <string name="total_income">Total Income</string>
+    <string name="total_expenses">Total Expenses</string>
+    <string name="total_closing_balance">Total Closing Balance</string>
+    <string name="net_surplus_deficit">NET SURPLUS / DEFICIT</string>
+    <string name="search_reports">Search by resident, flat, category, vendor, status…</string>
+    <string name="search_reports_cd">Search Reports</string>
+    <string name="reset_label">Reset</string>
+    <string name="search_flat_wing">Search flat, wing, resident…</string>
+    <string name="search_txn_desc">Search Txn Description / Type / Amount</string>
+    <string name="total_amount_received">TOTAL AMOUNT RECEIVED</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- DASHBOARD                                                   -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <string name="greeting_good_morning">Good Morning</string>
+    <string name="greeting_good_afternoon">Good Afternoon</string>
+    <string name="greeting_good_evening">Good Evening</string>
+    <string name="upcoming_due">Upcoming Maintenance Due</string>
+    <string name="no_pending_bills">No pending maintenance bills right now.</string>
+    <string name="no_recent_activity">No recent activity available.</string>
+    <string name="payment_verifications">Payment Verifications</string>
+    <string name="pending_complaints">Pending Complaints</string>
+    <string name="overdue_dues">Overdue Dues</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- PROFILE                                                     -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <string name="my_profile">My Profile</string>
+    <string name="resident_account_details">Resident Account Details</string>
+    <string name="update_phone_number">Update Phone Number</string>
+    <string name="change_profile_photo">Change Profile Photo</string>
+    <string name="remove_profile_photo">Remove Profile Photo</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- SPLASH                                                      -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <string name="splash_checking_session">Checking your session…</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- ADMIN MANAGEMENT                                            -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <string name="edit_assign_flat">Edit / Assign Flat</string>
+    <string name="edit_assign_resident">Edit / Assign Resident</string>
+    <string name="delete_resident_title">Delete resident?</string>
+    <string name="temporary_password">Temporary password</string>
+    <string name="search_flat_types">Search flat types</string>
+    <string name="flat_label_format">Flat %1$s</string>
+    <string name="payment_qr_preview">Payment QR preview</string>
+    <string name="auto_reminders">Auto reminders</string>
+    <string name="payment_alerts">Payment alerts</string>
+    <string name="complaint_alerts">Complaint alerts</string>
+    <string name="visitor_alerts">Visitor alerts</string>
+    <string name="category_amount_format">%1$s · ₹%2$s</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- NOTIFICATION SCREEN                                         -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <string name="notifications_title">Notifications</string>
+    <string name="delete_all_notifications">Delete all notifications</string>
+    <string name="delete_notification">Delete notification</string>
+    <string name="total_count">Total: %1$d</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- POLL / VOTING                                               -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <string name="poll_options">Poll options</string>
+    <string name="anonymous">Anonymous</string>
+    <string name="allow_vote_change">Allow vote change</string>
+    <string name="show_results_before_end">Show results before end</string>
+    <string name="mandatory">Mandatory</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- PAYMENT RESIDENT                                            -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <string name="no_upi_configured">No UPI ID configured by admin.</string>
+    <string name="no_qr_configured">No QR code configured by admin.</string>
+    <string name="unable_open_qr">Unable to open QR image.</string>
+    <string name="payment_submitted_verification">Payment submitted successfully. Waiting for admin verification.</string>
+    <string name="no_payment_records">No payment records</string>
+    <string name="receipt_saved">Receipt saved to Downloads.</string>
+    <string name="unable_save_receipt">Unable to save receipt.</string>
+    <string name="unable_share_receipt">Unable to share receipt.</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- ADVANCED / QR                                               -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <string name="qr_image_selected">QR image selected</string>
+    <string name="unable_read_qr">Unable to read QR image</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- CONFIRMATION DIALOGS                                        -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
     <string name="confirm_logout_title">Logout?</string>
     <string name="confirm_logout_message">Are you sure you want to logout from SocietyHub?</string>
     <string name="confirm_delete_title">Delete?</string>
@@ -291,7 +567,10 @@
     <string name="confirm_delete_rule_message">This society rule will be permanently deleted. This action cannot be undone.</string>
     <string name="confirm_delete_expense_title">Delete Expense?</string>
     <string name="confirm_delete_expense_message">Are you sure you want to delete this expense record? This action cannot be undone.</string>
-    <!-- SocietyHub Success Message strings -->
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- SUCCESS MESSAGES                                            -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
     <string name="success_bills_generated">Maintenance bills generated successfully.</string>
     <string name="success_payment_submitted">Payment submitted for verification.</string>
     <string name="success_payment_approved">Payment approved successfully.</string>
@@ -314,4 +593,173 @@
     <string name="success_bill_cancelled">Bill cancelled successfully.</string>
     <string name="success_bill_deleted">Bill deleted successfully.</string>
     <string name="success_marked_paid">Bill marked as paid successfully.</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- ERROR / NETWORK MESSAGES                                    -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <string name="error_network">A network error occurred. Please try again.</string>
+    <string name="error_login_failed">Login failed. Please try again.</string>
+    <string name="error_server">Server error. Please try again later.</string>
+    <string name="error_request_failed">Request failed. Please try again.</string>
+    <string name="error_something_wrong">Something went wrong. Please try again.</string>
+    <string name="saved_successfully">Saved successfully</string>
+    <string name="resident_created">Resident created successfully</string>
+    <string name="resident_deleted">Resident deleted successfully</string>
+    <string name="flat_created">Flat created successfully</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- EMPTY STATES                                                -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <string name="no_records_found">No records found</string>
+    <string name="no_residents_found">No residents found</string>
+    <string name="no_payments_found">No payments found</string>
+    <string name="no_complaints_found">No complaints found</string>
+    <string name="no_notices_available">No notices available</string>
+    <string name="no_bills_available">No bills available</string>
+    <string name="no_reports_available">No reports available</string>
+    <string name="no_notifications_available">No notifications available</string>
+    <string name="no_matching_records">No matching records found</string>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- ACCESSIBILITY (contentDescription)                          -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <string name="cd_back">Back</string>
+    <string name="cd_refresh">Refresh</string>
+    <string name="cd_menu">Menu</string>
+    <string name="cd_search">Search</string>
+    <string name="cd_filter">Filter</string>
+    <string name="cd_notifications">Notifications</string>
+    <string name="cd_edit">Edit</string>
+    <string name="cd_delete">Delete</string>
+    <string name="cd_login">Login</string>
+    <string name="cd_approve">Approve</string>
+    <string name="cd_reject">Reject</string>
+    <string name="cd_generate_bills">Generate Bills</string>
+    <string name="cd_view_details">View Details</string>
+    <string name="cd_more_actions">More actions</string>
+    <string name="cd_clear">Clear</string>
+    <string name="cd_reset">Reset</string>
+    <string name="cd_thumbnail">Thumbnail</string>
+    <string name="cd_payment_screenshot">Payment screenshot</string>
+    <string name="cd_selected_screenshot">Selected payment screenshot</string>
+    <string name="cd_society_logo">%1$s logo</string>
+    <string name="cd_email_or_mobile">Email or mobile number</string>
+    <string name="cd_full_attachment">Full Complaint Attachment</string>
+    <string name="cd_complaint_picture">Selected complaint picture</string>
+    <string name="cd_event_image">Event image</string>
+    <string name="cd_payment_qr">Payment QR preview</string>
+    <string name="cd_society_qr">Society payment QR code</string>
+    <string name="cd_copy_upi">Copy UPI ID</string>
+    <string name="cd_add_notice">Add notice</string>
+    <string name="cd_delete_all_notifications">Delete all notifications</string>
+    <string name="cd_delete_notification">Delete notification</string>
+
+    <!-- Localization completion: maintenance, reports, meetings, NOC, events, settings, super-admin and exports -->
+    <string name="loc_create_manual_bill">Create Manual Bill</string>
+    <string name="loc_specific_resident">Specific Resident</string>
+    <string name="loc_optional_charges">Optional charges / immediate penalty</string>
+    <string name="loc_reason_required">Reason (required)</string>
+    <string name="loc_notes_breakdown">Notes / charge breakdown</string>
+    <string name="loc_penalty_settings">Penalty settings</string>
+    <string name="loc_duplicate_bill">A bill already exists for this resident for the selected month and year.</string>
+    <string name="loc_generate_bills_hint">Tap \u201cGenerate Bills\u201d above to create bills for all flats.</string>
+    <string name="loc_no_bills_generated">No bills generated yet</string>
+    <string name="loc_maintenance_unavailable">Maintenance unavailable</string>
+    <string name="loc_payment_verification_unavailable">Payment verification unavailable</string>
+    <string name="loc_pending_verifications">Pending Payment Verifications</string>
+    <string name="loc_no_pending_payments">No pending payment submissions.</string>
+    <string name="loc_apply_penalty">Apply Penalty</string>
+    <string name="loc_apply_waiver">Apply Waiver</string>
+    <string name="loc_send_reminder">Send Reminder</string>
+    <string name="loc_raise_dispute">Raise dispute</string>
+    <string name="loc_submit_dispute">Submit Dispute</string>
+    <string name="loc_download_qr">Download QR Code</string>
+    <string name="loc_open_upi">Open UPI App</string>
+    <string name="loc_copy_upi">Copy UPI</string>
+    <string name="loc_i_have_paid">I Have Paid</string>
+    <string name="loc_financial_reports">Financial &amp; Maintenance Reports</string>
+    <string name="loc_financial_summary">Financial Accounting Summary</string>
+    <string name="loc_monthly_maintenance_report">Monthly Maintenance Report</string>
+    <string name="loc_expense_report">Expense Report</string>
+    <string name="loc_bank_account_ledger">Bank Account Ledger</string>
+    <string name="loc_cash_account_ledger">Cash Account Ledger</string>
+    <string name="loc_flat_collection_report">Flat Collection Report</string>
+    <string name="loc_writeoff_history">Write-offs History</string>
+    <string name="loc_no_report_entries">No report entries found</string>
+    <string name="loc_resident_financial_reports">Society Financial &amp; Maintenance Reports</string>
+    <string name="loc_personal_statement">My Personal Account Statement</string>
+    <string name="loc_report_filters">Report Multi-Filters</string>
+    <string name="loc_reset_filters">Reset Filters</string>
+    <string name="loc_meeting_minutes">Meeting Minutes</string>
+    <string name="loc_minutes_of_meeting">Minutes of Meeting</string>
+    <string name="loc_meeting_poll">Meeting Poll</string>
+    <string name="loc_meeting_fines">Meeting Fines</string>
+    <string name="loc_mark_attendance">Mark attendance</string>
+    <string name="loc_mark_all_present">Mark all present</string>
+    <string name="loc_comments_qa">Comments / Q&amp;A</string>
+    <string name="loc_attach_files">Attach files</string>
+    <string name="loc_save_minutes">Save minutes</string>
+    <string name="loc_delete_meeting">Delete Meeting</string>
+    <string name="loc_keep_meeting">Keep Meeting</string>
+    <string name="loc_no_fines">No fines found for this meeting.</string>
+    <string name="loc_cancel_request">Cancel Request</string>
+    <string name="loc_upload_requested_info">Upload Requested Info</string>
+    <string name="loc_view_noc_certificate">View NOC Certificate</string>
+    <string name="loc_share_link">Share Link</string>
+    <string name="loc_no_noc_requests">No NOC requests yet</string>
+    <string name="loc_admin_note">Admin note</string>
+    <string name="loc_authorized_signatory">Authorized Signatory</string>
+    <string name="loc_event_details">Details</string>
+    <string name="loc_event_organizer">Organizer</string>
+    <string name="loc_event_audience">Audience</string>
+    <string name="loc_no_events_found">No events found</string>
+    <string name="loc_delete_event_message">This event will be removed permanently.</string>
+    <string name="loc_society_details">Society details</string>
+    <string name="loc_appearance_alerts">Appearance and alerts</string>
+    <string name="loc_save_settings">Save Settings</string>
+    <string name="loc_transfer_flat">Transfer flat</string>
+    <string name="loc_transfer_history">Transfer history</string>
+    <string name="loc_writeoff_summary">Write-off Summary</string>
+    <string name="loc_platform_overview">Platform Overview</string>
+    <string name="loc_manage_societies">Manage societies and monitor platform growth.</string>
+    <string name="loc_add_society">Add Society</string>
+    <string name="loc_edit_society">Edit Society</string>
+    <string name="loc_society_profile">Society Profile</string>
+    <string name="loc_society_administrator">Society Administrator</string>
+    <string name="loc_download_pdf">Download complete PDF</string>
+    <string name="loc_download_csv">Download complete CSV</string>
+    <string name="loc_share_pdf">Share complete PDF</string>
+    <string name="loc_share_csv">Share complete CSV</string>
+    <string name="loc_export_reports">Export reports</string>
+    <string name="loc_share_report">Share report</string>
+    <string name="excel_transactions">Excel Transactions</string>
+    <string name="excel_subtitle">Download, validate and import member transactions</string>
+    <string name="excel_downloads">Workbook downloads</string>
+    <string name="excel_download_help">Download a blank input template or export society transaction data using the filters below.</string>
+    <string name="excel_template">Blank template</string>
+    <string name="excel_export">Export data</string>
+    <string name="excel_filters">Transaction filters</string>
+    <string name="excel_from_date">From date</string>
+    <string name="excel_to_date">To date</string>
+    <string name="excel_wing">Wing</string>
+    <string name="excel_flat">Flat number</string>
+    <string name="excel_status">Payment status</string>
+    <string name="excel_clear_filters">Clear filters</string>
+    <string name="excel_import">Import workbook</string>
+    <string name="excel_select_file">Select Excel file</string>
+    <string name="excel_remove_file">Remove selected file</string>
+    <string name="excel_upload_preview">Upload and preview</string>
+    <string name="excel_validation_summary">Validation summary</string>
+    <string name="excel_total">Total</string>
+    <string name="excel_valid">Valid</string>
+    <string name="excel_invalid">Invalid</string>
+    <string name="excel_warnings">Warnings</string>
+    <string name="excel_error_report">Download error report</string>
+    <string name="excel_confirm_import">Confirm import</string>
+    <string name="excel_import_completed">Import completed</string>
+    <string name="excel_confirm_title">Confirm transaction import?</string>
+    <string name="excel_confirm_message">This will import %1$d validated transaction rows. This action cannot be repeated for the same batch.</string>
+    <string name="excel_confirm">Import transactions</string>
+    <string name="excel_import_history">Import history</string>
+    <string name="excel_no_import_history">No Excel imports yet.</string>
 </resources>

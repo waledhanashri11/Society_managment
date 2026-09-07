@@ -10,4 +10,6 @@ interface SuperAdminApiService {
     @GET("api/super-admin/societies/{id}") suspend fun society(@Path("id") id: String): Response<ManagedSocietyDto>
     @POST("api/super-admin/societies") suspend fun createSociety(@Body request: CreateSocietyRequest): Response<CreateSocietyResponse>
     @PATCH("api/super-admin/societies/{id}/status") suspend fun setStatus(@Path("id") id: String, @Body request: SocietyStatusRequest): Response<MessageResponse>
+    @PUT("api/super-admin/societies/{id}") suspend fun updateSociety(@Path("id") id: String, @Body request: UpdateSocietyRequest): Response<MessageResponse>
+    @PUT("api/super-admin/societies/{id}/admin") suspend fun updateAdmin(@Path("id") id: String, @Body request: UpdateAdminRequest): Response<MessageResponse>
 }

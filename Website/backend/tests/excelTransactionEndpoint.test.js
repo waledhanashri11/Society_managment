@@ -54,6 +54,11 @@ const request = async (baseUrl, token, path, options = {}) => fetch(`${baseUrl}$
     assert.strictEqual(exported.status, 200);
     assert((await exported.arrayBuffer()).byteLength > 1000);
 
+    if (process.env.EXCEL_E2E_ALLOW_WRITES !== 'true') {
+      console.log('Excel template/export contract passed; import mutation test skipped unless EXCEL_E2E_ALLOW_WRITES=true.');
+      return;
+    }
+
     reference = `XLS-E2E-${Date.now()}`;
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('Transactions');

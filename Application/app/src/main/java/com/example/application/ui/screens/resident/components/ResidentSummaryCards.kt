@@ -32,6 +32,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import com.example.application.R
 
 @Composable
 fun ResidentSummaryCards(
@@ -53,9 +56,9 @@ fun ResidentSummaryCards(
         // Card 1: Total Due (Blue)
         SummaryItemCard(
             modifier = Modifier.weight(1f),
-            title = "Total Due",
+            title = stringResource(R.string.total_due),
             valueText = totalDueText,
-            subtext = if (pendingBillsCount == 1) "1 pending bill" else "$pendingBillsCount pending bills",
+            subtext = pluralStringResource(R.plurals.pending_bills, pendingBillsCount, pendingBillsCount),
             icon = Icons.Filled.CurrencyRupee,
             accentColor = Color(0xFF2563EB),
             backgroundColor = Color(0xFFEFF6FF),
@@ -65,9 +68,9 @@ fun ResidentSummaryCards(
         // Card 2: Paid (Green)
         SummaryItemCard(
             modifier = Modifier.weight(1f),
-            title = "Paid",
+            title = stringResource(R.string.status_paid),
             valueText = totalPaidText,
-            subtext = "$paidBillsCount paid",
+            subtext = "$paidBillsCount ${stringResource(R.string.status_paid).lowercase()}",
             icon = Icons.Filled.CheckCircle,
             accentColor = Color(0xFF16A34A),
             backgroundColor = Color(0xFFF0FDF4),
@@ -77,9 +80,9 @@ fun ResidentSummaryCards(
         // Card 3: Complaints (Orange)
         SummaryItemCard(
             modifier = Modifier.weight(1f),
-            title = "Complaints",
+            title = stringResource(R.string.complaints),
             valueText = openComplaintsCount.toString(),
-            subtext = "Open",
+            subtext = stringResource(R.string.open_label),
             icon = Icons.Filled.PriorityHigh,
             accentColor = Color(0xFFEA580C),
             backgroundColor = Color(0xFFFFF7ED),
@@ -89,9 +92,9 @@ fun ResidentSummaryCards(
         // Card 4: Approved (Purple)
         SummaryItemCard(
             modifier = Modifier.weight(1f),
-            title = "Approved",
+            title = stringResource(R.string.status_approved),
             valueText = approvedComplaintsCount.toString(),
-            subtext = "Complaints",
+            subtext = stringResource(R.string.complaints),
             icon = Icons.Filled.VerifiedUser,
             accentColor = Color(0xFF9333EA),
             backgroundColor = Color(0xFFFAF5FF),

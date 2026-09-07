@@ -20,8 +20,10 @@ room = "2.8.4"
 coroutines = "1.10.2"
 coil = "3.3.0"
 work = "2.10.5"
+desugarJdkLibs = "2.1.5"
 
 [libraries]
+desugar-jdk-libs = { group = "com.android.tools", name = "desugar_jdk_libs", version.ref = "desugarJdkLibs" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }

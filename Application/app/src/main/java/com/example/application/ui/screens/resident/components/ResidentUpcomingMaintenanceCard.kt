@@ -32,6 +32,9 @@ import com.example.application.data.remote.dto.MaintenanceBillDto
 import com.example.application.data.remote.dto.netPayableAmount
 import com.example.application.util.DashboardFormatters
 
+import androidx.compose.ui.res.stringResource
+import com.example.application.R
+
 @Composable
 fun ResidentUpcomingMaintenanceCard(
     bill: MaintenanceBillDto?,
@@ -77,7 +80,7 @@ fun ResidentUpcomingMaintenanceCard(
                     }
 
                     Text(
-                        text = "Upcoming Maintenance Due",
+                        text = stringResource(R.string.upcoming_due),
                         style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp),
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
@@ -87,7 +90,7 @@ fun ResidentUpcomingMaintenanceCard(
                 }
 
                 Text(
-                    text = "View Details >",
+                    text = "${stringResource(R.string.view_details)} >",
                     style = MaterialTheme.typography.labelMedium.copy(fontSize = 13.sp),
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF2563EB),
@@ -98,7 +101,7 @@ fun ResidentUpcomingMaintenanceCard(
             // Body Row
             if (bill == null) {
                 Text(
-                    text = "No pending maintenance bills right now.",
+                    text = stringResource(R.string.no_pending_bills),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -113,7 +116,7 @@ fun ResidentUpcomingMaintenanceCard(
                         verticalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
                         Text(
-                            text = bill.title?.ifBlank { "Monthly Maintenance" } ?: "Monthly Maintenance",
+                            text = bill.title?.ifBlank { stringResource(R.string.maintenance) } ?: stringResource(R.string.maintenance),
                             style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp),
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurface,
@@ -121,7 +124,7 @@ fun ResidentUpcomingMaintenanceCard(
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
-                            text = "Due on ${DashboardFormatters.date(bill.dueDate ?: bill.maintenanceDueDate)}",
+                            text = stringResource(R.string.due_date, DashboardFormatters.date(bill.dueDate ?: bill.maintenanceDueDate)),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

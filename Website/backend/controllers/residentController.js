@@ -41,8 +41,11 @@ const addMonthYearFilters = (where, params, dateExpression, month, year) => {
 };
 
 const getTableColumns = async (tableName) => {
-  const [columns] = await promisePool.query(`SHOW COLUMNS FROM ${tableName}`);
-  return columns.map((column) => column.Field);
+  const [columns] = await promisePool.query(
+    `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = $1`,
+    [tableName]
+  );
+  return columns.map((column) => column.column_name);
 };
 
 const hasColumn = (columns, columnName) => columns.includes(columnName);
