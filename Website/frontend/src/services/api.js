@@ -391,6 +391,10 @@ export const monthlyReportAPI = {
   getPaymentReceipt: (id) => api.get(`/reports/maintenance/receipts/${id}`),
 };
 
+export const overallReportAPI = {
+  get: (params = {}, config = {}) => api.get('/reports/overall', { ...config, params }),
+};
+
 export const superAdminAPI = {
   getDashboard: () => api.get('/super-admin/dashboard'),
   getSocieties: () => api.get('/super-admin/societies'),

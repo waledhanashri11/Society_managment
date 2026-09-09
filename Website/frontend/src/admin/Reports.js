@@ -1,5 +1,6 @@
 /* eslint-disable */
 import React, { useCallback, useEffect, useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
   Building2,
@@ -100,6 +101,7 @@ const getStatusBadgeClass = (status = '') => {
 };
 
 export default function AdminReports() {
+  const navigate = useNavigate();
   const [financialYear, setFinancialYear] = useState(getCurrentIndianFY());
   const [selectedMonthFilter, setSelectedMonthFilter] = useState('All');
   const [activeTab, setActiveTab] = useState('summary'); // 'summary' | 'monthlyReport' | 'bankLedger' | 'cashLedger' | 'flats' | 'writeoffs'
@@ -467,6 +469,7 @@ export default function AdminReports() {
       {/* Navigation Tabs (Pill style matching Notices page) */}
       <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', overflowX: 'auto', paddingBottom: '4px', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
         {[
+          { id: 'overall', label: 'Overall Report', icon: PieChart },
           { id: 'summary', label: 'Financial Accounting Summary', icon: WalletCards },
           { id: 'monthlyReport', label: 'Monthly Maintenance Report', icon: BarChart3 },
           { id: 'expenses', label: 'Expense Report', icon: Wallet },
@@ -478,7 +481,7 @@ export default function AdminReports() {
           return (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => tab.id === 'overall' ? navigate('/admin/reports/overall') : setActiveTab(tab.id)}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',

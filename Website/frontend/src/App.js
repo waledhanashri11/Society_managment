@@ -24,6 +24,7 @@ const Maintenance = lazy(() => import('./admin/Maintenance'));
 const Complaints = lazy(() => import('./admin/Complaints'));
 const Notices = lazy(() => import('./admin/Notices'));
 const Reports = lazy(() => import('./admin/Reports'));
+const OverallReport = lazy(() => import('./admin/OverallReport'));
 const NOCManagement = lazy(() => import('./admin/NOCManagement'));
 const AdminSettings = lazy(() => import('./admin/AdminSettings'));
 const AdminMeetings = lazy(() => import('./admin/MeetingsModule'));
@@ -100,6 +101,7 @@ function App() {
             <Route path="notices" element={<Notices />} />
             <Route path="society-rules" element={<SocietyRules />} />
             <Route path="reports" element={<Reports />} />
+            <Route path="reports/overall" element={<OverallReport />} />
             <Route path="write-off-history" element={<Navigate to="/admin/agm-report" replace />} />
             <Route path="agm-report" element={<AGMReport />} />
             <Route path="noc-management" element={<NOCManagement />} />
