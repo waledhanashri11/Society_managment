@@ -79,6 +79,15 @@ The maintenance sample includes two editable examples, an `Instructions` workshe
 
 The last two columns should remain blank during upload; they are populated by validation and error reports.
 
+## Web Data Import module
+
+Authenticated admins can open **Admin Dashboard → Data Import** or use the Data Import sidebar item. The responsive web page provides the same two server-backed workflows as Android:
+
+- Import Residents
+- Import Maintenance Transactions
+
+Each workflow can download its own sample Excel, select an `.xlsx`, `.xls`, or `.csv` file, display server-side preview counts and row-wise validation messages, ask for confirmation, show imported/skipped/failed results, display tenant-scoped history, and download error reports. The browser never parses or inserts spreadsheet rows directly; it sends the file to the protected preview endpoint and confirms only the returned batch ID.
+
 ## Testing
 
 1. Run `npm install` in `Website/backend`.

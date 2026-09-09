@@ -2,7 +2,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  AlertTriangle, Building2, CalendarDays, FileCheck2, IndianRupee, Megaphone,
+  AlertTriangle, Building2, CalendarDays, FileCheck2, FileUp, IndianRupee, Megaphone,
   MessageSquareWarning, Users
 } from 'lucide-react';
 import { complaintAPI, flatAPI, maintenanceAPI, nocAPI, noticeAPI, userAPI } from '../services/api';
@@ -134,7 +134,12 @@ const AdminDashboard = () => {
     <div>
       <div className="portal-page-title">
         <div><h1>{t('dashboard.title')}</h1><p>{t('adminDashboard.subtitle')}</p></div>
-        <div className="portal-date-chip"><CalendarDays size={14} /> {formatters.date(new Date(), { day: undefined, month: 'long', year: 'numeric' })}</div>
+        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+          <button type="button" className="portal-primary-btn" onClick={() => navigate('/admin/data-import')}>
+            <FileUp size={15} /> {t('nav.dataImport')}
+          </button>
+          <div className="portal-date-chip"><CalendarDays size={14} /> {formatters.date(new Date(), { day: undefined, month: 'long', year: 'numeric' })}</div>
+        </div>
       </div>
 
       {loading ? (

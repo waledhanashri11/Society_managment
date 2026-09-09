@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
-  Bell, Building2, CalendarDays, ChevronDown, ClipboardList, CreditCard, FileBarChart, FileCheck2, FileText, Home, Languages, LogOut, Menu, Moon, Sun,
+  Bell, Building2, CalendarDays, ChevronDown, ClipboardList, CreditCard, Database, FileBarChart, FileCheck2, FileText, Home, Languages, LogOut, Menu, Moon, Sun,
   Megaphone, MessageSquareWarning, Settings, UserCircle, Users, X
 } from 'lucide-react';
 import { getUser, logout } from '../utils/auth';
@@ -17,6 +17,7 @@ const adminLinks = [
   { to: '/admin/flats', labelKey: 'nav.flats', icon: Building2 },
   { to: '/admin/meetings', labelKey: 'nav.meetings', icon: CalendarDays },
   { to: '/admin/maintenance', labelKey: 'nav.maintenance', icon: ClipboardList },
+  { to: '/admin/data-import', labelKey: 'nav.dataImport', icon: Database },
   { to: '/admin/agm-report', labelKey: 'nav.agmReport', icon: FileText },
   { to: '/admin/complaints', labelKey: 'nav.complaints', icon: MessageSquareWarning },
   { to: '/admin/notices', labelKey: 'nav.notices', icon: Megaphone },

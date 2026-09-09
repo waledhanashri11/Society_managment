@@ -363,9 +363,12 @@ const confirmImport = async (req, res) => {
 const history = async (req, res) => {
   try {
     const [rows] = await promisePool.query(
-      `SELECT id::text AS id, file_name AS "fileName", status, created_at AS "createdAt",
-              total_rows AS "totalRows", imported_rows AS imported, failed_rows AS failed
-       FROM excel_transaction_import_batches WHERE society_id = ? ORDER BY created_at DESC LIMIT 100`,
+      `SELECT b.id::text AS id, b.file_name AS "fileName", COALESCE(u.name, 'Admin') AS "uploadedBy",
+              b.status, b.created_at AS "createdAt", b.total_rows AS "totalRows",
+              b.imported_rows AS imported, b.skipped_rows AS skipped, b.failed_rows AS failed
+       FROM excel_transaction_import_batches b
+       LEFT JOIN users u ON u.id = b.created_by AND u.society_id = b.society_id
+       WHERE b.society_id = ? ORDER BY b.created_at DESC LIMIT 100`,
       [req.user.societyId]
     );
     return res.json({ success: true, data: rows });

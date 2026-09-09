@@ -29,6 +29,7 @@ const AdminSettings = lazy(() => import('./admin/AdminSettings'));
 const AdminMeetings = lazy(() => import('./admin/MeetingsModule'));
 const AGMReport = lazy(() => import('./admin/AGMReport'));
 const SocietyRules = lazy(() => import('./admin/SocietyRules'));
+const DataImport = lazy(() => import('./admin/DataImport'));
 
 const ResidentLayout = lazy(() => import('./resident/ResidentLayout'));
 const ResidentDashboard = lazy(() => import('./resident/ResidentDashboard'));
@@ -94,6 +95,7 @@ function App() {
             <Route path="flats" element={<Flats />} />
             <Route path="meetings" element={<AdminMeetings />} />
             <Route path="maintenance" element={<Maintenance />} />
+            <Route path="data-import" element={<DataImport />} />
             <Route path="complaints" element={<Complaints />} />
             <Route path="notices" element={<Notices />} />
             <Route path="society-rules" element={<SocietyRules />} />

@@ -192,6 +192,18 @@ export const meetingAPI = {
 export const residentsAPI = {
   getAll: (config = {}) => cachedGet('/residents', config),
   create: (data) => mutate(api.post('/residents', data), ['/residents', '/users', '/flats']),
+  downloadImportTemplate: () => api.get('/residents/import/template', { responseType: 'blob' }),
+  previewImport: (file) => {
+    const form = new FormData();
+    form.append('file', file);
+    return api.post('/residents/import/preview', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+  },
+  confirmImport: (batchId) => mutate(
+    api.post('/residents/import/confirm', { batchId }),
+    ['/residents', '/users', '/flats']
+  ),
+  getImportHistory: () => api.get('/residents/imports'),
+  downloadImportErrors: (batchId) => api.get(`/residents/import/${batchId}/errors`, { responseType: 'blob' }),
 };
 
 export const maintenanceAPI = {
@@ -255,6 +267,18 @@ export const maintenanceAPI = {
   getCashLedger: (params = {}, config = {}) => api.get('/maintenance/reports/cash-ledger', { ...config, params }),
   getFlatCollectionReport: (params = {}, config = {}) => api.get('/maintenance/reports/flat-collection', { ...config, params }),
   saveOpeningBalance: (data) => mutate(api.put('/maintenance/reports/opening-balance', data), '/maintenance'),
+  downloadTransactionImportTemplate: () => api.get('/maintenance/transactions/template', { responseType: 'blob' }),
+  previewTransactionImport: (file) => {
+    const form = new FormData();
+    form.append('file', file);
+    return api.post('/maintenance/transactions/import/preview', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+  },
+  confirmTransactionImport: (batchId) => mutate(
+    api.post('/maintenance/transactions/import/confirm', { batchId }),
+    '/maintenance'
+  ),
+  getTransactionImportHistory: () => api.get('/maintenance/transactions/imports'),
+  downloadTransactionImportErrors: (batchId) => api.get(`/maintenance/transactions/imports/${batchId}/errors`, { responseType: 'blob' }),
 };
 
 export const complaintAPI = {
