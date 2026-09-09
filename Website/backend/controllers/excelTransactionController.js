@@ -1,7 +1,7 @@
 const multer = require('multer');
 const { promisePool } = require('../config/database');
 const {
-  ALLOWED_MODES, ALLOWED_STATUSES, ALLOWED_ACTIONS, parseWorkbook, createWorkbook,
+  INVALID_FORMAT_MESSAGE, ALLOWED_MODES, ALLOWED_STATUSES, ALLOWED_ACTIONS, parseWorkbook, createWorkbook,
   createErrorWorkbook, canonicalRow, hash, normalizeExportFilters
 } = require('../services/excelTransactionService');
 
@@ -16,7 +16,7 @@ const upload = multer({
       'application/vnd.ms-excel', 'text/csv', 'application/csv',
       'application/octet-stream'
     ].includes(file.mimetype);
-    callback(validExtension && validMime ? null : new Error('Only .xlsx workbooks are supported'), validExtension && validMime);
+    callback(validExtension && validMime ? null : new Error('Only .xlsx, .xls and .csv files are supported'), validExtension && validMime);
   }
 });
 
@@ -57,7 +57,7 @@ const template = async (req, res) => {
     const society = await societyContext(req.user.societyId);
     const members = await listMembers(req.user.societyId);
     const buffer = await createWorkbook({ society, members, template: true });
-    return sendWorkbook(res, buffer, `SocietyHub_Transaction_Template_${society.code}.xlsx`);
+    return sendWorkbook(res, buffer, 'maintenance_import_sample.xlsx');
   } catch (error) {
     console.error('Excel template error:', error);
     return res.status(500).json({ success: false, message: 'Unable to generate the transaction template' });
@@ -250,7 +250,7 @@ const previewImport = async (req, res) => {
     console.error('Excel preview error:', error);
     const safeMessages = [
       /^Workbook must contain a Transactions sheet$/,
-      /^Missing required column:/,
+      new RegExp(`^${INVALID_FORMAT_MESSAGE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`),
       /^The Transactions sheet does not contain any data rows$/,
       /^A workbook may contain at most 5,000 transaction rows$/
     ];

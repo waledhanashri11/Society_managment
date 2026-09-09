@@ -25,17 +25,22 @@ import com.example.application.util.ExcelFileManager
 import com.example.application.util.ResidentImportFileManager
 import com.example.application.viewmodel.ResidentImportEvent
 import com.example.application.viewmodel.ResidentImportViewModel
+import com.example.application.viewmodel.ExcelTransactionEvent
+import com.example.application.viewmodel.ExcelTransactionsViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DataImportScreen(
     onBack: () -> Unit,
     onMaintenanceTransactions: () -> Unit,
-    viewModel: ResidentImportViewModel = hiltViewModel()
+    viewModel: ResidentImportViewModel = hiltViewModel(),
+    transactionViewModel: ExcelTransactionsViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
     val state by viewModel.state.collectAsStateWithLifecycle()
     val event by viewModel.event.collectAsStateWithLifecycle()
+    val transactionState by transactionViewModel.state.collectAsStateWithLifecycle()
+    val transactionEvent by transactionViewModel.event.collectAsStateWithLifecycle()
     var showResidentFlow by remember { mutableStateOf(false) }
     var showResidentHistory by remember { mutableStateOf(false) }
     val residentPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -50,6 +55,14 @@ fun DataImportScreen(
             .onSuccess { Toast.makeText(context, "Saved ${it.name}", Toast.LENGTH_LONG).show() }
             .onFailure { Toast.makeText(context, it.message ?: "Download failed", Toast.LENGTH_LONG).show() }
         viewModel.clearEvent()
+    }
+
+    LaunchedEffect(transactionEvent) {
+        val download = transactionEvent as? ExcelTransactionEvent.Download ?: return@LaunchedEffect
+        runCatching { ExcelFileManager.save(context, download.body, download.fileName) }
+            .onSuccess { Toast.makeText(context, "Saved ${it.name}", Toast.LENGTH_LONG).show() }
+            .onFailure { Toast.makeText(context, it.message ?: "Download failed", Toast.LENGTH_LONG).show() }
+        transactionViewModel.clearEvent()
     }
 
     if (state.confirm) AlertDialog(
@@ -76,6 +89,7 @@ fun DataImportScreen(
                     title = "Import Residents",
                     description = "Validate resident and flat details, preview errors, then confirm the valid records.",
                     busy = state.busy,
+                    templateLoading = state.templateDownloading,
                     onImport = { residentPicker.launch(arrayOf(ResidentImportFileManager.XLSX, ResidentImportFileManager.XLS, ResidentImportFileManager.CSV, "text/csv")) },
                     onTemplate = viewModel::template,
                     onHistory = { showResidentHistory = !showResidentHistory; if (showResidentHistory) viewModel.history() }
@@ -108,25 +122,30 @@ fun DataImportScreen(
                 ImportModuleCard(
                     title = "Import Maintenance Transactions",
                     description = "Validate payment transactions, preview row errors, confirm imports, and review history.",
-                    busy = false,
+                    busy = transactionState.busy,
+                    templateLoading = transactionState.templateDownloading,
                     onImport = onMaintenanceTransactions,
-                    onTemplate = onMaintenanceTransactions,
+                    onTemplate = transactionViewModel::downloadTemplate,
                     onHistory = onMaintenanceTransactions
                 )
             }
             state.error?.let { item { Text(it, color = MaterialTheme.colorScheme.error) } }
+            transactionState.error?.let { item { Text(it, color = MaterialTheme.colorScheme.error) } }
         }
     }
 }
 
 @Composable
-private fun ImportModuleCard(title:String, description:String, busy:Boolean, onImport:()->Unit, onTemplate:()->Unit, onHistory:()->Unit) {
+private fun ImportModuleCard(title:String, description:String, busy:Boolean, templateLoading:Boolean, onImport:()->Unit, onTemplate:()->Unit, onHistory:()->Unit) {
     Card(shape = RoundedCornerShape(18.dp), elevation = CardDefaults.cardElevation(2.dp)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Text(description, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Button(onClick = onImport, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.UploadFile, null); Spacer(Modifier.width(8.dp)); Text("Import Excel") }
-            OutlinedButton(onClick = onTemplate, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Download, null); Spacer(Modifier.width(8.dp)); Text("Download Template") }
+            OutlinedButton(onClick = onTemplate, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                if (templateLoading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Icon(Icons.Default.Download, null)
+                Spacer(Modifier.width(8.dp)); Text(if (templateLoading) "Preparing sample…" else "Download Sample Excel")
+            }
             TextButton(onClick = onHistory, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.History, null); Spacer(Modifier.width(8.dp)); Text("Import History") }
         }
     }

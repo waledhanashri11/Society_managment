@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -121,10 +122,7 @@ fun ExcelTransactionsScreen(
                 SectionCard(stringResource(R.string.excel_downloads)) {
                     Text(stringResource(R.string.excel_download_help), style = MaterialTheme.typography.bodyMedium)
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = viewModel::downloadTemplate, enabled = !state.busy, modifier = Modifier.weight(1f)) {
-                            Icon(Icons.Default.Download, null); Text(stringResource(R.string.excel_template), modifier = Modifier.padding(start = 6.dp))
-                        }
-                        Button(onClick = viewModel::export, enabled = !state.busy, modifier = Modifier.weight(1f)) {
+                        Button(onClick = viewModel::export, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
                             Icon(Icons.Default.Download, null); Text(stringResource(R.string.excel_export), modifier = Modifier.padding(start = 6.dp))
                         }
                     }
@@ -147,6 +145,10 @@ fun ExcelTransactionsScreen(
 
             item {
                 SectionCard(stringResource(R.string.excel_import)) {
+                    OutlinedButton(onClick = viewModel::downloadTemplate, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
+                        if (state.templateDownloading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Icon(Icons.Default.Download, null)
+                        Text(if (state.templateDownloading) "Preparing sample…" else "Download Sample Excel", modifier = Modifier.padding(start = 8.dp))
+                    }
                     OutlinedButton(onClick = { picker.launch(arrayOf(ExcelFileManager.XLSX_MIME, ExcelFileManager.XLS_MIME, ExcelFileManager.CSV_MIME, "application/csv")) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Default.FileOpen, null); Text(stringResource(R.string.excel_select_file), modifier = Modifier.padding(start = 8.dp))
                     }

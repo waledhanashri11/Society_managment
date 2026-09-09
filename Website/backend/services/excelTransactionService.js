@@ -2,12 +2,28 @@ const crypto = require('crypto');
 const ExcelJS = require('exceljs');
 const XLSX = require('@keep-lts/xlsx');
 
-const HEADERS = [
-  'Transaction ID', 'Society Code', 'Member ID', 'Member Name', 'Wing', 'Flat Number',
-  'Bill ID', 'Bill Number', 'Transaction Date', 'Transaction Type', 'Payment Mode',
-  'Amount', 'UTR/Cheque Number', 'Payment Status', 'Remarks', 'Import Action',
-  'Validation Result', 'Validation Message'
+const TRANSACTION_FIELDS = [
+  { header: 'Transaction ID', required: false, format: 'Positive number for UPDATE; leave blank for CREATE', example: '' },
+  { header: 'Society Code', required: false, format: 'Authenticated society code when supplied', example: 'SOCIETY01' },
+  { header: 'Member ID', required: true, format: 'Positive member ID from the Members sheet', example: '101' },
+  { header: 'Member Name', required: false, format: 'Filled from the selected member during validation', example: 'Aarav Sharma' },
+  { header: 'Wing', required: false, format: 'Must match the selected bill when supplied', example: 'A' },
+  { header: 'Flat Number', required: false, format: 'Must match the selected bill when supplied', example: 'A-101' },
+  { header: 'Bill ID', required: true, format: 'Positive maintenance bill ID belonging to the member', example: '1001' },
+  { header: 'Bill Number', required: false, format: 'Display value only', example: 'BILL-1001' },
+  { header: 'Transaction Date', required: true, format: 'YYYY-MM-DD', example: '2026-09-09' },
+  { header: 'Transaction Type', required: false, format: 'Maintenance; blank defaults to Maintenance', example: 'Maintenance' },
+  { header: 'Payment Mode', required: true, format: 'Cash, UPI, Bank Transfer, or Cheque', example: 'UPI' },
+  { header: 'Amount', required: true, format: 'Positive number, maximum 999999999999.99', example: '1500.00' },
+  { header: 'UTR/Cheque Number', required: false, format: 'Required for every non-cash payment; must be unique for the bill', example: 'UTR20260909001' },
+  { header: 'Payment Status', required: true, format: 'Pending, Approved, Paid, or Rejected', example: 'Pending' },
+  { header: 'Remarks', required: false, format: 'Optional note', example: 'September maintenance' },
+  { header: 'Import Action', required: false, format: 'CREATE or UPDATE; blank defaults to CREATE', example: 'CREATE' },
+  { header: 'Validation Result', required: false, format: 'Leave blank; populated by validation/error reports', example: '' },
+  { header: 'Validation Message', required: false, format: 'Leave blank; populated by validation/error reports', example: '' }
 ];
+const HEADERS = TRANSACTION_FIELDS.map((field) => field.header);
+const INVALID_FORMAT_MESSAGE = 'Invalid Excel format. Please download and use the sample Excel template.';
 
 const ALLOWED_MODES = new Set(['Cash', 'UPI', 'Bank Transfer', 'Cheque']);
 // Paid is a valid persisted status and must round-trip through export/import.
@@ -56,15 +72,22 @@ const excelDate = (value) => {
 };
 const hash = (value) => crypto.createHash('sha256').update(value).digest('hex');
 
+const validateHeaders = (values) => {
+  const uploaded = values.map(normalizeHeader).filter(Boolean);
+  const expected = HEADERS.map(normalizeHeader);
+  if (uploaded.length !== expected.length || new Set(uploaded).size !== expected.length || expected.some((header) => !uploaded.includes(header))) {
+    throw new Error(INVALID_FORMAT_MESSAGE);
+  }
+};
+
 const parseWorkbook = async (buffer, fileName = 'upload.xlsx') => {
   if (!/\.xlsx$/i.test(fileName)) {
     const book = XLSX.read(buffer, { type: 'buffer', cellDates: true });
     const sheet = book.Sheets.Transactions || book.Sheets[book.SheetNames[0]];
     if (!sheet) throw new Error('Workbook must contain transaction rows');
     const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: true });
+    validateHeaders(matrix[0] || []);
     const headers = (matrix[0] || []).map(normalizeHeader);
-    const required = ['Member ID', 'Bill ID', 'Transaction Date', 'Payment Mode', 'Amount', 'Payment Status', 'Import Action'];
-    for (const name of required) if (!headers.includes(normalizeHeader(name))) throw new Error(`Missing required column: ${name}`);
     const get = (row, name) => row[headers.indexOf(normalizeHeader(name))];
     return matrix.slice(1).map((row, index) => ({ row, index })).filter(({row}) => row.some((v) => text(v) !== '')).map(({row,index}) => ({
       rowNumber:index+2, transactionId:text(get(row,'Transaction ID')), societyCode:text(get(row,'Society Code')),
@@ -80,11 +103,9 @@ const parseWorkbook = async (buffer, fileName = 'upload.xlsx') => {
   await workbook.xlsx.load(buffer);
   const sheet = workbook.getWorksheet('Transactions');
   if (!sheet) throw new Error('Workbook must contain a Transactions sheet');
+  validateHeaders(sheet.getRow(1).values.slice(1));
   const headerMap = new Map();
   sheet.getRow(1).eachCell((cell, column) => headerMap.set(normalizeHeader(cell.value), column));
-  for (const required of ['Member ID', 'Bill ID', 'Transaction Date', 'Payment Mode', 'Amount', 'Payment Status', 'Import Action']) {
-    if (!headerMap.has(normalizeHeader(required))) throw new Error(`Missing required column: ${required}`);
-  }
   const get = (row, name) => row.getCell(headerMap.get(normalizeHeader(name)) || 0).value;
   const rows = [];
   sheet.eachRow((row, rowNumber) => {
@@ -155,6 +176,11 @@ const createWorkbook = async ({ society, transactions = [], members = [], templa
     item.payment_mode, Number(item.amount), item.reference_number, item.payment_status,
     item.remarks, item.import_action || 'UPDATE', '', ''
   ]));
+  if (template && transactions.length === 0) {
+    const member = members[0];
+    sheet.addRow(['', society?.code || 'SOCIETY01', member?.id || 101, member?.name || 'Aarav Sharma', member?.wing || 'A', member?.flat_number || 'A-101', 1001, 'BILL-1001', '2026-09-09', 'Maintenance', 'UPI', 1500, 'UTR20260909001', 'Pending', 'Replace this example with real data', 'CREATE', '', '']);
+    sheet.addRow(['', society?.code || 'SOCIETY01', member?.id || 102, member?.name || 'Meera Patil', member?.wing || 'B', member?.flat_number || 'B-202', 1002, 'BILL-1002', '2026-09-10', 'Maintenance', 'Cash', 1200, '', 'Paid', 'Replace this example with real data', 'CREATE', '', '']);
+  }
   styleTable(sheet);
   addValidations(sheet, template ? 1000 : Math.max(sheet.rowCount + 100, 500));
 
@@ -183,19 +209,18 @@ const createWorkbook = async ({ society, transactions = [], members = [], templa
   summary.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1D4ED8' } };
   summary.getColumn(1).width = 28; summary.getColumn(2).width = 20; summary.getColumn(2).numFmt = '₹#,##0.00';
 
-  const instructions = workbook.addWorksheet('Instructions');
-  instructions.addRows([
-    ['SocietyHub Excel Transaction Import'],
-    ['1. Do not change sheet names or column headers.'],
-    ['2. Use Member ID and Bill ID from the Members sheet and your maintenance records.'],
-    ['3. Transaction Date must use YYYY-MM-DD.'],
-    ['4. CREATE adds a payment. UPDATE may only modify a non-approved payment.'],
-    ['5. Approved transactions are immutable; use the application adjustment workflow instead.'],
-    ['6. Upload the workbook, review every validation result, then confirm the batch.'],
-    ['7. Invalid rows are never imported. Duplicate uploads are not imported twice.']
-  ]);
-  instructions.getColumn(1).width = 110;
-  instructions.getRow(1).font = { bold: true, size: 16 };
+  const instructions = workbook.addWorksheet('Instructions', { views: [{ state: 'frozen', ySplit: 1 }] });
+  instructions.columns = [
+    { header: 'Column', key: 'column', width: 26 },
+    { header: 'Required', key: 'required', width: 12 },
+    { header: 'Allowed values / format', key: 'format', width: 72 },
+    { header: 'Example', key: 'example', width: 34 }
+  ];
+  TRANSACTION_FIELDS.forEach((field) => instructions.addRow({ column: field.header, required: field.required ? 'Yes' : 'No', format: field.format, example: field.example }));
+  instructions.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+  instructions.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1D4ED8' } };
+  instructions.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
+  instructions.getColumn(3).alignment = { wrapText: true, vertical: 'top' };
   return workbook.xlsx.writeBuffer();
 };
 
@@ -221,7 +246,7 @@ const canonicalRow = (societyId, row) => JSON.stringify([
 ]);
 
 module.exports = {
-  HEADERS, ALLOWED_MODES, ALLOWED_STATUSES, ALLOWED_ACTIONS,
+  TRANSACTION_FIELDS, HEADERS, INVALID_FORMAT_MESSAGE, ALLOWED_MODES, ALLOWED_STATUSES, ALLOWED_ACTIONS,
   parseWorkbook, createWorkbook, createErrorWorkbook, canonicalRow, hash,
   normalizeExportFilters
 };

@@ -1,7 +1,7 @@
 const assert = require('assert');
 const ExcelJS = require('exceljs');
 const {
-  HEADERS, parseWorkbook, createWorkbook, createErrorWorkbook, canonicalRow, hash, normalizeExportFilters
+  HEADERS, INVALID_FORMAT_MESSAGE, parseWorkbook, createWorkbook, createErrorWorkbook, canonicalRow, hash, normalizeExportFilters
 } = require('../services/excelTransactionService');
 
 (async () => {
@@ -14,9 +14,13 @@ const {
   await workbook.xlsx.load(buffer);
   assert.deepStrictEqual(workbook.worksheets.map((sheet) => sheet.name), ['Transactions', 'Members', 'Summary', 'Instructions']);
   assert.deepStrictEqual(workbook.getWorksheet('Transactions').getRow(1).values.slice(1), HEADERS);
+  assert.strictEqual(workbook.getWorksheet('Transactions').actualRowCount, 3);
+  assert.strictEqual(workbook.getWorksheet('Instructions').getCell('A2').value, 'Transaction ID');
+  assert.strictEqual(workbook.getWorksheet('Instructions').getCell('B4').value, 'Yes');
   assert.strictEqual(workbook.getWorksheet('Summary').getCell('B4').formula.includes('SUMIF'), true);
 
   const transactions = workbook.getWorksheet('Transactions');
+  transactions.spliceRows(2, 2);
   transactions.addRow(['', 'TEST', 10, 'Test Member', 'A', '101', 50, 'BILL-50', new Date('2026-08-24'), 'Maintenance', 'UPI', 1250, 'UTR-1', 'Pending', 'Test', 'CREATE', '', '']);
   const populated = await workbook.xlsx.writeBuffer();
   const rows = await parseWorkbook(populated);
@@ -45,6 +49,15 @@ const {
   wrongSheet.addWorksheet('Sheet1').addRow(HEADERS);
   const wrongSheetBuffer = Buffer.from(await wrongSheet.xlsx.writeBuffer());
   await assert.rejects(() => parseWorkbook(wrongSheetBuffer), /Transactions sheet/);
+
+  const missingColumn = new ExcelJS.Workbook();
+  missingColumn.addWorksheet('Transactions').addRow(HEADERS.slice(0, -1));
+  const missingColumnBuffer = Buffer.from(await missingColumn.xlsx.writeBuffer());
+  await assert.rejects(
+    () => parseWorkbook(missingColumnBuffer),
+    (error) => error.message === INVALID_FORMAT_MESSAGE
+  );
+  await assert.rejects(() => parseWorkbook(Buffer.from('not a spreadsheet'), 'invalid.xlsx'));
 
   const fingerprint = hash(canonicalRow(1, { ...rows[0], amount: 1250 }));
   assert.match(fingerprint, /^[a-f0-9]{64}$/);

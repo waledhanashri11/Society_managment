@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const multer = require('multer');
 const { promisePool } = require('../config/database');
-const { parseResidentFile, createResidentTemplate, createResidentErrorReport, normalizeMobile, key } = require('../services/residentImportService');
+const { INVALID_FORMAT_MESSAGE, parseResidentFile, createResidentTemplate, createResidentErrorReport, normalizeMobile, key } = require('../services/residentImportService');
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 const allowedExtension = /\.(xlsx|xls|csv)$/i;
@@ -10,7 +10,7 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX
 const uploadFile = (req, res, next) => upload.single('file')(req, res, (error) => error ? res.status(400).json({ success: false, message: error.code === 'LIMIT_FILE_SIZE' ? 'File must be 5 MB or smaller' : error.message }) : next());
 const sendXlsx = (res, buffer, name) => { res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'); res.setHeader('Content-Disposition', `attachment; filename="${name}"`); res.setHeader('Cache-Control', 'private, no-store'); res.send(Buffer.from(buffer)); };
 
-const template = async (_req, res) => { try { sendXlsx(res, await createResidentTemplate(), 'SocietyHub_Resident_Import_Template.xlsx'); } catch (error) { console.error('Resident template error:', error); res.status(500).json({ success: false, message: 'Unable to generate template' }); } };
+const template = async (_req, res) => { try { sendXlsx(res, await createResidentTemplate(), 'resident_import_sample.xlsx'); } catch (error) { console.error('Resident template error:', error); res.status(500).json({ success: false, message: 'Unable to generate sample Excel' }); } };
 
 const validFlat = (value) => /^(?=.*\d)[A-Za-z0-9][A-Za-z0-9\/-]{0,19}$/.test(value);
 const validateRows = async (rows, societyId) => {
@@ -62,7 +62,7 @@ const preview = async (req, res) => {
     } catch (error) { await connection.rollback(); throw error; } finally { connection.release(); }
   } catch (error) {
     console.error('Resident import preview error:', error);
-    const safe = /^(Missing required column:|A file may contain at most|The file)/.test(error.message || '') ? error.message : 'Unable to validate resident file';
+    const safe = error.message === INVALID_FORMAT_MESSAGE || /^(A file may contain at most|The file)/.test(error.message || '') ? error.message : 'Unable to validate resident file';
     return res.status(400).json({ success: false, message: safe });
   }
 };

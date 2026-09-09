@@ -28,6 +28,7 @@ data class ExcelTransactionsUiState(
     val confirmation: ExcelImportConfirmDto? = null,
     val history: List<ExcelImportBatchDto> = emptyList(),
     val busy: Boolean = false,
+    val templateDownloading: Boolean = false,
     val error: String? = null,
     val message: String? = null,
     val confirmDialog: Boolean = false
@@ -56,7 +57,7 @@ class ExcelTransactionsViewModel @Inject constructor(
     fun clearEvent() { _event.value = null }
     fun clearNotice() = _state.update { it.copy(error = null, message = null) }
 
-    fun downloadTemplate() = binary("SocietyHub_Transaction_Template.xlsx") { repository.template() }
+    fun downloadTemplate() = binary("maintenance_import_sample.xlsx", true) { repository.template() }
 
     fun export() {
         ExcelExportFilterPolicy.validate(_state.value.filters)?.let { error ->
@@ -105,12 +106,12 @@ class ExcelTransactionsViewModel @Inject constructor(
         }
     }
 
-    private fun binary(fileName: String, block: suspend () -> NetworkResult<ResponseBody>) = viewModelScope.launch {
+    private fun binary(fileName: String, template: Boolean = false, block: suspend () -> NetworkResult<ResponseBody>) = viewModelScope.launch {
         if (_state.value.busy) return@launch
-        _state.update { it.copy(busy = true, error = null, message = null) }
+        _state.update { it.copy(busy = true, templateDownloading = template, error = null, message = null) }
         when (val result = block()) {
-            is NetworkResult.Success -> { _state.update { it.copy(busy = false) }; _event.value = ExcelTransactionEvent.Download(result.data, fileName) }
-            is NetworkResult.Error -> _state.update { it.copy(busy = false, error = message(result)) }
+            is NetworkResult.Success -> { _state.update { it.copy(busy = false, templateDownloading = false) }; _event.value = ExcelTransactionEvent.Download(result.data, fileName) }
+            is NetworkResult.Error -> _state.update { it.copy(busy = false, templateDownloading = false, error = message(result)) }
             NetworkResult.Loading -> Unit
         }
     }

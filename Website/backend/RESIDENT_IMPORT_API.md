@@ -6,7 +6,7 @@ All endpoints require `Authorization: Bearer <JWT>` and an authenticated user wi
 
 `GET /api/residents/import/template`
 
-Returns `SocietyHub_Resident_Import_Template.xlsx`. The `Residents` worksheet contains these columns in row 1:
+Returns `resident_import_sample.xlsx`. The `Residents` worksheet contains two editable example rows and these exact columns in row 1:
 
 1. Flat Number
 2. Resident Name
@@ -16,7 +16,9 @@ Returns `SocietyHub_Resident_Import_Template.xlsx`. The `Residents` worksheet co
 6. Ownership Type (`Owner` or `Tenant`)
 7. Occupancy Status (`Active` or `Inactive`)
 
-The example row should be removed before upload. Flat Type must already exist and be active in the society. Active creates an approved account; Inactive creates a pending account. Imported accounts receive a cryptographically random password and can use the existing password-reset flow.
+The `Instructions` worksheet marks every field as required and documents its format and allowed values. Replace or remove the example rows before upload. Flat Type must already exist and be active in the society. Active creates an approved account; Inactive creates a pending account. Imported accounts receive a cryptographically random password and can use the existing password-reset flow.
+
+Uploaded headings are checked against the same field configuration that creates the sample. Missing, duplicated, or unknown headings return: `Invalid Excel format. Please download and use the sample Excel template.`
 
 ## Preview
 
@@ -52,7 +54,30 @@ Returns the latest 100 tenant-scoped resident import batches, including file nam
 
 The Admin Dashboard now opens a dedicated `Data Import` screen. Resident imports run directly in this screen. Maintenance transaction actions open the existing transaction import screen, which owns its template, preview, confirmation, error report, and history flow. The normal Residents and Maintenance pages do not show Excel import buttons.
 
-Maintenance uploads accept `.xlsx`, `.xls`, and `.csv`. For `.xls` and `.csv`, the first worksheet/data table is treated as `Transactions`; all required transaction headers remain identical to the Excel template.
+Maintenance uploads accept `.xlsx`, `.xls`, and `.csv`. `GET /api/maintenance/transactions/template` returns `maintenance_import_sample.xlsx`. For `.xls` and `.csv`, the first worksheet/data table is treated as `Transactions`; all transaction headers must remain identical to the sample.
+
+The maintenance sample includes two editable examples, an `Instructions` worksheet, the society's `Members` reference worksheet, and the existing `Summary` worksheet. Its exact transaction headings are:
+
+1. Transaction ID
+2. Society Code
+3. Member ID
+4. Member Name
+5. Wing
+6. Flat Number
+7. Bill ID
+8. Bill Number
+9. Transaction Date (`YYYY-MM-DD`)
+10. Transaction Type (`Maintenance`)
+11. Payment Mode (`Cash`, `UPI`, `Bank Transfer`, or `Cheque`)
+12. Amount
+13. UTR/Cheque Number
+14. Payment Status (`Pending`, `Approved`, `Paid`, or `Rejected`)
+15. Remarks
+16. Import Action (`CREATE` or `UPDATE`)
+17. Validation Result
+18. Validation Message
+
+The last two columns should remain blank during upload; they are populated by validation and error reports.
 
 ## Testing
 
